@@ -1,0 +1,16 @@
+{
+  "name": "@fishy/shared",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared types and utilities for Fishy",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  }
+}

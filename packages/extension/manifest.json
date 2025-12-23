@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Fishy - Holochain in the Browser",
+  "version": "0.0.1",
+  "description": "Browser extension implementation of Holochain conductor",
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "dist/background/index.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content/index.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "dist/popup/index.html",
+    "default_title": "Fishy"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/lib/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

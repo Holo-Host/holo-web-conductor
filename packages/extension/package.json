@@ -1,0 +1,19 @@
+{
+  "name": "@fishy/extension",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Fishy browser extension - Holochain conductor in the browser",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'TODO: configure build'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fishy/core": "workspace:*",
+    "@fishy/lair": "workspace:*",
+    "@fishy/shared": "workspace:*"
+  }
+}

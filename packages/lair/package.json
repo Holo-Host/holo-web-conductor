@@ -1,0 +1,19 @@
+{
+  "name": "@fishy/lair",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lair keystore implementation for browser environment",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fishy/shared": "workspace:*"
+  }
+}

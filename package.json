@@ -1,0 +1,25 @@
+{
+  "name": "fishy",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Browser extension implementation of Holochain conductor and Lair keystore",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "clean": "npm run clean --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
