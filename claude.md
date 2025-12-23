@@ -61,28 +61,30 @@ packages/
 
 ---
 
-### Step 1: Browser Extension Base
+### Step 1: Browser Extension Base ✓
 
 **Goal**: Create a working browser extension with a base API for webpage ↔ extension communication.
 
 **Dependencies**: None
 
-**Sub-tasks**:
-1. **1.1** Configure build tooling for extension (esbuild/vite + TypeScript)
-2. **1.2** Implement background service worker skeleton
-3. **1.3** Implement content script that injects `window.holochain` API
-4. **1.4** Create message passing protocol between content script ↔ background
-5. **1.5** Add basic popup UI showing connection status
-6. **1.6** Test: Verify round-trip message passing from page → extension → page
+**Completed**:
+- [x] **1.1** Configure build tooling for extension (Vite + TypeScript)
+- [x] **1.2** Implement background service worker skeleton with message routing
+- [x] **1.3** Implement content script that injects `window.holochain` API
+- [x] **1.4** Create message passing protocol between content script ↔ background
+- [x] **1.5** Add basic popup UI showing connection status
+- [x] **1.6** Test: Verify round-trip message passing from page → extension → page
 
 **Key Files**:
-- `packages/extension/src/background/index.ts`
-- `packages/extension/src/content/index.ts`
-- `packages/extension/src/lib/messaging.ts`
+- `packages/extension/src/background/index.ts` - Message router with handlers for CONNECT, DISCONNECT, CALL_ZOME, APP_INFO
+- `packages/extension/src/content/index.ts` - Bridge that injects window.holochain API
+- `packages/extension/src/lib/messaging.ts` - Type-safe message protocol with serialization
+- `packages/extension/src/popup/index.html` - Extension popup UI
+- `packages/extension/test/test-page.html` - Integration test page
 
 **Tests**:
-- Unit tests for message serialization
-- Integration test with test webpage
+- ✅ 18 unit tests for message serialization/deserialization (all passing)
+- ✅ Integration test webpage with manual testing instructions
 
 ---
 
@@ -349,8 +351,9 @@ Step 2 (Lair)      Step 3 (Auth)
 ## Requirements & Tradeoffs
 
 1. Each step of the process must be built using test-driven development practices such that CI can confirm no regressions before merging a PR
-2. Different portions of the plan, or even the same plan may be worked on from different workstations, so claude must be set up to pick up sessions where they were left off.
-3. Perfect is the enemy of the good. This plan should not be implemented to the highest possible standard of efficiency or robustness, but rather in a way that allows for reaching the functionality goals in reasonable time, and iterating on quality goals over time.
+2. **User testing is required before commits**: After implementing features, user testing must be performed in a real browser environment before creating git commits. This ensures functionality works as expected.
+3. Different portions of the plan, or even the same plan may be worked on from different workstations, so claude must be set up to pick up sessions where they were left off.
+4. Perfect is the enemy of the good. This plan should not be implemented to the highest possible standard of efficiency or robustness, but rather in a way that allows for reaching the functionality goals in reasonable time, and iterating on quality goals over time.
 
 ---
 

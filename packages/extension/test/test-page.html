@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fishy Extension Test Page</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+      }
+      .test-section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .status.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .status.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .status.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+      pre {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 12px;
+      }
+      .test-result {
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🐟 Fishy Extension Test Page</h1>
+
+    <div class="test-section">
+      <h2>Extension Detection</h2>
+      <div id="detection-status" class="status info">
+        Checking for Fishy extension...
+      </div>
+      <div id="detection-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Connection Test</h2>
+      <button id="connect-btn">Connect</button>
+      <button id="disconnect-btn" disabled>Disconnect</button>
+      <div id="connection-status" class="status info">Not connected</div>
+      <div id="connection-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>App Info Test</h2>
+      <button id="appinfo-btn" disabled>Get App Info</button>
+      <div id="appinfo-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Zome Call Test</h2>
+      <button id="zomecall-btn" disabled>Call Zome (Mock)</button>
+      <div id="zomecall-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Test Log</h2>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const log = document.getElementById("log");
+
+      function addLog(message) {
+        const timestamp = new Date().toISOString().split("T")[1].split(".")[0];
+        log.textContent += `[${timestamp}] ${message}\n`;
+        log.scrollTop = log.scrollHeight;
+        console.log(message);
+      }
+
+      function showStatus(elementId, className, message) {
+        const el = document.getElementById(elementId);
+        el.className = `status ${className}`;
+        el.textContent = message;
+      }
+
+      function showResult(elementId, data) {
+        const el = document.getElementById(elementId);
+        el.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      }
+
+      // Check for extension
+      addLog("Waiting for Fishy extension...");
+
+      function checkExtension() {
+        if (window.holochain) {
+          addLog("✓ Fishy extension detected!");
+          addLog(`  Version: ${window.holochain.version}`);
+          addLog(`  isFishy: ${window.holochain.isFishy}`);
+
+          showStatus("detection-status", "success", "✓ Extension detected!");
+          showResult("detection-result", {
+            detected: true,
+            version: window.holochain.version,
+            isFishy: window.holochain.isFishy,
+          });
+
+          // Enable test buttons
+          document.getElementById("connect-btn").disabled = false;
+        } else {
+          addLog("✗ Fishy extension not detected");
+          showStatus(
+            "detection-status",
+            "error",
+            "✗ Extension not detected. Please install and reload."
+          );
+        }
+      }
+
+      // Wait for fishy:ready event
+      window.addEventListener("fishy:ready", () => {
+        addLog("Received fishy:ready event");
+        checkExtension();
+      });
+
+      // Also check immediately in case event fired before listener attached
+      setTimeout(checkExtension, 100);
+
+      // Connect button
+      document.getElementById("connect-btn").addEventListener("click", async () => {
+        addLog("Attempting to connect...");
+        try {
+          const result = await window.holochain.connect();
+          addLog("✓ Connected successfully!");
+          showStatus("connection-status", "success", "✓ Connected");
+          showResult("connection-result", result);
+
+          // Enable other test buttons
+          document.getElementById("disconnect-btn").disabled = false;
+          document.getElementById("appinfo-btn").disabled = false;
+          document.getElementById("zomecall-btn").disabled = false;
+          document.getElementById("connect-btn").disabled = true;
+        } catch (error) {
+          addLog(`✗ Connection failed: ${error.message}`);
+          showStatus("connection-status", "error", `✗ Error: ${error.message}`);
+        }
+      });
+
+      // Disconnect button
+      document
+        .getElementById("disconnect-btn")
+        .addEventListener("click", async () => {
+          addLog("Attempting to disconnect...");
+          try {
+            const result = await window.holochain.disconnect();
+            addLog("✓ Disconnected successfully!");
+            showStatus("connection-status", "info", "Disconnected");
+            showResult("connection-result", result);
+
+            // Disable test buttons
+            document.getElementById("disconnect-btn").disabled = true;
+            document.getElementById("appinfo-btn").disabled = true;
+            document.getElementById("zomecall-btn").disabled = true;
+            document.getElementById("connect-btn").disabled = false;
+          } catch (error) {
+            addLog(`✗ Disconnect failed: ${error.message}`);
+            showStatus(
+              "connection-status",
+              "error",
+              `✗ Error: ${error.message}`
+            );
+          }
+        });
+
+      // App Info button
+      document.getElementById("appinfo-btn").addEventListener("click", async () => {
+        addLog("Requesting app info...");
+        try {
+          const result = await window.holochain.appInfo("test-app");
+          addLog("✓ App info received!");
+          showResult("appinfo-result", result);
+        } catch (error) {
+          addLog(`✗ App info failed: ${error.message}`);
+          showResult("appinfo-result", { error: error.message });
+        }
+      });
+
+      // Zome Call button
+      document
+        .getElementById("zomecall-btn")
+        .addEventListener("click", async () => {
+          addLog("Calling zome function...");
+          try {
+            // Create mock Uint8Arrays for testing
+            const dnaHash = new Uint8Array([1, 2, 3, 4, 5]);
+            const agentPubKey = new Uint8Array([6, 7, 8, 9, 10]);
+
+            const result = await window.holochain.callZome({
+              cell_id: [dnaHash, agentPubKey],
+              zome_name: "test_zome",
+              fn_name: "test_function",
+              payload: { test: "data" },
+              provenance: agentPubKey,
+              cap_secret: null,
+            });
+            addLog("✓ Zome call completed!");
+            showResult("zomecall-result", result);
+          } catch (error) {
+            addLog(`✗ Zome call failed: ${error.message}`);
+            showResult("zomecall-result", { error: error.message });
+          }
+        });
+
+      addLog("Test page loaded. Click buttons to test extension functionality.");
+    </script>
+  </body>
+</html>

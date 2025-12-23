@@ -5,15 +5,20 @@
   "description": "Fishy browser extension - Holochain conductor in the browser",
   "type": "module",
   "scripts": {
-    "build": "echo 'TODO: configure build'",
+    "build": "vite build",
+    "dev": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fishy/core": "workspace:*",
-    "@fishy/lair": "workspace:*",
-    "@fishy/shared": "workspace:*"
+    "@fishy/core": "*",
+    "@fishy/lair": "*",
+    "@fishy/shared": "*"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "@types/chrome": "^0.0.256"
   }
 }
