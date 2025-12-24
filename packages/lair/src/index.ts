@@ -4,26 +4,35 @@
  * This package provides key management functionality mirroring
  * the Lair keystore for use in browser environments.
  *
- * Key features to implement:
- * - Key generation (Ed25519 for signing)
- * - Key storage (IndexedDB)
- * - Signing operations
- * - Key derivation
+ * Features:
+ * - Ed25519 key generation and signing
+ * - X25519 encryption/decryption (crypto_box)
+ * - Symmetric encryption (secret_box)
+ * - Key derivation (hierarchical deterministic keys)
+ * - IndexedDB persistence
+ * - Full libsodium compatibility
  */
 
-import type { AgentPubKey } from "@fishy/shared";
+// Export types
+export type {
+  EntryTag,
+  Ed25519PubKey,
+  Ed25519Signature,
+  X25519PubKey,
+  EncryptedData,
+  Nonce,
+  DerivationPath,
+  EntryInfo,
+  NewSeedResult,
+  LairClient as ILairClient,
+  StoredKeyEntry,
+} from "./types";
 
-// Placeholder interface - to be expanded based on Lair analysis
-export interface LairClient {
-  // Generate a new signing keypair
-  generateSigningKeypair(): Promise<AgentPubKey>;
+// Export storage
+export type { KeyStorage } from "./storage";
+export { IndexedDBKeyStorage, createKeyStorage } from "./storage";
 
-  // Sign data with a specific key
-  sign(pubKey: AgentPubKey, data: Uint8Array): Promise<Uint8Array>;
+// Export client
+export { LairClient, createLairClient } from "./client";
 
-  // List all keys
-  listKeys(): Promise<AgentPubKey[]>;
-}
-
-// Placeholder export
 export const VERSION = "0.0.1";

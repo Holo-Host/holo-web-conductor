@@ -14,6 +14,12 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fishy/shared": "*"
+    "@fishy/shared": "*",
+    "libsodium-wrappers": "^0.7.13"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers": "^0.7.14",
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^25.0.0"
   }
 }
