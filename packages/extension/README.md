@@ -2,15 +2,17 @@
 
 Browser extension implementation of Holochain conductor and Lair keystore.
 
-## Step 1: Browser Extension Base ✓
+## Step 1: Browser Extension Base ✅ COMPLETE
 
 The extension now has:
-- ✅ Build tooling (Vite + TypeScript)
+- ✅ Build tooling (Vite + TypeScript with IIFE output)
 - ✅ Background service worker with message routing
-- ✅ Content script that injects `window.holochain` API
-- ✅ Messaging protocol for page ↔ extension communication
+- ✅ Content script that injects `window.holochain` API (via separate inject script)
+- ✅ Messaging protocol for page ↔ extension communication (postMessage bridge)
 - ✅ Basic popup UI
 - ✅ Test page for integration testing
+- ✅ 34 automated tests (18 messaging + 16 build validation)
+- ✅ Browser tested and working
 
 ## Development
 
@@ -84,33 +86,46 @@ All messages should show in the test log on the page.
 ```
 ┌─────────────────┐
 │   Web Page      │
-│  window.        │
-│  holochain      │
+│  (Page Context) │
 └────────┬────────┘
+         │
+    ┌────▼─────┐
+    │  inject/ │  Injected script defines window.holochain
+    │  index.js│  (web_accessible_resource)
+    └────┬─────┘
          │ window.postMessage
          ▼
 ┌─────────────────┐
-│ Content Script  │
-│  (Bridge)       │
+│ Content Script  │  Isolated world, bridges messages
+│   (Bridge)      │
 └────────┬────────┘
          │ chrome.runtime.sendMessage
          ▼
 ┌─────────────────┐
-│   Background    │
+│   Background    │  Service worker, routes to handlers
 │ Service Worker  │
 │ (Message Router)│
 └─────────────────┘
 ```
 
+**Key architectural decisions**:
+- Separate inject script to avoid CSP violations
+- postMessage bridge for page ↔ content script communication
+- IIFE format for all scripts (content + inject) for compatibility
+
 ## Files
 
 - `src/background/index.ts` - Background service worker
-- `src/content/index.ts` - Content script that injects API
+- `src/content/index.ts` - Content script bridge (postMessage ↔ runtime.sendMessage)
+- `src/inject/index.ts` - Injected script that defines window.holochain
 - `src/popup/index.html` - Extension popup UI
 - `src/popup/index.ts` - Popup logic
 - `src/lib/messaging.ts` - Message protocol definitions
+- `src/lib/messaging.test.ts` - Message protocol tests (18 tests)
+- `src/build-validation.test.ts` - Build validation tests (16 tests)
 - `manifest.json` - Extension manifest (MV3)
 - `test/test-page.html` - Integration test page
+- `vite.config.ts` - Build configuration
 
 ## API
 

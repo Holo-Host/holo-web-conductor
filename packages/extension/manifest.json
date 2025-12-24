@@ -27,7 +27,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["lib/*"],
+      "resources": ["inject/index.js"],
       "matches": ["<all_urls>"]
     }
   ]

@@ -123,6 +123,37 @@ describe("build validation", () => {
     });
   });
 
+  describe("inject script", () => {
+    it("should exist at inject/index.js", () => {
+      const injectPath = resolve(DIST_DIR, "inject/index.js");
+      expect(existsSync(injectPath)).toBe(true);
+    });
+
+    it("should NOT contain ES module import/export statements", () => {
+      const injectPath = resolve(DIST_DIR, "inject/index.js");
+      const content = readFileSync(injectPath, "utf-8");
+
+      // Inject script runs in page context and must be IIFE
+      expect(content).not.toMatch(/^import\s+/m);
+      expect(content).not.toMatch(/^export\s+/m);
+      expect(content).not.toMatch(/^\s*import\s*{/m);
+      expect(content).not.toMatch(/^\s*export\s*{/m);
+    });
+
+    it("should be listed in web_accessible_resources", () => {
+      const manifestPath = resolve(DIST_DIR, "manifest.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+
+      expect(manifest.web_accessible_resources).toBeTruthy();
+      const hasInjectResource = manifest.web_accessible_resources.some(
+        (resource: any) =>
+          resource.resources &&
+          resource.resources.includes("inject/index.js")
+      );
+      expect(hasInjectResource).toBe(true);
+    });
+  });
+
   describe("file structure", () => {
     it("should not have src directory in dist", () => {
       const srcPath = resolve(DIST_DIR, "src");
@@ -130,7 +161,7 @@ describe("build validation", () => {
     });
 
     it("should have correct directory structure", () => {
-      const requiredDirs = ["background", "content", "popup"];
+      const requiredDirs = ["background", "content", "popup", "inject"];
       requiredDirs.forEach((dir) => {
         const dirPath = resolve(DIST_DIR, dir);
         expect(existsSync(dirPath)).toBe(true);

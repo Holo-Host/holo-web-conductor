@@ -1,34 +1,47 @@
 # Fishy Development Session
 
-**Last Updated**: 2025-12-23
-**Current Step**: Step 1 - Browser Extension Base
-**Status**: ⚠️ **PENDING USER TESTING** - Build complete, awaiting browser validation
+**Last Updated**: 2025-12-24
+**Current Step**: Step 2 - Lair Keystore Implementation
+**Status**: 🎯 **READY TO START** - Step 1 complete and committed
 
 ## Current State
 
-### Step 1: Browser Extension Base - Implementation Complete ✓
+### Step 1: Browser Extension Base - ✅ COMPLETE
 
-All code has been written and unit tests pass (31/31). **Awaiting user testing in browser before commit.**
+All implementation complete, tested in browser, and committed.
 
-**Completed Tasks**:
+**What was accomplished**:
 - ✅ Build tooling configured (Vite with separate IIFE builds for scripts)
 - ✅ Background service worker with message routing
-- ✅ Content script that injects `window.holochain` API
-- ✅ Message passing protocol with serialization
+- ✅ Content script that injects `window.holochain` API via separate inject script
+- ✅ Message passing protocol with serialization (handles Uint8Array)
 - ✅ Basic popup UI
-- ✅ Test webpage created
-- ✅ 18 unit tests for messaging (all passing)
-- ✅ 13 build validation tests (all passing)
+- ✅ Test webpage for integration testing
+- ✅ 18 unit tests for messaging protocol
+- ✅ 16 build validation tests (includes CSP checks)
+- ✅ Browser testing completed successfully
+- ✅ 34/34 tests passing
 
-**Issue Fixed During Development**:
-- Content scripts were initially bundled with ES module imports
-- Fixed by configuring Vite to build scripts as IIFE format
-- Added build validation tests to catch this automatically
+**Issues found and fixed**:
+1. **ES module imports in content script** - Fixed by using IIFE format
+2. **CSP violation with inline scripts** - Fixed by creating separate inject script with postMessage communication
 
-**Pending**:
-- 🔄 **User testing in browser** - Extension needs to be loaded and tested before commit
-- Test page: `packages/extension/test/test-page.html`
-- Expected: Extension loads without errors, all API calls work
+**Key architectural decision**: Used postMessage bridge pattern for page ↔ content script communication to avoid CSP violations.
+
+## Next Step: Step 2 - Lair Keystore Implementation
+
+**Goal**: Implement browser-based key management mirroring Lair functionality.
+
+**Reference**: `../lair/crates/lair_keystore_api/src/lair_client.rs`
+
+**Key tasks**:
+1. Set up IndexedDB storage layer for keys
+2. Implement Ed25519 key generation using Web Crypto API or libsodium.js
+3. Implement signing and verification operations
+4. Implement encryption operations (crypto_box, secret_box)
+5. Key derivation for hierarchical keys
+
+See `claude.md` lines 89-117 for full details.
 
 ## How to Resume This Session
 
@@ -46,18 +59,19 @@ All code has been written and unit tests pass (31/31). **Awaiting user testing i
    cat claude.md   # Full project plan
    ```
 
-3. **Check current status**:
+3. **Verify Step 1 is complete**:
    ```bash
    cd packages/extension
    npm install     # If needed
    npm run build
-   npm test        # Should show 31/31 passing
+   npm test        # Should show 34/34 passing
    ```
 
-4. **If resuming after user testing**:
-   - If tests passed: Review changes and commit
-   - If tests failed: Check `packages/extension/test/test-page.html` for errors
-   - Debugging: Check browser console, extension popup
+4. **Begin Step 2**:
+   ```bash
+   cd packages/lair
+   # Start implementing keystore functionality
+   ```
 
 ## Current Working Directory
 
@@ -77,18 +91,13 @@ All code has been written and unit tests pass (31/31). **Awaiting user testing i
 
 ## Next Actions
 
-### Immediate (Before Commit)
-1. User loads extension in browser
-2. User tests with `test/test-page.html`
-3. If successful → Commit changes
-4. If issues → Debug and fix
-
-### After Step 1 Complete
-Next step is **Step 2: Lair Keystore Implementation**
-- Implement Ed25519 key generation
-- IndexedDB storage for keys
-- Sign/verify operations
-- See `claude.md` lines 89-117 for details
+### Immediate
+Start **Step 2: Lair Keystore Implementation**
+- Set up packages/lair package structure
+- Implement IndexedDB storage
+- Add Ed25519 key generation
+- Implement signing operations
+- See `claude.md` lines 89-117 for detailed sub-tasks
 
 ## Technical Context
 
@@ -112,20 +121,23 @@ Next step is **Step 2: Lair Keystore Implementation**
 - Cross-workstation continuity needed
 - npm workspaces (not pnpm/yarn)
 
-## Git Status Before Commit
+## Step 1 Completion Notes
 
-Expected files to be committed:
-- Modified: `claude.md`, `packages/extension/package.json`, `packages/core/package.json`, etc.
-- New: `packages/extension/src/lib/`, `packages/extension/src/popup/`, `packages/extension/test/`, `packages/extension/vite.config.ts`, `packages/extension/README.md`, `SESSION.md`
+**Browser testing results**: ✅ Passed
+- Extension loads without errors
+- Test page detects extension
+- All API calls work correctly
+- CSP violation fixed with separate inject script
 
-## Questions for Next Session
+**Known minor issues** (deferred to later):
+- Popup shows blank hostname for chrome:// and file:// URLs (cosmetic, not blocking)
 
-- Did browser testing pass?
-- Any issues found during testing?
-- Ready to proceed to Step 2?
+**Commits**:
+1. WIP commit with initial implementation
+2. Final commit with CSP fix and completion
 
 ## Claude Context Prompt for Resuming
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and claude.md to understand where we are. We're currently on Step 1 (Browser Extension Base). The code is written and tests pass, but we need to [check SESSION.md for current status].
+> I'm continuing the Fishy project. Please read SESSION.md and claude.md to understand where we are. Step 1 (Browser Extension Base) is complete. We're ready to start Step 2 (Lair Keystore Implementation).

@@ -99,6 +99,29 @@ export default defineConfig({
           },
         });
 
+        // Build inject script as IIFE (runs in page context)
+        await viteBuild({
+          configFile: false,
+          build: {
+            outDir: distDir,
+            emptyOutDir: false,
+            lib: {
+              entry: resolve(__dirname, "src/inject/index.ts"),
+              formats: ["iife"],
+              name: "FishyInject",
+              fileName: () => "inject/index.js",
+            },
+            sourcemap: true,
+            target: "es2020",
+            minify: false,
+            rollupOptions: {
+              output: {
+                extend: true,
+              },
+            },
+          },
+        });
+
         // Copy manifest.json to dist folder
         copyFileSync(
           resolve(__dirname, "manifest.json"),
