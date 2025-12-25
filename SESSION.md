@@ -1,8 +1,8 @@
 # Fishy Development Session
 
-**Last Updated**: 2025-12-24
-**Current Step**: Step 2 - Lair Keystore Implementation
-**Status**: 🎯 **READY TO START** - Step 1 complete and committed
+**Last Updated**: 2025-12-25
+**Current Step**: Planning Step 2.5 - Lair UI Integration
+**Status**: 🎯 **PLANNING** - Step 2 complete and committed, planning UI before Step 3
 
 ## Current State
 
@@ -28,20 +28,45 @@ All implementation complete, tested in browser, and committed.
 
 **Key architectural decision**: Used postMessage bridge pattern for page ↔ content script communication to avoid CSP violations.
 
-## Next Step: Step 2 - Lair Keystore Implementation
+### Step 2: Lair Keystore Implementation - ✅ COMPLETE
 
-**Goal**: Implement browser-based key management mirroring Lair functionality.
+All implementation complete, all tests passing, and committed.
 
-**Reference**: `../lair/crates/lair_keystore_api/src/lair_client.rs`
+**What was accomplished**:
+- ✅ IndexedDB storage layer with Uint8Array serialization (toStorable/fromStorable methods)
+- ✅ Ed25519 key generation using libsodium-wrappers
+- ✅ Key signing operations (signByPubKey)
+- ✅ Hierarchical key derivation using crypto_kdf
+- ✅ Asymmetric encryption (cryptoBoxByPubKey/cryptoBoxOpenByPubKey) with X25519
+- ✅ Symmetric encryption (secretBoxByTag/secretBoxOpenByTag) with XSalsa20Poly1305
+- ✅ Key management (newSeed, getEntry, listEntries)
+- ✅ Comprehensive test suite (21/21 tests passing)
+- ✅ Vitest configuration with fake-indexeddb for testing
+
+**Issues found and fixed**:
+1. **IndexedDB Uint8Array serialization** - Fixed by converting to/from regular arrays
+2. **Type errors in crypto operations** - Ensured proper Uint8Array types throughout
+3. **crypto_kdf_derive_from_key type handling** - Wrapped derived seeds in Uint8Array constructor
+4. **crypto_secretbox key type** - Wrapped key extraction in Uint8Array constructor
+
+**Key architectural decisions**:
+- Used libsodium-wrappers for full crypto compatibility with Lair's algorithms
+- IndexedDB database name: `fishy_lair`, store: `keys`, key path: `info.tag`
+- Exportable flag stored but not yet enforced (planned for Step 2.5)
+
+## Next Step: Step 2.5 - Lair UI Integration (NEW)
+
+**Goal**: Add UI integration in extension popup for Lair key management before implementing authorization.
 
 **Key tasks**:
-1. Set up IndexedDB storage layer for keys
-2. Implement Ed25519 key generation using Web Crypto API or libsodium.js
-3. Implement signing and verification operations
-4. Implement encryption operations (crypto_box, secret_box)
-5. Key derivation for hierarchical keys
+1. Lock/unlock mechanism (exploring WebAuthn/Passkeys vs passphrase)
+2. Create keypairs from UI
+3. View existing keypairs
+4. Sign/verify text manually
+5. Export/import keypairs (passphrase-based encryption)
+6. Enforce exportable flag
 
-See `claude.md` lines 89-117 for full details.
+**Note**: This step was inserted before Step 3 to provide UI for key management independent of web page authorization.
 
 ## How to Resume This Session
 
@@ -81,7 +106,11 @@ See `claude.md` lines 89-117 for full details.
 
 ## Important Files for Context
 
+### Project-Wide
 - `claude.md` - Main project plan with all steps
+- `SESSION.md` - This file - session state and completion notes
+
+### Extension Package
 - `packages/extension/README.md` - Extension-specific docs and testing instructions
 - `packages/extension/src/lib/messaging.ts` - Core message protocol
 - `packages/extension/src/background/index.ts` - Background service worker
@@ -89,15 +118,22 @@ See `claude.md` lines 89-117 for full details.
 - `packages/extension/vite.config.ts` - Build configuration (uses IIFE for scripts)
 - `packages/extension/src/build-validation.test.ts` - Build validation tests
 
+### Lair Package
+- `packages/lair/src/client.ts` - Lair client implementation with all crypto operations
+- `packages/lair/src/storage.ts` - IndexedDB storage layer
+- `packages/lair/src/types.ts` - TypeScript type definitions for Lair API
+- `packages/lair/src/client.test.ts` - Comprehensive test suite (21 tests)
+
 ## Next Actions
 
 ### Immediate
-Start **Step 2: Lair Keystore Implementation**
-- Set up packages/lair package structure
-- Implement IndexedDB storage
-- Add Ed25519 key generation
-- Implement signing operations
-- See `claude.md` lines 89-117 for detailed sub-tasks
+Plan and implement **Step 2.5: Lair UI Integration**
+- Design lock/unlock mechanism (WebAuthn/Passkeys exploration)
+- Create popup UI for key management
+- Implement create/view/sign/verify operations in UI
+- Add export/import with passphrase encryption
+- Enforce exportable flag
+- See planning session for detailed sub-tasks
 
 ## Technical Context
 
@@ -121,8 +157,25 @@ Start **Step 2: Lair Keystore Implementation**
 - Cross-workstation continuity needed
 - npm workspaces (not pnpm/yarn)
 
-## Step 1 Completion Notes
+## Step Completion Notes
 
+### Step 2 Completion (2025-12-25)
+**Testing results**: ✅ All 21 tests passing
+- Key generation and storage working
+- Signing operations verified
+- Key derivation working correctly
+- Encryption/decryption (both asymmetric and symmetric) working
+- IndexedDB persistence verified
+
+**Known limitations** (to be addressed in Step 2.5):
+- No export/import functionality yet
+- Exportable flag not enforced
+- No lock/unlock mechanism
+- No UI for key management
+
+**Commit**: `494d6dc` - "Step 2 Complete: Lair keystore implementation with full crypto operations"
+
+### Step 1 Completion (2025-12-24)
 **Browser testing results**: ✅ Passed
 - Extension loads without errors
 - Test page detects extension
@@ -140,4 +193,28 @@ Start **Step 2: Lair Keystore Implementation**
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and claude.md to understand where we are. Step 1 (Browser Extension Base) is complete. We're ready to start Step 2 (Lair Keystore Implementation).
+> I'm continuing the Fishy project. Please read SESSION.md and claude.md to understand where we are. Steps 1 and 2 are complete. We're planning Step 2.5 (Lair UI Integration) before moving to Step 3 (Authorization).
+
+---
+
+## 🚨 IMPORTANT WORKFLOW REMINDER
+
+**Before suggesting moving to the next step, Claude MUST:**
+
+1. ✅ Update SESSION.md:
+   - Update "Last Updated" date
+   - Update "Current Step" and "Status"
+   - Add completion notes for the finished step (testing results, issues, commits)
+   - Update "Next Step" section
+   - Update "Claude Context Prompt for Resuming"
+
+2. ✅ Update claude.md:
+   - Mark completed step with ✓
+   - Add any new sub-steps if the plan evolved
+   - Update step descriptions if implementation differed from plan
+
+3. ✅ Commit these documentation updates:
+   - Include both SESSION.md and claude.md in the commit
+   - Use commit message format: "Update session docs: Step X complete"
+
+**This ensures continuity across workstations and sessions.**

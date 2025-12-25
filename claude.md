@@ -88,7 +88,7 @@ packages/
 
 ---
 
-### Step 2: Lair Keystore Implementation
+### Step 2: Lair Keystore Implementation ✓
 
 **Goal**: Implement browser-based key management mirroring Lair functionality.
 
@@ -96,26 +96,84 @@ packages/
 
 **Reference**: `../lair/crates/lair_keystore_api/src/lair_client.rs`
 
-**Sub-tasks**:
-1. **2.1** Set up IndexedDB storage layer for keys
-2. **2.2** Implement Ed25519 key generation using Web Crypto API or libsodium.js
-3. **2.3** Implement `new_seed()` - generate new signing keypair
-4. **2.4** Implement `sign_by_pub_key()` - sign data with stored key
-5. **2.5** Implement `list_entries()` / `get_entry()` - key enumeration
-6. **2.6** Implement `derive_seed()` - hierarchical key derivation
-7. **2.7** Implement encryption: `crypto_box_xsalsa_by_pub_key`, `crypto_box_xsalsa_open_by_pub_key`
-8. **2.8** Implement secret box operations for symmetric encryption
+**Completed**:
+- [x] **2.1** Set up IndexedDB storage layer for keys
+- [x] **2.2** Implement Ed25519 key generation using libsodium-wrappers
+- [x] **2.3** Implement `new_seed()` - generate new signing keypair
+- [x] **2.4** Implement `sign_by_pub_key()` - sign data with stored key
+- [x] **2.5** Implement `list_entries()` / `get_entry()` - key enumeration
+- [x] **2.6** Implement `derive_seed()` - hierarchical key derivation
+- [x] **2.7** Implement encryption: `crypto_box_xsalsa_by_pub_key`, `crypto_box_xsalsa_open_by_pub_key`
+- [x] **2.8** Implement secret box operations for symmetric encryption
 
 **Key Files**:
-- `packages/lair/src/index.ts`
-- `packages/lair/src/storage.ts` (IndexedDB)
-- `packages/lair/src/crypto.ts` (Ed25519, X25519, XSalsa20)
+- `packages/lair/src/index.ts` - Main exports
+- `packages/lair/src/client.ts` - LairClient implementation
+- `packages/lair/src/storage.ts` - IndexedDB storage with Uint8Array serialization
+- `packages/lair/src/types.ts` - TypeScript type definitions
+- `packages/lair/src/client.test.ts` - Comprehensive test suite (21 tests)
 
 **Tests**:
-- Key generation produces valid Ed25519 keys
-- Sign/verify round-trip
-- Encrypt/decrypt round-trip
-- Keys persist across sessions (IndexedDB)
+- ✅ 21/21 tests passing
+- Key generation, signing, encryption, derivation all verified
+- IndexedDB persistence tested with fake-indexeddb
+
+---
+
+### Step 2.5: Lair UI Integration
+
+**Goal**: Add UI in extension popup for Lair key management before implementing web page authorization.
+
+**Dependencies**: Step 2 (Lair client)
+
+**Sub-tasks**:
+1. **2.5.1** Implement lock/unlock mechanism
+   - Explore WebAuthn/Passkeys API for modern authentication
+   - Fallback to passphrase-based if WebAuthn not suitable
+   - Lock state persists across browser restarts
+2. **2.5.2** Create keypair management UI
+   - Create new keypairs with tag and exportable flag
+   - List existing keypairs with metadata
+   - Delete keypairs (with confirmation)
+3. **2.5.3** Implement sign/verify operations in UI
+   - Text input for data to sign
+   - Display signature in base64
+   - Verify signatures from other keypairs
+4. **2.5.4** Implement export/import functionality
+   - Export keypairs with passphrase-based encryption
+   - Enforce exportable flag (non-exportable keys cannot be exported)
+   - Import encrypted keypairs
+   - Follow security model from original Lair
+5. **2.5.5** Add Lair operations to background service worker
+   - Message types for all Lair operations
+   - Handlers that check lock state before operations
+   - Only accessible from extension popup (not web pages)
+6. **2.5.6** Write tests for UI operations
+   - Lock/unlock flow
+   - Create/list/delete keypairs
+   - Sign/verify operations
+   - Export/import with encryption
+
+**Key Files**:
+- `packages/extension/src/popup/lair.html` - Lair management UI
+- `packages/extension/src/popup/lair.ts` - UI logic
+- `packages/extension/src/lib/lair-lock.ts` - Lock/unlock mechanism
+- `packages/extension/src/lib/lair-export.ts` - Export/import with encryption
+- `packages/extension/src/background/index.ts` - Add Lair message handlers
+- `packages/extension/src/lib/messaging.ts` - Add Lair message types
+
+**Tests**:
+- Lock/unlock mechanism works correctly
+- Keypair operations only work when unlocked
+- Export respects exportable flag
+- Import/export round-trip with passphrase
+- UI properly displays key information
+
+**Design Decisions**:
+- Lair operations NOT exposed through window.holochain API (popup only)
+- Passphrase-based export/import for simplicity
+- Strict enforcement of exportable flag
+- Lock state persists across restarts
 
 ---
 
@@ -320,30 +378,34 @@ packages/
 Step 0 ✓
     │
     v
-Step 1 (Extension Base)
+Step 1 (Extension Base) ✓
     │
-    ├──────────────────┐
-    v                  v
-Step 2 (Lair)      Step 3 (Auth)
-    │                  │
-    └──────┬───────────┘
-           v
-       Step 4 (hApp Context)
-           │
-           v
-       Step 5 (WASM + Mock Host Fn)
-           │
-           v
-       Step 6 (Local Chain)
-           │
-           v
-       Step 7 (hc-http-gw)
-           │
-           v
-       Step 8 (Network Host Fn)
-           │
-           v
-       Step 9 (Integration Tests)
+    v
+Step 2 (Lair Client) ✓
+    │
+    v
+Step 2.5 (Lair UI) ← CURRENT
+    │
+    └──────┬───────────┐
+           v           v
+       Step 3      Step 4
+       (Auth)      (hApp Context)
+           │           │
+           └─────┬─────┘
+                 v
+             Step 5 (WASM + Mock Host Fn)
+                 │
+                 v
+             Step 6 (Local Chain)
+                 │
+                 v
+             Step 7 (hc-http-gw)
+                 │
+                 v
+             Step 8 (Network Host Fn)
+                 │
+                 v
+             Step 9 (Integration Tests)
 ```
 
 ---
