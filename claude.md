@@ -420,12 +420,13 @@ Step 2.5 (Lair UI) ✓
 
 ---
 
-## Requirements & Tradeoffs
+## Requirements, Tradeoffs & Dev Instructions
 
 1. Each step of the process must be built using test-driven development practices such that CI can confirm no regressions before merging a PR
 2. **User testing is required before commits**: After implementing features, user testing must be performed in a real browser environment before creating git commits. This ensures functionality works as expected.
 3. Different portions of the plan, or even the same plan may be worked on from different workstations, so claude must be set up to pick up sessions where they were left off.
 4. Perfect is the enemy of the good. This plan should not be implemented to the highest possible standard of efficiency or robustness, but rather in a way that allows for reaching the functionality goals in reasonable time, and iterating on quality goals over time.
+5. Don't add claude co-authored/generated messages in commit descriptions
 
 ---
 
