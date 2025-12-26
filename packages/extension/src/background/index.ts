@@ -23,7 +23,9 @@ import {
 import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
+import { getHappContextManager } from "../lib/happ-context-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
+import type { InstallHappRequest } from "@fishy/core";
 import sodium from "libsodium-wrappers";
 
 console.log("Fishy background service worker loaded");
@@ -32,6 +34,7 @@ console.log("Fishy background service worker loaded");
 const lairLock = getLairLock();
 const permissionManager = getPermissionManager();
 const authManager = getAuthManager();
+const happContextManager = getHappContextManager();
 let lairClient: Awaited<ReturnType<typeof createLairClient>> | null = null;
 
 // Initialize Lair client
@@ -82,6 +85,22 @@ async function handleMessage(
 
       case MessageType.APP_INFO:
         return handleAppInfo(message, sender);
+
+      // hApp Context Management
+      case MessageType.INSTALL_HAPP:
+        return handleInstallHapp(message, sender);
+
+      case MessageType.UNINSTALL_HAPP:
+        return handleUninstallHapp(message, sender);
+
+      case MessageType.LIST_HAPPS:
+        return handleListHapps(message, sender);
+
+      case MessageType.ENABLE_HAPP:
+        return handleEnableHapp(message, sender);
+
+      case MessageType.DISABLE_HAPP:
+        return handleDisableHapp(message, sender);
 
       // Lair lock/unlock operations
       case MessageType.LAIR_GET_LOCK_STATE:
@@ -265,19 +284,212 @@ async function handleCallZome(
 
 /**
  * Handle APP_INFO requests
- * TODO(Step 4): Implement hApp context
  */
 async function handleAppInfo(
   message: RequestMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
-  console.log("App info request:", message.payload);
+  try {
+    const url = sender.tab?.url;
+    if (!url) {
+      return createErrorResponse(message.id, "Cannot determine origin - no tab URL");
+    }
 
-  // For Step 1, return a mock response
-  return createSuccessResponse(message.id, {
-    mock: true,
-    message: "App info not yet implemented",
-  });
+    const origin = new URL(url).origin;
+    console.log("App info request from:", origin);
+
+    // Check permission first
+    const permission = await permissionManager.checkPermission(origin);
+    if (!permission?.granted) {
+      return createErrorResponse(message.id, "Permission denied");
+    }
+
+    const context = await happContextManager.getContextForDomain(origin);
+    if (!context) {
+      return createErrorResponse(message.id, `No hApp installed for ${origin}`);
+    }
+
+    if (!context.enabled) {
+      return createErrorResponse(message.id, "hApp is disabled");
+    }
+
+    // Update last used timestamp
+    await happContextManager.touchContext(context.id);
+
+    return createSuccessResponse(message.id, {
+      contextId: context.id,
+      domain: context.domain,
+      appName: context.appName,
+      appVersion: context.appVersion,
+      agentPubKey: context.agentPubKey,
+      cells: happContextManager.getCellIds(context),
+      installedAt: context.installedAt,
+      enabled: context.enabled,
+    });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+// ============================================================================
+// hApp Context Management Handlers
+// ============================================================================
+
+/**
+ * Handle INSTALL_HAPP requests
+ */
+async function handleInstallHapp(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const url = sender.tab?.url;
+    if (!url) {
+      return createErrorResponse(message.id, "Cannot determine origin - no tab URL");
+    }
+
+    const origin = new URL(url).origin;
+    console.log("Install hApp request from:", origin);
+
+    const request = message.payload as InstallHappRequest;
+    if (!request || !request.dnas || request.dnas.length === 0) {
+      return createErrorResponse(message.id, "Invalid install request - dnas required");
+    }
+
+    // Convert any serialized Uint8Arrays back to actual Uint8Arrays
+    const normalizedRequest: InstallHappRequest = {
+      appName: request.appName,
+      appVersion: request.appVersion,
+      dnas: request.dnas.map((dna) => ({
+        hash: toUint8Array(dna.hash),
+        wasm: toUint8Array(dna.wasm),
+        name: dna.name,
+        properties: dna.properties,
+      })),
+    };
+
+    const context = await happContextManager.installHapp(origin, normalizedRequest);
+
+    return createSuccessResponse(message.id, {
+      contextId: context.id,
+      agentPubKey: context.agentPubKey,
+      cells: happContextManager.getCellIds(context),
+    });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle UNINSTALL_HAPP requests
+ */
+async function handleUninstallHapp(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const { contextId } = message.payload as { contextId: string };
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+
+    await happContextManager.uninstallHapp(contextId);
+    console.log(`[HappContext] Uninstalled hApp ${contextId}`);
+
+    return createSuccessResponse(message.id, { uninstalled: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle LIST_HAPPS requests
+ */
+async function handleListHapps(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const contexts = await happContextManager.listContexts();
+
+    return createSuccessResponse(message.id, {
+      contexts: contexts.map((context) => ({
+        id: context.id,
+        domain: context.domain,
+        appName: context.appName,
+        appVersion: context.appVersion,
+        agentPubKey: context.agentPubKey,
+        installedAt: context.installedAt,
+        lastUsed: context.lastUsed,
+        enabled: context.enabled,
+        dnaCount: context.dnas.length,
+      })),
+    });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle ENABLE_HAPP requests
+ */
+async function handleEnableHapp(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const { contextId } = message.payload as { contextId: string };
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+
+    await happContextManager.setContextEnabled(contextId, true);
+    console.log(`[HappContext] Enabled context ${contextId}`);
+
+    return createSuccessResponse(message.id, { enabled: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle DISABLE_HAPP requests
+ */
+async function handleDisableHapp(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const { contextId } = message.payload as { contextId: string };
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+
+    await happContextManager.setContextEnabled(contextId, false);
+    console.log(`[HappContext] Disabled context ${contextId}`);
+
+    return createSuccessResponse(message.id, { disabled: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 }
 
 // ============================================================================

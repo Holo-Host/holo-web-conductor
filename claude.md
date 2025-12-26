@@ -225,27 +225,31 @@ packages/
 
 ---
 
-### Step 4: hApp Context Creation
+### Step 4: hApp Context Creation ✓
 
 **Goal**: Create hApp contexts based on domain-served data.
 
 **Dependencies**: Step 1, Step 2, Step 3
 
-**Sub-tasks**:
-1. **4.1** Define hApp context structure (domain, DNA hashes, agent key)
-2. **4.2** Implement context storage (IndexedDB)
-3. **4.3** Create context initialization flow from web page
-4. **4.4** Associate agent keys with contexts
-5. **4.5** Implement context listing and selection
+**Completed** (2025-12-26):
+- [x] **4.1** Define hApp context structure (domain, DNA hashes, agent key) - HappContext, DnaContext, CellId types
+- [x] **4.2** Implement context storage (IndexedDB) - HappContextStorage class with fishy_happ_contexts database
+- [x] **4.3** Create context initialization flow from web page - installHapp() API with INSTALL_HAPP message type
+- [x] **4.4** Associate agent keys with contexts - One agent key per domain, created via Lair with tag `${domain}:agent`
+- [x] **4.5** Implement context listing and selection - listContexts(), getContextForDomain(), enable/disable
 
 **Key Files**:
-- `packages/core/src/conductor/context.ts`
-- `packages/core/src/conductor/storage.ts`
+- `packages/core/src/index.ts` - HappContext, DnaContext, CellId types
+- `packages/extension/src/lib/happ-context-storage.ts` - IndexedDB storage (2 stores: contexts + dna_wasm)
+- `packages/extension/src/lib/happ-context-manager.ts` - Business logic orchestration
+- `packages/extension/src/background/index.ts` - Message handlers (INSTALL_HAPP, LIST_HAPPS, etc.)
+- `packages/extension/test/happ-install-test.html` - Manual test page
 
 **Tests**:
-- Context created for new domain
-- Same domain reuses existing context
-- Context persists across sessions
+- ✅ 12 storage tests (context CRUD, domain index, DNA WASM deduplication)
+- ✅ 13 manager tests (install flow, permission checks, agent key lifecycle)
+- ✅ 79 total tests passing + 16 skipped
+- ⏳ Manual browser testing pending
 
 ---
 

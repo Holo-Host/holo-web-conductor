@@ -31,6 +31,8 @@ export interface HappInstallConfig {
 export interface DnaConfig {
   hash: Uint8Array;
   wasm: Uint8Array;
+  name?: string;
+  properties?: Record<string, unknown>;
 }
 
 export interface ZomeCallRequest {
@@ -38,6 +40,73 @@ export interface ZomeCallRequest {
   zome: string;
   fn: string;
   payload: unknown;
+}
+
+/**
+ * Type aliases for Holochain primitives
+ */
+export type DnaHash = Uint8Array;
+export type AgentPubKey = Uint8Array;
+export type CellId = [DnaHash, AgentPubKey];
+
+/**
+ * hApp context - associates a domain with DNAs and agent identity
+ */
+export interface HappContext {
+  /** Unique context ID (UUID v4) */
+  id: string;
+
+  /** Domain this context is for (e.g., "https://example.com") */
+  domain: string;
+
+  /** Agent public key (Ed25519) for this context */
+  agentPubKey: AgentPubKey;
+
+  /** Tag in Lair keystore for agent key */
+  agentKeyTag: string;
+
+  /** DNAs in this hApp */
+  dnas: DnaContext[];
+
+  /** Installation metadata */
+  appName?: string;
+  appVersion?: string;
+  installedAt: number;
+  lastUsed: number;
+
+  /** Whether this context is enabled */
+  enabled: boolean;
+}
+
+/**
+ * DNA context within a hApp
+ */
+export interface DnaContext {
+  /** DNA hash (32 bytes) */
+  hash: DnaHash;
+
+  /** WASM bytes (stored in IndexedDB) */
+  wasm: Uint8Array;
+
+  /** DNA name/identifier */
+  name?: string;
+
+  /** Properties for this DNA */
+  properties?: Record<string, unknown>;
+}
+
+/**
+ * Install request payload from web page
+ */
+export interface InstallHappRequest {
+  /** App name (optional) */
+  appName?: string;
+
+  /** App version (optional) */
+  appVersion?: string;
+
+  /** DNAs to install */
+  dnas: DnaConfig[];
 }
 
 export const VERSION = "0.0.1";

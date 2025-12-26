@@ -49,6 +49,13 @@ export enum MessageType {
   PERMISSION_REVOKE = "permission_revoke",
   AUTH_REQUEST_INFO = "auth_request_info",
 
+  // hApp Context Management
+  INSTALL_HAPP = "install_happ",
+  UNINSTALL_HAPP = "uninstall_happ",
+  LIST_HAPPS = "list_happs",
+  ENABLE_HAPP = "enable_happ",
+  DISABLE_HAPP = "disable_happ",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -89,7 +96,12 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.PERMISSION_DENY
     | MessageType.PERMISSION_LIST
     | MessageType.PERMISSION_REVOKE
-    | MessageType.AUTH_REQUEST_INFO;
+    | MessageType.AUTH_REQUEST_INFO
+    | MessageType.INSTALL_HAPP
+    | MessageType.UNINSTALL_HAPP
+    | MessageType.LIST_HAPPS
+    | MessageType.ENABLE_HAPP
+    | MessageType.DISABLE_HAPP;
   payload?: unknown;
 }
 
@@ -240,7 +252,12 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.PERMISSION_DENY ||
     message.type === MessageType.PERMISSION_LIST ||
     message.type === MessageType.PERMISSION_REVOKE ||
-    message.type === MessageType.AUTH_REQUEST_INFO
+    message.type === MessageType.AUTH_REQUEST_INFO ||
+    message.type === MessageType.INSTALL_HAPP ||
+    message.type === MessageType.UNINSTALL_HAPP ||
+    message.type === MessageType.LIST_HAPPS ||
+    message.type === MessageType.ENABLE_HAPP ||
+    message.type === MessageType.DISABLE_HAPP
   );
 }
 

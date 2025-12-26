@@ -11,7 +11,17 @@ interface HolochainAPI {
   connect(): Promise<any>;
   disconnect(): Promise<any>;
   callZome(params: any): Promise<any>;
-  appInfo(installed_app_id: string): Promise<any>;
+  appInfo(): Promise<any>;
+  installHapp(request: {
+    appName?: string;
+    appVersion?: string;
+    dnas: Array<{
+      hash: Uint8Array;
+      wasm: Uint8Array;
+      name?: string;
+      properties?: Record<string, unknown>;
+    }>;
+  }): Promise<any>;
 }
 
 // Generate unique request ID
@@ -99,8 +109,21 @@ const holochainAPI: HolochainAPI = {
     return sendToContentScript("call_zome", params);
   },
 
-  async appInfo(installed_app_id: string): Promise<any> {
-    return sendToContentScript("app_info", { installed_app_id });
+  async appInfo(): Promise<any> {
+    return sendToContentScript("app_info", null);
+  },
+
+  async installHapp(request: {
+    appName?: string;
+    appVersion?: string;
+    dnas: Array<{
+      hash: Uint8Array;
+      wasm: Uint8Array;
+      name?: string;
+      properties?: Record<string, unknown>;
+    }>;
+  }): Promise<any> {
+    return sendToContentScript("install_happ", request);
   },
 };
 

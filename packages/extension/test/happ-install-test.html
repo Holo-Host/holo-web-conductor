@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fishy hApp Install Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #555;
+      margin-top: 30px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 8px;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .status.success {
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+    }
+    .status.info {
+      background: #d1ecf1;
+      border: 1px solid #bee5eb;
+      color: #0c5460;
+    }
+    pre {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 12px;
+      border: 1px solid #e9ecef;
+    }
+    .inline-code {
+      background: #f8f9fa;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #555;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h1>🐟 Fishy hApp Install Test Page</h1>
+
+  <div class="section">
+    <h2>1. Check Fishy Extension</h2>
+    <div id="fishyStatus"></div>
+    <button onclick="checkFishy()">Check Extension Status</button>
+  </div>
+
+  <div class="section">
+    <h2>2. Connect to Fishy</h2>
+    <p>This will trigger the authorization popup if not already approved.</p>
+    <button onclick="connectToFishy()">Connect</button>
+    <div id="connectStatus"></div>
+  </div>
+
+  <div class="section">
+    <h2>3. Install Test hApp</h2>
+    <p>This will install a minimal test hApp with mock DNA data.</p>
+    <div>
+      <label for="appName">App Name:</label>
+      <input type="text" id="appName" value="Test hApp" />
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="appVersion">App Version:</label>
+      <input type="text" id="appVersion" value="1.0.0" />
+    </div>
+    <button onclick="installTestHapp()" style="margin-top: 15px;">Install hApp</button>
+    <div id="installStatus"></div>
+  </div>
+
+  <div class="section">
+    <h2>4. Get App Info</h2>
+    <p>Retrieve information about the installed hApp for this domain.</p>
+    <button onclick="getAppInfo()">Get App Info</button>
+    <div id="appInfoStatus"></div>
+  </div>
+
+  <div class="section">
+    <h2>5. Test Results</h2>
+    <div id="testResults"></div>
+  </div>
+
+  <script>
+    // Wait for Fishy to be ready
+    let fishyReady = false;
+    window.addEventListener('fishy:ready', () => {
+      fishyReady = true;
+      log('info', 'fishyStatus', 'Fishy extension detected and ready!');
+    });
+
+    // Helper to log status
+    function log(type, elementId, message, data = null) {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+
+      let html = `<div class="status ${type}">${message}</div>`;
+      if (data) {
+        html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      }
+      el.innerHTML = html;
+    }
+
+    // Helper to add to test results
+    function addTestResult(message, success = true) {
+      const el = document.getElementById('testResults');
+      const type = success ? 'success' : 'error';
+      const timestamp = new Date().toLocaleTimeString();
+      el.innerHTML += `<div class="status ${type}">[${timestamp}] ${message}</div>`;
+    }
+
+    // Generate mock DNA hash and WASM
+    function generateMockDNA(name) {
+      // Mock DNA hash (32 bytes)
+      const hash = new Uint8Array(32);
+      crypto.getRandomValues(hash);
+
+      // Mock WASM (just some random bytes for testing)
+      const wasm = new Uint8Array(100);
+      crypto.getRandomValues(wasm);
+
+      return { hash, wasm, name };
+    }
+
+    // Check if Fishy is available
+    function checkFishy() {
+      if (window.holochain && window.holochain.isFishy) {
+        log('success', 'fishyStatus', `Fishy extension is available! Version: ${window.holochain.version}`);
+        addTestResult('✓ Fishy extension detected');
+      } else {
+        log('error', 'fishyStatus', 'Fishy extension not found. Please install and reload.');
+        addTestResult('✗ Fishy extension not found', false);
+      }
+    }
+
+    // Connect to Fishy
+    async function connectToFishy() {
+      try {
+        log('info', 'connectStatus', 'Connecting to Fishy...');
+        const result = await window.holochain.connect();
+        log('success', 'connectStatus', 'Connected successfully!', result);
+        addTestResult('✓ Connected to Fishy');
+      } catch (error) {
+        log('error', 'connectStatus', `Connection failed: ${error.message}`);
+        addTestResult(`✗ Connection failed: ${error.message}`, false);
+      }
+    }
+
+    // Install test hApp
+    async function installTestHapp() {
+      try {
+        const appName = document.getElementById('appName').value || 'Test hApp';
+        const appVersion = document.getElementById('appVersion').value || '1.0.0';
+
+        log('info', 'installStatus', 'Installing hApp...');
+
+        // Generate mock DNAs
+        const dnas = [
+          generateMockDNA('test-dna-1'),
+          generateMockDNA('test-dna-2'),
+        ];
+
+        const request = {
+          appName,
+          appVersion,
+          dnas,
+        };
+
+        const result = await window.holochain.installHapp(request);
+
+        log('success', 'installStatus', 'hApp installed successfully!', {
+          contextId: result.contextId,
+          agentPubKey: Array.from(result.agentPubKey).map(b => b.toString(16).padStart(2, '0')).join(''),
+          cellCount: result.cells.length,
+        });
+        addTestResult(`✓ Installed hApp "${appName}" v${appVersion}`);
+      } catch (error) {
+        log('error', 'installStatus', `Install failed: ${error.message}`);
+        addTestResult(`✗ Install failed: ${error.message}`, false);
+      }
+    }
+
+    // Get app info
+    async function getAppInfo() {
+      try {
+        log('info', 'appInfoStatus', 'Fetching app info...');
+
+        const result = await window.holochain.appInfo();
+
+        log('success', 'appInfoStatus', 'App info retrieved!', {
+          contextId: result.contextId,
+          domain: result.domain,
+          appName: result.appName,
+          appVersion: result.appVersion,
+          agentPubKey: Array.from(result.agentPubKey).map(b => b.toString(16).padStart(2, '0')).join(''),
+          cellCount: result.cells.length,
+          installedAt: new Date(result.installedAt).toLocaleString(),
+          enabled: result.enabled,
+        });
+        addTestResult('✓ Retrieved app info');
+      } catch (error) {
+        log('error', 'appInfoStatus', `Failed to get app info: ${error.message}`);
+        addTestResult(`✗ Failed to get app info: ${error.message}`, false);
+      }
+    }
+
+    // Check on page load
+    setTimeout(() => {
+      if (!fishyReady) {
+        log('error', 'fishyStatus', 'Fishy extension not detected. Please install the extension and reload this page.');
+      }
+    }, 1000);
+  </script>
+</body>
+</html>
