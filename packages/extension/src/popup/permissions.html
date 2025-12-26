@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Manage Permissions - Fishy</title>
+  <style>
+    body {
+      width: 500px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      background: #f5f5f5;
+    }
+
+    .back-link {
+      display: inline-block;
+      color: #007bff;
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 20px 0;
+      color: #333;
+    }
+
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .section h2 {
+      font-size: 18px;
+      margin: 0 0 12px 0;
+      color: #333;
+    }
+
+    .info-box {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #1976d2;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+    }
+
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 10px;
+      background: #f5f5f5;
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      border-bottom: 2px solid #ddd;
+    }
+
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 14px;
+    }
+
+    tr:hover {
+      background: #f9f9f9;
+    }
+
+    .origin {
+      font-weight: 500;
+      color: #333;
+      word-break: break-all;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status.granted {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status.denied {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .timestamp {
+      font-size: 12px;
+      color: #666;
+    }
+
+    button {
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .revoke-btn {
+      background: #6c757d;
+      color: white;
+    }
+
+    .revoke-btn:hover {
+      background: #5a6268;
+    }
+
+    .revoke-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .danger-btn {
+      background: #dc3545;
+      color: white;
+      margin-top: 16px;
+      padding: 10px 16px;
+      font-size: 14px;
+    }
+
+    .danger-btn:hover {
+      background: #c82333;
+    }
+
+    .danger-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .error {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">← Back to Main</a>
+
+  <h1>Permission Management</h1>
+
+  <div class="info-box">
+    Manage which websites can access your Holochain data through Fishy.
+    You can revoke permissions at any time.
+  </div>
+
+  <div id="error-container" class="hidden">
+    <div class="error" id="error-message"></div>
+  </div>
+
+  <div class="section">
+    <h2>Authorized Domains</h2>
+
+    <div id="loading-state" class="loading">
+      Loading permissions...
+    </div>
+
+    <div id="empty-state" class="hidden">
+      <div class="empty-state">
+        <div class="icon">🔒</div>
+        <p>No permissions granted yet.</p>
+        <p style="font-size: 13px; color: #999;">
+          When you connect to a website, it will appear here.
+        </p>
+      </div>
+    </div>
+
+    <div id="permissions-table-container" class="hidden">
+      <table id="permissions-table">
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Status</th>
+            <th>Granted</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="permissions-tbody">
+          <!-- Permissions will be inserted here -->
+        </tbody>
+      </table>
+
+      <button id="clear-all-btn" class="danger-btn">
+        Revoke All Permissions
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="./permissions.ts"></script>
+</body>
+</html>

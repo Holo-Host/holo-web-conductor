@@ -21,6 +21,8 @@ import {
   serializeMessage,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
+import { getPermissionManager } from "../lib/permissions";
+import { getAuthManager } from "../lib/auth-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
 import sodium from "libsodium-wrappers";
 
@@ -28,6 +30,8 @@ console.log("Fishy background service worker loaded");
 
 // Singleton instances
 const lairLock = getLairLock();
+const permissionManager = getPermissionManager();
+const authManager = getAuthManager();
 let lairClient: Awaited<ReturnType<typeof createLairClient>> | null = null;
 
 // Initialize Lair client
@@ -122,6 +126,22 @@ async function handleMessage(
       case MessageType.LAIR_IMPORT_SEED:
         return handleLairImportSeed(message);
 
+      // Permission management
+      case MessageType.PERMISSION_GRANT:
+        return handlePermissionGrant(message);
+
+      case MessageType.PERMISSION_DENY:
+        return handlePermissionDeny(message);
+
+      case MessageType.PERMISSION_LIST:
+        return handlePermissionList(message);
+
+      case MessageType.PERMISSION_REVOKE:
+        return handlePermissionRevoke(message);
+
+      case MessageType.AUTH_REQUEST_INFO:
+        return handleAuthRequestInfo(message);
+
       default:
         return createErrorResponse(
           message.id,
@@ -139,18 +159,76 @@ async function handleMessage(
 
 /**
  * Handle CONNECT requests
- * TODO(Step 3): Implement authorization flow
+ * Implements Step 3 authorization flow
  */
 async function handleConnect(
   message: RequestMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
-  console.log("Connect request from:", sender.tab?.url);
+  // Extract origin from tab URL
+  const url = sender.tab?.url;
+  if (!url) {
+    return createErrorResponse(message.id, "Cannot determine origin - no tab URL");
+  }
 
-  // For Step 1, just acknowledge the connection
-  return createSuccessResponse(message.id, {
-    connected: true,
-    url: sender.tab?.url,
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch (error) {
+    return createErrorResponse(message.id, `Invalid URL: ${url}`);
+  }
+
+  console.log("Connect request from:", origin);
+
+  // Check existing permission
+  const permission = await permissionManager.checkPermission(origin);
+
+  if (permission?.granted) {
+    // Already approved - instant connection
+    console.log(`[Auth] Origin ${origin} already approved`);
+    return createSuccessResponse(message.id, {
+      connected: true,
+      origin,
+    });
+  }
+
+  if (permission?.granted === false) {
+    // Previously denied
+    console.log(`[Auth] Origin ${origin} was previously denied`);
+    return createErrorResponse(
+      message.id,
+      "Connection denied. This site was previously denied access to Fishy."
+    );
+  }
+
+  // No permission set - create authorization request and open popup
+  console.log(`[Auth] No permission for ${origin} - opening authorization popup`);
+
+  const authRequest = await authManager.createAuthRequest(
+    origin,
+    sender.tab!.id!,
+    message.id
+  );
+
+  // Open authorization popup window
+  try {
+    await chrome.windows.create({
+      url: `popup/authorize.html?requestId=${authRequest.id}`,
+      type: "popup",
+      width: 420,
+      height: 600,
+      focused: true,
+    });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      `Failed to open authorization popup: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  // Return a promise that will be resolved when user approves/denies
+  return new Promise((resolve) => {
+    authManager.setPendingCallback(authRequest.id, resolve);
   });
 }
 
@@ -576,6 +654,151 @@ async function handleLairImportSeed(
       payload.exportable ?? false
     );
     return createSuccessResponse(message.id, result);
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PERMISSION_GRANT requests
+ */
+async function handlePermissionGrant(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { requestId, origin } = message.payload as { requestId: string; origin: string };
+
+    if (!requestId || !origin) {
+      return createErrorResponse(message.id, "requestId and origin are required");
+    }
+
+    // Grant permission
+    await permissionManager.grantPermission(origin);
+    console.log(`[Auth] Permission granted for ${origin}`);
+
+    // Resolve pending auth request
+    const resolved = await authManager.resolveAuthRequest(
+      requestId,
+      createSuccessResponse(message.id, { connected: true, origin })
+    );
+
+    if (!resolved) {
+      return createErrorResponse(message.id, "Authorization request not found or expired");
+    }
+
+    return createSuccessResponse(message.id, { granted: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PERMISSION_DENY requests
+ */
+async function handlePermissionDeny(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { requestId, origin } = message.payload as { requestId: string; origin: string };
+
+    if (!requestId || !origin) {
+      return createErrorResponse(message.id, "requestId and origin are required");
+    }
+
+    // Deny permission
+    await permissionManager.denyPermission(origin);
+    console.log(`[Auth] Permission denied for ${origin}`);
+
+    // Resolve pending auth request with error
+    const resolved = await authManager.resolveAuthRequest(
+      requestId,
+      createErrorResponse(message.id, "User denied access")
+    );
+
+    if (!resolved) {
+      return createErrorResponse(message.id, "Authorization request not found or expired");
+    }
+
+    return createSuccessResponse(message.id, { denied: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PERMISSION_LIST requests
+ */
+async function handlePermissionList(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const permissions = await permissionManager.listPermissions();
+    return createSuccessResponse(message.id, { permissions });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PERMISSION_REVOKE requests
+ */
+async function handlePermissionRevoke(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { origin } = message.payload as { origin: string };
+
+    if (!origin) {
+      return createErrorResponse(message.id, "origin is required");
+    }
+
+    await permissionManager.revokePermission(origin);
+    console.log(`[Auth] Permission revoked for ${origin}`);
+
+    return createSuccessResponse(message.id, { revoked: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle AUTH_REQUEST_INFO requests
+ */
+async function handleAuthRequestInfo(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { requestId } = message.payload as { requestId: string };
+
+    if (!requestId) {
+      return createErrorResponse(message.id, "requestId is required");
+    }
+
+    const authRequest = await authManager.getAuthRequest(requestId);
+
+    if (!authRequest) {
+      return createErrorResponse(message.id, "Authorization request not found");
+    }
+
+    return createSuccessResponse(message.id, {
+      origin: authRequest.origin,
+      timestamp: authRequest.timestamp,
+    });
   } catch (error) {
     return createErrorResponse(
       message.id,

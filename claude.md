@@ -187,29 +187,41 @@ packages/
 
 ---
 
-### Step 3: Authorization Mechanism
+### Step 3: Authorization Mechanism ✓
 
 **Goal**: Implement user consent flow for page ↔ extension connections (like MetaMask).
 
 **Dependencies**: Step 1, Step 2
 
-**Sub-tasks**:
-1. **3.1** Design permission model (per-domain, per-action)
-2. **3.2** Create authorization request popup
-3. **3.3** Implement permission storage (approved domains)
-4. **3.4** Add permission check middleware to message handler
-5. **3.5** Implement permission revocation UI
-6. **3.6** Handle first-time connection prompts
+**Completed**:
+- [x] **3.1** Design permission model (per-domain, simple approach - no per-action granularity)
+- [x] **3.2** Create authorization request popup (authorize.html + authorize.ts)
+- [x] **3.3** Implement permission storage via PermissionManager (chrome.storage.local)
+- [x] **3.4** Add permission check middleware to message handler (handleConnect with AuthManager)
+- [x] **3.5** Implement permission revocation UI (permissions.html + permissions.ts)
+- [x] **3.6** Handle first-time connection prompts (popup window with 2-minute timeout)
 
 **Key Files**:
-- `packages/extension/src/popup/authorize.ts`
-- `packages/extension/src/lib/permissions.ts`
+- `packages/extension/src/lib/permissions.ts` - PermissionManager class (220 lines)
+- `packages/extension/src/lib/auth-manager.ts` - AuthManager class (159 lines)
+- `packages/extension/src/popup/authorize.html` - Authorization popup UI
+- `packages/extension/src/popup/authorize.ts` - Authorization popup logic
+- `packages/extension/src/popup/permissions.html` - Permission management UI
+- `packages/extension/src/popup/permissions.ts` - Permission management logic
+- `packages/extension/test/authorization-test.html` - Manual test page
 
 **Tests**:
-- Unauthorized domain is blocked
-- Authorized domain can make calls
-- Permission persists across sessions
-- User can revoke permissions
+- ✅ 9 PermissionManager tests (grant, deny, revoke, list, persistence)
+- ✅ 9 AuthManager tests (create, resolve, timeout, cleanup)
+- ✅ Build successful - all files compiled
+- ✅ Extension loads without errors in Chrome
+
+**Implementation Notes**:
+- Per-domain permissions (simple model, can expand to per-action later)
+- MetaMask-style popup window approach
+- Promise-based authorization flow with 2-minute timeout
+- Permissions persist across browser restarts via chrome.storage.local
+- Added 'wasm-unsafe-eval' CSP to manifest.json for libsodium WebAssembly support
 
 ---
 

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fishy Authorization Test Page</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .section h2 {
+      margin-top: 0;
+      color: #333;
+      font-size: 18px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-right: 12px;
+      margin-bottom: 12px;
+    }
+
+    .primary {
+      background: #007bff;
+      color: white;
+    }
+
+    .primary:hover {
+      background: #0056b3;
+    }
+
+    .primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .secondary {
+      background: #6c757d;
+      color: white;
+    }
+
+    .secondary:hover {
+      background: #5a6268;
+    }
+
+    .danger {
+      background: #dc3545;
+      color: white;
+    }
+
+    .danger:hover {
+      background: #c82333;
+    }
+
+    .status {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .status.info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+
+    .log {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+
+    .log-entry {
+      margin-bottom: 4px;
+      color: #333;
+    }
+
+    .log-entry.error {
+      color: #dc3545;
+      font-weight: 600;
+    }
+
+    .log-entry.success {
+      color: #28a745;
+    }
+
+    .instructions {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    .instructions h3 {
+      margin-top: 0;
+      color: #856404;
+      font-size: 16px;
+    }
+
+    .instructions ol {
+      margin: 8px 0;
+      padding-left: 20px;
+      color: #856404;
+    }
+
+    .instructions li {
+      margin-bottom: 8px;
+    }
+
+    code {
+      background: #fff;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Fishy Authorization Test Page</h1>
+  <p class="subtitle">Test the authorization flow and permission management</p>
+
+  <div class="instructions">
+    <h3>Testing Instructions</h3>
+    <ol>
+      <li>Load the Fishy extension as an unpacked extension in Chrome</li>
+      <li>Open this HTML file in your browser (either via file:// or localhost)</li>
+      <li>Click "Test Connection" - should open authorization popup on first attempt</li>
+      <li>Approve the connection in the popup</li>
+      <li>Click "Test Connection" again - should succeed instantly without popup</li>
+      <li>Open extension popup and go to "Manage Permissions"</li>
+      <li>Revoke permission for this origin</li>
+      <li>Click "Test Connection" again - should open popup again</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2>Connection Test</h2>
+    <div id="status-display"></div>
+    <button class="primary" id="connect-btn">Test Connection</button>
+    <button class="secondary" id="disconnect-btn" disabled>Disconnect</button>
+    <button class="danger" id="clear-log-btn">Clear Log</button>
+  </div>
+
+  <div class="section">
+    <h2>Current Status</h2>
+    <div id="connection-info">
+      <p><strong>Connected:</strong> <span id="connected-status">No</span></p>
+      <p><strong>Origin:</strong> <code id="origin-display">Unknown</code></p>
+      <p><strong>Extension Loaded:</strong> <span id="extension-status">Checking...</span></p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Event Log</h2>
+    <div class="log" id="event-log">
+      <div class="log-entry">Waiting for actions...</div>
+    </div>
+  </div>
+
+  <script>
+    // Get DOM elements
+    const statusDisplay = document.getElementById('status-display');
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    const clearLogBtn = document.getElementById('clear-log-btn');
+    const eventLog = document.getElementById('event-log');
+    const connectedStatus = document.getElementById('connected-status');
+    const originDisplay = document.getElementById('origin-display');
+    const extensionStatus = document.getElementById('extension-status');
+
+    let isConnected = false;
+
+    // Logging utility
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      eventLog.appendChild(entry);
+      eventLog.scrollTop = eventLog.scrollHeight;
+      console.log(`[${timestamp}] ${message}`);
+    }
+
+    // Show status message
+    function showStatus(message, type = 'info') {
+      statusDisplay.innerHTML = `<div class="status ${type}">${message}</div>`;
+    }
+
+    // Update UI state
+    function updateUI() {
+      connectedStatus.textContent = isConnected ? 'Yes' : 'No';
+      connectedStatus.style.color = isConnected ? '#28a745' : '#dc3545';
+      connectedStatus.style.fontWeight = '600';
+
+      connectBtn.disabled = isConnected;
+      disconnectBtn.disabled = !isConnected;
+    }
+
+    // Check if extension is loaded
+    function checkExtension() {
+      if (typeof window.holochain !== 'undefined') {
+        extensionStatus.textContent = 'Yes';
+        extensionStatus.style.color = '#28a745';
+        extensionStatus.style.fontWeight = '600';
+        log('Fishy extension detected', 'success');
+        return true;
+      } else {
+        extensionStatus.textContent = 'No';
+        extensionStatus.style.color = '#dc3545';
+        extensionStatus.style.fontWeight = '600';
+        log('Fishy extension NOT detected', 'error');
+        showStatus(
+          'Fishy extension not detected! Make sure the extension is installed and loaded.',
+          'error'
+        );
+        return false;
+      }
+    }
+
+    // Display current origin
+    function displayOrigin() {
+      const origin = window.location.origin;
+      originDisplay.textContent = origin;
+      log(`Current origin: ${origin}`);
+    }
+
+    // Test connection
+    async function testConnection() {
+      if (!checkExtension()) {
+        return;
+      }
+
+      log('Testing connection...');
+      showStatus('Connecting... (popup may open)', 'info');
+      connectBtn.disabled = true;
+
+      try {
+        log('Calling window.holochain.connect()...');
+        const result = await window.holochain.connect();
+
+        log(`Connection successful: ${JSON.stringify(result)}`, 'success');
+        showStatus(`Connected successfully to origin: ${result.origin}`, 'success');
+
+        isConnected = true;
+        updateUI();
+      } catch (error) {
+        log(`Connection failed: ${error.message}`, 'error');
+        showStatus(`Connection failed: ${error.message}`, 'error');
+        isConnected = false;
+        updateUI();
+      } finally {
+        connectBtn.disabled = false;
+      }
+    }
+
+    // Disconnect
+    function disconnect() {
+      log('Disconnecting...');
+      isConnected = false;
+      updateUI();
+      showStatus('Disconnected', 'info');
+      log('Disconnected (note: permission still exists until revoked)', 'success');
+    }
+
+    // Clear log
+    function clearLog() {
+      eventLog.innerHTML = '<div class="log-entry">Log cleared</div>';
+      log('Log cleared');
+    }
+
+    // Event listeners
+    connectBtn.addEventListener('click', testConnection);
+    disconnectBtn.addEventListener('click', disconnect);
+    clearLogBtn.addEventListener('click', clearLog);
+
+    // Initialize
+    window.addEventListener('DOMContentLoaded', () => {
+      log('Page loaded');
+      displayOrigin();
+      checkExtension();
+      updateUI();
+    });
+  </script>
+</body>
+</html>

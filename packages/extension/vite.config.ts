@@ -12,6 +12,8 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, "src/popup/index.html"),
         lair: resolve(__dirname, "src/popup/lair.html"),
+        authorize: resolve(__dirname, "src/popup/authorize.html"),
+        permissions: resolve(__dirname, "src/popup/permissions.html"),
       },
       output: {
         entryFileNames: (chunkInfo) => {
@@ -145,7 +147,7 @@ export default defineConfig({
           }
 
           // Copy all HTML files
-          const htmlFiles = ["index.html", "lair.html"];
+          const htmlFiles = ["index.html", "lair.html", "authorize.html", "permissions.html"];
           htmlFiles.forEach((file) => {
             const srcPath = resolve(srcPopupDir, file);
             const destPath = resolve(destPopupDir, file);

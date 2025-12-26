@@ -42,6 +42,13 @@ export enum MessageType {
   LAIR_EXPORT_SEED = "lair_export_seed",
   LAIR_IMPORT_SEED = "lair_import_seed",
 
+  // Authorization/Permissions
+  PERMISSION_GRANT = "permission_grant",
+  PERMISSION_DENY = "permission_deny",
+  PERMISSION_LIST = "permission_list",
+  PERMISSION_REVOKE = "permission_revoke",
+  AUTH_REQUEST_INFO = "auth_request_info",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -77,7 +84,12 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LAIR_VERIFY
     | MessageType.LAIR_DERIVE_SEED
     | MessageType.LAIR_EXPORT_SEED
-    | MessageType.LAIR_IMPORT_SEED;
+    | MessageType.LAIR_IMPORT_SEED
+    | MessageType.PERMISSION_GRANT
+    | MessageType.PERMISSION_DENY
+    | MessageType.PERMISSION_LIST
+    | MessageType.PERMISSION_REVOKE
+    | MessageType.AUTH_REQUEST_INFO;
   payload?: unknown;
 }
 
@@ -223,7 +235,12 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.LAIR_VERIFY ||
     message.type === MessageType.LAIR_DERIVE_SEED ||
     message.type === MessageType.LAIR_EXPORT_SEED ||
-    message.type === MessageType.LAIR_IMPORT_SEED
+    message.type === MessageType.LAIR_IMPORT_SEED ||
+    message.type === MessageType.PERMISSION_GRANT ||
+    message.type === MessageType.PERMISSION_DENY ||
+    message.type === MessageType.PERMISSION_LIST ||
+    message.type === MessageType.PERMISSION_REVOKE ||
+    message.type === MessageType.AUTH_REQUEST_INFO
   );
 }
 
