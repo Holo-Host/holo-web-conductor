@@ -175,6 +175,16 @@ packages/
 - Strict enforcement of exportable flag
 - Lock state persists across restarts
 
+**Implementation Notes** (Step 2.5 Complete ✓):
+- Used Web Crypto API PBKDF2 instead of libsodium crypto_pwhash (Argon2id) for broader browser compatibility
+- Integrated export/import methods directly into LairClient instead of separate lair-export.ts file
+- Passphrase-based lock/unlock chosen over WebAuthn/Passkeys for v1 (can add WebAuthn later)
+- Chrome message passing serialization handled with toUint8Array() helper pattern
+- Files created: lair.html (9.74KB), lair.ts (474 lines), lair-lock.ts (311 lines)
+- Methods added to LairClient: exportSeedByTag(), importSeed(), deleteEntry()
+- 13 new message types added for Lair operations
+- All functionality verified working in Chrome browser
+
 ---
 
 ### Step 3: Authorization Mechanism
@@ -384,7 +394,7 @@ Step 1 (Extension Base) ✓
 Step 2 (Lair Client) ✓
     │
     v
-Step 2.5 (Lair UI) ← CURRENT
+Step 2.5 (Lair UI) ✓
     │
     └──────┬───────────┐
            v           v

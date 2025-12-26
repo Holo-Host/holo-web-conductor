@@ -112,9 +112,19 @@ describe("build validation", () => {
       expect(existsSync(popupPath)).toBe(true);
     });
 
-    it("should have index.js at popup/index.js", () => {
-      const popupJsPath = resolve(DIST_DIR, "popup/index.js");
+    it("should have popup.js at popup/popup.js", () => {
+      const popupJsPath = resolve(DIST_DIR, "popup/popup.js");
       expect(existsSync(popupJsPath)).toBe(true);
+    });
+
+    it("should have lair.html at popup/lair.html", () => {
+      const lairPath = resolve(DIST_DIR, "popup/lair.html");
+      expect(existsSync(lairPath)).toBe(true);
+    });
+
+    it("should have lair.js at popup/lair.js", () => {
+      const lairJsPath = resolve(DIST_DIR, "popup/lair.js");
+      expect(existsSync(lairJsPath)).toBe(true);
     });
 
     it("should NOT have HTML in src directory (should be moved)", () => {

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lair Keystore - Fishy</title>
+    <style>
+      body {
+        width: 500px;
+        padding: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        margin: 0;
+        font-size: 14px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 16px 0;
+        color: #333;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 16px 0 8px 0;
+        color: #555;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 4px;
+      }
+      .back-link {
+        display: inline-block;
+        margin-bottom: 12px;
+        color: #007bff;
+        text-decoration: none;
+        font-size: 12px;
+      }
+      .back-link:hover {
+        text-decoration: underline;
+      }
+      .lock-status {
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .lock-status.locked {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .lock-status.unlocked {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .section {
+        margin-bottom: 20px;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #f9f9f9;
+      }
+      .section.disabled {
+        opacity: 0.5;
+        pointer-events: none;
+      }
+      .form-group {
+        margin-bottom: 12px;
+      }
+      label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #333;
+      }
+      input[type="text"],
+      input[type="password"],
+      textarea,
+      select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 13px;
+        box-sizing: border-box;
+        font-family: inherit;
+      }
+      textarea {
+        min-height: 60px;
+        resize: vertical;
+      }
+      input[type="checkbox"] {
+        margin-right: 6px;
+      }
+      button {
+        padding: 8px 16px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        margin-right: 8px;
+        margin-top: 4px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      button.danger {
+        background: #dc3545;
+      }
+      button.danger:hover {
+        background: #c82333;
+      }
+      button.secondary {
+        background: #6c757d;
+      }
+      button.secondary:hover {
+        background: #545b62;
+      }
+      .error {
+        color: #dc3545;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .success {
+        color: #28a745;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        background: white;
+      }
+      th,
+      td {
+        padding: 8px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        font-size: 12px;
+      }
+      th {
+        background: #f0f0f0;
+        font-weight: 600;
+      }
+      .pubkey {
+        font-family: monospace;
+        font-size: 11px;
+        word-break: break-all;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 600;
+      }
+      .badge.exportable {
+        background: #d4edda;
+        color: #155724;
+      }
+      .badge.non-exportable {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .result-box {
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 8px;
+        margin-top: 8px;
+        font-family: monospace;
+        font-size: 11px;
+        word-break: break-all;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="index.html" class="back-link">← Back to Main</a>
+    <h1>Lair Keystore Management</h1>
+
+    <!-- Lock Status -->
+    <div id="lock-status" class="lock-status locked">
+      <span id="lock-status-text">🔒 Locked</span>
+    </div>
+
+    <!-- Lock/Unlock Section -->
+    <div class="section">
+      <h2>Lock / Unlock</h2>
+
+      <div id="passphrase-setup" class="hidden">
+        <p style="font-size: 12px; color: #666;">No passphrase set. Set one to protect your keystore.</p>
+        <div class="form-group">
+          <label for="new-passphrase">New Passphrase (min 8 characters)</label>
+          <input type="password" id="new-passphrase" placeholder="Enter passphrase" />
+        </div>
+        <button id="set-passphrase-btn">Set Passphrase</button>
+        <div id="set-passphrase-error" class="error hidden"></div>
+      </div>
+
+      <div id="unlock-section" class="hidden">
+        <div class="form-group">
+          <label for="unlock-passphrase">Passphrase</label>
+          <input type="password" id="unlock-passphrase" placeholder="Enter passphrase" />
+        </div>
+        <button id="unlock-btn">Unlock</button>
+        <div id="unlock-error" class="error hidden"></div>
+      </div>
+
+      <div id="lock-section" class="hidden">
+        <button id="lock-btn" class="secondary">Lock Keystore</button>
+        <button id="change-passphrase-btn" class="secondary">Change Passphrase</button>
+      </div>
+    </div>
+
+    <!-- Keypair Management Section -->
+    <div id="keypair-section" class="section disabled">
+      <h2>Keypair Management</h2>
+
+      <div class="form-group">
+        <label for="new-tag">Tag (identifier)</label>
+        <input type="text" id="new-tag" placeholder="my-keypair" />
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="new-exportable" />
+          Exportable
+        </label>
+      </div>
+      <button id="create-keypair-btn">Create Keypair</button>
+      <div id="create-keypair-error" class="error hidden"></div>
+      <div id="create-keypair-success" class="success hidden"></div>
+
+      <h2>Existing Keypairs</h2>
+      <div id="keypair-list">
+        <p style="font-size: 12px; color: #666;">No keypairs yet.</p>
+      </div>
+    </div>
+
+    <!-- Sign/Verify Section -->
+    <div id="sign-verify-section" class="section disabled">
+      <h2>Sign</h2>
+      <div class="form-group">
+        <label for="sign-keypair">Select Keypair</label>
+        <select id="sign-keypair">
+          <option value="">-- Select keypair --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="sign-data">Data to Sign</label>
+        <textarea id="sign-data" placeholder="Enter text to sign"></textarea>
+      </div>
+      <button id="sign-btn">Sign</button>
+      <div id="sign-error" class="error hidden"></div>
+      <div id="sign-result" class="result-box hidden"></div>
+
+      <h2>Verify Signature</h2>
+      <div class="form-group">
+        <label for="verify-pubkey">Public Key (base64)</label>
+        <input type="text" id="verify-pubkey" placeholder="Paste public key" />
+      </div>
+      <div class="form-group">
+        <label for="verify-data">Data</label>
+        <textarea id="verify-data" placeholder="Enter original text"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="verify-signature">Signature (base64)</label>
+        <textarea id="verify-signature" placeholder="Paste signature"></textarea>
+      </div>
+      <button id="verify-btn">Verify</button>
+      <div id="verify-error" class="error hidden"></div>
+      <div id="verify-result" class="success hidden"></div>
+    </div>
+
+    <!-- Export/Import Section -->
+    <div id="export-import-section" class="section disabled">
+      <h2>Export Keypair</h2>
+      <div class="form-group">
+        <label for="export-keypair">Select Keypair (exportable only)</label>
+        <select id="export-keypair">
+          <option value="">-- Select keypair --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="export-passphrase">Encryption Passphrase</label>
+        <input type="password" id="export-passphrase" placeholder="Enter passphrase for export" />
+      </div>
+      <button id="export-btn">Export</button>
+      <div id="export-error" class="error hidden"></div>
+      <div id="export-result" class="result-box hidden"></div>
+
+      <h2>Import Keypair</h2>
+      <div class="form-group">
+        <label for="import-data">Encrypted Export Data (JSON)</label>
+        <textarea id="import-data" placeholder="Paste encrypted export data"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="import-passphrase">Decryption Passphrase</label>
+        <input type="password" id="import-passphrase" placeholder="Enter passphrase" />
+      </div>
+      <div class="form-group">
+        <label for="import-tag">New Tag</label>
+        <input type="text" id="import-tag" placeholder="my-imported-keypair" />
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="import-exportable" />
+          Make Exportable
+        </label>
+      </div>
+      <button id="import-btn">Import</button>
+      <div id="import-error" class="error hidden"></div>
+      <div id="import-success" class="success hidden"></div>
+    </div>
+
+    <script type="module" src="./lair.ts"></script>
+  </body>
+</html>

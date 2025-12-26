@@ -70,6 +70,39 @@ export interface NewSeedResult {
 }
 
 /**
+ * Encrypted export of a seed
+ * Encrypted with passphrase-based key derivation
+ */
+export interface EncryptedExport {
+  /** Format version for future compatibility */
+  version: number;
+
+  /** Original tag of the exported entry */
+  tag: string;
+
+  /** Ed25519 public key */
+  ed25519_pub_key: Uint8Array;
+
+  /** X25519 public key */
+  x25519_pub_key: Uint8Array;
+
+  /** Salt for key derivation (16 bytes) */
+  salt: Uint8Array;
+
+  /** Nonce for encryption (24 bytes) */
+  nonce: Uint8Array;
+
+  /** Encrypted seed data */
+  cipher: Uint8Array;
+
+  /** Whether the key was exportable */
+  exportable: boolean;
+
+  /** When the key was created */
+  created_at: number;
+}
+
+/**
  * Lair keystore client interface
  */
 export interface LairClient {
@@ -159,6 +192,34 @@ export interface LairClient {
     nonce: Nonce,
     cipher: EncryptedData
   ): Promise<Uint8Array>;
+
+  /**
+   * Export a seed encrypted with a passphrase
+   * @param tag - Tag of the entry to export
+   * @param passphrase - Passphrase to encrypt the export
+   * @throws Error if the entry is not exportable
+   */
+  exportSeedByTag(tag: EntryTag, passphrase: string): Promise<EncryptedExport>;
+
+  /**
+   * Import an encrypted seed
+   * @param encrypted - The encrypted export data
+   * @param passphrase - Passphrase to decrypt
+   * @param newTag - Tag for the imported entry
+   * @param exportable - Whether the imported key should be exportable
+   */
+  importSeed(
+    encrypted: EncryptedExport,
+    passphrase: string,
+    newTag: EntryTag,
+    exportable: boolean
+  ): Promise<NewSeedResult>;
+
+  /**
+   * Delete an entry from the keystore
+   * @param tag - Tag of the entry to delete
+   */
+  deleteEntry(tag: EntryTag): Promise<void>;
 }
 
 /**

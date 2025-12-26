@@ -24,6 +24,7 @@ export type {
   DerivationPath,
   EntryInfo,
   NewSeedResult,
+  EncryptedExport,
   LairClient as ILairClient,
   StoredKeyEntry,
 } from "./types";

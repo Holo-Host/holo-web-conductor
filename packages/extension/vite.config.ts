@@ -11,13 +11,19 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "src/popup/index.html"),
+        lair: resolve(__dirname, "src/popup/lair.html"),
       },
       output: {
-        entryFileNames: "[name]/index.js",
+        entryFileNames: (chunkInfo) => {
+          // Put popup scripts in popup/ directory
+          return "popup/[name].js";
+        },
         chunkFileNames: "lib/[name]-[hash].js",
         assetFileNames: (assetInfo) => {
           if (assetInfo.name?.endsWith(".html")) {
-            return "popup/index.html";
+            // Keep HTML files in popup directory with original names
+            const baseName = assetInfo.name.replace(/^.*[\\/]/, "");
+            return `popup/${baseName}`;
           }
           return "assets/[name]-[hash][extname]";
         },
@@ -128,12 +134,26 @@ export default defineConfig({
           resolve(distDir, "manifest.json")
         );
 
-        // Move HTML file from dist/src/popup/index.html to dist/popup/index.html if needed
-        const srcHtmlPath = resolve(distDir, "src/popup/index.html");
-        const destHtmlPath = resolve(distDir, "popup/index.html");
+        // Move HTML files from dist/src/popup/*.html to dist/popup/*.html if needed
+        const srcPopupDir = resolve(distDir, "src/popup");
+        const destPopupDir = resolve(distDir, "popup");
 
-        if (existsSync(srcHtmlPath)) {
-          copyFileSync(srcHtmlPath, destHtmlPath);
+        if (existsSync(srcPopupDir)) {
+          // Ensure destination directory exists
+          if (!existsSync(destPopupDir)) {
+            mkdirSync(destPopupDir, { recursive: true });
+          }
+
+          // Copy all HTML files
+          const htmlFiles = ["index.html", "lair.html"];
+          htmlFiles.forEach((file) => {
+            const srcPath = resolve(srcPopupDir, file);
+            const destPath = resolve(destPopupDir, file);
+            if (existsSync(srcPath)) {
+              copyFileSync(srcPath, destPath);
+            }
+          });
+
           // Remove the dist/src directory
           rmSync(resolve(distDir, "src"), { recursive: true, force: true });
         }

@@ -15,10 +15,12 @@
   "dependencies": {
     "@fishy/core": "*",
     "@fishy/lair": "*",
-    "@fishy/shared": "*"
+    "@fishy/shared": "*",
+    "libsodium-wrappers": "^0.7.13"
   },
   "devDependencies": {
     "vite": "^5.0.0",
-    "@types/chrome": "^0.0.256"
+    "@types/chrome": "^0.0.256",
+    "@types/libsodium-wrappers": "^0.7.14"
   }
 }

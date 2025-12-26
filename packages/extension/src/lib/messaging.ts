@@ -21,6 +21,27 @@ export enum MessageType {
   APP_INFO = "app_info",
   SIGNAL = "signal",
 
+  // Lair keystore - Lock/unlock
+  LAIR_GET_LOCK_STATE = "lair_get_lock_state",
+  LAIR_SET_PASSPHRASE = "lair_set_passphrase",
+  LAIR_UNLOCK = "lair_unlock",
+  LAIR_LOCK = "lair_lock",
+
+  // Lair keystore - Keypair management
+  LAIR_NEW_SEED = "lair_new_seed",
+  LAIR_LIST_ENTRIES = "lair_list_entries",
+  LAIR_GET_ENTRY = "lair_get_entry",
+  LAIR_DELETE_ENTRY = "lair_delete_entry",
+
+  // Lair keystore - Operations
+  LAIR_SIGN = "lair_sign_by_pub_key",
+  LAIR_VERIFY = "lair_verify_signature",
+  LAIR_DERIVE_SEED = "lair_derive_seed",
+
+  // Lair keystore - Export/import
+  LAIR_EXPORT_SEED = "lair_export_seed",
+  LAIR_IMPORT_SEED = "lair_import_seed",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -43,7 +64,20 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.CONNECT
     | MessageType.DISCONNECT
     | MessageType.CALL_ZOME
-    | MessageType.APP_INFO;
+    | MessageType.APP_INFO
+    | MessageType.LAIR_GET_LOCK_STATE
+    | MessageType.LAIR_SET_PASSPHRASE
+    | MessageType.LAIR_UNLOCK
+    | MessageType.LAIR_LOCK
+    | MessageType.LAIR_NEW_SEED
+    | MessageType.LAIR_LIST_ENTRIES
+    | MessageType.LAIR_GET_ENTRY
+    | MessageType.LAIR_DELETE_ENTRY
+    | MessageType.LAIR_SIGN
+    | MessageType.LAIR_VERIFY
+    | MessageType.LAIR_DERIVE_SEED
+    | MessageType.LAIR_EXPORT_SEED
+    | MessageType.LAIR_IMPORT_SEED;
   payload?: unknown;
 }
 
@@ -176,7 +210,20 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.CONNECT ||
     message.type === MessageType.DISCONNECT ||
     message.type === MessageType.CALL_ZOME ||
-    message.type === MessageType.APP_INFO
+    message.type === MessageType.APP_INFO ||
+    message.type === MessageType.LAIR_GET_LOCK_STATE ||
+    message.type === MessageType.LAIR_SET_PASSPHRASE ||
+    message.type === MessageType.LAIR_UNLOCK ||
+    message.type === MessageType.LAIR_LOCK ||
+    message.type === MessageType.LAIR_NEW_SEED ||
+    message.type === MessageType.LAIR_LIST_ENTRIES ||
+    message.type === MessageType.LAIR_GET_ENTRY ||
+    message.type === MessageType.LAIR_DELETE_ENTRY ||
+    message.type === MessageType.LAIR_SIGN ||
+    message.type === MessageType.LAIR_VERIFY ||
+    message.type === MessageType.LAIR_DERIVE_SEED ||
+    message.type === MessageType.LAIR_EXPORT_SEED ||
+    message.type === MessageType.LAIR_IMPORT_SEED
   );
 }
 

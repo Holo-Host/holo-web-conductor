@@ -15,6 +15,7 @@ import type {
   DerivationPath,
   EntryInfo,
   NewSeedResult,
+  EncryptedExport,
   LairClient as ILairClient,
   StoredKeyEntry,
 } from "./types";
@@ -25,7 +26,7 @@ import { createKeyStorage } from "./storage";
  * Lair keystore client implementation
  */
 export class LairClient implements ILairClient {
-  private storage: KeyStorage;
+  private storage!: KeyStorage; // Initialized in async initialize()
   private ready: Promise<void>;
 
   constructor(storage?: KeyStorage) {
@@ -355,6 +356,173 @@ export class LairClient implements ILairClient {
     const decrypted = sodium.crypto_secretbox_open_easy(cipher, nonce, key);
 
     return decrypted;
+  }
+
+  /**
+   * Export a seed encrypted with a passphrase
+   */
+  async exportSeedByTag(tag: EntryTag, passphrase: string): Promise<EncryptedExport> {
+    await this.ensureReady();
+
+    const entry = await this.storage.getEntry(tag);
+    if (!entry) {
+      throw new Error(`Tag "${tag}" not found`);
+    }
+
+    // Enforce exportable flag
+    if (!entry.info.exportable) {
+      throw new Error(`Key "${tag}" is not exportable`);
+    }
+
+    if (!passphrase || passphrase.length < 8) {
+      throw new Error("Passphrase must be at least 8 characters");
+    }
+
+    // Generate salt for key derivation
+    const salt = sodium.randombytes_buf(16);
+
+    // Derive encryption key from passphrase using PBKDF2 (Web Crypto API)
+    const encoder = new TextEncoder();
+    const passphraseBytes = encoder.encode(passphrase);
+
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      passphraseBytes,
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+
+    const keyBuffer = await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: salt as BufferSource,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      256
+    );
+
+    const key = new Uint8Array(keyBuffer);
+
+    // Generate nonce
+    const nonce = sodium.randombytes_buf(24);
+
+    // Encrypt the seed (first 32 bytes)
+    const seedToEncrypt = entry.seed.slice(0, 32);
+    const cipher = sodium.crypto_secretbox_easy(seedToEncrypt, nonce, key);
+
+    return {
+      version: 1,
+      tag: entry.info.tag,
+      ed25519_pub_key: entry.info.ed25519_pub_key,
+      x25519_pub_key: entry.info.x25519_pub_key,
+      salt,
+      nonce,
+      cipher,
+      exportable: entry.info.exportable,
+      created_at: entry.info.created_at,
+    };
+  }
+
+  /**
+   * Import an encrypted seed
+   */
+  async importSeed(
+    encrypted: EncryptedExport,
+    passphrase: string,
+    newTag: EntryTag,
+    exportable: boolean
+  ): Promise<NewSeedResult> {
+    await this.ensureReady();
+
+    // Check if newTag already exists
+    if (await this.storage.hasEntry(newTag)) {
+      throw new Error(`Entry with tag "${newTag}" already exists`);
+    }
+
+    if (!passphrase || passphrase.length < 8) {
+      throw new Error("Passphrase must be at least 8 characters");
+    }
+
+    // Derive decryption key from passphrase using PBKDF2 (Web Crypto API)
+    const encoder = new TextEncoder();
+    const passphraseBytes = encoder.encode(passphrase);
+
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      passphraseBytes,
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+
+    const keyBuffer = await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: encrypted.salt as BufferSource,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      256
+    );
+
+    const key = new Uint8Array(keyBuffer);
+
+    // Decrypt the seed
+    let seed: Uint8Array;
+    try {
+      seed = sodium.crypto_secretbox_open_easy(
+        encrypted.cipher,
+        encrypted.nonce,
+        key
+      );
+    } catch (error) {
+      throw new Error("Failed to decrypt: incorrect passphrase or corrupted data");
+    }
+
+    // Regenerate keypair from seed
+    const keypair = sodium.crypto_sign_seed_keypair(seed);
+
+    // Verify the public key matches
+    if (!sodium.memcmp(keypair.publicKey, encrypted.ed25519_pub_key)) {
+      throw new Error("Decrypted seed does not match expected public key");
+    }
+
+    // Convert to X25519
+    const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
+      keypair.publicKey
+    );
+
+    const entry_info: EntryInfo = {
+      tag: newTag,
+      ed25519_pub_key: keypair.publicKey,
+      x25519_pub_key,
+      created_at: Date.now(),
+      exportable,
+    };
+
+    const stored_entry: StoredKeyEntry = {
+      info: entry_info,
+      seed: keypair.privateKey,
+    };
+
+    await this.storage.putEntry(stored_entry);
+
+    return {
+      tag: newTag,
+      entry_info,
+    };
+  }
+
+  /**
+   * Delete an entry from the keystore
+   */
+  async deleteEntry(tag: EntryTag): Promise<void> {
+    await this.ensureReady();
+    await this.storage.deleteEntry(tag);
   }
 
   /**
