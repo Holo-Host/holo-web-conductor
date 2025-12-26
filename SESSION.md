@@ -180,24 +180,9 @@ All implementation complete, all unit tests passing, build successful.
 □ "Revoke All" clears all permissions
 ```
 
-## Next Step: Step 4 - Holochain Conductor Integration
+## Next Step: Step 4 -  hApp Context Creation
 
-**Goal**: Integrate with actual Holochain conductor (local or remote).
-
-**Key tasks**:
-1. Design conductor connection options (local WebSocket, remote URL)
-2. Implement WebSocket connection to conductor
-3. Handle conductor authentication
-4. Forward zome calls from extension to conductor
-5. Add conductor settings UI
-6. Test with real Holochain apps
-
-**Dependencies**: Steps 1, 2, 2.5, and 3 complete
-
-**Key Files** (anticipated):
-- `packages/extension/src/lib/conductor-client.ts` (new)
-- `packages/extension/src/popup/settings.html` (new)
-- `packages/extension/src/background/index.ts` (modify for conductor forwarding)
+**Goal**: Create hApp contexts based on domain-served data.
 
 ## How to Resume This Session
 
@@ -215,7 +200,7 @@ All implementation complete, all unit tests passing, build successful.
    cat claude.md   # Full project plan
    ```
 
-3. **Verify Step 1 is complete**:
+3. **Verify previous is complete**:
    ```bash
    cd packages/extension
    npm install     # If needed
@@ -223,11 +208,8 @@ All implementation complete, all unit tests passing, build successful.
    npm test        # Should show 34/34 passing
    ```
 
-4. **Begin Step 2**:
-   ```bash
-   cd packages/lair
-   # Start implementing keystore functionality
-   ```
+4. **Begin Next Step**:
+
 
 ## Current Working Directory
 
@@ -261,13 +243,7 @@ All implementation complete, all unit tests passing, build successful.
 ## Next Actions
 
 ### Immediate
-Begin **Step 3: Authorization Mechanism**
-- Design permission model for domain-based authorization
-- Create authorization request popup UI
-- Implement permission storage and checks
-- Add permission middleware to message handlers
-- Build permission management UI
-- Test with authorization flow from test webpage
+Begin **Step 4:  hApp Context Creation**
 
 ## Technical Context
 
