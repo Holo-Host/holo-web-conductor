@@ -246,7 +246,7 @@ Begin **Step 3: Authorization Mechanism**
 **Known limitations**:
 - Some tests skipped in Node.js due to crypto API differences (not a blocker - all functionality verified in browser)
 
-**Commit**: (pending - to be created in this session)
+**Commit**: `8d3f78b` - "Step 2.5 Complete: Lair UI Integration with lock/unlock and key management"
 
 ### Step 2 Completion (2025-12-25)
 **Testing results**: ✅ All 21 tests passing
