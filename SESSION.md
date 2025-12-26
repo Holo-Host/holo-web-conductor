@@ -397,4 +397,9 @@ When resuming on another workstation, tell Claude:
    - Include both SESSION.md and claude.md in the commit
    - Use commit message format: "Update session docs: Step X complete"
 
+**Commit Format**:
+- **DO NOT** add ai generated or co-authored footer lines
+- Keep commit messages focused on technical changes only
+- This project does not use AI attribution in commit messages
+
 **This ensures continuity across workstations and sessions.**
