@@ -14,6 +14,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fishy/shared": "*"
+    "@fishy/shared": "*",
+    "@msgpack/msgpack": "^3.0.0",
+    "libsodium-wrappers": "^0.7.13"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers": "^0.7.14"
   }
 }

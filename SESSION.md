@@ -1,8 +1,8 @@
 # Fishy Development Session
 
 **Last Updated**: 2025-12-26
-**Current Step**: Step 4 Complete - hApp Context Creation
-**Status**: ✅ **COMPLETE** - Step 4 fully implemented, all tests passing, ready for manual browser testing
+**Current Step**: Step 5 Complete - WASM Execution with Mocked Host Functions
+**Status**: ✅ **COMPLETE** - Step 5 fully implemented, 20 host functions, 34 tests passing, ready for manual testing
 
 ## Current State
 
@@ -256,9 +256,9 @@ Database: fishy_happ_contexts v1
 □ Verify agent key created in Lair (open Lair UI, look for "domain:agent" tag)
 ```
 
-## Next Step: Step 5 - WASM Execution
+## Next Step: Step 6 - Local Chain Data Storage
 
-**Goal**: Execute hApp WASM in web workers with sandboxing.
+**Goal**: Implement source chain storage with IndexedDB for persistent CRUD operations.
 
 ## How to Resume This Session
 
@@ -403,6 +403,78 @@ Begin **Step 5: WASM Execution**
 - Enable/disable/uninstall operations working
 
 **Commit**: Ready to commit - "Step 4 Complete: hApp Context Creation with management UI"
+
+### Step 5 Completion (2025-12-26)
+**Testing results**: ✅ All tests passing (34 passed), build successful, ribosome infrastructure complete
+- Core tests: 34 passed (13 runtime + 21 serialization)
+- Build: All files compiled successfully, no errors
+- Ribosome: 20 host functions registered and ready
+- Background integration: handleCallZome() routes to ribosome.callZome()
+
+**Key implementation details**:
+- Browser-native WebAssembly API (no external dependencies like wasmer-js)
+- Module caching by DNA hash for performance - modules compiled once and reused
+- MessagePack serialization via @msgpack/msgpack for WASM ↔ JS communication
+- Host function registry with auto-initialization pattern
+- Real Ed25519 crypto via libsodium-wrappers for ephemeral signing and verification
+- Mock implementations for CRUD/links (Step 6 will add real persistence)
+- i64 return convention: high 32 bits = pointer, low 32 bits = length
+- Bump allocator test WASM with memory export for serialization testing
+
+**Files created** (~2,640 lines total):
+- `packages/core/src/ribosome/runtime.ts` (137 lines) - WASM compilation, caching, instantiation
+- `packages/core/src/ribosome/call-context.ts` (55 lines) - Type definitions
+- `packages/core/src/ribosome/error.ts` (96 lines) - Error handling
+- `packages/core/src/ribosome/serialization.ts` (198 lines) - MessagePack & WASM memory ops
+- `packages/core/src/ribosome/index.ts` (108 lines) - callZome() entry point
+- `packages/core/src/ribosome/host-fn/base.ts` (62 lines) - Base types and error wrapping
+- `packages/core/src/ribosome/host-fn/index.ts` (148 lines) - Host function registry
+- `packages/core/src/ribosome/host-fn/*.ts` (20 files, ~50 lines each) - Individual host functions
+- `packages/core/src/ribosome/test/minimal-wasm-bytes.ts` (48 lines) - Test WASM with add() function
+- `packages/core/src/ribosome/test/allocator-wasm-bytes.ts` (71 lines) - WASM with memory + allocator
+- `packages/core/src/ribosome/runtime.test.ts` (148 lines) - 13 runtime tests
+- `packages/core/src/ribosome/serialization.test.ts` (289 lines) - 21 serialization tests
+- `packages/core/vitest.config.ts` (13 lines) - Test configuration
+- `packages/extension/test/wasm-test.html` - Manual test page
+- `STEP5_PLAN.md` (674 lines) - Implementation plan
+
+**Files modified**:
+- `packages/extension/src/background/index.ts` - Updated handleCallZome() to call ribosome
+- `packages/core/package.json` - Added @msgpack/msgpack and libsodium-wrappers dependencies
+
+**Host functions implemented** (20 total):
+1. **Info (4)**: agent_info, dna_info, zome_info, call_info
+2. **Utility (4)**: random_bytes, sys_time, trace, hash
+3. **Signing (3)**: sign (mock), sign_ephemeral (real), verify_signature (real)
+4. **CRUD (5)**: create (mock), get (mock), update (mock), delete (mock), query (mock)
+5. **Links (4)**: create_link (mock), get_links (mock), delete_link (mock), count_links (mock)
+
+**Known mock implementations** (deferred to Step 6):
+- CRUD operations return mock data (no source chain persistence)
+- Link operations return empty arrays (no link storage)
+- sign() uses deterministic mock signatures (Lair integration needed)
+- hash() uses placeholder algorithm (Blake2b needed)
+
+**Manual testing status**: ⏳ **PENDING USER ACTION**
+- Test page created at packages/extension/test/wasm-test.html
+- Tests ribosome infrastructure and host function registry
+- Verifies hApp installation and context creation
+- No real Holochain WASM yet (Step 6+ will add real zome testing)
+
+**Manual testing checklist** (for user):
+```
+□ Load extension in chrome://extensions/ (Load unpacked → dist/)
+□ Open test/wasm-test.html in browser
+□ Extension status check succeeds
+□ Connection succeeds (authorization popup if first time)
+□ Install mock hApp succeeds - creates context with agent key
+□ Background console shows: "[Ribosome] Initialized registry with 20 host functions"
+□ Background console shows: "[Ribosome] Compiling WASM for DNA..."
+□ Background console shows: "[Ribosome] Using cached module for DNA..." (on second call)
+□ No errors in background or page console
+```
+
+**Commit**: Ready to commit - "Step 5 Complete: WASM ribosome with 20 host functions"
 
 ### Step 2.5 Completion (2025-12-26)
 **Testing results**: ✅ All functionality verified in Chrome browser

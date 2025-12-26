@@ -19,6 +19,7 @@ import {
   isRequestMessage,
   deserializeMessage,
   serializeMessage,
+  type ZomeCallPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
@@ -26,6 +27,8 @@ import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
 import type { InstallHappRequest } from "@fishy/core";
+import { callZome, type ZomeCallRequest } from "@fishy/core/ribosome";
+import { encode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 
 console.log("Fishy background service worker loaded");
@@ -267,19 +270,95 @@ async function handleDisconnect(
 
 /**
  * Handle CALL_ZOME requests
- * TODO(Step 5): Implement WASM execution
+ * Executes WASM zome functions via ribosome
  */
 async function handleCallZome(
   message: RequestMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
-  console.log("Zome call request:", message.payload);
+  try {
+    const url = sender.tab?.url;
+    if (!url) {
+      return createErrorResponse(message.id, "Cannot determine origin - no tab URL");
+    }
 
-  // For Step 1, return a mock response
-  return createSuccessResponse(message.id, {
-    mock: true,
-    message: "Zome call not yet implemented",
-  });
+    const origin = new URL(url).origin;
+    console.log("Zome call request from:", origin);
+
+    // Check permission first
+    const permission = await permissionManager.checkPermission(origin);
+    if (!permission?.granted) {
+      return createErrorResponse(message.id, "Permission denied");
+    }
+
+    // Get hApp context
+    const context = await happContextManager.getContextForDomain(origin);
+    if (!context) {
+      return createErrorResponse(message.id, `No hApp installed for ${origin}`);
+    }
+
+    if (!context.enabled) {
+      return createErrorResponse(message.id, "hApp is disabled");
+    }
+
+    // Parse zome call payload
+    const zomeCallPayload = message.payload as ZomeCallPayload;
+    const { cell_id, zome_name, fn_name, payload, provenance } = zomeCallPayload;
+
+    // Convert any serialized Uint8Arrays back to actual Uint8Arrays
+    const cellId: [Uint8Array, Uint8Array] = [
+      toUint8Array(cell_id[0]),
+      toUint8Array(cell_id[1]),
+    ];
+    const provenanceBytes = toUint8Array(provenance);
+
+    const [dnaHash, agentPubKey] = cellId;
+
+    // Find the DNA in the context
+    const dna = context.dnas.find((d) => {
+      const dnaHashBytes = toUint8Array(d.hash);
+      return (
+        dnaHashBytes.length === dnaHash.length &&
+        dnaHashBytes.every((byte, i) => byte === dnaHash[i])
+      );
+    });
+
+    if (!dna) {
+      return createErrorResponse(
+        message.id,
+        `DNA not found in hApp context: ${Buffer.from(dnaHash).toString("hex").substring(0, 16)}...`
+      );
+    }
+
+    // Serialize payload to MessagePack
+    const payloadBytes = new Uint8Array(encode(payload));
+
+    // Build zome call request
+    const zomeCallRequest: ZomeCallRequest = {
+      dnaWasm: toUint8Array(dna.wasm),
+      cellId,
+      zome: zome_name,
+      fn: fn_name,
+      payload: payloadBytes,
+      provenance: provenanceBytes,
+    };
+
+    console.log(`[CallZome] Executing ${zome_name}::${fn_name}`);
+
+    // Execute via ribosome
+    const result = await callZome(zomeCallRequest);
+
+    // Update last used timestamp
+    await happContextManager.touchContext(context.id);
+
+    return createSuccessResponse(message.id, result);
+  } catch (error) {
+    console.error("Error in handleCallZome:", error);
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 }
 
 /**
