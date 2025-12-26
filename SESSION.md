@@ -467,6 +467,10 @@ When resuming on another workstation, tell Claude:
 
 ## 🚨 IMPORTANT WORKFLOW REMINDER
 
+** Before begining work, and after planning is approved:
+
+1. Copy plan to STEPX_PLAN.md so that it is recorded in the repo.
+
 **Before suggesting moving to the next step, Claude MUST:**
 
 1. ✅ Update SESSION.md:
