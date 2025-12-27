@@ -28,7 +28,7 @@ export interface CallInfo {
  *
  * Returns provenance (caller's agent pub key) and capability grant info.
  */
-export const callInfo: HostFunctionImpl = (context, inputPtr) => {
+export const callInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
   const callInfoData: CallInfo = {

@@ -34,11 +34,15 @@ interface TraceInput {
  * Logs trace messages to the browser console with formatted output.
  * Format: [TRACE][zome_name] message
  */
-export const trace: HostFunctionImpl = (context, inputPtr) => {
+export const trace: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
+  console.log(
+    `[trace] ptr=${inputPtr}, len=${inputLen}, memSize=${(instance.exports.memory as WebAssembly.Memory).buffer.byteLength}`
+  );
+
   // Deserialize trace input
-  const input = deserializeFromWasm(instance, inputPtr, 0) as TraceInput;
+  const input = deserializeFromWasm(instance, inputPtr, inputLen) as TraceInput;
 
   // Handle both string input and structured input
   const message = typeof input === "string" ? input : input.msg;

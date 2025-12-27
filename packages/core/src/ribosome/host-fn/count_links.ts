@@ -28,11 +28,11 @@ interface CountLinksInput {
  * Always returns 0 (no links found).
  * Step 6 will add real link counting.
  */
-export const countLinks: HostFunctionImpl = (context, inputPtr) => {
+export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as CountLinksInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as CountLinksInput;
 
   // Return count of 0 (no links)
   const count = 0;

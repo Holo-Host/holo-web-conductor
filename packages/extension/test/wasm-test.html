@@ -108,12 +108,12 @@
 <body>
     <div class="container">
         <h1>🐠 Fishy WASM Ribosome Test</h1>
-        <p class="subtitle">Step 5: Test WASM execution with mocked host functions</p>
+        <p class="subtitle">Step 5.5: Integration Testing with Real HDK Zome</p>
 
         <div class="warning">
-            <strong>⚠️ Note:</strong> This test page demonstrates the ribosome infrastructure
-            with 20 implemented host functions. Since we don't have real Holochain WASM yet,
-            this tests the registry and host function framework readiness.
+            <strong>✅ Real HDK WASM:</strong> This test page uses a real Holochain zome
+            compiled with HDK 0.6. It exercises all major host function categories and validates
+            the complete flow from web page → extension → ribosome → WASM → host functions → results.
         </div>
 
         <!-- Status Check -->
@@ -159,6 +159,22 @@
             </div>
         </div>
 
+        <!-- Zome Function Tests -->
+        <div class="section">
+            <h2>5. Zome Function Tests</h2>
+            <p style="font-size: 14px; color: #666; margin-bottom: 15px;">
+                Test real zome functions that exercise host functions:
+            </p>
+            <button id="test-agent-info-btn" disabled>Get Agent Info</button>
+            <button id="test-random-btn" disabled>Get Random Bytes</button>
+            <button id="test-timestamp-btn" disabled>Get Timestamp</button>
+            <button id="test-trace-btn" disabled>Trace Message</button>
+            <button id="test-signing-btn" disabled>Test Signing</button>
+            <button id="test-create-btn" disabled>Create Entry</button>
+            <button id="test-get-btn" disabled>Get Entry</button>
+            <div id="zome-test-status"></div>
+        </div>
+
         <!-- Console Output -->
         <div class="section">
             <h2>Console Output</h2>
@@ -172,10 +188,17 @@
                 <li id="check-1">Extension loads without errors in chrome://extensions/</li>
                 <li id="check-2">Extension status check succeeds</li>
                 <li id="check-3">Connection request succeeds (authorization popup if first time)</li>
-                <li id="check-4">hApp installation creates context with agent key</li>
+                <li id="check-4">hApp installs with real HDK test zome WASM</li>
                 <li id="check-5">Background console shows ribosome initialization with 20 host functions</li>
                 <li id="check-6">Background console shows module caching messages</li>
                 <li id="check-7">No errors in background or page console</li>
+                <li id="check-8">get_agent_info() returns agent pub key and chain head</li>
+                <li id="check-9">get_random_bytes() returns 32 unique bytes</li>
+                <li id="check-10">get_timestamp() returns current time</li>
+                <li id="check-11">trace_message() logs to background console</li>
+                <li id="check-12">test_signing() returns true (signature verifies)</li>
+                <li id="check-13">create_test_entry() returns action hash</li>
+                <li id="check-14">get_test_entry() returns mock record</li>
             </ul>
         </div>
     </div>
@@ -236,6 +259,36 @@
                 document.getElementById('connect-btn').disabled = true;
                 document.getElementById('disconnect-btn').disabled = false;
                 document.getElementById('install-happ-btn').disabled = false;
+
+                // Check if hApp is already installed
+                try {
+                    const appInfo = await window.holochain.appInfo();
+                    if (appInfo && appInfo.contextId) {
+                        contextId = appInfo.contextId;
+                        log(`✓ Found existing hApp! Context ID: ${contextId}`);
+                        log(`  App: ${appInfo.appName} v${appInfo.appVersion}`);
+                        log(`  Agent: ${Array.from(appInfo.agentPubKey).slice(0, 8).join(',')}...`);
+                        showStatus('install-status',
+                            `<strong>hApp already installed!</strong><br>
+                            Context ID: <code>${contextId}</code><br>
+                            App: ${appInfo.appName} v${appInfo.appVersion}`,
+                            'success');
+
+                        // Enable zome test buttons
+                        document.getElementById('test-agent-info-btn').disabled = false;
+                        document.getElementById('test-random-btn').disabled = false;
+                        document.getElementById('test-timestamp-btn').disabled = false;
+                        document.getElementById('test-trace-btn').disabled = false;
+                        document.getElementById('test-signing-btn').disabled = false;
+                        document.getElementById('test-create-btn').disabled = false;
+                        document.getElementById('test-get-btn').disabled = false;
+
+                        markChecked('check-4');
+                    }
+                } catch (e) {
+                    // No hApp installed yet, that's fine
+                    log('No existing hApp found - install one to test zome functions');
+                }
             } catch (error) {
                 log(`Connection failed: ${error.message}`, true);
                 showStatus('connect-status',
@@ -262,37 +315,32 @@
 
         // Install hApp
         document.getElementById('install-happ-btn').addEventListener('click', async () => {
-            log('Installing mock hApp...');
+            log('Installing HDK test zome hApp...');
 
-            // Create mock DNA hashes (32 random bytes each)
-            const dnaHash1 = new Uint8Array(32);
-            const dnaHash2 = new Uint8Array(32);
-            crypto.getRandomValues(dnaHash1);
-            crypto.getRandomValues(dnaHash2);
+            // Load the real HDK compiled test zome WASM
+            let testZomeWasm;
+            try {
+                const response = await fetch('test-zome.wasm');
+                testZomeWasm = new Uint8Array(await response.arrayBuffer());
+                log(`✓ Loaded test-zome.wasm (${testZomeWasm.length} bytes)`);
+            } catch (error) {
+                log(`Failed to load test-zome.wasm: ${error.message}`, true);
+                showStatus('install-status', '<strong>Error:</strong> Could not load test-zome.wasm', 'error');
+                return;
+            }
 
-            // Create minimal valid WASM (same as used in ribosome tests)
-            const mockWasm = new Uint8Array([
-                0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, // Magic + version
-                0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f, // Type section
-                0x03, 0x02, 0x01, 0x00, // Function section
-                0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00, // Export section
-                0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6a, 0x0b // Code section
-            ]);
+            // Create DNA hash
+            const dnaHash = new Uint8Array(32);
+            crypto.getRandomValues(dnaHash);
 
             const request = {
-                appName: "Test hApp",
-                appVersion: "0.0.1",
+                appName: "Test Zome hApp",
+                appVersion: "0.1.0",
                 dnas: [
                     {
-                        hash: dnaHash1,
-                        wasm: mockWasm,
-                        name: "test_dna_1",
-                        properties: {}
-                    },
-                    {
-                        hash: dnaHash2,
-                        wasm: mockWasm,
-                        name: "test_dna_2",
+                        hash: dnaHash,
+                        wasm: testZomeWasm,
+                        name: "test_zome",
                         properties: {}
                     }
                 ]
@@ -318,11 +366,165 @@
                 markChecked('check-5');
                 markChecked('check-6');
                 markChecked('check-7');
+
+                // Enable zome test buttons
+                document.getElementById('test-agent-info-btn').disabled = false;
+                document.getElementById('test-random-btn').disabled = false;
+                document.getElementById('test-timestamp-btn').disabled = false;
+                document.getElementById('test-trace-btn').disabled = false;
+                document.getElementById('test-signing-btn').disabled = false;
+                document.getElementById('test-create-btn').disabled = false;
+                document.getElementById('test-get-btn').disabled = false;
             } catch (error) {
                 log(`Installation failed: ${error.message}`, true);
                 showStatus('install-status',
                     `<strong>Installation failed:</strong> ${error.message}`,
                     'error');
+            }
+        });
+
+        // Zome function tests
+        let lastCreatedHash = null;
+
+        document.getElementById('test-agent-info-btn').addEventListener('click', async () => {
+            log('Calling get_agent_info()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_agent_info',
+                    payload: null
+                });
+                log(`✓ Agent Info: ${JSON.stringify(result, null, 2)}`);
+                showStatus('zome-test-status', '<strong>Success!</strong> Check console output for agent info.', 'success');
+                markChecked('check-8');
+            } catch (error) {
+                log(`get_agent_info failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-random-btn').addEventListener('click', async () => {
+            log('Calling get_random_bytes()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_random_bytes',
+                    payload: null
+                });
+                // Convert to array if needed (Chrome serialization converts Uint8Array to object)
+                const bytes = Array.isArray(result) ? result : Array.from(Object.values(result));
+                log(`✓ Random Bytes (${bytes.length}): ${bytes.slice(0, 16).join(',')}...`);
+                showStatus('zome-test-status', `<strong>Success!</strong> Got ${bytes.length} random bytes.`, 'success');
+                markChecked('check-9');
+            } catch (error) {
+                log(`get_random_bytes failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-timestamp-btn').addEventListener('click', async () => {
+            log('Calling get_timestamp()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_timestamp',
+                    payload: null
+                });
+                log(`Raw timestamp result: ${JSON.stringify(result)}`);
+
+                // Handle different serialization formats
+                const secs = result.secs || result[0] || 0;
+                const nanos = result.nanos || result[1] || 0;
+
+                const date = new Date(secs * 1000);
+                log(`✓ Timestamp: {secs: ${secs}, nanos: ${nanos}} → ${date.toISOString()}`);
+                showStatus('zome-test-status', `<strong>Success!</strong> Got timestamp: ${date.toISOString()}`, 'success');
+                markChecked('check-10');
+            } catch (error) {
+                log(`get_timestamp failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-trace-btn').addEventListener('click', async () => {
+            log('Calling trace_message()...');
+            try {
+                await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'trace_message',
+                    payload: 'Hello from test page!'
+                });
+                log('✓ Trace sent - check background console for: [TRACE][test_zome] Hello from test page!');
+                showStatus('zome-test-status', '<strong>Success!</strong> Check background console for trace message.', 'success');
+                markChecked('check-11');
+            } catch (error) {
+                log(`trace_message failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-signing-btn').addEventListener('click', async () => {
+            log('Calling test_signing()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'test_signing',
+                    payload: null
+                });
+                log(`✓ Signing test: signature ${result ? 'VERIFIED' : 'FAILED'}`);
+                showStatus('zome-test-status', `<strong>${result ? 'Success' : 'Failed'}!</strong> Signature ${result ? 'verified' : 'did not verify'}.`, result ? 'success' : 'error');
+                if (result) markChecked('check-12');
+            } catch (error) {
+                log(`test_signing failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-create-btn').addEventListener('click', async () => {
+            log('Calling create_test_entry()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'create_test_entry',
+                    payload: 'Test entry created at ' + new Date().toISOString()
+                });
+                lastCreatedHash = result;
+                // Convert to array for display
+                const hashBytes = Array.isArray(result) ? result : Array.from(Object.values(result));
+                log(`✓ Entry created! Hash: ${hashBytes.slice(0, 8).join(',')}...`);
+                showStatus('zome-test-status', '<strong>Success!</strong> Entry created. Now try "Get Entry".', 'success');
+                markChecked('check-13');
+            } catch (error) {
+                log(`create_test_entry failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-get-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create an entry first!', 'info');
+                return;
+            }
+            log('Calling get_test_entry()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_test_entry',
+                    payload: lastCreatedHash
+                });
+                log(`✓ Entry retrieved: ${JSON.stringify(result, null, 2)}`);
+                showStatus('zome-test-status', '<strong>Success!</strong> Entry retrieved (mock data from Step 5).', 'success');
+                markChecked('check-14');
+            } catch (error) {
+                log(`get_test_entry failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
             }
         });
 

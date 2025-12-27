@@ -39,11 +39,11 @@ interface QueryInput {
  * Always returns an empty array.
  * Step 6 will add real chain queries.
  */
-export const query: HostFunctionImpl = (context, inputPtr) => {
+export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as QueryInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as QueryInput;
 
   // Return empty array (no records found)
   const results: any[] = [];

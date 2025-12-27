@@ -24,11 +24,11 @@ interface SignInput {
  * For now, this creates a deterministic signature based on the agent pub key
  * and data. This allows signatures to be verified but doesn't use Lair.
  */
-export const sign: HostFunctionImpl = (context, inputPtr) => {
+export const sign: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
   // Deserialize input
-  const input = deserializeFromWasm(instance, inputPtr, 0) as SignInput;
+  const input = deserializeFromWasm(instance, inputPtr, inputLen) as SignInput;
   const data = input instanceof Uint8Array ? input : input.data;
 
   // Get agent pub key from cell ID

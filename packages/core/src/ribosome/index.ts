@@ -4,10 +4,15 @@
  * Main entry point for executing Holochain zome calls in the browser.
  */
 
+import sodium from "libsodium-wrappers";
 import { ZomeCallRequest, CallContext } from "./call-context";
 import { getRibosomeRuntime } from "./runtime";
 import { getHostFunctionRegistry } from "./host-fn";
-import { deserializeFromWasm, serializeToWasm } from "./serialization";
+import {
+  deserializeFromWasm,
+  serializeToWasm,
+  writeGuestPtr,
+} from "./serialization";
 import {
   zomeFunctionNotFoundError,
   wasmInstantiationError,
@@ -37,6 +42,9 @@ export async function callZome(request: ZomeCallRequest): Promise<unknown> {
     `[Ribosome] Calling zome function: ${zome}::${fn}`
   );
 
+  // Ensure libsodium is ready (required for signing host functions)
+  await sodium.ready;
+
   // Get runtime and compile/cache module
   const runtime = getRibosomeRuntime();
   const [dnaHash] = cellId;
@@ -51,49 +59,55 @@ export async function callZome(request: ZomeCallRequest): Promise<unknown> {
     provenance,
   };
 
-  // For now, instantiate without imports to get memory
-  // We'll need to re-instantiate with imports once we have the instance
+  // Create a mutable instance reference that will be updated after instantiation
+  // This allows host functions to access the real instance's memory
+  const instanceRef = { current: null as WebAssembly.Instance | null };
+
+  // Build import object with host functions
+  // We'll use a getter to access the instance, which will be updated after instantiation
+  const registry = getHostFunctionRegistry();
+  const imports = registry.buildImportObject(instanceRef, context);
+
+  console.log(
+    `[Ribosome] Instantiating with ${registry.size} host functions`
+  );
+
+  // Instantiate with host function imports
   let instance: WebAssembly.Instance;
-
   try {
-    // First instantiation: no imports (just to get memory)
-    const tempInstance = await runtime.instantiateModule(module, {});
-
-    // Build import object with host functions
-    const registry = getHostFunctionRegistry();
-    const imports = registry.buildImportObject(tempInstance, context);
-
-    console.log(
-      `[Ribosome] Instantiating with ${registry.size} host functions`
-    );
-
-    // Second instantiation: with host function imports
     instance = await runtime.instantiateModule(module, imports);
   } catch (error) {
     throw wasmInstantiationError(error);
   }
 
+  // Update the instance reference so host functions use the real instance
+  instanceRef.current = instance;
+
   // Serialize input payload to WASM memory
-  const { ptr: inputPtr, len: inputLen } = serializeToWasm(instance, payload);
+  const { ptr: dataPtr, len: dataLen } = serializeToWasm(instance, payload);
+
+  console.log(
+    `[Ribosome] Calling ${zome}::${fn}(ptr=${dataPtr}, len=${dataLen})`
+  );
 
   // Get zome function export
-  const zomeFnName = `__hc_${zome}_${fn}`;
+  // HDK exports functions with just their bare names (e.g., "get_agent_info")
+  // Signature: fn(guest_ptr: usize, len: usize) -> DoubleUSize
+  const zomeFnName = fn;
   const zomeFn = instance.exports[zomeFnName] as
-    | ((ptr: number) => bigint)
+    | ((ptr: number, len: number) => bigint)
     | undefined;
 
   if (!zomeFn) {
     throw zomeFunctionNotFoundError(zome, fn);
   }
 
-  console.log(`[Ribosome] Calling ${zomeFnName}(${inputPtr})`);
+  // Call zome function with TWO parameters: pointer and length
+  const resultI64 = zomeFn(dataPtr, dataLen);
 
-  // Call zome function (returns i64: high 32 bits = ptr, low 32 bits = len)
-  const resultI64 = zomeFn(inputPtr);
-
-  // Extract pointer and length from i64
-  const resultPtr = Number(resultI64 >> 32n);
-  const resultLen = Number(resultI64 & 0xffffffffn);
+  // Extract result: HIGH 32 bits = ptr, LOW 32 bits = len (from merge_usize)
+  const resultPtr = Number(resultI64 >> 32n); // ptr in high 32 bits
+  const resultLen = Number(resultI64 & 0xffffffffn); // len in low 32 bits
 
   console.log(
     `[Ribosome] Result at ptr=${resultPtr}, len=${resultLen}`

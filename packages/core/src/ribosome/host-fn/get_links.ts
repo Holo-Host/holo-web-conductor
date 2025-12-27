@@ -48,11 +48,11 @@ interface Link {
  * Always returns an empty array (no links found).
  * Step 6 will add real link queries.
  */
-export const getLinks: HostFunctionImpl = (context, inputPtr) => {
+export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as GetLinksInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as GetLinksInput;
 
   // Return empty array (no links found)
   const links: Link[] = [];

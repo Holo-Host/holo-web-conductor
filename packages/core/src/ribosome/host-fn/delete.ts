@@ -22,11 +22,11 @@ interface DeleteInput {
  * Returns a random action hash for the delete action.
  * Step 6 will add real chain storage.
  */
-export const deleteEntry: HostFunctionImpl = (context, inputPtr) => {
+export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as DeleteInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as DeleteInput;
 
   // Generate mock delete action hash
   const actionHash = new Uint8Array(32);

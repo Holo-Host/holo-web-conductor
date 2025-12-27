@@ -10,16 +10,17 @@ import { deserializeFromWasm, serializeResult } from "../serialization";
 
 /**
  * Verify signature input structure
+ * Matches holochain_integrity_types::signature::VerifySignature
  */
 interface VerifySignatureInput {
-  /** Public key to verify against */
-  pub_key: Uint8Array;
+  /** Public key to verify against (39-byte AgentPubKey) */
+  key: Uint8Array;
+
+  /** Signature to verify (64-byte Ed25519 signature) */
+  signature: Uint8Array;
 
   /** Data that was signed */
   data: Uint8Array;
-
-  /** Signature to verify */
-  signature: Uint8Array;
 }
 
 /**
@@ -27,28 +28,29 @@ interface VerifySignatureInput {
  *
  * Verifies an Ed25519 signature using libsodium.
  * This is a public operation (doesn't require Lair access).
+ *
+ * NOTE: libsodium must be initialized before calling (done in ribosome/index.ts)
  */
-export const verifySignature: HostFunctionImpl = (context, inputPtr) => {
+export const verifySignature: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
-
-  // Ensure libsodium is ready
-  if (!sodium.ready) {
-    throw new Error("libsodium not ready");
-  }
 
   // Deserialize input
   const input = deserializeFromWasm(
     instance,
     inputPtr,
-    0
+    inputLen
   ) as VerifySignatureInput;
 
-  const { pub_key, data, signature } = input;
+  const { key, data, signature } = input;
+
+  // Extract raw 32-byte public key from 39-byte AgentPubKey
+  // Format: [prefix(3)][hash(32)][location(4)]
+  const rawPubKey = key.slice(3, 35);
 
   // Verify signature using libsodium
   let valid: boolean;
   try {
-    valid = sodium.crypto_sign_verify_detached(signature, data, pub_key);
+    valid = sodium.crypto_sign_verify_detached(signature, data, rawPubKey);
   } catch (error) {
     // Invalid signature format or verification failed
     valid = false;
@@ -56,6 +58,3 @@ export const verifySignature: HostFunctionImpl = (context, inputPtr) => {
 
   return serializeResult(instance, valid);
 };
-
-// Initialize libsodium on module load
-await sodium.ready;

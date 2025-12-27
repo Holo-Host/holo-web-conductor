@@ -117,9 +117,19 @@ export function serializeToWasm(
   data: unknown
 ): { ptr: number; len: number } {
   try {
+    // Debug: log what we're encoding
+    if (data && typeof data === 'object' && 'Ok' in data) {
+      const okValue = (data as any).Ok;
+      console.log(`[serializeToWasm] Encoding Ok value:`,
+        okValue instanceof Uint8Array ? `Uint8Array(${okValue.length})` : typeof okValue,
+        `first bytes:`, okValue instanceof Uint8Array ? Array.from(okValue.slice(0, 10)) : 'N/A');
+    }
+
     // Encode as MessagePack
     const bytes = encode(data);
     const len = bytes.length;
+
+    console.log(`[serializeToWasm] Encoded to ${len} bytes, first 20:`, Array.from(bytes.slice(0, 20)));
 
     // Allocate memory in WASM
     const ptr = wasmAllocate(instance, len);
@@ -156,8 +166,21 @@ export function deserializeFromWasm(
     // Read bytes from WASM memory
     const bytes = readFromWasmMemory(instance, ptr, len);
 
+    // Debug: log first 20 bytes
+    console.log(`[deserializeFromWasm] Bytes (first 20):`, Array.from(bytes.slice(0, 20)));
+
     // Decode from MessagePack
-    return decode(bytes);
+    const decoded = decode(bytes);
+
+    // Debug: log what we decoded
+    if (decoded && typeof decoded === 'object' && 'Ok' in decoded) {
+      const okValue = (decoded as any).Ok;
+      console.log(`[deserializeFromWasm] Ok value type:`,
+        okValue instanceof Uint8Array ? `Uint8Array(${okValue.length})` : typeof okValue,
+        `first bytes:`, okValue instanceof Uint8Array ? Array.from(okValue.slice(0, 10)) : 'N/A');
+    }
+
+    return decoded;
   } catch (error) {
     if (error instanceof Error && error.name === "RibosomeError") {
       throw error;
@@ -184,16 +207,65 @@ export function createI64Result(ptr: number, len: number): bigint {
 /**
  * Serialize result and return as i64
  *
- * Convenience function that combines serialization and i64 creation.
+ * Host functions must return Result<T, WasmError> wrapped in Ok.
+ *
+ * NOTE: In the real Holochain conductor, the ribosome infrastructure wraps
+ * results. But since we're implementing host functions directly in TypeScript
+ * (not going through that infrastructure), we must provide the wrapper ourselves.
+ * The HDK expects to deserialize Result<T, WasmError> from host function calls.
  *
  * @param instance - WebAssembly instance
- * @param data - Data to serialize
+ * @param data - Data to serialize (will be wrapped in Ok)
  * @returns i64 result (ptr in high 32 bits, len in low 32 bits)
  */
 export function serializeResult(
   instance: WebAssembly.Instance,
   data: unknown
 ): bigint {
-  const { ptr, len } = serializeToWasm(instance, data);
+  // Wrap in Result::Ok - HDK expects Result<T, WasmError>
+  const result = { Ok: data };
+  const { ptr, len } = serializeToWasm(instance, result);
   return createI64Result(ptr, len);
+}
+
+/**
+ * Write a GuestPtr struct to WASM memory
+ *
+ * GuestPtr is an 8-byte structure with WASM-specific layout:
+ * - length (u32, 4 bytes) - length of data (LOW 32 bits when cast to i64)
+ * - offset (u32, 4 bytes) - pointer to data (HIGH 32 bits when cast to i64)
+ *
+ * This is used when calling zome functions, which expect a pointer to a GuestPtr.
+ *
+ * @param instance - WebAssembly instance
+ * @param dataPtr - Pointer to the actual data
+ * @param dataLen - Length of the data
+ * @returns Pointer to the GuestPtr struct
+ */
+export function writeGuestPtr(
+  instance: WebAssembly.Instance,
+  dataPtr: number,
+  dataLen: number
+): number {
+  // Allocate 8 bytes for GuestPtr struct
+  const guestPtrPtr = wasmAllocate(instance, 8);
+
+  // Write length and offset with WASM layout (length first, then offset)
+  const memory = instance.exports.memory as WebAssembly.Memory;
+  const view = new DataView(memory.buffer);
+  view.setUint32(guestPtrPtr, dataLen, true); // length at offset 0
+  view.setUint32(guestPtrPtr + 4, dataPtr, true); // offset at offset 4
+
+  // Verify the GuestPtr was written correctly
+  const readLength = view.getUint32(guestPtrPtr, true);
+  const readOffset = view.getUint32(guestPtrPtr + 4, true);
+  console.log(
+    `[writeGuestPtr] Wrote GuestPtr@${guestPtrPtr}: length=${readLength}, offset=${readOffset}`
+  );
+
+  // Also log the actual data at that location
+  const dataBytes = new Uint8Array(memory.buffer, dataPtr, Math.min(dataLen, 20));
+  console.log(`[writeGuestPtr] Data at ${dataPtr}:`, Array.from(dataBytes));
+
+  return guestPtrPtr;
 }

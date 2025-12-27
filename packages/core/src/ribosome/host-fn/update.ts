@@ -25,11 +25,11 @@ interface UpdateInput {
  * Returns a random action hash for the update action.
  * Step 6 will add real chain storage and validation.
  */
-export const update: HostFunctionImpl = (context, inputPtr) => {
+export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as UpdateInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as UpdateInput;
 
   // Generate mock update action hash
   const actionHash = new Uint8Array(32);

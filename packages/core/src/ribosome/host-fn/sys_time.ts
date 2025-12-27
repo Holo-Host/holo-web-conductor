@@ -8,35 +8,16 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 
 /**
- * Timestamp structure (microseconds since UNIX epoch)
- */
-interface Timestamp {
-  /** Seconds component */
-  secs: number;
-  /** Nanoseconds component */
-  nanos: number;
-}
-
-/**
  * sys_time host function implementation
  *
  * Returns current time as microseconds since UNIX epoch.
- * Holochain uses a Timestamp struct with secs and nanos fields.
+ * Timestamp is a newtype i64 wrapper that serializes as bare i64.
  */
-export const sysTime: HostFunctionImpl = (context, inputPtr) => {
+export const sysTime: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
-  // Get current time in milliseconds
-  const nowMs = Date.now();
+  // Timestamp(i64) is microseconds since UNIX epoch
+  const timestampMicros = Date.now() * 1000;
 
-  // Convert to seconds and nanoseconds
-  const secs = Math.floor(nowMs / 1000);
-  const nanos = (nowMs % 1000) * 1_000_000; // Convert remaining ms to ns
-
-  const timestamp: Timestamp = {
-    secs,
-    nanos,
-  };
-
-  return serializeResult(instance, timestamp);
+  return serializeResult(instance, timestampMicros);
 };

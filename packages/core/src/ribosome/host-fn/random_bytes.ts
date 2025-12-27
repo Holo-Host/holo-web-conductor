@@ -20,11 +20,11 @@ interface RandomBytesInput {
  *
  * Uses the Web Crypto API to generate cryptographically secure random bytes.
  */
-export const randomBytes: HostFunctionImpl = (context, inputPtr) => {
+export const randomBytes: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input to get desired length
-  const input = deserializeFromWasm(instance, inputPtr, 0) as RandomBytesInput;
+  const input = deserializeFromWasm(instance, inputPtr, inputLen) as RandomBytesInput;
   const length = typeof input === "number" ? input : input.length;
 
   // Generate random bytes using Web Crypto API

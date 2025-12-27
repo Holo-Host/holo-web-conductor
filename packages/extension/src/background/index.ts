@@ -67,6 +67,44 @@ function toUint8Array(data: any): Uint8Array {
 }
 
 /**
+ * Recursively normalize Uint8Arrays in nested data structures
+ * Chrome's message passing converts Uint8Arrays to objects with numeric keys
+ */
+function normalizeUint8Arrays(data: any): any {
+  if (data === null || data === undefined) {
+    return data;
+  }
+
+  // Check if this looks like a serialized Uint8Array
+  // (object with consecutive numeric keys starting from 0)
+  if (typeof data === 'object' && !Array.isArray(data) && !(data instanceof Uint8Array)) {
+    const keys = Object.keys(data);
+    const isUint8ArrayLike = keys.length > 0 &&
+      keys.every((k, i) => k === String(i)) &&
+      keys.every(k => typeof data[k] === 'number');
+
+    if (isUint8ArrayLike) {
+      return new Uint8Array(Object.values(data) as number[]);
+    }
+
+    // Otherwise recurse into object properties
+    const normalized: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      normalized[key] = normalizeUint8Arrays(value);
+    }
+    return normalized;
+  }
+
+  // Recurse into arrays
+  if (Array.isArray(data)) {
+    return data.map(normalizeUint8Arrays);
+  }
+
+  // Primitives and Uint8Array instances pass through
+  return data;
+}
+
+/**
  * Handle incoming messages from content scripts
  */
 async function handleMessage(
@@ -283,7 +321,8 @@ async function handleCallZome(
     }
 
     const origin = new URL(url).origin;
-    console.log("Zome call request from:", origin);
+    const requestPayload = message.payload as any;
+    console.log("Zome call request:", requestPayload);
 
     // Check permission first
     const permission = await permissionManager.checkPermission(origin);
@@ -291,8 +330,14 @@ async function handleCallZome(
       return createErrorResponse(message.id, "Permission denied");
     }
 
-    // Get hApp context
-    const context = await happContextManager.getContextForDomain(origin);
+    // Get hApp context - either from contextId or from domain
+    let context;
+    if (requestPayload.contextId) {
+      context = await happContextManager.getContext(requestPayload.contextId);
+    } else {
+      context = await happContextManager.getContextForDomain(origin);
+    }
+
     if (!context) {
       return createErrorResponse(message.id, `No hApp installed for ${origin}`);
     }
@@ -301,20 +346,21 @@ async function handleCallZome(
       return createErrorResponse(message.id, "hApp is disabled");
     }
 
-    // Parse zome call payload
-    const zomeCallPayload = message.payload as ZomeCallPayload;
-    const { cell_id, zome_name, fn_name, payload, provenance } = zomeCallPayload;
+    // Extract zome call parameters (support both old and new format)
+    const zome_name = requestPayload.zome || requestPayload.zome_name;
+    const fn_name = requestPayload.function || requestPayload.fn_name;
+    const payload = requestPayload.payload;
 
-    // Convert any serialized Uint8Arrays back to actual Uint8Arrays
-    const cellId: [Uint8Array, Uint8Array] = [
-      toUint8Array(cell_id[0]),
-      toUint8Array(cell_id[1]),
-    ];
-    const provenanceBytes = toUint8Array(provenance);
-
-    const [dnaHash, agentPubKey] = cellId;
+    // Build cell_id from context
+    console.log(`[CallZome] Building cell_id from context`, context);
+    const agentPubKey = toUint8Array(context.agentPubKey);
+    const dnaHash = toUint8Array(context.dnas[0].hash); // Use first DNA's hash
+    const cellId: [Uint8Array, Uint8Array] = [dnaHash, agentPubKey];
+    const provenanceBytes = agentPubKey;
+    console.log(`[CallZome] Cell ID built: DNA hash ${dnaHash.length} bytes, Agent ${agentPubKey.length} bytes`);
 
     // Find the DNA in the context
+    console.log(`[CallZome] Looking for DNA in ${context.dnas.length} DNAs`);
     const dna = context.dnas.find((d) => {
       const dnaHashBytes = toUint8Array(d.hash);
       return (
@@ -324,14 +370,22 @@ async function handleCallZome(
     });
 
     if (!dna) {
+      console.error(`[CallZome] DNA not found!`);
       return createErrorResponse(
         message.id,
         `DNA not found in hApp context: ${Buffer.from(dnaHash).toString("hex").substring(0, 16)}...`
       );
     }
 
+    console.log(`[CallZome] DNA found, WASM size: ${dna.wasm.length} bytes`);
+
+    // Normalize payload: convert object-like Uint8Arrays back to real Uint8Arrays
+    // Chrome's message passing converts Uint8Arrays to objects like {0: byte0, 1: byte1, ...}
+    const normalizedPayload = normalizeUint8Arrays(payload);
+
     // Serialize payload to MessagePack
-    const payloadBytes = new Uint8Array(encode(payload));
+    const payloadBytes = new Uint8Array(encode(normalizedPayload));
+    console.log(`[CallZome] Payload serialized: ${payloadBytes.length} bytes`);
 
     // Build zome call request
     const zomeCallRequest: ZomeCallRequest = {
@@ -347,11 +401,33 @@ async function handleCallZome(
 
     // Execute via ribosome
     const result = await callZome(zomeCallRequest);
+    console.log(`[CallZome] Result received:`, result);
+
+    // Unwrap Result<T, E> - throw if Err
+    if (result && typeof result === 'object' && 'Err' in result) {
+      const errorMsg = typeof result.Err === 'string'
+        ? result.Err
+        : JSON.stringify(result.Err);
+      throw new Error(`Zome call failed: ${errorMsg}`);
+    }
+
+    // Extract Ok value if present
+    const unwrappedResult = (result && typeof result === 'object' && 'Ok' in result)
+      ? result.Ok
+      : result;
+
+    // Debug: log what type of data we're returning
+    console.log(`[CallZome] Unwrapped result type:`,
+      unwrappedResult instanceof Uint8Array ? 'Uint8Array' :
+      unwrappedResult instanceof Buffer ? 'Buffer' :
+      Array.isArray(unwrappedResult) ? 'Array' :
+      typeof unwrappedResult,
+      `length:`, unwrappedResult?.length);
 
     // Update last used timestamp
     await happContextManager.touchContext(context.id);
 
-    return createSuccessResponse(message.id, result);
+    return createSuccessResponse(message.id, unwrappedResult);
   } catch (error) {
     console.error("Error in handleCallZome:", error);
     return createErrorResponse(

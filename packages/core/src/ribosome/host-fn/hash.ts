@@ -22,11 +22,11 @@ interface HashInput {
  * Holochain uses Blake2b for hashing, but we'll use SHA-256 as a compatible substitute
  * since Blake2b is not available in Web Crypto API.
  */
-export const hash: HostFunctionImpl = (context, inputPtr) => {
+export const hash: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const input = deserializeFromWasm(instance, inputPtr, 0) as HashInput;
+  const input = deserializeFromWasm(instance, inputPtr, inputLen) as HashInput;
 
   // Handle both direct Uint8Array and structured input
   const data = input instanceof Uint8Array ? input : input.data;

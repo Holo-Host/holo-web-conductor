@@ -31,11 +31,11 @@ interface CreateLinkInput {
  * Returns a random action hash for the create link action.
  * Step 6 will add real link storage.
  */
-export const createLink: HostFunctionImpl = (context, inputPtr) => {
+export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as CreateLinkInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
 
   // Generate mock create link action hash
   const actionHash = new Uint8Array(32);

@@ -1,0 +1,18 @@
+[package]
+name = "test_zome"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hdk = "0.6"
+serde = "1"
+getrandom = "0.3"
+holochain_serialized_bytes = "=0.0.56"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

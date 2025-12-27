@@ -42,7 +42,7 @@ export interface DnaInfo {
  * Returns DNA hash and metadata.
  * For now, returns mock data with basic structure.
  */
-export const dnaInfo: HostFunctionImpl = (context, inputPtr) => {
+export const dnaInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
   // Get DNA hash from cell ID

@@ -22,11 +22,11 @@ interface DeleteLinkInput {
  * Returns a random action hash for the delete link action.
  * Step 6 will add real link deletion.
  */
-export const deleteLink: HostFunctionImpl = (context, inputPtr) => {
+export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, 0) as DeleteLinkInput;
+  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as DeleteLinkInput;
 
   // Generate mock delete link action hash
   const actionHash = new Uint8Array(32);
