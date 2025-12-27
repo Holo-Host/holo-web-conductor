@@ -585,6 +585,62 @@ const payloadBytes = new Uint8Array(encode(paramBytes));
 - Workarounds create more complexity than they solve
 - Need to fix the encoding side, not add hacks on decoding side
 
+### ❌ Failed Solution #5: Removing Result Wrapper from serializeResult (Attempted 3+ Times)
+
+**Attempted**: Modified `serializeResult()` in `packages/core/src/ribosome/serialization.ts` to return raw data instead of wrapping in `{Ok: data}`.
+
+**Original code**:
+```typescript
+export function serializeResult(
+  instance: WebAssembly.Instance,
+  data: unknown
+): bigint {
+  // Wrap in Result::Ok - HDK expects Result<T, WasmError>
+  const result = { Ok: data };
+  const { ptr, len } = serializeToWasm(instance, result);
+  return createI64Result(ptr, len);
+}
+```
+
+**Failed change**:
+```typescript
+export function serializeResult(
+  instance: WebAssembly.Instance,
+  data: unknown
+): bigint {
+  // WRONG: Removed wrapper, serialized raw data
+  const { ptr, len } = serializeToWasm(instance, data);
+  return createI64Result(ptr, len);
+}
+```
+
+**Why It Was Proposed**:
+- Byte-level analysis (investigations/byte-comparison.md) showed double-wrapping occurs: `bin8(41, bin8(39, hash))`
+- Logical reasoning: "If data gets double-wrapped, remove one wrapper layer"
+- Observation: Host function returns `{Ok: Uint8Array(39)}` → 45 bytes, but WASM outputs 47 bytes with extra wrapper
+- Assumption: The {Ok: ...} wrapper at the host function level causes the double-wrapping
+
+**Why It Failed**:
+- **HDK explicitly requires Result<T, WasmError> from host functions**
+- Error message when attempted: `"invalid type: sequence, expected \`Ok\` or \`Err\`"`
+- ALL 7 zome test functions fail immediately with deserialization errors
+- The WASM guest code expects to deserialize Result types from host function returns
+- This is part of the Holochain host function contract - host functions MUST return Result
+
+**Evidence from Holochain Source**:
+- Host functions in Holochain conductor return `Result<T, WasmError>`
+- HDK's host function imports expect Result wrapper
+- The ribosome deserializes host function returns as Result types
+
+**Commit (Reverted)**: cb0776c - "WIP: Step 5.5 - msgpack serialization double-encoding issue"
+
+**Lessons Learned**:
+- **The {Ok: ...} wrapper is NOT optional** - it's a required part of the host function contract
+- Logical reasoning about "remove one wrapper" fails because it ignores protocol requirements
+- The double-wrapping issue must be solved WHILE maintaining the Result wrapper
+- This solution has been attempted **at least 3 times** across multiple sessions, proving the need for this archive
+- The byte-level analysis proved the encoding libraries are correct, so the issue is in the data flow, not the wrapper itself
+
 ### 🔍 What We Know Works
 
 1. **Simple types** (numbers, strings, booleans, objects with primitives) serialize correctly
