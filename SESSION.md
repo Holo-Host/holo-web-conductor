@@ -256,6 +256,117 @@ Database: fishy_happ_contexts v1
 □ Verify agent key created in Lair (open Lair UI, look for "domain:agent" tag)
 ```
 
+## Serialization Debugging Protocol
+
+### If You're Working on Serialization Issues
+
+**STOP and Read First**:
+1. Read the "Failed Solutions Archive" in claude.md (DO NOT retry failed approaches)
+2. Review the serialization flow documented by the Explore agent (ask for agent ad57861 summary if needed)
+3. Check current git status for uncommitted serialization changes
+
+### Debugging Checklist
+
+Before making changes:
+- [ ] I have read the Failed Solutions Archive
+- [ ] I understand WHY previous solutions failed (not just WHAT failed)
+- [ ] I have a hypothesis about the root cause that differs from previous attempts
+- [ ] I can explain how my approach avoids the pitfalls of failed solutions
+
+### Required Logging for Serialization Changes
+
+When debugging serialization issues, add comprehensive logging:
+
+```typescript
+console.log('[Serialization] Input type:', typeof data, Array.isArray(data) ? 'array' : '');
+console.log('[Serialization] Input value:', data);
+console.log('[Serialization] Encoded bytes length:', bytes.length);
+console.log('[Serialization] First 20 bytes:', Array.from(bytes.slice(0, 20)));
+console.log('[Serialization] Decoded back:', decode(bytes));
+```
+
+Compare byte sequences:
+1. What Fishy produces
+2. What real Holochain conductor produces (if available)
+3. What the WASM expects to receive
+
+### Testing Requirements
+
+Any serialization changes MUST:
+1. Pass all existing serialization tests (34 tests in core)
+2. Add new tests for the specific failure case
+3. Test with actual WASM (not just mock functions)
+4. Verify round-trip: JS → msgpack → WASM → msgpack → JS
+
+### Byte-Level Comparison Methodology
+
+**Step 1: Create Rust test program** to generate expected bytes:
+```rust
+// In ../holochain or a test directory
+use holochain_integrity_types::prelude::*;
+use holochain_serialized_bytes::prelude::*;
+
+fn main() {
+    // Test the exact same data structure
+    let hash = ActionHash::from_raw_bytes(vec![0u8; 39]);
+    let result: Result<ActionHash, ()> = Ok(hash);
+    let extern_io = ExternIO::encode(&result).unwrap();
+    let bytes = rmp_serde::to_vec(&extern_io).unwrap();
+
+    println!("Bytes: {:?}", bytes);
+    println!("Length: {}", bytes.len());
+    println!("First 20: {:?}", &bytes[..20.min(bytes.len())]);
+}
+```
+
+**Step 2: Compare with TypeScript output**:
+```typescript
+const hash = new Uint8Array(39); // all zeros
+const result = {Ok: hash};
+const paramBytes = encode(result);
+const externIOBytes = encode(paramBytes);
+
+console.log('Bytes:', Array.from(externIOBytes));
+console.log('Length:', externIOBytes.length);
+console.log('First 20:', Array.from(externIOBytes.slice(0, 20)));
+```
+
+**Step 3: Document differences**:
+- If bytes match: Issue is elsewhere (decoding, WASM interface, memory handling)
+- If bytes differ: Document EXACTLY where they differ and why
+- Create test case with expected bytes from Rust program
+
+### Known Working Configuration (Baseline)
+
+If serialization changes break basic functionality, revert to:
+- **Commit**: d688d59 - "Step 5 Complete: WASM ribosome with 20 host functions"
+- **Tests Passing**: 34/34 core tests, 79/79 extension tests
+- **Known Working**: Simple types, non-binary data
+- **Known Broken**: Binary data (ActionHash/EntryHash) double-encoding
+
+### Emergency Revert Procedure
+
+If you've made changes that break the build or tests:
+
+```bash
+# 1. Check what's changed
+git status
+git diff
+
+# 2. If in doubt, revert serialization files
+git checkout d688d59 -- packages/core/src/ribosome/serialization.ts
+git checkout d688d59 -- packages/core/src/ribosome/serialization.test.ts
+git checkout d688d59 -- packages/extension/src/background/index.ts
+
+# 3. Rebuild and test
+cd packages/core
+npm test
+
+cd ../extension
+npm test
+npm run build
+```
+
 ## Next Step: Step 6 - Local Chain Data Storage
 
 **Goal**: Implement source chain storage with IndexedDB for persistent CRUD operations.

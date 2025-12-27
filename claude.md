@@ -38,6 +38,46 @@ packages/
     └── src/
 ```
 
+---
+
+## Holochain Client Compatibility
+
+### Web-App Development Constraint
+
+Web-app developers building applications for this extension will use the standard **holochain-client-js** library (https://github.com/holochain/holochain-client-js). This project MUST maintain compatibility with those types and interfaces.
+
+**Key Types** (all using `Uint8Array`):
+- `AgentPubKey` - 39-byte Uint8Array
+- `ActionHash` - 39-byte Uint8Array
+- `EntryHash` - 39-byte Uint8Array
+- `DnaHash` - 39-byte Uint8Array
+- `CellId` - Tuple of `[DnaHash, AgentPubKey]`
+
+**Call Signatures**:
+```typescript
+interface CallZomeRequest {
+  cell_id: CellId;           // [DnaHash, AgentPubKey]
+  zome_name: string;
+  fn_name: string;
+  provenance?: AgentPubKey;  // Uint8Array
+  payload?: any;             // Msgpack-serializable data
+}
+```
+
+**Critical Requirements**:
+1. Hash types MUST remain as `Uint8Array` (not base64 strings or objects)
+2. Return values from zome calls MUST match holochain-client-js expectations
+3. `AppInfo` structure MUST follow the same schema as standard Holochain
+4. Future shim layer will auto-detect extension context (no code changes needed in web-apps)
+
+**Serialization Contract**:
+- Data flow: Web-app (JS types) → Extension (Chrome messaging) → WASM (msgpack) → Host functions → Back through stack
+- **Chrome messaging converts Uint8Arrays to objects** with numeric keys `{0: 1, 1: 2, ...}`
+- Extension must normalize back to Uint8Array before processing
+- WASM expects msgpack-encoded bytes in exact format used by Holochain's `holochain_serialized_bytes` crate
+
+---
+
 ## Reference Repos (local paths)
 
 - **Holochain**: `../holochain` - Main conductor, ribosome, HDK/HDI
@@ -445,6 +485,13 @@ Step 2.5 (Lair UI) ✓
 3. Different portions of the plan, or even the same plan may be worked on from different workstations, so claude must be set up to pick up sessions where they were left off.
 4. Perfect is the enemy of the good. This plan should not be implemented to the highest possible standard of efficiency or robustness, but rather in a way that allows for reaching the functionality goals in reasonable time, and iterating on quality goals over time.
 5. Don't add claude co-authored/generated messages in commit descriptions
+6. **Avoiding Solution Loops**: When debugging persistent issues (especially serialization):
+   - ALWAYS read the "Failed Solutions Archive" before proposing solutions
+   - Document WHY a solution failed, not just WHAT failed
+   - Before retrying a similar approach, explain how it differs from the failed attempt
+   - Use the Explore agent to research Holochain's actual implementation before making assumptions
+   - Add comprehensive logging to compare byte-level differences
+   - DO NOT assume version incompatibilities without proof
 
 ---
 
@@ -458,6 +505,452 @@ Step 2.5 (Lair UI) ✓
 | IndexedDB size limits | May hit storage caps | Implement LRU cache for DHT data, keep source chain complete |
 | hc-http-gw compatibility | API may change | Pin to specific version, abstract network layer |
 | Cross-browser compatibility | Firefox/Chrome differences | Use webextension-polyfill, test on both |
+
+---
+
+## Failed Solutions Archive
+
+> **Purpose**: This section documents serialization solutions that have been attempted and FAILED. Do NOT retry these approaches without a fundamentally different understanding of the root cause.
+
+### Problem Statement
+
+**Symptom**: Binary data (Uint8Array/ActionHash) returned from host functions gets double-encoded:
+- Input: `{Ok: Uint8Array(39)}` → Serialized to 45 bytes with format `bin8(39, [hash])`
+- WASM output: 47 bytes with format `bin8(41, bin8(39, [hash]))`
+- The inner `bin8(39)` wrapper gets re-wrapped in `bin8(41)`
+- Rust receives `[196, 39, ...]` (msgpack bin8 marker) instead of hash bytes
+
+**Root Cause (Current Understanding)**: The ExternIO double-encoding pattern in background/index.ts:
+```javascript
+// First encode: parameter → msgpack bytes
+const paramBytes = new Uint8Array(encode(normalizedPayload));
+// Second encode: bytes → msgpack binary (wraps in another bin8)
+const payloadBytes = new Uint8Array(encode(paramBytes));
+```
+
+### ❌ Failed Solution #1: msgpack-bridge WASM Module
+
+**Attempted**: Built a separate WASM-based serialization bridge using Rust's `rmpv` library to ensure bit-for-bit compatibility with Holochain's msgpack encoding.
+
+**Why It Failed**:
+- Created `packages/msgpack-bridge/` with Rust codec using `rmpv` 1.3 (same version as Holochain)
+- Compiled to WASM with wasm-pack
+- Added initialization complexity for service workers
+- **Result**: The double-encoding issue persisted even with Rust codec
+- **Root Cause Not Addressed**: Using the same codec doesn't solve the ExternIO wrapping pattern issue
+
+**Commit**: 77fab6a - "feat: add serialization bridge solutions (broken)"
+
+**Lessons Learned**:
+- The issue is NOT codec incompatibility between @msgpack/msgpack and rmp-serde
+- The issue is NOT about which library does the encoding
+- The issue IS about how data is wrapped/unwrapped for ExternIO format
+
+### ❌ Failed Solution #2: Removing Double-Encoding
+
+**Attempted**: Removed the second `encode()` call to eliminate double-wrapping.
+
+**Why It Failed**:
+- WASM expects ExternIO format which requires specific byte wrapping
+- Removing the wrapper breaks the calling convention
+- HDK on the WASM side expects a specific format
+
+**Lessons Learned**:
+- Cannot arbitrarily change the ExternIO format without coordinating with WASM-side expectations
+- The HDK and host function interface has a contract that must be honored
+
+### ❌ Failed Solution #3: Converting Uint8Arrays to Plain Arrays
+
+**Attempted**: Convert Uint8Array to regular JavaScript arrays before encoding to avoid msgpack binary type.
+
+**Why It Failed**:
+- msgpack treats arrays differently than binary data
+- Resulted in different encoding format that WASM couldn't parse
+- Lost semantic meaning of "this is binary data"
+
+**Lessons Learned**:
+- Type semantics matter - binary data vs array of numbers are different
+- msgpack format must match what Rust's serde expects
+
+### ❌ Failed Solution #4: Double-Decode Workaround
+
+**Attempted**: Add extra decode step on the receiving end to unwrap double-encoded data.
+
+**Why It Failed**:
+- Band-aid solution that doesn't address root cause
+- Breaks for data that's correctly single-encoded
+- Creates asymmetry in the serialization pipeline
+
+**Lessons Learned**:
+- Workarounds create more complexity than they solve
+- Need to fix the encoding side, not add hacks on decoding side
+
+### 🔍 What We Know Works
+
+1. **Simple types** (numbers, strings, booleans, objects with primitives) serialize correctly
+2. **Chrome message passing normalization** (normalizeUint8Arrays) correctly handles Uint8Array → object conversion
+3. **msgpack round-trip** for non-binary data works fine
+4. **WASM compilation and execution** works correctly
+5. **Host function registry** and calling mechanism works
+
+### 🔍 What Doesn't Work
+
+1. **Binary data in host function returns** - Gets double-encoded when returning ActionHash/EntryHash
+2. **Nested Uint8Arrays** - When wrapped in Result types like `{Ok: Uint8Array}`
+
+### 📚 ExternIO Deep Dive - THE ACTUAL CONTRACT
+
+**Source**: `/home/eric/code/metacurrency/holochain/holochain/crates/holochain_integrity_types/src/zome_io.rs`
+
+ExternIO is Holochain's boundary type for all data crossing the WASM boundary:
+
+```rust
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct ExternIO(#[serde(with = "serde_bytes")] pub Vec<u8>);
+
+impl ExternIO {
+    pub fn encode<I>(input: I) -> Result<Self, SerializedBytesError>
+    where I: serde::Serialize + std::fmt::Debug,
+    {
+        Ok(Self(holochain_serialized_bytes::encode(&input)?))
+    }
+
+    pub fn decode<O>(&self) -> Result<O, SerializedBytesError>
+    where O: serde::de::DeserializeOwned + std::fmt::Debug,
+    {
+        holochain_serialized_bytes::decode(&self.0)
+    }
+}
+```
+
+**KEY INSIGHTS**:
+
+1. **`#[serde(with = "serde_bytes")]`** - This annotation tells serde to treat the Vec<u8> as raw bytes, NOT as a sequence
+   - When serialized with msgpack, it becomes `bin8`/`bin16`/`bin32` format
+   - When deserialized, it expects msgpack binary format
+
+2. **ExternIO.encode() ALREADY does msgpack encoding** - The input data gets msgpack-encoded into bytes, then wrapped in ExternIO
+
+3. **The Double-Encoding Pattern IS INTENTIONAL**:
+   ```
+   Data (e.g., ActionHash)
+     → msgpack encode (inside ExternIO.encode())
+     → Vec<u8> bytes
+     → ExternIO(Vec<u8>)
+     → msgpack encode again (when ExternIO itself is serialized)
+     → msgpack bin8 wrapper around the inner msgpack bytes
+   ```
+
+4. **On the WASM side**, when a function returns `ExternIO`:
+   - The return value is ALREADY msgpack-encoded data wrapped in ExternIO
+   - The ExternIO itself gets serialized as msgpack binary
+   - The host receives: `bin8(length, [inner_msgpack_bytes])`
+
+5. **For zome calls INPUT**:
+   - Web-page calls with payload (e.g., `{foo: "bar"}`)
+   - Extension should: `ExternIO.encode(payload)` equivalent in TypeScript
+   - This means: `encode(payload)` → bytes → then wrap those bytes as msgpack binary
+
+6. **For host function RETURN values**:
+   - Host function has data (e.g., `{Ok: ActionHash}`)
+   - Host must: `ExternIO.encode(data)` equivalent
+   - Return to WASM as i64 (pointer + length)
+   - WASM receives msgpack bytes that it can decode
+
+**THE CRITICAL QUESTION**: Is our TypeScript implementation correctly mimicking ExternIO's double-encoding?
+
+Current implementation in `background/index.ts`:
+```javascript
+// Encode the zome parameter
+const paramBytes = new Uint8Array(encode(normalizedPayload));
+// Wrap in ExternIO format by encoding the bytes again
+const payloadBytes = new Uint8Array(encode(paramBytes));
+```
+
+**Potential Issue**: The second `encode(paramBytes)` treats the Uint8Array as msgpack binary type, but does it match exactly what `#[serde(with = "serde_bytes")]` produces?
+
+**Test This**: Compare byte-for-byte:
+1. Rust: `ExternIO::encode(data)` → serialize → what bytes?
+2. TypeScript: `encode(encode(data))` → what bytes?
+3. Do they match?
+
+### 🧬 Meta-Analysis: The msgpack-bridge Back-and-Forth
+
+**WHY does the msgpack-bridge keep being reconsidered, then rejected, then reconsidered again?**
+
+This pattern reveals a deeper issue with how Claude approaches the problem:
+
+**The Loop**:
+1. Claude sees double-encoding issue
+2. Claude suspects @msgpack/msgpack vs rmp-serde incompatibility
+3. Claude builds msgpack-bridge WASM module using Rust's rmpv
+4. Claude tests and sees problem persists
+5. Claude realizes it's not about the codec
+6. Claude reverts to @msgpack/msgpack
+7. **[Time passes, new session starts]**
+8. Claude sees double-encoding issue again...
+9. **GOTO step 2** (loop!)
+
+**Root Cause of the Loop**:
+- **Symptom focus** instead of understanding the protocol
+- **Assumption** that matching Rust's library = matching behavior
+- **Missing**: Deep understanding of ExternIO contract (now documented above!)
+- **Missing**: Byte-level comparison of what Holochain actually produces vs what we produce
+
+**The msgpack-bridge IS technically correct** - using rmpv WILL produce identical bytes to Holochain for the SAME operations. But:
+- The complexity of WASM initialization in service workers is HIGH
+- The debugging is HARDER (binary WASM vs readable TypeScript)
+- **IT DOESN'T SOLVE THE ROOT ISSUE** which is about understanding the ExternIO protocol
+
+**When to Consider msgpack-bridge**:
+✅ **YES** - If byte-level testing proves @msgpack/msgpack produces different bytes than rmpv for the same input
+✅ **YES** - If we find edge cases where JavaScript msgpack != Rust msgpack (e.g., handling of Map vs Object)
+
+❌ **NO** - If we haven't done byte-level comparison first
+❌ **NO** - If we don't understand what ExternIO expects
+❌ **NO** - As a first attempt before understanding the protocol
+
+**Decision Framework for Future Sessions**:
+
+Before considering msgpack-bridge again, MUST complete this checklist:
+- [ ] Have we documented the exact bytes Holochain produces for test cases?
+- [ ] Have we documented the exact bytes our TypeScript produces?
+- [ ] Do the bytes differ? If YES, where exactly?
+- [ ] Have we tested with actual Holochain WASM to see what it expects/produces?
+- [ ] Can we explain WHY the bytes differ (not just that they do)?
+- [ ] Have we tried adjusting the TypeScript encoding to match?
+- [ ] Have we exhausted simpler solutions?
+
+**ONLY AFTER** answering these questions should msgpack-bridge be reconsidered.
+
+**The Real Solution Likely Involves**:
+- Understanding how Holochain's HDK expects data formatted
+- Matching the exact byte sequence for ExternIO serialization
+- Potentially adjusting how we handle Uint8Array in TypeScript
+- NOT necessarily using the same Rust library
+
+### 🎯 Next Steps Guidance
+
+Before attempting a new solution, ensure you can answer:
+1. **Why did the previous approaches fail?** (Understand root cause, not symptoms)
+2. **What is the ExternIO format contract?** ✅ NOW DOCUMENTED ABOVE
+3. **How does Holochain's conductor handle this?** (Study real_ribosome.rs implementation)
+4. **What does the HDK expect to receive?** (Trace the WASM-side code)
+5. **Does TypeScript's msgpack.encode(Uint8Array) produce the same bytes as Rust's `#[serde(with = "serde_bytes")]`?**
+
+**Required Testing**:
+- Create a test Rust program that serializes ExternIO with different payloads
+- Capture the exact bytes produced
+- Compare with TypeScript implementation byte-for-byte
+- Test specifically with `{Ok: Uint8Array(39)}` (ActionHash)
+
+**DO NOT**:
+- Retry msgpack version changes without understanding ExternIO contract ✅ NOW UNDERSTOOD
+- Add more encoding/decoding layers without fixing root cause
+- Assume the issue is codec compatibility
+- Make changes without comprehensive logging to compare byte sequences
+
+---
+
+## Serialization Testing Strategy
+
+### Overview
+
+Serialization bugs are notoriously difficult because:
+- Small byte differences cause failures
+- Errors manifest far from the root cause
+- "Works in tests, fails in production" scenarios
+
+This testing strategy ensures serialization changes are validated thoroughly.
+
+### Level 1: Unit Tests (Already Implemented)
+
+**Location**: `packages/core/src/ribosome/serialization.test.ts` (21 tests)
+
+**Coverage**:
+- Round-trip encoding/decoding for primitive types
+- Uint8Array handling
+- WASM memory operations (read/write)
+- Result type wrapping `{Ok: T}` and `{Err: E}`
+
+**When to Run**: After ANY change to serialization.ts
+**Expected**: ALL 21 tests must pass
+
+### Level 2: Byte-Level Comparison Tests (NEEDS IMPLEMENTATION)
+
+**Purpose**: Verify our TypeScript produces identical bytes to Holochain's Rust
+
+**Implementation Approach**:
+
+1. **Create Rust test program** (`test-serialization/src/main.rs`):
+   ```rust
+   use holochain_integrity_types::prelude::*;
+   use holochain_serialized_bytes::prelude::*;
+
+   fn main() {
+       // Test case 1: Simple object
+       let data = json!({"foo": "bar"});
+       let extern_io = ExternIO::encode(&data).unwrap();
+       let bytes = rmp_serde::to_vec(&extern_io).unwrap();
+       println!("TEST_CASE_1: {:?}", bytes);
+
+       // Test case 2: ActionHash in Result
+       let hash = ActionHash::from_raw_bytes(vec![0u8; 39]);
+       let result: Result<ActionHash, ()> = Ok(hash);
+       let extern_io = ExternIO::encode(&result).unwrap();
+       let bytes = rmp_serde::to_vec(&extern_io).unwrap();
+       println!("TEST_CASE_2: {:?}", bytes);
+
+       // Test case 3: Nested structure
+       // ... more test cases
+   }
+   ```
+
+2. **Capture Rust output**:
+   ```bash
+   cargo run > rust-bytes.txt
+   ```
+
+3. **Create TypeScript comparison test**:
+   ```typescript
+   import { encode } from '@msgpack/msgpack';
+
+   describe('Byte-level compatibility with Holochain', () => {
+     it('matches Rust for simple object', () => {
+       const data = {foo: 'bar'};
+       const paramBytes = encode(data);
+       const externIOBytes = encode(paramBytes);
+
+       // Expected from Rust test program
+       const expected = [196, 131, 161, 102, ...]; // bytes from rust-bytes.txt
+       expect(Array.from(externIOBytes)).toEqual(expected);
+     });
+
+     it('matches Rust for ActionHash in Result', () => {
+       const hash = new Uint8Array(39); // all zeros
+       const result = {Ok: hash};
+       const paramBytes = encode(result);
+       const externIOBytes = encode(paramBytes);
+
+       const expected = [...]; // from TEST_CASE_2
+       expect(Array.from(externIOBytes)).toEqual(expected);
+     });
+   });
+   ```
+
+4. **If bytes DON'T match**: Document the differences and investigate why
+5. **If bytes DO match**: The issue is elsewhere (not encoding, maybe decoding or WASM interface)
+
+### Level 3: Integration Tests with Real WASM (NEEDS IMPLEMENTATION)
+
+**Purpose**: Verify the entire pipeline works with actual Holochain WASM
+
+**Prerequisites**:
+- A simple Holochain zome compiled to WASM
+- Zome functions that return ActionHash, EntryHash, etc.
+
+**Test Setup**:
+```javascript
+// test-zomes/simple/src/lib.rs
+use hdk::prelude::*;
+
+#[hdk_extern]
+fn get_my_agent() -> ExternResult<AgentPubKey> {
+    Ok(agent_info()?.agent_latest_pubkey)
+}
+
+#[hdk_extern]
+fn echo_hash(hash: ActionHash) -> ExternResult<ActionHash> {
+    Ok(hash)
+}
+```
+
+**Compile**:
+```bash
+cargo build --release --target wasm32-unknown-unknown
+```
+
+**Integration Test**:
+```typescript
+import { callZome } from './ribosome';
+
+describe('Real WASM Integration', () => {
+  it('returns AgentPubKey from zome', async () => {
+    const result = await callZome({
+      dnaHash,
+      zomeName: 'simple',
+      fnName: 'get_my_agent',
+      payload: null,
+    });
+
+    expect(result).toHaveProperty('Ok');
+    expect(result.Ok).toBeInstanceOf(Uint8Array);
+    expect(result.Ok.length).toBe(39);
+  });
+
+  it('round-trips ActionHash through zome', async () => {
+    const inputHash = new Uint8Array(39).fill(42);
+    const result = await callZome({
+      dnaHash,
+      zomeName: 'simple',
+      fnName: 'echo_hash',
+      payload: inputHash,
+    });
+
+    expect(result.Ok).toEqual(inputHash);
+  });
+});
+```
+
+### Level 4: End-to-End Browser Tests (MANUAL)
+
+**Purpose**: Verify serialization in real browser environment
+
+**Test Page**: `packages/extension/test/wasm-test.html` (already exists)
+
+**Manual Test Cases**:
+1. Load extension in Chrome
+2. Install hApp with real WASM
+3. Call zome function that returns AgentPubKey
+4. Verify console shows correct deserialized value (not double-encoded)
+5. Call zome function that creates entry and returns ActionHash
+6. Verify ActionHash is correct format
+
+### Test-Driven Development Flow
+
+When fixing serialization issues:
+
+1. **Reproduce** - Create a failing test that demonstrates the bug
+2. **Isolate** - Determine which level the bug occurs (unit/byte/integration/e2e)
+3. **Compare** - If byte-level, compare with Rust output
+4. **Fix** - Make minimum change to fix the specific issue
+5. **Verify** - All levels of tests pass
+6. **Commit** - With clear explanation of what was wrong and how it was fixed
+
+### Debugging Helpers
+
+**Add to serialization.ts**:
+```typescript
+export function debugEncode(data: any, label: string): Uint8Array {
+  console.log(`[${label}] Input:`, data);
+  console.log(`[${label}] Input type:`, typeof data, Array.isArray(data) ? 'array' : '');
+  const bytes = encode(data);
+  console.log(`[${label}] Encoded length:`, bytes.length);
+  console.log(`[${label}] First 20 bytes:`, Array.from(bytes.slice(0, 20)));
+  console.log(`[${label}] Decoded back:`, decode(bytes));
+  return new Uint8Array(bytes);
+}
+```
+
+**Use in ribosome**:
+```typescript
+const paramBytes = debugEncode(normalizedPayload, 'PARAM');
+const payloadBytes = debugEncode(paramBytes, 'EXTERN_IO');
+```
+
+This produces detailed logs for comparing with Rust output.
 
 ---
 
