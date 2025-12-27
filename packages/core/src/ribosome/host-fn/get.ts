@@ -9,13 +9,15 @@ import { deserializeFromWasm, serializeResult } from "../serialization";
 
 /**
  * Get input structure
+ *
+ * Note: The input is actually an array of GetInput objects for batch operations
  */
 interface GetInput {
   /** Hash of the action or entry to get */
-  hash: Uint8Array;
+  any_dht_hash: Uint8Array;
 
   /** Get options */
-  options?: {
+  get_options?: {
     strategy?: string;
   };
 }
@@ -32,8 +34,10 @@ interface Record {
         timestamp: number;
         action_seq: number;
         prev_action: Uint8Array | null;
-        entry_type?: { App: { id: number; zome_id: number; visibility: string } };
+        entry_type?: { App: { entry_index: number; zome_index: number; visibility: string } };
         entry_hash?: Uint8Array;
+        entry_index?: number;
+        weight?: { bucket_id: number; units: number; rate_bytes: number };
       };
       hash: Uint8Array;
     };
@@ -41,8 +45,8 @@ interface Record {
   };
   entry?: {
     Present: {
-      entry_type: string;
-      entry: Uint8Array;
+      entry_type: string;  // "App", "Agent", etc. (serde tag)
+      entry: Uint8Array;   // The actual entry bytes (serde content)
     };
   } | null;
 }
@@ -57,14 +61,15 @@ interface Record {
 export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
-  // Deserialize input
-  const input = deserializeFromWasm(instance, inputPtr, inputLen) as GetInput;
-  const { hash } = input;
+  // Deserialize input - it's an array of GetInput objects
+  const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as GetInput[];
+  const input = inputs[0]; // Get first element
+  const { any_dht_hash } = input;
 
   // Debug: Check what we received
   console.log(`[get] Received hash:`,
-    hash instanceof Uint8Array ? `Uint8Array(${hash.length})` : typeof hash,
-    `first 10 bytes:`, hash instanceof Uint8Array ? Array.from(hash.slice(0, 10)) : 'N/A');
+    any_dht_hash instanceof Uint8Array ? `Uint8Array(${any_dht_hash.length})` : typeof any_dht_hash,
+    `first 10 bytes:`, any_dht_hash instanceof Uint8Array ? Array.from(any_dht_hash.slice(0, 10)) : 'N/A');
 
   // Create mock record
   const [_dnaHash, rawAgentPubKey] = callContext.cellId;
@@ -75,6 +80,18 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   agentPubKey.set(rawAgentPubKey, 3); // 32-byte public key
   agentPubKey.set([0, 0, 0, 0], 35); // location (all zeros)
 
+  // Create a mock previous action hash (39 bytes) - not genesis
+  const prevActionHash = new Uint8Array(39);
+  prevActionHash.set([132, 41, 36], 0); // ACTION_PREFIX
+  prevActionHash.set(new Uint8Array(32).fill(1), 3); // Different hash content
+  prevActionHash.set([0, 0, 0, 0], 35); // location
+
+  // Create a mock entry hash (39 bytes) with ENTRY_PREFIX
+  const entryHash = new Uint8Array(39);
+  entryHash.set([132, 33, 36], 0); // ENTRY_PREFIX (not ACTION_PREFIX!)
+  entryHash.set(any_dht_hash.slice(3, 35), 3); // Copy hash content from input
+  entryHash.set([0, 0, 0, 0], 35); // location
+
   const mockRecord: Record = {
     signed_action: {
       hashed: {
@@ -82,19 +99,21 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
           type: "Create",
           author: agentPubKey, // 39-byte AgentPubKey
           timestamp: Date.now() * 1000, // microseconds
-          action_seq: 0,
-          prev_action: null, // Genesis
-          entry_type: { App: { id: 0, zome_id: 0, visibility: "Public" } },
-          entry_hash: hash, // Should be 39-byte EntryHash
+          action_seq: 1, // Not genesis
+          prev_action: prevActionHash, // Previous action hash
+          entry_type: { App: { entry_index: 0, zome_index: 0, visibility: "Public" } },
+          entry_hash: entryHash, // 39-byte EntryHash with correct prefix
+          entry_index: 0, // Index of entry in action
+          weight: { bucket_id: 0, units: 0, rate_bytes: 0 }, // EntryRateWeight
         },
-        hash: hash, // Should be 39-byte ActionHash
+        hash: any_dht_hash, // 39-byte ActionHash (input hash)
       },
       signature: new Uint8Array(64), // Empty signature
     },
     entry: {
       Present: {
-        entry_type: "App",
-        entry: new Uint8Array(0), // Empty entry
+        entry_type: "App",  // serde tag field
+        entry: new Uint8Array(0),  // serde content field (AppEntryBytes - empty for mock)
       },
     },
   };
@@ -103,6 +122,7 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
     "[get] Returning MOCK record - Step 6 will add real storage"
   );
 
-  // Return Some(record) - in Holochain this would be Option<Record>
-  return serializeResult(instance, mockRecord);
+  // Return Vec<Option<Record>> - the zome expects a vector of optional records
+  // Some(record) is represented as the record itself (not null)
+  return serializeResult(instance, [mockRecord]);
 };

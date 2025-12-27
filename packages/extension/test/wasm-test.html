@@ -230,15 +230,23 @@
             return value;
         }
 
-        // Helper to format results for display, converting hashes to base64
+        // Helper to convert bytes to hex string
+        function bytesToHex(bytes) {
+            return Array.from(bytes)
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        // Helper to format results for display, converting hashes to base64 and signatures to hex
         function formatForDisplay(value) {
             if (value == null) return value;
 
             // Try to convert to Uint8Array if it's a Chrome-serialized object
             const normalized = maybeUint8Array(value);
 
-            // Handle Uint8Array - check if it's a 39-byte hash
+            // Handle Uint8Array
             if (normalized instanceof Uint8Array) {
+                // 39-byte hash - convert to base64
                 if (normalized.length === 39 && normalized[0] === 132 && normalized[2] === 36) {
                     try {
                         return encodeHashToBase64(normalized);
@@ -247,11 +255,35 @@
                         return `Uint8Array(${normalized.length})`;
                     }
                 }
+                // 64-byte signature - convert to hex
+                if (normalized.length === 64) {
+                    return bytesToHex(normalized);
+                }
+                // Other byte arrays - show abbreviated form
                 return `Uint8Array(${normalized.length}): [${Array.from(normalized.slice(0, 8)).join(',')}...]`;
             }
 
-            // Handle arrays
+            // Handle arrays - check for signatures and hashes first
             if (Array.isArray(value)) {
+                // Check if it's a byte array (all numbers 0-255)
+                const isByteArray = value.length > 0 && value.every(v => typeof v === 'number' && v >= 0 && v <= 255);
+
+                if (isByteArray) {
+                    // 39-byte hash array
+                    if (value.length === 39 && value[0] === 132 && value[2] === 36) {
+                        try {
+                            return encodeHashToBase64(new Uint8Array(value));
+                        } catch (e) {
+                            console.warn('Failed to encode hash:', e);
+                        }
+                    }
+                    // 64-byte signature array
+                    if (value.length === 64) {
+                        return bytesToHex(value);
+                    }
+                }
+
+                // Regular array - recurse
                 return value.map(formatForDisplay);
             }
 
@@ -610,7 +642,12 @@
                     function: 'get_test_entry',
                     payload: lastCreatedHash
                 });
-                log(`✓ Entry retrieved: ${JSON.stringify(result, null, 2)}`);
+
+                // Format result with base64 hashes and hex signatures
+                const formatted = formatForDisplay(result);
+                log(`✓ Entry retrieved: ${JSON.stringify(formatted, null, 2)}`);
+                console.log('Get entry result (formatted):', formatted);
+
                 showStatus('zome-test-status', '<strong>Success!</strong> Entry retrieved (mock data from Step 5).', 'success');
                 markChecked('check-14');
             } catch (error) {
