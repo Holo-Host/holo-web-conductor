@@ -28,6 +28,7 @@ import { getHappContextManager } from "../lib/happ-context-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
 import type { InstallHappRequest } from "@fishy/core";
 import { callZome, type ZomeCallRequest } from "@fishy/core/ribosome";
+import { decodeResult } from "../utils/result-decoder.js";
 import { encode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 
@@ -101,6 +102,45 @@ function normalizeUint8Arrays(data: any): any {
   }
 
   // Primitives and Uint8Array instances pass through
+  return data;
+}
+
+/**
+ * Convert Uint8Arrays to regular Arrays for Chrome message passing
+ *
+ * Chrome's structured cloning algorithm converts Uint8Arrays to plain objects
+ * with numeric keys (e.g., {0: 1, 1: 2, ...}). By explicitly converting to
+ * Arrays, we preserve the data in a cleaner format that the UI can easily
+ * work with.
+ *
+ * The UI layer will convert Arrays back to Uint8Arrays before formatting
+ * for display (e.g., base64 encoding for hashes).
+ */
+function serializeForTransport(data: any): any {
+  if (data === null || data === undefined) {
+    return data;
+  }
+
+  // Convert Uint8Array to regular Array
+  if (data instanceof Uint8Array) {
+    return Array.from(data);
+  }
+
+  // Recurse into arrays
+  if (Array.isArray(data)) {
+    return data.map(serializeForTransport);
+  }
+
+  // Recurse into objects
+  if (typeof data === 'object') {
+    const serialized: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      serialized[key] = serializeForTransport(value);
+    }
+    return serialized;
+  }
+
+  // Primitives pass through
   return data;
 }
 
@@ -424,10 +464,23 @@ async function handleCallZome(
       typeof unwrappedResult,
       `length:`, unwrappedResult?.length);
 
+    // Decode the msgpack-wrapped result and convert hashes to base64
+    const decodedResult = unwrappedResult instanceof Uint8Array
+      ? decodeResult(unwrappedResult)
+      : unwrappedResult;
+
+    console.log(`[CallZome] Decoded result:`, decodedResult);
+
+    // Convert Uint8Arrays to regular Arrays for Chrome message passing
+    // Chrome's structured cloning converts Uint8Arrays to objects with numeric keys
+    // By explicitly converting to Arrays, we preserve the data cleanly
+    const transportSafeResult = serializeForTransport(decodedResult);
+    console.log(`[CallZome] Transport-safe result:`, transportSafeResult);
+
     // Update last used timestamp
     await happContextManager.touchContext(context.id);
 
-    return createSuccessResponse(message.id, unwrappedResult);
+    return createSuccessResponse(message.id, transportSafeResult);
   } catch (error) {
     console.error("Error in handleCallZome:", error);
     return createErrorResponse(

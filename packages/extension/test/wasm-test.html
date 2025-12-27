@@ -203,10 +203,69 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { encodeHashToBase64 } from 'https://esm.sh/@holochain/client@0.20.1';
+
         let output = document.getElementById('output');
         let connectionEstablished = false;
         let contextId = null;
+
+        // Helper to convert Arrays back to Uint8Array for hash formatting
+        function maybeUint8Array(value) {
+            if (value instanceof Uint8Array) return value;
+
+            // Check if it's a regular Array that looks like hash bytes
+            // The background script explicitly converts Uint8Arrays to Arrays
+            // before sending through Chrome message passing
+            if (Array.isArray(value)) {
+                // Hashes are 39 bytes with format [132, type, 36, ...]
+                // where type is 32 (Agent), 41 (Action), 33 (Entry), or 45 (DNA)
+                if (value.length === 39 && value[0] === 132 && value[2] === 36) {
+                    return new Uint8Array(value);
+                }
+                // NOTE: 41-byte wrapped hashes (bin8 wrapper) should NEVER reach the UI
+                // If you see a 41-byte array starting with [196, 39, ...], something is wrong
+            }
+
+            return value;
+        }
+
+        // Helper to format results for display, converting hashes to base64
+        function formatForDisplay(value) {
+            if (value == null) return value;
+
+            // Try to convert to Uint8Array if it's a Chrome-serialized object
+            const normalized = maybeUint8Array(value);
+
+            // Handle Uint8Array - check if it's a 39-byte hash
+            if (normalized instanceof Uint8Array) {
+                if (normalized.length === 39 && normalized[0] === 132 && normalized[2] === 36) {
+                    try {
+                        return encodeHashToBase64(normalized);
+                    } catch (e) {
+                        console.warn('Failed to encode hash:', e);
+                        return `Uint8Array(${normalized.length})`;
+                    }
+                }
+                return `Uint8Array(${normalized.length}): [${Array.from(normalized.slice(0, 8)).join(',')}...]`;
+            }
+
+            // Handle arrays
+            if (Array.isArray(value)) {
+                return value.map(formatForDisplay);
+            }
+
+            // Handle objects
+            if (typeof value === 'object') {
+                const result = {};
+                for (const [key, val] of Object.entries(value)) {
+                    result[key] = formatForDisplay(val);
+                }
+                return result;
+            }
+
+            return value;
+        }
 
         function log(message, isError = false) {
             const timestamp = new Date().toLocaleTimeString();
@@ -395,7 +454,9 @@
                     function: 'get_agent_info',
                     payload: null
                 });
-                log(`✓ Agent Info: ${JSON.stringify(result, null, 2)}`);
+                const formatted = formatForDisplay(result);
+                log(`✓ Agent Info: ${JSON.stringify(formatted, null, 2)}`);
+                console.log('Agent Info (formatted):', formatted);
                 showStatus('zome-test-status', '<strong>Success!</strong> Check console output for agent info.', 'success');
                 markChecked('check-8');
             } catch (error) {
@@ -435,11 +496,31 @@
                 });
                 log(`Raw timestamp result: ${JSON.stringify(result)}`);
 
-                // Handle different serialization formats
-                const secs = result.secs || result[0] || 0;
-                const nanos = result.nanos || result[1] || 0;
+                // Holochain Timestamp is i64 microseconds since Unix epoch
+                let microseconds, secs, nanos;
 
-                const date = new Date(secs * 1000);
+                if (typeof result === 'number') {
+                    // Direct microseconds value
+                    microseconds = result;
+                } else if (result.secs !== undefined) {
+                    // Struct format {secs, nanos}
+                    secs = result.secs;
+                    nanos = result.nanos || 0;
+                    microseconds = secs * 1000000 + Math.floor(nanos / 1000);
+                } else if (Array.isArray(result) && result.length === 2) {
+                    // Tuple format [secs, nanos]
+                    secs = result[0];
+                    nanos = result[1] || 0;
+                    microseconds = secs * 1000000 + Math.floor(nanos / 1000);
+                }
+
+                // Convert microseconds to secs/nanos for display
+                if (secs === undefined) {
+                    secs = Math.floor(microseconds / 1000000);
+                    nanos = (microseconds % 1000000) * 1000;
+                }
+
+                const date = new Date(secs * 1000 + Math.floor(nanos / 1000000));
                 log(`✓ Timestamp: {secs: ${secs}, nanos: ${nanos}} → ${date.toISOString()}`);
                 showStatus('zome-test-status', `<strong>Success!</strong> Got timestamp: ${date.toISOString()}`, 'success');
                 markChecked('check-10');
@@ -494,10 +575,20 @@
                     function: 'create_test_entry',
                     payload: 'Test entry created at ' + new Date().toISOString()
                 });
+
+                // Log raw result details
+                log(`Raw result type: ${Array.isArray(result) ? 'Array' : typeof result}`);
+                log(`Raw result length: ${result.length}`);
+                log(`Raw result first 10 bytes: [${result.slice(0, 10).join(', ')}]`);
+
                 lastCreatedHash = result;
-                // Convert to array for display
-                const hashBytes = Array.isArray(result) ? result : Array.from(Object.values(result));
-                log(`✓ Entry created! Hash: ${hashBytes.slice(0, 8).join(',')}...`);
+
+                // Format for display (will convert to base64 if it's a hash)
+                const formatted = formatForDisplay(result);
+                log(`✓ Entry created! ActionHash: ${formatted}`);
+                console.log('Create entry result (raw):', result);
+                console.log('Create entry result (formatted):', formatted);
+
                 showStatus('zome-test-status', '<strong>Success!</strong> Entry created. Now try "Get Entry".', 'success');
                 markChecked('check-13');
             } catch (error) {
