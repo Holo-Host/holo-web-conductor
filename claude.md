@@ -641,6 +641,64 @@ export function serializeResult(
 - This solution has been attempted **at least 3 times** across multiple sessions, proving the need for this archive
 - The byte-level analysis proved the encoding libraries are correct, so the issue is in the data flow, not the wrapper itself
 
+### ❌ Failed Solution #6: ExternIO Double-Encoding for WASM Boundary
+
+**Attempted**: Implemented ExternIO-style double-encoding/decoding based on Holochain's ExternIO type:
+- Added `serializeExternIO()` and `deserializeExternIO()` helper functions
+- Double-encode: `encode(encode(data))` to create `bin8([msgpack bytes])`
+- Double-decode: `decode(decode(bytes))` to unwrap `bin8` then decode inner msgpack
+- Applied to various WASM boundary crossings (zome inputs, outputs, host function returns)
+
+**Why It Was Proposed**:
+- Found ExternIO in Holochain source: `#[serde(with = "serde_bytes")]` wraps Vec<u8> in msgpack bin8
+- ExternIO::encode() does: data → msgpack → Vec<u8> → serialize → bin8 wrapper
+- Assumed this pattern applied to all WASM boundary crossings
+- Logs showed zome functions returning 47 bytes (potential bin8 wrapper)
+
+**Why It Failed**:
+1. **Zome function inputs**: Applied ExternIO double-encoding, got "Offset is outside the bounds of the DataView"
+   - Error indicated WASM not expecting double-encoded input
+   - Reverted to single encoding (plain msgpack)
+
+2. **Host function returns**: Applied ExternIO double-encoding, got WASM error:
+   ```
+   bytes = [196, 98, 129, 162, 79, 107, ...]
+   Deserialize("invalid value: byte array, expected `Ok` or `Err`")
+   ```
+   - WASM saw bin8 (byte array) when expecting map (Result type)
+   - HDK expects to deserialize Result directly, not unwrap bin8 first
+   - Reverted to single encoding
+
+3. **Zome function outputs**: Applied ExternIO double-decoding, got "Offset is outside the bounds of the DataView"
+   - Indicates zome functions NOT returning ExternIO-wrapped data
+   - Reverted to single decoding
+
+**Evidence**:
+- Testing showed only plain msgpack works (no ExternIO at any boundary)
+- 6/7 test functions work with plain msgpack
+- Only `get_test_entry` fails, but with different error (BadSize, not ExternIO-related)
+
+**Commits**:
+- ExternIO implementation: (uncommitted, reverted)
+- Helper functions remain in serialization.ts but unused
+
+**Lessons Learned**:
+- ExternIO is NOT used at the WASM boundaries we're implementing
+- ExternIO may be specific to certain Holochain contexts (conductor ↔ WASM) not applicable here
+- The test zome may be compiled without ExternIO expectations
+- Cannot assume Holochain source code patterns apply without testing
+- "Offset is outside the bounds of the DataView" = strong signal of wrong encoding approach
+- WASM error messages about deserialize types are diagnostic: "expected X, got Y" reveals format mismatch
+
+**Correct Approach**:
+- Zome inputs: Plain msgpack (single encode)
+- Zome outputs: Plain msgpack (single decode)
+- Host function inputs: Plain msgpack (single decode)
+- Host function returns: Plain msgpack {Ok: data} (single encode)
+
+**Remaining Issue**:
+The original double-wrapping problem persists - `create_test_entry` returns Uint8Array(41) with bin8 wrapper instead of Uint8Array(39) raw hash. This is NOT solved by ExternIO approach.
+
 ### 🔍 What We Know Works
 
 1. **Simple types** (numbers, strings, booleans, objects with primitives) serialize correctly
