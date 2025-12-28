@@ -108,12 +108,12 @@
 <body>
     <div class="container">
         <h1>🐠 Fishy WASM Ribosome Test</h1>
-        <p class="subtitle">Step 5.5: Integration Testing with Real HDK Zome</p>
+        <p class="subtitle">Step 5.7: hApp Bundle Support with DNA Manifests</p>
 
         <div class="warning">
-            <strong>✅ Real HDK WASM:</strong> This test page uses a real Holochain zome
-            compiled with HDK 0.6. It exercises all major host function categories and validates
-            the complete flow from web page → extension → ribosome → WASM → host functions → results.
+            <strong>✅ hApp Bundle Support:</strong> This test page loads a real .happ bundle
+            (packed with hc CLI) that includes DNA manifests. The manifests are used by host
+            functions for proper link/entry type resolution and zome metadata.
         </div>
 
         <!-- Status Check -->
@@ -133,11 +133,12 @@
 
         <!-- Install hApp (required for context) -->
         <div class="section">
-            <h2>3. Install Test hApp</h2>
+            <h2>3. Install Test hApp Bundle</h2>
             <p style="font-size: 14px; color: #666; margin-bottom: 10px;">
-                Install a mock hApp to create the context needed for zome calls.
+                Install the test-zome .happ bundle (packed with hc CLI). The bundle includes
+                DNA manifests that are used by host functions for metadata and type resolution.
             </p>
-            <button id="install-happ-btn" disabled>Install Mock hApp</button>
+            <button id="install-happ-btn" disabled>Install hApp Bundle</button>
             <div id="install-status"></div>
         </div>
 
@@ -166,12 +167,16 @@
                 Test real zome functions that exercise host functions:
             </p>
             <button id="test-agent-info-btn" disabled>Get Agent Info</button>
+            <button id="test-zome-info-btn" disabled>Get Zome Info</button>
             <button id="test-random-btn" disabled>Get Random Bytes</button>
             <button id="test-timestamp-btn" disabled>Get Timestamp</button>
             <button id="test-trace-btn" disabled>Trace Message</button>
             <button id="test-signing-btn" disabled>Test Signing</button>
             <button id="test-create-btn" disabled>Create Entry</button>
             <button id="test-get-btn" disabled>Get Entry</button>
+            <button id="test-get-details-btn" disabled>Get Details</button>
+            <button id="test-update-btn" disabled>Update Entry</button>
+            <button id="test-delete-entry-btn" disabled>Delete Entry</button>
             <button id="test-emit-signal-btn" disabled>Emit Signal</button>
             <button id="test-query-btn" disabled>Query Chain</button>
             <button id="test-create-link-btn" disabled>Create Link</button>
@@ -373,12 +378,16 @@
 
                         // Enable zome test buttons
                         document.getElementById('test-agent-info-btn').disabled = false;
+                        document.getElementById('test-zome-info-btn').disabled = false;
                         document.getElementById('test-random-btn').disabled = false;
                         document.getElementById('test-timestamp-btn').disabled = false;
                         document.getElementById('test-trace-btn').disabled = false;
                         document.getElementById('test-signing-btn').disabled = false;
                         document.getElementById('test-create-btn').disabled = false;
                         document.getElementById('test-get-btn').disabled = false;
+                        document.getElementById('test-get-details-btn').disabled = false;
+                        document.getElementById('test-update-btn').disabled = false;
+                        document.getElementById('test-delete-entry-btn').disabled = false;
                         document.getElementById('test-emit-signal-btn').disabled = false;
                         document.getElementById('test-query-btn').disabled = false;
                         document.getElementById('test-create-link-btn').disabled = false;
@@ -418,46 +427,36 @@
 
         // Install hApp
         document.getElementById('install-happ-btn').addEventListener('click', async () => {
-            log('Installing HDK test zome hApp...');
+            log('Installing test-zome hApp bundle...');
 
-            // Load the real HDK compiled test zome WASM
-            let testZomeWasm;
+            // Load the .happ bundle (packed with hc CLI)
+            let happBundle;
             try {
-                const response = await fetch('test-zome.wasm');
-                testZomeWasm = new Uint8Array(await response.arrayBuffer());
-                log(`✓ Loaded test-zome.wasm (${testZomeWasm.length} bytes)`);
+                const response = await fetch('test.happ');
+                happBundle = new Uint8Array(await response.arrayBuffer());
+                log(`✓ Loaded test.happ bundle (${happBundle.length} bytes)`);
             } catch (error) {
-                log(`Failed to load test-zome.wasm: ${error.message}`, true);
-                showStatus('install-status', '<strong>Error:</strong> Could not load test-zome.wasm', 'error');
+                log(`Failed to load test.happ: ${error.message}`, true);
+                showStatus('install-status', '<strong>Error:</strong> Could not load test.happ bundle', 'error');
                 return;
             }
 
-            // Create DNA hash
-            const dnaHash = new Uint8Array(32);
-            crypto.getRandomValues(dnaHash);
-
             const request = {
-                appName: "Test Zome hApp",
                 appVersion: "0.1.0",
-                dnas: [
-                    {
-                        hash: dnaHash,
-                        wasm: testZomeWasm,
-                        name: "test_zome",
-                        properties: {}
-                    }
-                ]
+                happBundle: happBundle
             };
 
             try {
                 const response = await window.holochain.installHapp(request);
                 contextId = response.contextId;
-                log(`hApp installed! Context ID: ${contextId}`);
-                log(`Agent pub key: ${Array.from(response.agentPubKey).slice(0, 8).join(',')}...`);
-                log(`Cells: ${response.cells.length} created`);
+                log(`✓ hApp installed! Context ID: ${contextId}`);
+                log(`  App: ${response.appName}`);
+                log(`  Agent pub key: ${Array.from(response.agentPubKey).slice(0, 8).join(',')}...`);
+                log(`  Cells: ${response.cells.length} created`);
 
                 showStatus('install-status',
-                    `<strong>hApp installed!</strong><br>
+                    `<strong>hApp bundle installed!</strong><br>
+                    App: <code>${response.appName}</code><br>
                     Context ID: <code>${contextId}</code><br>
                     Agent Key: <code>${Array.from(response.agentPubKey).slice(0,16).join(',')}...</code><br>
                     Cells: ${response.cells.length}`,
@@ -472,12 +471,16 @@
 
                 // Enable zome test buttons
                 document.getElementById('test-agent-info-btn').disabled = false;
+                document.getElementById('test-zome-info-btn').disabled = false;
                 document.getElementById('test-random-btn').disabled = false;
                 document.getElementById('test-timestamp-btn').disabled = false;
                 document.getElementById('test-trace-btn').disabled = false;
                 document.getElementById('test-signing-btn').disabled = false;
                 document.getElementById('test-create-btn').disabled = false;
                 document.getElementById('test-get-btn').disabled = false;
+                document.getElementById('test-get-details-btn').disabled = false;
+                document.getElementById('test-update-btn').disabled = false;
+                document.getElementById('test-delete-entry-btn').disabled = false;
                 document.getElementById('test-emit-signal-btn').disabled = false;
                 document.getElementById('test-query-btn').disabled = false;
                 document.getElementById('test-create-link-btn').disabled = false;
@@ -507,11 +510,29 @@
                 const formatted = formatForDisplay(result);
                 log(`✓ Agent Info: ${JSON.stringify(formatted, null, 2)}`);
                 console.log('Agent Info (formatted):', formatted);
-                showStatus('zome-test-status', '<strong>Success!</strong> Check console output for agent info.', 'success');
+                showStatus('zome-test-status', 'Check console output for agent info.', 'success');
                 markChecked('check-8');
             } catch (error) {
                 log(`get_agent_info failed: ${error.message}`, true);
-                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+                showStatus('zome-test-status', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-zome-info-btn').addEventListener('click', async () => {
+            log('Calling get_zome_info()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_zome_info',
+                    payload: null
+                });
+                log(`✓ Zome Info: ${JSON.stringify(result, null, 2)}`);
+                console.log('Zome Info (raw):', result);
+                showStatus('zome-test-status', 'Check console output for zome info (entry_defs, zome_types from manifest).', 'success');
+            } catch (error) {
+                log(`get_zome_info failed: ${error.message}`, true);
+                showStatus('zome-test-status', `Error: ${error.message}`, 'error');
             }
         });
 
@@ -666,10 +687,91 @@
                 log(`✓ Entry retrieved: ${JSON.stringify(formatted, null, 2)}`);
                 console.log('Get entry result (formatted):', formatted);
 
-                showStatus('zome-test-status', '<strong>Success!</strong> Entry retrieved (mock data from Step 5).', 'success');
+                showStatus('zome-test-status', 'Entry retrieved (mock data from Step 5).', 'success');
                 markChecked('check-14');
             } catch (error) {
                 log(`get_test_entry failed: ${error.message}`, true);
+                showStatus('zome-test-status', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-get-details-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', 'Create an entry first!', 'info');
+                return;
+            }
+            log('Calling get_details_test()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_details_test',
+                    payload: lastCreatedHash
+                });
+
+                const formatted = formatForDisplay(result);
+                log(`✓ Entry details retrieved: ${JSON.stringify(formatted, null, 2)}`);
+                console.log('Get details result (formatted):', formatted);
+
+                showStatus('zome-test-status', 'Entry details retrieved (includes validation status).', 'success');
+            } catch (error) {
+                log(`get_details_test failed: ${error.message}`, true);
+                showStatus('zome-test-status', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-update-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create an entry first!', 'info');
+                return;
+            }
+            log('Calling update_test_entry()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'update_test_entry',
+                    payload: {
+                        original_hash: lastCreatedHash,
+                        new_content: 'Updated entry at ' + new Date().toISOString()
+                    }
+                });
+
+                const formatted = formatForDisplay(result);
+                log(`✓ Entry updated! New ActionHash: ${formatted}`);
+                console.log('Update entry result:', formatted);
+
+                // Update lastCreatedHash to the new action hash
+                lastCreatedHash = result;
+
+                showStatus('zome-test-status', '<strong>Success!</strong> Entry updated.', 'success');
+            } catch (error) {
+                log(`update_test_entry failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-delete-entry-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create an entry first!', 'info');
+                return;
+            }
+            log('Calling delete_test_entry()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'delete_test_entry',
+                    payload: lastCreatedHash
+                });
+
+                const formatted = formatForDisplay(result);
+                log(`✓ Entry deleted! Delete ActionHash: ${formatted}`);
+                console.log('Delete entry result:', formatted);
+
+                showStatus('zome-test-status', '<strong>Success!</strong> Entry deleted (tombstone created).', 'success');
+            } catch (error) {
+                log(`delete_test_entry failed: ${error.message}`, true);
                 showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
             }
         });

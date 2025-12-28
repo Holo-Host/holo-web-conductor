@@ -20,6 +20,13 @@ fn get_agent_info(_: ()) -> ExternResult<AgentInfo> {
     agent_info()
 }
 
+/// Test zome_info host function
+/// Returns zome metadata including entry defs and zome types
+#[hdk_extern]
+fn get_zome_info(_: ()) -> ExternResult<ZomeInfo> {
+    zome_info()
+}
+
 /// Test random_bytes host function
 /// Returns 32 random bytes
 #[hdk_extern]
@@ -81,6 +88,39 @@ fn create_test_entry(content: String) -> ExternResult<ActionHash> {
 #[hdk_extern]
 fn get_test_entry(hash: ActionHash) -> ExternResult<Option<Record>> {
     get(hash, GetOptions::default())
+}
+
+/// Test get_details host function
+/// Retrieves full details including validation status
+#[hdk_extern]
+fn get_details_test(hash: ActionHash) -> ExternResult<Option<Details>> {
+    get_details(hash, GetOptions::default())
+}
+
+/// Input for update_test_entry
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct UpdateEntryInput {
+    pub original_hash: ActionHash,
+    pub new_content: String,
+}
+
+/// Test update host function
+/// Updates an existing entry and returns the new action hash
+#[hdk_extern]
+fn update_test_entry(input: UpdateEntryInput) -> ExternResult<ActionHash> {
+    let new_entry = TestEntry {
+        content: input.new_content,
+        timestamp: sys_time()?,
+    };
+
+    update_entry(input.original_hash, &EntryTypes::TestEntry(new_entry))
+}
+
+/// Test delete host function
+/// Deletes an entry by creating a delete action
+#[hdk_extern]
+fn delete_test_entry(hash: ActionHash) -> ExternResult<ActionHash> {
+    delete_entry(hash)
 }
 
 /// Test emit_signal host function

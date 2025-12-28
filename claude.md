@@ -377,6 +377,91 @@ interface CallZomeRequest {
 
 ---
 
+### Step 5.7: .happ Bundle Support with DNA Manifest Integration ✅ COMPLETE (2025-12-28)
+
+**Goal**: Add support for loading .happ bundles (instead of standalone WASM) to access DNA manifest metadata required for proper link/entry type resolution.
+
+**Dependencies**: Step 5.6
+
+**Status**: ✅ **COMPLETE** - 22/22 tests passing, bundle unpacking working, manifest data flowing to host functions, manual testing complete
+
+**What was accomplished**:
+- ✅ Implemented in-browser .happ bundle unpacking (gzip + msgpack, no hc CLI dependency)
+- ✅ Created type definitions for AppManifest and DnaManifest (holochain_types compatible)
+- ✅ Built bundle unpacker with proper error handling for malformed bundles
+- ✅ Updated data structures to store and pass DNA manifests (DnaContext, CallContext, Storage)
+- ✅ Rewrote installation flow to unpack .happ bundles and extract manifests
+- ✅ Updated host functions (zome_info, create_link, get_links) to use manifest data
+- ✅ Created proper .happ test bundle using hc CLI (test-zome packaged with manifests)
+- ✅ Fixed critical bundle format discovery: manifests are msgpack objects, not YAML bytes
+- ✅ Fixed ActionHash format issues in multiple host functions (create_link, delete_link, delete, update)
+- ✅ Added update_test_entry and delete_test_entry functions to test zome
+- ✅ Updated manual testing UI with Update Entry and Delete Entry buttons
+- ✅ Added get_zome_info test function and UI button for inspecting manifest data
+- ✅ Changed contextID from UUID to DNA hash (base64-encoded using encodeHashToBase64 from @holochain/client)
+- ✅ Added get_details_test function and UI button for retrieving full record details
+- ✅ Automated tests properly validate real bundle format
+
+**Key Discovery**:
+The Holochain `hc` CLI packs manifests as MessagePack-serialized objects, NOT as raw YAML bytes. The manifest is already parsed when extracted from msgpack. This was discovered during manual testing when automated tests initially used YAML strings.
+
+**Sub-tasks**:
+1. **5.7.1**: ✅ Add dependencies (pako for gzip, @msgpack/msgpack) and create bundle type definitions
+2. **5.7.2**: ✅ Implement bundle unpacker (unpackHappBundle, unpackDnaBundle, createRuntimeManifest)
+3. **5.7.3**: ✅ Update data structures for manifest storage (DnaContext, CallContext, StorableDnaContext)
+4. **5.7.4**: ✅ Update installation flow (HappContextManager.installHapp, background handlers)
+5. **5.7.5**: ✅ Update host functions to use manifest (zome_info uses manifest for zome_types)
+6. **5.7.6**: ✅ Create test .happ bundle (happ.yaml, dna.yaml, pack.sh script)
+7. **5.7.7**: ✅ Update manual testing UI to load .happ instead of standalone .wasm
+8. **5.7.8**: ✅ Add automated tests (22 tests for bundle unpacking and manifest handling)
+9. **5.7.9**: ✅ Fix bundle format issues discovered during manual testing
+10. **5.7.10**: ✅ Fix ActionHash format in host functions (wrong prefix/size)
+11. **5.7.11**: ✅ Add missing test functions (update_test_entry, delete_test_entry)
+12. **5.7.12**: ✅ Add get_zome_info test function and UI button
+13. **5.7.13**: ✅ Use DNA hash as contextID instead of UUID (using encodeHashToBase64 from @holochain/client)
+14. **5.7.14**: ✅ Add get_details_test function and UI button
+
+**Files Created** (~800 lines):
+- `packages/core/src/types/bundle-types.ts` (200 lines) - Type definitions
+- `packages/core/src/bundle/unpacker.ts` (245 lines) - Bundle unpacking
+- `packages/core/src/bundle/unpacker.test.ts` (556 lines) - 22 automated tests
+- `packages/core/src/bundle/index.ts` (2 lines) - Exports
+- `packages/test-zome/happ.yaml` (17 lines) - hApp manifest
+- `packages/test-zome/dna.yaml` (14 lines) - DNA manifest
+- `packages/test-zome/pack.sh` (32 lines) - Build and pack script
+
+**Files Modified** (~500 lines):
+- `packages/core/package.json` - Added pako dependency
+- `packages/core/src/index.ts` - Updated DnaContext, InstallHappRequest
+- `packages/extension/src/lib/happ-context-storage.ts` - Added manifest storage
+- `packages/core/src/ribosome/call-context.ts` - Added dnaManifest field
+- `packages/core/src/ribosome/index.ts` - Pass manifest in ZomeCallRequest
+- `packages/extension/src/lib/happ-context-manager.ts` - Unpack bundles on install, use DNA hash as contextID, use @holochain/client encodeHashToBase64
+- `packages/extension/src/background/index.ts` - Updated INSTALL_HAPP, CALL_ZOME handlers
+- `packages/core/src/ribosome/host-fn/zome_info.ts` - Use manifest for zome_types
+- `packages/core/src/ribosome/host-fn/create_link.ts` - Fixed ActionHash prefix (0x29)
+- `packages/core/src/ribosome/host-fn/delete_link.ts` - Fixed ActionHash size (39 bytes)
+- `packages/core/src/ribosome/host-fn/delete.ts` - Fixed ActionHash size (39 bytes)
+- `packages/core/src/ribosome/host-fn/update.ts` - Fixed ActionHash size (39 bytes)
+- `packages/test-zome/src/lib.rs` - Added update_test_entry, delete_test_entry, get_zome_info, get_details_test
+- `packages/extension/test/wasm-test.html` - Load .happ, added Update/Delete/ZomeInfo/GetDetails buttons
+
+**Known Limitations**:
+- Entry type extraction not yet implemented (empty entry_defs in zome_info)
+- Link type extraction not yet implemented (placeholder link types)
+- Link storage not implemented (create_link/get_links return mock data)
+- Multi-zome DNA support deferred to Step 6
+- DNA hash computation simplified (proper hashing with modifiers in Step 6)
+
+**Next Steps** (Step 6):
+- Parse entry types from integrity zome WASM
+- Parse link types from integrity zome WASM
+- Implement real link storage with type validation
+- Implement proper DNA hash computation with modifiers
+- Support multi-zome DNAs properly
+
+---
+
 ### Step 6: Local Chain Data Storage
 
 **Goal**: Implement real source chain storage for create/update/delete operations.
@@ -513,6 +598,7 @@ Step 2.5 (Lair UI) ✓
 
 ## Requirements, Tradeoffs & Dev Instructions
 
+0. When reporting on status, or asking questions don't add the emotional tags at the beginning and end of phrases, (you can tell you are doing this if there's an exclamation point at the end of the phrase/sentence).  Just code related information.
 1. Each step of the process must be built using test-driven development practices such that CI can confirm no regressions before merging a PR
 2. **User testing is required before commits**: After implementing features, user testing must be performed in a real browser environment before creating git commits. This ensures functionality works as expected.
 3. Different portions of the plan, or even the same plan may be worked on from different workstations, so claude must be set up to pick up sessions where they were left off.

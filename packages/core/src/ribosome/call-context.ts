@@ -4,6 +4,8 @@
  * Defines the context and state for WASM function invocations.
  */
 
+import type { DnaManifestRuntime } from '../types/bundle-types';
+
 /**
  * Cell ID: [DNA hash, Agent public key]
  */
@@ -47,6 +49,9 @@ export interface CallContext {
 
   /** Signals emitted during this call (populated by emit_signal host function) */
   emittedSignals?: EmittedSignal[];
+
+  /** DNA manifest (from .happ bundle) */
+  dnaManifest?: DnaManifestRuntime;
 }
 
 /**
@@ -84,4 +89,7 @@ export interface ZomeCallRequest {
 
   /** Agent making the call */
   provenance: Uint8Array;
+
+  /** DNA manifest (from .happ bundle) */
+  dnaManifest?: DnaManifestRuntime;
 }

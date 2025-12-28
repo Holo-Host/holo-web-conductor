@@ -39,6 +39,7 @@ interface StorableDnaContext {
   wasm: number[];
   name?: string;
   properties?: Record<string, unknown>;
+  manifest?: Record<string, unknown>;  // DnaManifestRuntime stored as plain object
 }
 
 /**
@@ -129,6 +130,7 @@ export class HappContextStorage {
         wasm: Array.from(dna.wasm),
         name: dna.name,
         properties: dna.properties,
+        manifest: dna.manifest,
       })),
       appName: context.appName,
       appVersion: context.appVersion,
@@ -152,6 +154,7 @@ export class HappContextStorage {
         wasm: new Uint8Array(dna.wasm),
         name: dna.name,
         properties: dna.properties,
+        manifest: dna.manifest as import('@fishy/core').DnaManifestRuntime | undefined,
       })),
       appName: stored.appName,
       appVersion: stored.appVersion,

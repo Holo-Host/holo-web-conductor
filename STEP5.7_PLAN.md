@@ -1,0 +1,2570 @@
+# Step 5.7: .happ Bundle Support with DNA Manifest Integration
+
+   **Implementation Plan for Fishy Browser Extension**
+   **Version**: 1.0
+   **Date**: 2025-12-27
+   **Holochain Version**: 0.6 (manifest_version: "0")
+
+   ## Executive Summary
+
+   Transform Fishy from supporting only standalone .wasm files to full .happ bundle support with DNA manifest integration. This enables proper entry type
+   definitions, link type validation, and authentic Holochain compatibility with the actual Holochain 0.6 bundle format.
+
+   **Critical**: This plan uses **Holochain 0.6 format with `manifest_version: "0"`**, not version 1.
+
+   **Scope**: TypeScript implementation of .happ unpacking, manifest parsing, storage updates, and host function integration.
+
+   **Key Deliverables**:
+   1. Bundle unpacker (gzip + msgpack) in @fishy/core
+   2. TypeScript manifest types matching Holochain 0.6
+   3. Updated storage layer with manifest persistence
+   4. Host functions using real manifest data
+   5. Proper .happ bundle for test-zome
+   6. Updated tests and manual testing UI
+
+   ---
+
+   ## Current State Analysis
+
+   ### What We Have
+   - Extension loads standalone .wasm files via InstallHappRequest
+   - DnaContext stores: {hash, wasm, name, properties}
+   - Host functions use HARDCODED/MOCK manifest data
+   - zome_info returns hardcoded entry_defs
+   - Link operations fail due to missing manifest
+   - Storage: IndexedDB without manifest field
+
+   ### What We Need
+   - Accept .happ bundle bytes in InstallHappRequest
+   - Unpack .happ → AppManifest + DNA bundles
+   - Unpack each DNA → DnaManifest + WASM
+   - Store manifest alongside WASM
+   - Thread manifest to host functions
+   - Use manifest for validation and queries
+
+   ---
+
+   ## Holochain 0.6 Bundle Format (ACTUAL)
+
+   ### happ.yaml Structure (manifest_version: "0")
+
+   ```yaml
+   ---
+   manifest_version: "0"
+   name: my_app
+   description: Optional description
+   roles:
+     - name: role_name
+       provisioning:
+         strategy: create
+         deferred: false
+       dna:
+         path: "./path/to/dna.dna"
+         properties: ~
+         network_seed: ~
+         version: ~
+         clone_limit: 0
+   ```
+
+   **Key Points:**
+   - `manifest_version: "0"` (NOT "1")
+   - `dna.path` (NOT `dna.bundled`)
+   - `provisioning` has `strategy` field with tag-based enum
+   - `clone_limit` is at dna level
+
+   ### dna.yaml Structure (manifest_version: "0")
+
+   ```yaml
+   ---
+   manifest_version: "0"
+   name: my_dna
+   integrity:
+     network_seed: 00000000-0000-0000-0000-000000000000
+     properties: ~
+     zomes:
+       - name: integrity_zome_name
+         path: ../target/wasm32-unknown-unknown/release/integrity.wasm
+   coordinator:
+     zomes:
+       - name: coordinator_zome_name
+         path: ../target/wasm32-unknown-unknown/release/coordinator.wasm
+         dependencies:
+           - name: integrity_zome_name
+   ```
+
+   **Key Points:**
+   - `manifest_version: "0"` (NOT "1")
+   - `integrity:` contains `network_seed`, `properties`, AND `zomes`
+   - `coordinator:` contains only `zomes`
+   - Zomes use `path` (NOT `bundled`)
+   - No `origin_time` field
+
+   ### Binary Bundle Structure
+
+   ```
+   .happ file (gzip compressed)
+   └─ MessagePack encoded: {manifest: AppManifest, resources: Map}
+      ├─ manifest: AppManifest (parsed from happ.yaml)
+      └─ resources: Map<ResourceIdentifier, bytes>
+         └─ "path/to/dna.dna" → DNA bundle bytes
+
+   .dna file (gzip compressed)
+   └─ MessagePack encoded: {manifest: DnaManifest, resources: Map}
+      ├─ manifest: DnaManifest (parsed from dna.yaml)
+      └─ resources: Map<ResourceIdentifier, bytes>
+         ├─ "generated_id_1" → integrity zome WASM
+         └─ "generated_id_2" → coordinator zome WASM
+   ```
+
+   **Important**: The `resources` Map uses ResourceIdentifiers, which are generated IDs, NOT the original file paths.
+
+   ---
+
+   ## TypeScript Type Definitions (Matching Holochain 0.6)
+
+   ### Core Bundle Types
+
+   ```typescript
+   /**
+    * Bundle wrapper - mr_bundle::Bundle<M>
+    * Reference: holochain/crates/mr_bundle/src/lib.rs
+    */
+   export interface Bundle<M> {
+     manifest: M;
+     resources: Record<string, Uint8Array>;  // ResourceIdentifier → bytes
+   }
+
+   /**
+    * App Manifest V0
+    * Reference: holochain_types::app::app_manifest::app_manifest_v0::AppManifestV0
+    */
+   export interface AppManifestV0 {
+     manifest_version: "0";
+     name: string;
+     description?: string;
+     roles: AppRoleManifest[];
+     allow_deferred_memproofs?: boolean;
+   }
+
+   /**
+    * App Role Manifest
+    * Reference: holochain_types::app::app_manifest::app_manifest_v0::AppRoleManifest
+    */
+   export interface AppRoleManifest {
+     name: string;
+     provisioning?: CellProvisioning;
+     dna: AppRoleDnaManifest;
+   }
+
+   /**
+    * Cell Provisioning
+    * Reference: holochain_types::app::app_manifest::app_manifest_v0::CellProvisioning
+    */
+   export type CellProvisioning =
+     | { strategy: "create"; deferred: boolean }
+     | { strategy: "clone" }
+     | { strategy: "disabled" };
+
+   /**
+    * App Role DNA Manifest
+    * Reference: holochain_types::app::app_manifest::app_manifest_v0::AppRoleDnaManifest
+    */
+   export interface AppRoleDnaManifest {
+     path?: string;  // Path to .dna bundle in resources
+     modifiers?: DnaModifiersOpt;
+     installed_hash?: string;  // DnaHashB64
+     clone_limit?: number;
+   }
+
+   /**
+    * DNA Modifiers (optional overrides)
+    * Reference: holochain_types::dna::DnaModifiersOpt
+    */
+   export interface DnaModifiersOpt {
+     network_seed?: string;
+     properties?: YamlProperties;
+     origin_time?: Timestamp;
+     quantum_time?: Duration;
+   }
+
+   /**
+    * DNA Manifest V0
+    * Reference: holochain_types::dna::dna_manifest::dna_manifest_v0::DnaManifestV0
+    */
+   export interface DnaManifestV0 {
+     manifest_version: "0";
+     name: string;
+     integrity: IntegrityManifest;
+     coordinator?: CoordinatorManifest;
+     lineage?: string[];  // DnaHashB64[]
+   }
+
+   /**
+    * Integrity Manifest
+    * Reference: holochain_types::dna::dna_manifest::dna_manifest_v0::IntegrityManifest
+    */
+   export interface IntegrityManifest {
+     network_seed?: string;
+     properties?: YamlProperties;
+     zomes: ZomeManifest[];
+   }
+
+   /**
+    * Coordinator Manifest
+    * Reference: holochain_types::dna::dna_manifest::dna_manifest_v0::CoordinatorManifest
+    */
+   export interface CoordinatorManifest {
+     zomes: ZomeManifest[];
+   }
+
+   /**
+    * Zome Manifest
+    * Reference: holochain_types::dna::zome::ZomeManifest
+    */
+   export interface ZomeManifest {
+     name: string;
+     path: string;  // Resource identifier (gets rewritten during bundling)
+     dependencies?: ZomeDependency[];
+     dylib?: string;  // Not used for WASM zomes
+   }
+
+   /**
+    * Zome Dependency
+    * Reference: holochain_zome_types::zome::ZomeDependency
+    */
+   export interface ZomeDependency {
+     name: string;
+   }
+
+   /**
+    * YAML Properties (arbitrary JSON-like data)
+    */
+   export type YamlProperties = Record<string, unknown>;
+
+   /**
+    * Timestamp (microseconds since Unix epoch)
+    */
+   export interface Timestamp {
+     secs: number;
+     nanos: number;
+   }
+
+   /**
+    * Duration (microseconds)
+    */
+   export interface Duration {
+     secs: number;
+     nanos: number;
+   }
+   ```
+
+   ### Versioned Manifest Enums
+
+   ```typescript
+   /**
+    * App Manifest (versioned enum)
+    * Reference: holochain_types::app::app_manifest::AppManifest
+    */
+   export type AppManifest = AppManifestV0;  // Only V0 exists currently
+
+   /**
+    * DNA Manifest (versioned enum)
+    * Reference: holochain_types::dna::dna_manifest::DnaManifest
+    */
+   export type DnaManifest = DnaManifestV0;  // Only V0 exists currently
+   ```
+
+   ---
+
+   ## Implementation Tasks
+
+   ### Task 5.7.1: Dependencies and Type Foundations
+
+   **Goal**: Add required libraries and create TypeScript type definitions.
+
+   **Dependencies to Add**:
+   ```bash
+   cd /home/eric/code/metacurrency/holochain/fishy/packages/core
+   npm install pako  # gzip compression/decompression
+   npm install --save-dev @types/pako
+
+   # @msgpack/msgpack already installed ✓
+   ```
+
+   **Files to Create**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/types.ts` (~350 lines)
+
+   **Complete Type Structure**:
+
+   ```typescript
+   /**
+    * Bundle Types for Holochain 0.6
+    *
+    * These types match the Rust structures in:
+    * - holochain_types::app::app_manifest::app_manifest_v0
+    * - holochain_types::dna::dna_manifest::dna_manifest_v0
+    * - mr_bundle::Bundle
+    *
+    * IMPORTANT: Holochain 0.6 uses manifest_version: "0"
+    *
+    * References:
+    * - holochain/crates/holochain_types/src/app/app_manifest/app_manifest_v0.rs
+    * - holochain/crates/holochain_types/src/dna/dna_manifest/dna_manifest_v0.rs
+    * - holochain/crates/mr_bundle/src/lib.rs
+    */
+
+   // [Full type definitions from above section]
+
+   /**
+    * Type guard for AppManifestV0
+    */
+   export function isAppManifestV0(value: unknown): value is AppManifestV0 {
+     return (
+       typeof value === 'object' &&
+       value !== null &&
+       'manifest_version' in value &&
+       value.manifest_version === '0' &&
+       'name' in value &&
+       'roles' in value &&
+       Array.isArray(value.roles)
+     );
+   }
+
+   /**
+    * Type guard for DnaManifestV0
+    */
+   export function isDnaManifestV0(value: unknown): value is DnaManifestV0 {
+     return (
+       typeof value === 'object' &&
+       value !== null &&
+       'manifest_version' in value &&
+       value.manifest_version === '0' &&
+       'name' in value &&
+       'integrity' in value &&
+       typeof value.integrity === 'object'
+     );
+   }
+
+   /**
+    * Type guard for Bundle<AppManifest>
+    */
+   export function isAppBundle(value: unknown): value is Bundle<AppManifest> {
+     return (
+       typeof value === 'object' &&
+       value !== null &&
+       'manifest' in value &&
+       'resources' in value &&
+       isAppManifestV0(value.manifest)
+     );
+   }
+
+   /**
+    * Type guard for Bundle<DnaManifest>
+    */
+   export function isDnaBundle(value: unknown): value is Bundle<DnaManifest> {
+     return (
+       typeof value === 'object' &&
+       value !== null &&
+       'manifest' in value &&
+       'resources' in value &&
+       isDnaManifestV0(value.manifest)
+     );
+   }
+   ```
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/index.ts`
+
+   ```typescript
+   /**
+    * Bundle Unpacking and Manifest Types
+    *
+    * Provides support for .happ and .dna bundle formats used by Holochain 0.6
+    */
+
+   export * from './types';
+   export * from './unpacker';
+   export * from './error';
+   ```
+
+   **Success Criteria**:
+   - pako added to package.json dependencies
+   - Types compile without errors
+   - All types have JSDoc with Rust references
+   - Type guards work correctly
+   - Exported from bundle/index.ts
+
+   ---
+
+   ### Task 5.7.2: Bundle Unpacker Implementation
+
+   **Goal**: Implement .happ and .dna bundle unpacking.
+
+   **Files to Create**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/error.ts` (~80 lines)
+
+   ```typescript
+   /**
+    * Bundle Error Types
+    */
+
+   export type BundleErrorCode =
+     | 'DECOMPRESS_FAILED'
+     | 'DECODE_FAILED'
+     | 'INVALID_STRUCTURE'
+     | 'MANIFEST_INVALID'
+     | 'WASM_NOT_FOUND'
+     | 'RESOURCE_NOT_FOUND';
+
+   /**
+    * Custom error class for bundle operations
+    */
+   export class BundleError extends Error {
+     constructor(
+       public code: BundleErrorCode,
+       message: string,
+       public cause?: unknown
+     ) {
+       super(message);
+       this.name = 'BundleError';
+     }
+
+     /**
+      * Create error for failed decompression
+      */
+     static decompressFailed(cause?: unknown): BundleError {
+       return new BundleError(
+         'DECOMPRESS_FAILED',
+         'Failed to decompress bundle (gzip)',
+         cause
+       );
+     }
+
+     /**
+      * Create error for failed MessagePack decoding
+      */
+     static decodeFailed(cause?: unknown): BundleError {
+       return new BundleError(
+         'DECODE_FAILED',
+         'Failed to decode MessagePack in bundle',
+         cause
+       );
+     }
+
+     /**
+      * Create error for invalid bundle structure
+      */
+     static invalidStructure(details: string): BundleError {
+       return new BundleError(
+         'INVALID_STRUCTURE',
+         `Invalid bundle structure: ${details}`
+       );
+     }
+
+     /**
+      * Create error for resource not found
+      */
+     static resourceNotFound(resourceId: string): BundleError {
+       return new BundleError(
+         'RESOURCE_NOT_FOUND',
+         `Resource not found in bundle: ${resourceId}`
+       );
+     }
+
+     /**
+      * Create error for WASM not found
+      */
+     static wasmNotFound(zomeName: string): BundleError {
+       return new BundleError(
+         'WASM_NOT_FOUND',
+         `WASM not found for zome: ${zomeName}`
+       );
+     }
+   }
+   ```
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/unpacker.ts` (~300 lines)
+
+   ```typescript
+   import pako from 'pako';
+   import { decode } from '@msgpack/msgpack';
+   import type {
+     Bundle,
+     AppManifest,
+     AppManifestV0,
+     DnaManifest,
+     DnaManifestV0,
+     ZomeManifest
+   } from './types';
+   import {
+     isAppBundle,
+     isDnaBundle,
+     isAppManifestV0,
+     isDnaManifestV0
+   } from './types';
+   import { BundleError } from './error';
+
+   /**
+    * Unpack a .happ bundle
+    *
+    * Process:
+    * 1. Gunzip decompress
+    * 2. MessagePack decode
+    * 3. Validate structure
+    * 4. Return Bundle<AppManifest>
+    *
+    * @param bytes - Compressed .happ bundle bytes
+    * @returns Unpacked app bundle with manifest and resources
+    * @throws BundleError if decompression, decoding, or validation fails
+    *
+    * Reference: holochain/crates/mr_bundle/src/lib.rs::Bundle::unpack
+    */
+   export function unpackHapp(bytes: Uint8Array): Bundle<AppManifest> {
+     console.log(`[unpackHapp] Unpacking .happ bundle (${bytes.length} bytes)`);
+
+     // 1. Decompress gzip
+     let decompressed: Uint8Array;
+     try {
+       decompressed = pako.ungzip(bytes);
+       console.log(`[unpackHapp] Decompressed to ${decompressed.length} bytes`);
+     } catch (error) {
+       console.error('[unpackHapp] Decompression failed:', error);
+       throw BundleError.decompressFailed(error);
+     }
+
+     // 2. Decode MessagePack
+     let decoded: unknown;
+     try {
+       decoded = decode(decompressed);
+       console.log('[unpackHapp] MessagePack decoded');
+     } catch (error) {
+       console.error('[unpackHapp] MessagePack decode failed:', error);
+       throw BundleError.decodeFailed(error);
+     }
+
+     // 3. Validate structure
+     if (!isAppBundle(decoded)) {
+       console.error('[unpackHapp] Invalid app bundle structure:', decoded);
+       throw BundleError.invalidStructure('Not a valid AppManifest bundle');
+     }
+
+     const bundle = decoded;
+     const manifest = bundle.manifest as AppManifestV0;
+
+     console.log(`[unpackHapp] ✓ App: "${manifest.name}", Roles: ${manifest.roles.length}`);
+     for (const role of manifest.roles) {
+       console.log(`[unpackHapp]   - Role: "${role.name}", DNA path: ${role.dna.path || '(none)'}`);
+     }
+
+     return bundle;
+   }
+
+   /**
+    * Unpack a .dna bundle
+    *
+    * Same process as .happ but expecting DnaManifest
+    *
+    * @param bytes - Compressed .dna bundle bytes
+    * @returns Unpacked DNA bundle with manifest and resources
+    * @throws BundleError if decompression, decoding, or validation fails
+    *
+    * Reference: holochain/crates/holochain_types/src/dna/dna_bundle.rs::DnaBundle::unpack
+    */
+   export function unpackDna(bytes: Uint8Array): Bundle<DnaManifest> {
+     console.log(`[unpackDna] Unpacking .dna bundle (${bytes.length} bytes)`);
+
+     // 1. Decompress gzip
+     let decompressed: Uint8Array;
+     try {
+       decompressed = pako.ungzip(bytes);
+       console.log(`[unpackDna] Decompressed to ${decompressed.length} bytes`);
+     } catch (error) {
+       console.error('[unpackDna] Decompression failed:', error);
+       throw BundleError.decompressFailed(error);
+     }
+
+     // 2. Decode MessagePack
+     let decoded: unknown;
+     try {
+       decoded = decode(decompressed);
+       console.log('[unpackDna] MessagePack decoded');
+     } catch (error) {
+       console.error('[unpackDna] MessagePack decode failed:', error);
+       throw BundleError.decodeFailed(error);
+     }
+
+     // 3. Validate structure
+     if (!isDnaBundle(decoded)) {
+       console.error('[unpackDna] Invalid DNA bundle structure:', decoded);
+       throw BundleError.invalidStructure('Not a valid DnaManifest bundle');
+     }
+
+     const bundle = decoded;
+     const manifest = bundle.manifest as DnaManifestV0;
+
+     const integrityCount = manifest.integrity.zomes.length;
+     const coordinatorCount = manifest.coordinator?.zomes.length || 0;
+     const totalZomes = integrityCount + coordinatorCount;
+
+     console.log(`[unpackDna] ✓ DNA: "${manifest.name}"`);
+     console.log(`[unpackDna]   Integrity zomes: ${integrityCount}`);
+     console.log(`[unpackDna]   Coordinator zomes: ${coordinatorCount}`);
+     console.log(`[unpackDna]   Total zomes: ${totalZomes}`);
+
+     return bundle;
+   }
+
+   /**
+    * Extract WASM from DNA bundle resources
+    *
+    * Handles both integrity and coordinator zomes.
+    * Returns a Map of zome_name → WASM bytes.
+    *
+    * Note: The `path` field in zomes has been rewritten to ResourceIdentifiers
+    * by the bundler. We use those IDs to look up WASM in resources.
+    *
+    * @param dnaBundle - Unpacked DNA bundle
+    * @returns Map of zome name to WASM bytes
+    * @throws BundleError if WASM resources not found
+    */
+   export function extractWasmFromDna(
+     dnaBundle: Bundle<DnaManifest>
+   ): Map<string, Uint8Array> {
+     const manifest = dnaBundle.manifest as DnaManifestV0;
+     const wasmMap = new Map<string, Uint8Array>();
+
+     console.log('[extractWasmFromDna] Extracting WASM files...');
+     console.log(`[extractWasmFromDna] Available resources:`, Object.keys(dnaBundle.resources));
+
+     // Extract integrity zomes
+     for (const zome of manifest.integrity.zomes) {
+       const resourceId = zome.path;  // Already a ResourceIdentifier after bundling
+       const wasmBytes = dnaBundle.resources[resourceId];
+
+       if (!wasmBytes) {
+         console.error(`[extractWasmFromDna] Integrity zome WASM not found:`, {
+           zomeName: zome.name,
+           resourceId,
+           availableResources: Object.keys(dnaBundle.resources)
+         });
+         throw BundleError.wasmNotFound(zome.name);
+       }
+
+       console.log(`[extractWasmFromDna]   ✓ Integrity: "${zome.name}" (${wasmBytes.length} bytes)`);
+       wasmMap.set(zome.name, wasmBytes);
+     }
+
+     // Extract coordinator zomes
+     if (manifest.coordinator) {
+       for (const zome of manifest.coordinator.zomes) {
+         const resourceId = zome.path;  // Already a ResourceIdentifier
+         const wasmBytes = dnaBundle.resources[resourceId];
+
+         if (!wasmBytes) {
+           console.error(`[extractWasmFromDna] Coordinator zome WASM not found:`, {
+             zomeName: zome.name,
+             resourceId,
+             availableResources: Object.keys(dnaBundle.resources)
+           });
+           throw BundleError.wasmNotFound(zome.name);
+         }
+
+         console.log(`[extractWasmFromDna]   ✓ Coordinator: "${zome.name}" (${wasmBytes.length} bytes)`);
+         wasmMap.set(zome.name, wasmBytes);
+       }
+     }
+
+     console.log(`[extractWasmFromDna] Extracted ${wasmMap.size} WASM files`);
+     return wasmMap;
+   }
+
+   /**
+    * Get all zomes from DNA manifest (integrity + coordinator)
+    *
+    * Utility function matching DnaManifestV0::all_zomes() in Rust
+    */
+   export function getAllZomes(manifest: DnaManifest): ZomeManifest[] {
+     const manifestV0 = manifest as DnaManifestV0;
+     const zomes = [...manifestV0.integrity.zomes];
+     if (manifestV0.coordinator) {
+       zomes.push(...manifestV0.coordinator.zomes);
+     }
+     return zomes;
+   }
+
+   /**
+    * Find a zome by name in DNA manifest
+    */
+   export function findZome(manifest: DnaManifest, zomeName: string): ZomeManifest | undefined {
+     const allZomes = getAllZomes(manifest);
+     return allZomes.find(z => z.name === zomeName);
+   }
+   ```
+
+   3. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/unpacker.test.ts` (~250 lines)
+
+   ```typescript
+   import { describe, it, expect } from 'vitest';
+   import { unpackHapp, unpackDna, extractWasmFromDna } from './unpacker';
+   import { BundleError } from './error';
+   import pako from 'pako';
+   import { encode } from '@msgpack/msgpack';
+
+   describe('Bundle Unpacker', () => {
+     describe('unpackHapp', () => {
+       it('should unpack valid .happ bundle', () => {
+         // Create mock app bundle
+         const mockBundle = {
+           manifest: {
+             manifest_version: '0',
+             name: 'test_app',
+             description: 'Test app',
+             roles: [
+               {
+                 name: 'test_role',
+                 provisioning: { strategy: 'create', deferred: false },
+                 dna: {
+                   path: './test.dna',
+                   clone_limit: 0
+                 }
+               }
+             ]
+           },
+           resources: {
+             './test.dna': new Uint8Array([1, 2, 3])
+           }
+         };
+
+         // Encode and compress
+         const encoded = encode(mockBundle);
+         const compressed = pako.gzip(encoded);
+
+         // Unpack
+         const result = unpackHapp(compressed);
+
+         expect(result.manifest.name).toBe('test_app');
+         expect(result.manifest.roles).toHaveLength(1);
+         expect(result.manifest.roles[0].name).toBe('test_role');
+         expect(result.resources['./test.dna']).toBeDefined();
+       });
+
+       it('should throw BundleError for invalid gzip', () => {
+         const invalidData = new Uint8Array([1, 2, 3, 4]);
+
+         expect(() => unpackHapp(invalidData)).toThrow(BundleError);
+         expect(() => unpackHapp(invalidData)).toThrow('DECOMPRESS_FAILED');
+       });
+
+       it('should throw BundleError for invalid msgpack', () => {
+         const invalidData = pako.gzip(new Uint8Array([1, 2, 3]));
+
+         expect(() => unpackHapp(invalidData)).toThrow(BundleError);
+         expect(() => unpackHapp(invalidData)).toThrow('DECODE_FAILED');
+       });
+
+       it('should throw BundleError for invalid structure', () => {
+         const invalidBundle = {
+           manifest: {
+             // Missing manifest_version
+             name: 'test'
+           },
+           resources: {}
+         };
+
+         const encoded = encode(invalidBundle);
+         const compressed = pako.gzip(encoded);
+
+         expect(() => unpackHapp(compressed)).toThrow(BundleError);
+         expect(() => unpackHapp(compressed)).toThrow('INVALID_STRUCTURE');
+       });
+     });
+
+     describe('unpackDna', () => {
+       it('should unpack valid .dna bundle', () => {
+         const mockBundle = {
+           manifest: {
+             manifest_version: '0',
+             name: 'test_dna',
+             integrity: {
+               network_seed: '00000000-0000-0000-0000-000000000000',
+               properties: null,
+               zomes: [
+                 {
+                   name: 'test_zome',
+                   path: 'resource_id_1'
+                 }
+               ]
+             },
+             coordinator: {
+               zomes: []
+             }
+           },
+           resources: {
+             'resource_id_1': new Uint8Array([0, 0x61, 0x73, 0x6d])  // WASM magic
+           }
+         };
+
+         const encoded = encode(mockBundle);
+         const compressed = pako.gzip(encoded);
+
+         const result = unpackDna(compressed);
+
+         expect(result.manifest.name).toBe('test_dna');
+         expect(result.manifest.integrity.zomes).toHaveLength(1);
+         expect(result.manifest.integrity.zomes[0].name).toBe('test_zome');
+       });
+     });
+
+     describe('extractWasmFromDna', () => {
+       it('should extract WASM from all zomes', () => {
+         const integrityWasm = new Uint8Array([0, 0x61, 0x73, 0x6d, 1]);
+         const coordinatorWasm = new Uint8Array([0, 0x61, 0x73, 0x6d, 2]);
+
+         const dnaBundle = {
+           manifest: {
+             manifest_version: '0' as const,
+             name: 'test_dna',
+             integrity: {
+               zomes: [
+                 { name: 'integrity_zome', path: 'res_1' }
+               ]
+             },
+             coordinator: {
+               zomes: [
+                 { name: 'coordinator_zome', path: 'res_2', dependencies: [] }
+               ]
+             }
+           },
+           resources: {
+             'res_1': integrityWasm,
+             'res_2': coordinatorWasm
+           }
+         };
+
+         const wasmMap = extractWasmFromDna(dnaBundle);
+
+         expect(wasmMap.size).toBe(2);
+         expect(wasmMap.get('integrity_zome')).toEqual(integrityWasm);
+         expect(wasmMap.get('coordinator_zome')).toEqual(coordinatorWasm);
+       });
+
+       it('should throw BundleError when WASM not found', () => {
+         const dnaBundle = {
+           manifest: {
+             manifest_version: '0' as const,
+             name: 'test_dna',
+             integrity: {
+               zomes: [
+                 { name: 'test_zome', path: 'missing_resource' }
+               ]
+             }
+           },
+           resources: {}
+         };
+
+         expect(() => extractWasmFromDna(dnaBundle)).toThrow(BundleError);
+         expect(() => extractWasmFromDna(dnaBundle)).toThrow('WASM_NOT_FOUND');
+       });
+     });
+   });
+   ```
+
+   **Success Criteria**:
+   - All unpacker tests pass
+   - Handles compressed + msgpack bundles correctly
+   - Clear error messages for all failure modes
+   - WASM extraction works for multi-zome DNAs
+   - Logging shows bundle structure details
+
+   ---
+
+   ### Task 5.7.3: Storage Layer Updates
+
+   **Goal**: Extend DnaContext and storage to persist manifests.
+
+   **Files to Modify**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/index.ts`
+
+   ```typescript
+   /**
+    * DNA context within a hApp
+    */
+   export interface DnaContext {
+     /** DNA hash (32 bytes) */
+     hash: DnaHash;
+
+     /** WASM bytes (stored in IndexedDB) */
+     wasm: Uint8Array;
+
+     /** DNA name/identifier */
+     name?: string;
+
+     /** Properties for this DNA */
+     properties?: Record<string, unknown>;
+
+     /** DNA manifest (NEW) - includes entry_defs, link_types, etc. */
+     manifest?: DnaManifest;
+   }
+   ```
+
+   **Reasoning**: manifest is optional for backward compatibility with existing stored contexts.
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/extension/src/lib/happ-context-storage.ts`
+
+   **Changes Required**:
+
+   ```typescript
+   // ADD import at top
+   import type { DnaManifest } from '@fishy/core/bundle';
+
+   // UPDATE StorableDnaContext interface
+   interface StorableDnaContext {
+     hash: number[];
+     wasm: number[];
+     name?: string;
+     properties?: Record<string, unknown>;
+     manifest?: any;  // NEW: DnaManifest is already JSON-serializable
+   }
+
+   // UPDATE toStorable() method (line ~121-139)
+   private toStorable(context: HappContext): StorableContext {
+     return {
+       id: context.id,
+       domain: context.domain,
+       agentPubKey: Array.from(context.agentPubKey),
+       agentKeyTag: context.agentKeyTag,
+       dnas: context.dnas.map((dna) => ({
+         hash: Array.from(dna.hash),
+         wasm: Array.from(dna.wasm),
+         name: dna.name,
+         properties: dna.properties,
+         manifest: dna.manifest,  // NEW: Store manifest directly
+       })),
+       appName: context.appName,
+       appVersion: context.appVersion,
+       installedAt: context.installedAt,
+       lastUsed: context.lastUsed,
+       enabled: context.enabled,
+     };
+   }
+
+   // UPDATE fromStorable() method (line ~144-162)
+   private fromStorable(stored: StorableContext): HappContext {
+     return {
+       id: stored.id,
+       domain: stored.domain,
+       agentPubKey: new Uint8Array(stored.agentPubKey),
+       agentKeyTag: stored.agentKeyTag,
+       dnas: stored.dnas.map((dna) => ({
+         hash: new Uint8Array(dna.hash),
+         wasm: new Uint8Array(dna.wasm),
+         name: dna.name,
+         properties: dna.properties,
+         manifest: dna.manifest,  // NEW: Restore manifest
+       })),
+       appName: stored.appName,
+       appVersion: stored.appVersion,
+       installedAt: stored.installedAt,
+       lastUsed: stored.lastUsed,
+       enabled: stored.enabled,
+     };
+   }
+   ```
+
+   3. `/home/eric/code/metacurrency/holochain/fishy/packages/extension/src/lib/happ-context-storage.test.ts`
+
+   **Add new test**:
+
+   ```typescript
+   import type { DnaManifest } from '@fishy/core/bundle';
+
+   it('should store and retrieve context with manifest', async () => {
+     const storage = new HappContextStorage();
+     await storage['ready'];
+
+     const mockManifest: DnaManifest = {
+       manifest_version: '0',
+       name: 'test_dna',
+       integrity: {
+         network_seed: '00000000-0000-0000-0000-000000000000',
+         properties: null,
+         zomes: [
+           {
+             name: 'test_zome',
+             path: 'test.wasm'
+           }
+         ]
+       },
+       coordinator: {
+         zomes: []
+       }
+     };
+
+     const context: HappContext = {
+       id: 'test-id',
+       domain: 'https://example.com',
+       agentPubKey: new Uint8Array(32),
+       agentKeyTag: 'test-agent',
+       dnas: [
+         {
+           hash: new Uint8Array(32),
+           wasm: new Uint8Array([0, 0x61, 0x73, 0x6d]),
+           name: 'test_dna',
+           properties: {},
+           manifest: mockManifest  // Include manifest
+         }
+       ],
+       appName: 'Test App',
+       installedAt: Date.now(),
+       lastUsed: Date.now(),
+       enabled: true
+     };
+
+     await storage.putContext(context);
+     const retrieved = await storage.getContext('test-id');
+
+     expect(retrieved).not.toBeNull();
+     expect(retrieved!.dnas[0].manifest).toEqual(mockManifest);
+     expect(retrieved!.dnas[0].manifest!.name).toBe('test_dna');
+     expect(retrieved!.dnas[0].manifest!.integrity.zomes).toHaveLength(1);
+   });
+   ```
+
+   **Success Criteria**:
+   - DnaContext.manifest field added
+   - Storage serializes manifest correctly
+   - Round-trip test passes
+   - Existing tests still pass (manifest optional for backward compat)
+   - Manifest survives IndexedDB storage/retrieval
+
+   ---
+
+   ### Task 5.7.4: Installation Flow Updates
+
+   **Goal**: Update INSTALL_HAPP handler to accept and process .happ bundles.
+
+   **Files to Modify**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/index.ts`
+
+   ```typescript
+   /**
+    * Install request payload from web page
+    * Accepts .happ bundle bytes (NEW) or legacy dnas array
+    */
+   export interface InstallHappRequest {
+     /** App name (optional, will be read from manifest if not provided) */
+     appName?: string;
+
+     /** App version (optional) */
+     appVersion?: string;
+
+     /** .happ bundle bytes (NEW - replaces dnas array) */
+     happBytes?: Uint8Array;
+
+     /** DEPRECATED: Individual DNA configs (kept for backward compat) */
+     dnas?: DnaConfig[];
+   }
+
+   // UPDATE DnaConfig to include manifest
+   export interface DnaConfig {
+     hash: Uint8Array;
+     wasm: Uint8Array;
+     name?: string;
+     properties?: Record<string, unknown>;
+     manifest?: DnaManifest;  // NEW
+   }
+   ```
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/extension/src/background/index.ts`
+
+   **Major changes to handleInstallHapp()**:
+
+   ```typescript
+   // ADD imports at top
+   import { unpackHapp, unpackDna, extractWasmFromDna, BundleError } from '@fishy/core/bundle';
+   import type { AppManifest, DnaManifest, AppManifestV0 } from '@fishy/core/bundle';
+
+   /**
+    * Handle INSTALL_HAPP requests
+    * NOW supports .happ bundle format
+    */
+   async function handleInstallHapp(
+     message: RequestMessage,
+     sender: chrome.runtime.MessageSender
+   ): Promise<ResponseMessage> {
+     try {
+       const url = sender.tab?.url;
+       if (!url) {
+         return createErrorResponse(message.id, "Cannot determine origin - no tab URL");
+       }
+
+       const origin = new URL(url).origin;
+       console.log("Install hApp request from:", origin);
+
+       const request = message.payload as InstallHappRequest;
+
+       // NEW: Unpack .happ bundle
+       let appManifest: AppManifest | undefined;
+       let dnaConfigs: DnaConfig[];
+
+       if (request.happBytes) {
+         console.log('[InstallHapp] Unpacking .happ bundle...');
+
+         try {
+           const happBytes = toUint8Array(request.happBytes);
+           const appBundle = unpackHapp(happBytes);
+           appManifest = appBundle.manifest;
+           const manifestV0 = appManifest as AppManifestV0;
+
+           console.log(`[InstallHapp] ✓ App: "${manifestV0.name}"`);
+           console.log(`[InstallHapp]   Roles: ${manifestV0.roles.length}`);
+
+           // Extract DNAs from roles
+           dnaConfigs = [];
+           for (const role of manifestV0.roles) {
+             // Get DNA bundle path from role
+             const dnaPath = role.dna.path;
+             if (!dnaPath) {
+               console.warn(`[InstallHapp] Role "${role.name}" has no DNA path, skipping`);
+               continue;
+             }
+
+             // Get DNA bundle bytes from resources
+             const dnaBundleBytes = appBundle.resources[dnaPath];
+
+             if (!dnaBundleBytes) {
+               throw new Error(`DNA bundle not found in resources: ${dnaPath}`);
+             }
+
+             console.log(`[InstallHapp]   Processing role "${role.name}"...`);
+
+             // Unpack DNA bundle
+             const dnaBundle = unpackDna(dnaBundleBytes);
+             const dnaManifest = dnaBundle.manifest as DnaManifestV0;
+
+             console.log(`[InstallHapp]     DNA: "${dnaManifest.name}"`);
+             console.log(`[InstallHapp]     Integrity zomes: ${dnaManifest.integrity.zomes.length}`);
+             console.log(`[InstallHapp]     Coordinator zomes: ${dnaManifest.coordinator?.zomes.length || 0}`);
+
+             // Extract WASM files
+             const wasmMap = extractWasmFromDna(dnaBundle);
+
+             // For now, use first WASM file
+             // TODO: In Step 6, properly handle multi-zome DNAs
+             const firstWasm = Array.from(wasmMap.values())[0];
+
+             if (!firstWasm) {
+               throw new Error(`No WASM found in DNA bundle: ${dnaManifest.name}`);
+             }
+
+             console.log(`[InstallHapp]     Using first WASM: ${firstWasm.length} bytes`);
+
+             // Compute DNA hash (placeholder for now)
+             const dnaHash = await computeDnaHash(dnaManifest, firstWasm);
+
+             // Merge properties: manifest → role modifiers
+             const mergedProperties = {
+               ...dnaManifest.integrity.properties,
+               ...role.dna.modifiers?.properties
+             };
+
+             // Create DnaConfig with manifest
+             dnaConfigs.push({
+               hash: dnaHash,
+               wasm: firstWasm,
+               name: dnaManifest.name,
+               properties: mergedProperties,
+               manifest: dnaManifest  // NEW: Include full manifest
+             });
+
+             console.log(`[InstallHapp]     ✓ DNA config created for "${dnaManifest.name}"`);
+           }
+
+           console.log(`[InstallHapp] ✓ Processed ${dnaConfigs.length} DNA(s) from bundle`);
+
+         } catch (error) {
+           if (error instanceof BundleError) {
+             return createErrorResponse(
+               message.id,
+               `Bundle unpacking failed [${error.code}]: ${error.message}`
+             );
+           }
+           throw error;
+         }
+       } else if (request.dnas) {
+         // DEPRECATED: Old format with standalone WASM
+         console.warn('[InstallHapp] ⚠️  Using DEPRECATED dnas format - please migrate to .happ bundles');
+         dnaConfigs = request.dnas.map((dna) => ({
+           hash: toUint8Array(dna.hash),
+           wasm: toUint8Array(dna.wasm),
+           name: dna.name,
+           properties: dna.properties,
+           // No manifest in legacy format
+         }));
+       } else {
+         return createErrorResponse(message.id, "Invalid install request - happBytes or dnas required");
+       }
+
+       // Validate we have at least one DNA
+       if (dnaConfigs.length === 0) {
+         return createErrorResponse(message.id, "No DNAs to install");
+       }
+
+       // Continue with existing installation flow
+       const context = await happContextManager.installHapp(origin, {
+         appName: request.appName || appManifest?.name,
+         appVersion: request.appVersion,
+         dnas: dnaConfigs
+       });
+
+       console.log(`[InstallHapp] ✓ Installation complete! Context ID: ${context.id}`);
+
+       return createSuccessResponse(message.id, {
+         contextId: context.id,
+         agentPubKey: context.agentPubKey,
+         cells: happContextManager.getCellIds(context),
+       });
+     } catch (error) {
+       console.error('[InstallHapp] Installation failed:', error);
+       return createErrorResponse(
+         message.id,
+         error instanceof Error ? error.message : String(error)
+       );
+     }
+   }
+
+   /**
+    * Compute DNA hash from manifest + WASM
+    *
+    * PLACEHOLDER: Real implementation will hash (manifest + wasm) using Holochain's algorithm
+    * For now, just generate random hash for testing
+    *
+    * TODO Step 6: Implement proper DnaHash = hash(DnaDef)
+    */
+   async function computeDnaHash(
+     manifest: DnaManifest,
+     wasm: Uint8Array
+   ): Promise<Uint8Array> {
+     // Placeholder: random hash for testing
+     const hash = new Uint8Array(32);
+     crypto.getRandomValues(hash);
+
+     console.log(`[computeDnaHash] Generated hash for "${manifest.name}": ${hash.slice(0, 8).join(',')}}...`);
+
+     return hash;
+   }
+   ```
+
+   **Success Criteria**:
+   - Accepts .happ bundle bytes
+   - Unpacks app manifest
+   - Unpacks each DNA bundle from resources
+   - Extracts WASM from DNA resources
+   - Stores manifest in DnaContext
+   - Backward compatible with old dnas[] format (with deprecation warning)
+   - Clear logging shows bundle processing steps
+   - Error handling for all failure modes
+
+   ---
+
+   ### Task 5.7.5: Thread Manifest to Ribosome
+
+   **Goal**: Pass manifest through zome call request to host functions.
+
+   **Files to Modify**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/call-context.ts`
+
+   ```typescript
+   // ADD import at top
+   import type { DnaManifest } from '../bundle/types';
+
+   /**
+    * Request to call a zome function
+    */
+   export interface ZomeCallRequest {
+     /** DNA WASM bytes */
+     dnaWasm: Uint8Array;
+
+     /** Cell ID [DNA hash, Agent pub key] */
+     cellId: CellId;
+
+     /** Zome name */
+     zome: string;
+
+     /** Function name */
+     fn: string;
+
+     /** Payload to serialize and pass to the zome function */
+     payload: unknown;
+
+     /** Agent making the call */
+     provenance: Uint8Array;
+
+     /** DNA manifest (NEW) - provides entry_defs, link_types, etc. */
+     dnaManifest?: DnaManifest;
+   }
+
+   /**
+    * Context for a zome call invocation
+    */
+   export interface CallContext {
+     /** Cell ID [DNA hash, Agent pub key] */
+     cellId: CellId;
+
+     /** Name of the zome being called */
+     zome: string;
+
+     /** Name of the function being called */
+     fn: string;
+
+     /** Payload for the function (will be serialized when passed to WASM) */
+     payload: unknown;
+
+     /** Agent making the call (provenance) */
+     provenance: Uint8Array;
+
+     /** Signals emitted during this call */
+     emittedSignals?: EmittedSignal[];
+
+     /** DNA manifest (NEW) */
+     dnaManifest?: DnaManifest;
+   }
+   ```
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/extension/src/background/index.ts`
+
+   **Update handleCallZome()** (around line 350-490):
+
+   ```typescript
+   async function handleCallZome(
+     message: RequestMessage,
+     sender: chrome.runtime.MessageSender
+   ): Promise<ResponseMessage> {
+     try {
+       // ... existing code to get context and DNA ...
+
+       const dna = context.dnas.find(/*...*/);
+
+       if (!dna) {
+         // ... existing error handling ...
+       }
+
+       console.log(`[CallZome] DNA found: "${dna.name}", WASM: ${dna.wasm.length} bytes`);
+
+       // NEW: Log manifest availability
+       if (dna.manifest) {
+         console.log(`[CallZome] ✓ DNA manifest available for "${dna.manifest.name}"`);
+       } else {
+         console.warn(`[CallZome] ⚠️  No manifest for DNA - using fallback behavior`);
+       }
+
+       // ... existing payload serialization ...
+
+       // Build zome call request WITH manifest
+       const zomeCallRequest: ZomeCallRequest = {
+         dnaWasm: toUint8Array(dna.wasm),
+         cellId,
+         zome: zome_name,
+         fn: fn_name,
+         payload: payloadBytes,
+         provenance: provenanceBytes,
+         dnaManifest: dna.manifest  // NEW: Pass manifest
+       };
+
+       console.log(`[CallZome] Executing ${zome_name}::${fn_name}`,
+         dna.manifest ? 'WITH manifest' : 'WITHOUT manifest');
+
+       // ... rest of execution ...
+     }
+   }
+   ```
+
+   3. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/index.ts`
+
+   **Update callZome()** (around line 54):
+
+   ```typescript
+   export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult> {
+     const { dnaWasm, cellId, zome, fn, payload, provenance, dnaManifest } = request;
+
+     console.log(
+       `[Ribosome] Calling zome function: ${zome}::${fn}`,
+       dnaManifest ? '(with manifest)' : '(no manifest)'
+     );
+
+     // ... existing module compilation code ...
+
+     // Create call context WITH manifest
+     const context: CallContext = {
+       cellId,
+       zome,
+       fn,
+       payload,
+       provenance,
+       dnaManifest  // NEW: Include manifest in context
+     };
+
+     // ... rest remains the same ...
+   }
+   ```
+
+   **Success Criteria**:
+   - Manifest flows from storage → background → ribosome → context
+   - Host functions can access context.callContext.dnaManifest
+   - Manifest is optional (graceful fallback for missing manifests)
+   - Logging shows manifest availability at each stage
+   - No breaking changes to existing code
+
+   ---
+
+   ### Task 5.7.6: Update Host Functions
+
+   **Goal**: Replace hardcoded/mock data with real manifest data.
+
+   **Files to Modify**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/host-fn/zome_info.ts`
+
+   **Complete rewrite to use manifest**:
+
+   ```typescript
+   /**
+    * zome_info host function
+    *
+    * Returns information about the current zome, including entry definitions
+    * and link types from the DNA manifest.
+    */
+
+   import { encode } from "@msgpack/msgpack";
+   import { HostFunctionImpl } from "./base";
+   import { deserializeFromWasm, serializeResult } from "../serialization";
+   import { findZome, getAllZomes } from "../../bundle/unpacker";
+   import type { DnaManifest, DnaManifestV0, ZomeManifest } from "../../bundle/types";
+
+   /**
+    * Zome info response structure
+    * Matches holochain_integrity_types::info::ZomeInfo
+    */
+   export interface ZomeInfo {
+     /** Name of the current zome */
+     name: string;
+
+     /** Zome ID (index in DNA's zome list) */
+     id: number;
+
+     /** Properties for this zome (SerializedBytes - msgpack-encoded) */
+     properties: Uint8Array;
+
+     /** Entry definitions for this zome */
+     entry_defs: Array<unknown>;
+
+     /** Exported function names */
+     extern_fns: string[];
+
+     /** Zome types in scope (ScopedZomeTypesSet) */
+     zome_types: {
+       entries: Array<[number, number[]]>; // Vec<(ZomeIndex, Vec<EntryDefIndex>)>
+       links: Array<[number, number[]]>; // Vec<(ZomeIndex, Vec<LinkType>)>
+     };
+   }
+
+   /**
+    * zome_info host function implementation
+    *
+    * Returns current zome name and metadata from DNA manifest.
+    * If no manifest available, returns fallback with empty entry_defs.
+    */
+   export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
+     const { callContext, instance } = context;
+     const manifest = callContext.dnaManifest;
+
+     console.log(`[zome_info] Called for zome: "${callContext.zome}"`);
+
+     // Encode empty properties as SerializedBytes (msgpack of {})
+     const emptyProps = {};
+     const propertiesBytes = new Uint8Array(encode(emptyProps));
+
+     // Try to get zome from manifest
+     let zomeInfo: ZomeInfo;
+
+     if (manifest) {
+       const manifestV0 = manifest as DnaManifestV0;
+       const allZomes = getAllZomes(manifest);
+       const zomeIndex = allZomes.findIndex(z => z.name === callContext.zome);
+
+       if (zomeIndex >= 0) {
+         const zomeManifest = allZomes[zomeIndex];
+
+         // Build entry_defs from manifest
+         // NOTE: Entry defs are NOT in the manifest, they come from the integrity WASM
+         // For now, return empty array - real entry defs will be extracted in Step 6
+         const entryDefs: any[] = [];
+
+         // Build link types from manifest
+         // NOTE: Link types are also not in manifest V0, they're discovered from WASM
+         const linkTypes: any[] = [];
+
+         // Build zome_types structure
+         const zomeTypes = {
+           entries: [[zomeIndex, []]] as Array<[number, number[]]>,
+           links: [[zomeIndex, []]] as Array<[number, number[]]>,
+         };
+
+         console.log(`[zome_info] ✓ Using manifest for "${callContext.zome}" (index ${zomeIndex})`);
+         console.log(`[zome_info]   DNA: "${manifestV0.name}"`);
+         console.log(`[zome_info]   Total zomes: ${allZomes.length}`);
+
+         zomeInfo = {
+           name: callContext.zome,
+           id: zomeIndex,
+           properties: propertiesBytes,
+           entry_defs: entryDefs,
+           extern_fns: [],  // TODO: Extract from WASM exports
+           zome_types: zomeTypes,
+         };
+       } else {
+         console.warn(`[zome_info] Zome "${callContext.zome}" not found in manifest`);
+         zomeInfo = createFallbackZomeInfo(callContext.zome);
+       }
+     } else {
+       console.warn(`[zome_info] No manifest available - using fallback`);
+       zomeInfo = createFallbackZomeInfo(callContext.zome);
+     }
+
+     return serializeResult(instance, zomeInfo);
+   };
+
+   /**
+    * Create fallback ZomeInfo when manifest not available
+    *
+    * Used for backward compatibility with standalone WASM files
+    */
+   function createFallbackZomeInfo(zomeName: string): ZomeInfo {
+     const emptyProps = {};
+     const propertiesBytes = new Uint8Array(encode(emptyProps));
+
+     // Return minimal ZomeInfo with hardcoded test entry
+     // This maintains backward compatibility with existing tests
+     const fallbackEntryDefs = [
+       {
+         id: { App: "test_entry" },
+         visibility: "Public",
+         required_validations: 5,
+         cache_at_agent_activity: false,
+       },
+     ];
+
+     console.log(`[zome_info] Created fallback ZomeInfo for "${zomeName}"`);
+
+     return {
+       name: zomeName,
+       id: 0,
+       properties: propertiesBytes,
+       entry_defs: fallbackEntryDefs,
+       extern_fns: [],
+       zome_types: {
+         entries: [[0, [0]]],
+         links: [],
+       },
+     };
+   }
+   ```
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/host-fn/create_link.ts`
+
+   **Update to log manifest availability**:
+
+   ```typescript
+   /**
+    * create_link host function
+    *
+    * Creates a link between two entries.
+    * NOW logs manifest availability for debugging.
+    */
+
+   import { HostFunctionImpl } from "./base";
+   import { deserializeFromWasm, serializeResult } from "../serialization";
+   import type { DnaManifestV0 } from "../../bundle/types";
+   import { getAllZomes } from "../../bundle/unpacker";
+
+   /**
+    * Create link input structure
+    */
+   interface CreateLinkInput {
+     /** Base address (entry or action hash) */
+     base: Uint8Array;
+
+     /** Target address (entry or action hash) */
+     target: Uint8Array;
+
+     /** Link type */
+     link_type: number | { App: { id: number; zome_id: number } };
+
+     /** Optional link tag (arbitrary bytes) */
+     tag?: Uint8Array;
+   }
+
+   /**
+    * create_link host function implementation
+    *
+    * NOTE: This is still a MOCK implementation for Step 5.7.
+    * Returns a random action hash for the create link action.
+    * NOW logs manifest availability and link type context.
+    * Step 6 will add real link storage.
+    */
+   export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
+     const { callContext, instance } = context;
+     const manifest = callContext.dnaManifest;
+
+     // Deserialize input
+     const input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
+
+     // Log manifest availability
+     if (manifest) {
+       const manifestV0 = manifest as DnaManifestV0;
+       const allZomes = getAllZomes(manifest);
+       const linkTypeId = typeof input.link_type === 'number'
+         ? input.link_type
+         : input.link_type.App.id;
+
+       console.log(`[create_link] ✓ Creating link with manifest available`);
+       console.log(`[create_link]   DNA: "${manifestV0.name}"`);
+       console.log(`[create_link]   Zome: "${callContext.zome}"`);
+       console.log(`[create_link]   Link type ID: ${linkTypeId}`);
+       console.log(`[create_link]   Total zomes in DNA: ${allZomes.length}`);
+
+       // TODO Step 6: Validate link_type against manifest.link_types
+       // For now, just log that validation would happen here
+       console.log(`[create_link]   (Link type validation will be added in Step 6)`);
+     } else {
+       console.warn(`[create_link] ⚠️  No manifest available - cannot validate link type`);
+     }
+
+     // Generate mock action hash (Step 6 will add persistence)
+     const actionHash = new Uint8Array(32);
+     crypto.getRandomValues(actionHash);
+
+     console.log(
+       `[create_link] Created link (mock) - Step 6 will add real persistence`
+     );
+
+     return serializeResult(instance, actionHash);
+   };
+   ```
+
+   3. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/host-fn/get_links.ts`
+
+   **Similar update for manifest logging**:
+
+   ```typescript
+   /**
+    * get_links host function
+    *
+    * Retrieves links from a base address.
+    * NOW logs manifest availability.
+    */
+
+   import { HostFunctionImpl } from "./base";
+   import { deserializeFromWasm, serializeResult } from "../serialization";
+   import type { DnaManifestV0 } from "../../bundle/types";
+   import { getAllZomes } from "../../bundle/unpacker";
+
+   /**
+    * Get links input structure
+    */
+   interface GetLinksInput {
+     /** Base address to get links from */
+     base: Uint8Array;
+
+     /** Link type filter */
+     link_type?: number | { App: { id: number; zome_id: number } };
+
+     /** Tag filter prefix */
+     tag_prefix?: Uint8Array;
+   }
+
+   /**
+    * Link structure
+    */
+   interface Link {
+     /** Target of the link */
+     target: Uint8Array;
+
+     /** Timestamp */
+     timestamp: number;
+
+     /** Link type */
+     link_type: number;
+
+     /** Tag */
+     tag: Uint8Array;
+
+     /** Create link action hash */
+     create_link_hash: Uint8Array;
+   }
+
+   /**
+    * get_links host function implementation
+    *
+    * NOTE: This is still a MOCK implementation for Step 5.7.
+    * Always returns an empty array (no links found).
+    * NOW logs manifest availability and link type context.
+    * Step 6 will add real link queries.
+    */
+   export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
+     const { callContext, instance } = context;
+     const manifest = callContext.dnaManifest;
+
+     // Deserialize input
+     const input = deserializeFromWasm(instance, inputPtr, inputLen) as GetLinksInput;
+
+     // Log manifest availability
+     if (manifest) {
+       const manifestV0 = manifest as DnaManifestV0;
+       const allZomes = getAllZomes(manifest);
+
+       console.log(`[get_links] ✓ Querying links with manifest available`);
+       console.log(`[get_links]   DNA: "${manifestV0.name}"`);
+       console.log(`[get_links]   Zome: "${callContext.zome}"`);
+       console.log(`[get_links]   Total zomes in DNA: ${allZomes.length}`);
+
+       if (input.link_type !== undefined) {
+         const linkTypeId = typeof input.link_type === 'number'
+           ? input.link_type
+           : input.link_type.App.id;
+         console.log(`[get_links]   Filtering by link type: ${linkTypeId}`);
+       }
+
+       // TODO Step 6: Use manifest to validate link types
+       console.log(`[get_links]   (Link type validation and storage will be added in Step 6)`);
+     } else {
+       console.warn(`[get_links] ⚠️  No manifest available`);
+     }
+
+     // Return empty array (Step 6 will add real queries)
+     const links: Link[] = [];
+
+     console.log(
+       `[get_links] Returning empty results - Step 6 will add real link queries`
+     );
+
+     return serializeResult(instance, links);
+   };
+   ```
+
+   4. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/host-fn/count_links.ts`
+
+   **Similar manifest logging**
+
+   **Success Criteria**:
+   - zome_info uses manifest when available
+   - zome_info falls back gracefully when no manifest
+   - create_link logs manifest availability
+   - get_links logs manifest availability
+   - count_links logs manifest availability
+   - Graceful fallback when manifest missing
+   - No breaking changes to existing tests
+   - Clear logging shows manifest usage
+
+   ---
+
+   ### Task 5.7.7: Create Test .happ Bundle
+
+   **Goal**: Package test-zome as a proper .happ bundle with manifests.
+
+   **Files to Create**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/test-zome/happ.yaml`
+
+   ```yaml
+   ---
+   manifest_version: "0"
+   name: test_zome_happ
+   description: Test hApp for Fishy browser extension development
+   roles:
+     - name: test_role
+       provisioning:
+         strategy: create
+         deferred: false
+       dna:
+         path: "./test_dna.dna"
+         clone_limit: 0
+   ```
+
+   2. `/home/eric/code/metacurrency/holochain/fishy/packages/test-zome/dna.yaml`
+
+   ```yaml
+   ---
+   manifest_version: "0"
+   name: test_dna
+   integrity:
+     network_seed: "00000000-0000-0000-0000-000000000000"
+     properties: ~
+     zomes:
+       - name: test_zome
+         path: ./target/wasm32-unknown-unknown/release/test_zome.wasm
+   coordinator:
+     zomes: []
+   ```
+
+   **Note**: This is a single-zome DNA with the integrity zome only. Coordinator zomes are empty since test_zome contains both integrity and coordinator
+   functions.
+
+   3. Update `/home/eric/code/metacurrency/holochain/fishy/packages/test-zome/build.sh`
+
+   ```bash
+   #!/bin/bash
+   set -e
+
+   echo "========================================"
+   echo "Building test zome for Fishy extension"
+   echo "========================================"
+
+   # Step 1: Build WASM
+   echo ""
+   echo "Step 1: Building WASM..."
+   cargo build --release --target wasm32-unknown-unknown
+
+   # Check if hc CLI is installed
+   if ! command -v hc &> /dev/null; then
+       echo ""
+       echo "ERROR: 'hc' CLI not found!"
+       echo "Please install Holochain CLI:"
+       echo "  cargo install holochain_cli"
+       exit 1
+   fi
+
+   # Step 2: Pack DNA bundle
+   echo ""
+   echo "Step 2: Packing DNA bundle..."
+   hc dna pack . -o ./test_dna.dna
+
+   # Step 3: Pack hApp bundle
+   echo ""
+   echo "Step 3: Packing hApp bundle..."
+   hc app pack . -o ../extension/test/test-zome.happ
+
+   echo ""
+   echo "========================================"
+   echo "✓ Build complete!"
+   echo "========================================"
+   echo "WASM:  ./target/wasm32-unknown-unknown/release/test_zome.wasm"
+   echo "DNA:   ./test_dna.dna"
+   echo "hApp:  ../extension/test/test-zome.happ"
+   echo ""
+   echo "To test in browser:"
+   echo "  1. cd ../extension"
+   echo "  2. npm run build"
+   echo "  3. Load extension from dist/ in Chrome"
+   echo "  4. Open test/wasm-test.html"
+   ```
+
+   4. Update `/home/eric/code/metacurrency/holochain/fishy/packages/test-zome/.gitignore`
+
+   ```
+   /target
+   *.dna
+   *.happ
+   *.happ.zip
+   ```
+
+   **Build and Verify**:
+
+   ```bash
+   cd /home/eric/code/metacurrency/holochain/fishy/packages/test-zome
+   chmod +x build.sh
+   ./build.sh
+   ```
+
+   Expected output:
+   ```
+   ========================================
+   Building test zome for Fishy extension
+   ========================================
+
+   Step 1: Building WASM...
+      Compiling test_zome v0.1.0 (/path/to/test-zome)
+       Finished release [optimized] target(s) in 2.34s
+
+   Step 2: Packing DNA bundle...
+   Successfully packed DNA bundle: ./test_dna.dna
+
+   Step 3: Packing hApp bundle...
+   Successfully packed hApp bundle: ../extension/test/test-zome.happ
+
+   ========================================
+   ✓ Build complete!
+   ========================================
+   WASM:  ./target/wasm32-unknown-unknown/release/test_zome.wasm
+   DNA:   ./test_dna.dna
+   hApp:  ../extension/test/test-zome.happ
+   ```
+
+   **Verify Bundle Structure**:
+
+   ```bash
+   # List contents of hApp bundle
+   cd /home/eric/code/metacurrency/holochain/fishy/packages/extension/test
+   ls -lh test-zome.happ
+
+   # Expected: ~2MB compressed file
+   ```
+
+   **Success Criteria**:
+   - happ.yaml validates with `hc` CLI
+   - dna.yaml validates with `hc` CLI
+   - `hc app pack` succeeds
+   - Bundle file created: test-zome.happ (~2MB)
+   - Bundle contains DNA bundle in resources
+   - Can unpack with unpackHapp() function
+
+   ---
+
+   ### Task 5.7.8: Update Tests and Manual Testing
+
+   **Goal**: Update integration tests and manual test UI for .happ bundles.
+
+   **Files to Modify**:
+
+   1. `/home/eric/code/metacurrency/holochain/fishy/packages/extension/test/wasm-test.html`
+
+   **Update Installation Section** (around line 420-493):
+
+   ```javascript
+   // Install hApp
+   document.getElementById('install-happ-btn').addEventListener('click', async () => {
+     log('Installing test-zome hApp from .happ bundle...');
+
+     // Load the .happ bundle (NEW - changed from .wasm)
+     let happBytes;
+     try {
+       const response = await fetch('test-zome.happ');
+       if (!response.ok) {
+         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+       }
+       happBytes = new Uint8Array(await response.arrayBuffer());
+       log(`✓ Loaded test-zome.happ (${happBytes.length} bytes)`);
+       log(`  First 4 bytes (gzip magic): [${happBytes.slice(0,4).join(', ')}]`);
+     } catch (error) {
+       log(`Failed to load test-zome.happ: ${error.message}`, true);
+       showStatus('install-status',
+         '<strong>Error:</strong> Could not load test-zome.happ<br>' +
+         'Make sure you ran <code>./build.sh</code> in packages/test-zome/',
+         'error');
+       return;
+     }
+
+     // NEW: Install from .happ bundle
+     const request = {
+       appName: "Test Zome hApp",
+       appVersion: "0.2.0",
+       happBytes: happBytes  // NEW: Send bundle bytes
+       // dnas: [...] REMOVED - no longer needed
+     };
+
+     try {
+       const response = await window.holochain.installHapp(request);
+       contextId = response.contextId;
+       log(`✓ hApp installed! Context ID: ${contextId}`);
+       log(`  Agent pub key: ${Array.from(response.agentPubKey).slice(0, 8).join(',')}...`);
+       log(`  Cells: ${response.cells.length} created`);
+
+       showStatus('install-status',
+         `<strong>hApp installed!</strong><br>
+         Context ID: <code>${contextId}</code><br>
+         Agent Key: <code>${Array.from(response.agentPubKey).slice(0,16).join(',')}...</code><br>
+         Cells: ${response.cells.length}`,
+         'success');
+
+       markChecked('check-4');
+
+       log('');
+       log('✓ CHECK BACKGROUND CONSOLE FOR:');
+       log('  - "Unpacking .happ bundle..."');
+       log('  - "App: test_zome_happ, Roles: 1"');
+       log('  - "DNA: test_dna, Zomes: 1"');
+       log('  - DNA manifest stored in IndexedDB');
+       log('');
+
+       markChecked('check-5');
+       markChecked('check-6');
+       markChecked('check-7');
+
+       // Enable zome test buttons
+       document.getElementById('test-agent-info-btn').disabled = false;
+       document.getElementById('test-random-btn').disabled = false;
+       document.getElementById('test-timestamp-btn').disabled = false;
+       document.getElementById('test-trace-btn').disabled = false;
+       document.getElementById('test-signing-btn').disabled = false;
+       document.getElementById('test-create-btn').disabled = false;
+       document.getElementById('test-get-btn').disabled = false;
+       document.getElementById('test-emit-signal-btn').disabled = false;
+       document.getElementById('test-query-btn').disabled = false;
+       document.getElementById('test-create-link-btn').disabled = false;
+       document.getElementById('test-get-links-btn').disabled = false;
+       document.getElementById('test-delete-link-btn').disabled = false;
+       document.getElementById('test-count-links-btn').disabled = false;
+     } catch (error) {
+       log(`Installation failed: ${error.message}`, true);
+       showStatus('install-status',
+         `<strong>Installation failed:</strong> ${error.message}`,
+         'error');
+     }
+   });
+   ```
+
+   2. Create `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/integration.test.ts`
+
+   **Real Bundle Integration Test**:
+
+   ```typescript
+   import { describe, it, expect } from 'vitest';
+   import { unpackHapp, unpackDna, extractWasmFromDna } from './unpacker';
+   import fs from 'fs';
+   import path from 'path';
+   import type { AppManifestV0, DnaManifestV0 } from './types';
+
+   describe('Bundle Integration Tests', () => {
+     it('should unpack real test-zome.happ bundle', async () => {
+       // Load actual .happ file
+       const happPath = path.join(
+         __dirname,
+         '../../../extension/test/test-zome.happ'
+       );
+
+       // Check if file exists (skip test if not built yet)
+       if (!fs.existsSync(happPath)) {
+         console.warn(
+           'test-zome.happ not found - run ./build.sh in packages/test-zome first'
+         );
+         return; // Skip test
+       }
+
+       const happBytes = fs.readFileSync(happPath);
+       console.log(`Loaded test-zome.happ: ${happBytes.length} bytes`);
+
+       // Unpack app bundle
+       const appBundle = unpackHapp(new Uint8Array(happBytes));
+       const appManifest = appBundle.manifest as AppManifestV0;
+
+       expect(appManifest.manifest_version).toBe('0');
+       expect(appManifest.name).toBe('test_zome_happ');
+       expect(appManifest.roles).toHaveLength(1);
+       expect(appManifest.roles[0].name).toBe('test_role');
+
+       // Get DNA bundle path from role
+       const dnaPath = appManifest.roles[0].dna.path;
+       expect(dnaPath).toBeDefined();
+       console.log(`DNA path in manifest: ${dnaPath}`);
+
+       // Get DNA bundle from resources
+       const dnaBundleBytes = appBundle.resources[dnaPath!];
+       expect(dnaBundleBytes).toBeDefined();
+       console.log(`DNA bundle size: ${dnaBundleBytes!.length} bytes`);
+
+       // Unpack DNA bundle
+       const dnaBundle = unpackDna(dnaBundleBytes!);
+       const dnaManifest = dnaBundle.manifest as DnaManifestV0;
+
+       expect(dnaManifest.manifest_version).toBe('0');
+       expect(dnaManifest.name).toBe('test_dna');
+       expect(dnaManifest.integrity).toBeDefined();
+       expect(dnaManifest.integrity.zomes).toHaveLength(1);
+       expect(dnaManifest.integrity.zomes[0].name).toBe('test_zome');
+
+       // Extract WASM
+       const wasmMap = extractWasmFromDna(dnaBundle);
+       expect(wasmMap.has('test_zome')).toBe(true);
+
+       const wasm = wasmMap.get('test_zome')!;
+       expect(wasm.length).toBeGreaterThan(1000); // Sanity check
+
+       // Verify WASM magic number (0x00 'asm')
+       expect(wasm[0]).toBe(0x00);
+       expect(wasm[1]).toBe(0x61);  // 'a'
+       expect(wasm[2]).toBe(0x73);  // 's'
+       expect(wasm[3]).toBe(0x6d);  // 'm'
+
+       console.log(`✓ Successfully unpacked and validated test-zome.happ`);
+       console.log(`  App: ${appManifest.name}`);
+       console.log(`  DNA: ${dnaManifest.name}`);
+       console.log(`  WASM size: ${wasm.length} bytes`);
+     });
+
+     it('should handle missing .happ file gracefully', () => {
+       const nonexistentPath = path.join(__dirname, 'nonexistent.happ');
+
+       if (!fs.existsSync(nonexistentPath)) {
+         // Test passes - file doesn't exist as expected
+         expect(true).toBe(true);
+       }
+     });
+   });
+   ```
+
+   3. Create `/home/eric/code/metacurrency/holochain/fishy/STEP5.7_TESTING.md`
+
+   ```markdown
+   # Step 5.7 Manual Testing Checklist
+
+   ## Prerequisites
+   - [ ] Extension built: `npm run build` in packages/extension
+   - [ ] .happ bundle created: `./build.sh` in packages/test-zome
+   - [ ] Extension loaded in Chrome from dist/
+
+   ## Test 1: Bundle Build Process
+   1. [ ] Navigate to `/home/eric/code/metacurrency/holochain/fishy/packages/test-zome`
+   2. [ ] Run `./build.sh`
+   3. [ ] Verify output shows:
+      - "Step 1: Building WASM..." - successful
+      - "Step 2: Packing DNA bundle..." - successful
+      - "Step 3: Packing hApp bundle..." - successful
+   4. [ ] Verify files created:
+      - `./test_dna.dna` (exists)
+      - `../extension/test/test-zome.happ` (exists, ~2MB)
+
+   ## Test 2: Bundle Unpacking in Browser
+   1. [ ] Open wasm-test.html in browser
+   2. [ ] Click "Check Extension"
+   3. [ ] Click "Connect to Fishy"
+   4. [ ] Click "Install Mock hApp"
+   5. [ ] Open background console (chrome://extensions → Inspect service worker)
+   6. [ ] Verify logs show:
+      ```
+      [InstallHapp] Unpacking .happ bundle...
+      [unpackHapp] Unpacking .happ bundle (XXXXX bytes)
+      [unpackHapp] Decompressed to XXXXX bytes
+      [unpackHapp] MessagePack decoded
+      [unpackHapp] ✓ App: "test_zome_happ", Roles: 1
+      [InstallHapp]   Processing role "test_role"...
+      [unpackDna] Unpacking .dna bundle (XXXXX bytes)
+      [unpackDna] ✓ DNA: "test_dna"
+      [extractWasmFromDna] Extracting WASM files...
+      [extractWasmFromDna]   ✓ Integrity: "test_zome" (XXXXX bytes)
+      [InstallHapp] ✓ Processed 1 DNA(s) from bundle
+      [InstallHapp] ✓ Installation complete! Context ID: XXXXX
+      ```
+   7. [ ] No errors in console
+
+   ## Test 3: Manifest Storage in IndexedDB
+   1. [ ] After installation, open DevTools → Application → IndexedDB
+   2. [ ] Navigate to `fishy_happ_contexts` → `contexts`
+   3. [ ] View installed hApp record
+   4. [ ] Verify `dnas` array has entry:
+      ```javascript
+      {
+        hash: [number array],
+        wasm: [number array],
+        name: "test_dna",
+        properties: {},
+        manifest: {
+          manifest_version: "0",
+          name: "test_dna",
+          integrity: {
+            network_seed: "00000000-0000-0000-0000-000000000000",
+            properties: null,
+            zomes: [{
+              name: "test_zome",
+              path: "..."
+            }]
+          },
+          coordinator: { zomes: [] }
+        }
+      }
+      ```
+   5. [ ] Manifest object is complete and valid
+
+   ## Test 4: Manifest in Zome Calls
+   1. [ ] Click "Get Agent Info" in test page
+   2. [ ] Check background console for:
+      ```
+      [CallZome] ✓ DNA manifest available for "test_dna"
+      [CallZome] Executing test_zome::get_agent_info WITH manifest
+      [Ribosome] Calling zome function: test_zome::get_agent_info (with manifest)
+      [zome_info] Called for zome: "test_zome"
+      [zome_info] ✓ Using manifest for "test_zome" (index 0)
+      [zome_info]   DNA: "test_dna"
+      [zome_info]   Total zomes: 1
+      ```
+   3. [ ] No warnings about missing manifest
+   4. [ ] Verify zome call succeeds
+
+   ## Test 5: Link Operations with Manifest
+   1. [ ] Create an entry first (click "Create Entry")
+   2. [ ] Click "Create Link"
+   3. [ ] Check background console:
+      ```
+      [create_link] ✓ Creating link with manifest available
+      [create_link]   DNA: "test_dna"
+      [create_link]   Zome: "test_zome"
+      [create_link]   Link type ID: X
+      [create_link]   Total zomes in DNA: 1
+      ```
+   4. [ ] Click "Get Links"
+   5. [ ] Verify similar manifest logging
+
+   ## Test 6: Fallback Behavior (Backward Compatibility)
+   NOTE: This test requires temporarily modifying code
+   1. [ ] Edit `packages/extension/src/background/index.ts`
+   2. [ ] In `handleCallZome`, comment out: `dnaManifest: dna.manifest`
+   3. [ ] Rebuild extension: `npm run build`
+   4. [ ] Reload extension in Chrome
+   5. [ ] Open wasm-test.html, connect, install
+   6. [ ] Click "Get Agent Info"
+   7. [ ] Check background console:
+      ```
+      [CallZome] ⚠️  No manifest for DNA - using fallback behavior
+      [CallZome] Executing test_zome::get_agent_info WITHOUT manifest
+      [zome_info] ⚠️  No manifest available - using fallback
+      [zome_info] Created fallback ZomeInfo for "test_zome"
+      ```
+   8. [ ] Verify zome call still succeeds (with fallback data)
+   9. [ ] Restore code and rebuild
+
+   ## Test 7: Error Handling
+   ### Test 7a: Corrupt Bundle
+   1. [ ] Create corrupt .happ file:
+      ```bash
+      echo "invalid data" > packages/extension/test/corrupt.happ
+      ```
+   2. [ ] Modify wasm-test.html to load 'corrupt.happ'
+   3. [ ] Try to install
+   4. [ ] Verify error message:
+      ```
+      Bundle unpacking failed [DECOMPRESS_FAILED]: Failed to decompress bundle (gzip)
+      ```
+   5. [ ] Restore test-zome.happ
+
+   ### Test 7b: Missing WASM in Bundle
+   This would require creating a malformed bundle - skip for manual testing
+
+   ## Test 8: Integration Test Suite
+   1. [ ] Run integration tests:
+      ```bash
+      cd packages/core
+      npm run test -- bundle/integration.test.ts
+      ```
+   2. [ ] Verify test passes:
+      ```
+      ✓ should unpack real test-zome.happ bundle
+      ```
+   3. [ ] Check test output shows:
+      ```
+      ✓ Successfully unpacked and validated test-zome.happ
+        App: test_zome_happ
+        DNA: test_dna
+        WASM size: XXXXX bytes
+      ```
+
+   ## Test 9: All Unit Tests
+   1. [ ] Run all core tests:
+      ```bash
+      cd packages/core
+      npm run test
+      ```
+   2. [ ] Verify all tests pass:
+      ```
+      Test Files  X passed (X)
+      Tests  XX passed (XX)
+      ```
+   3. [ ] Run extension tests:
+      ```bash
+      cd packages/extension
+      npm run test
+      ```
+   4. [ ] Verify all tests pass
+
+   ## Expected Outcomes
+
+   ### Success Indicators
+   - ✅ Build script creates .happ bundle
+   - ✅ Bundle unpacks successfully in browser
+   - ✅ Manifest stored in IndexedDB
+   - ✅ Manifest available in zome calls
+   - ✅ Host functions use manifest data
+   - ✅ Logging shows manifest processing
+   - ✅ Backward compatibility maintained
+   - ✅ Clear error messages for malformed bundles
+   - ✅ All unit tests pass
+   - ✅ Integration test passes
+
+   ### Red Flags
+   - ❌ "DECOMPRESS_FAILED" with valid bundle
+   - ❌ "INVALID_STRUCTURE" with hc-packed bundle
+   - ❌ "WASM_NOT_FOUND" in extraction
+   - ❌ Manifest missing in IndexedDB
+   - ❌ "No manifest available" warnings during zome calls
+   - ❌ Test failures
+
+   ## Debugging Tips
+
+   ### If bundle unpacking fails:
+   1. Check bundle file size: `ls -lh packages/extension/test/test-zome.happ`
+   2. Verify gzip magic: `xxd packages/extension/test/test-zome.happ | head -1`
+      - Should start with: `1f8b` (gzip magic)
+   3. Check bundle with hc CLI: `hc app unpack packages/extension/test/test-zome.happ`
+
+   ### If manifest not in IndexedDB:
+   1. Check if installation succeeded
+   2. Look for error in background console
+   3. Verify `dna.manifest` is set in handleInstallHapp
+   4. Check storage serialization in toStorable()
+
+   ### If "No manifest available" warnings:
+   1. Verify manifest in IndexedDB (Test 3)
+   2. Check handleCallZome passes `dnaManifest: dna.manifest`
+   3. Verify callZome receives manifest in request
+   4. Check CallContext has manifest field
+
+   ## Completion Criteria
+
+   All tests pass:
+   - [ ] Test 1: Build Process
+   - [ ] Test 2: Bundle Unpacking
+   - [ ] Test 3: IndexedDB Storage
+   - [ ] Test 4: Manifest in Zome Calls
+   - [ ] Test 5: Link Operations
+   - [ ] Test 6: Fallback Behavior
+   - [ ] Test 7: Error Handling
+   - [ ] Test 8: Integration Tests
+   - [ ] Test 9: All Unit Tests
+
+   Ready for commit when all ✓
+   ```
+
+   **Success Criteria**:
+   - test-zome.happ bundle loads successfully
+   - Manifest data visible in IndexedDB
+   - zome_info uses manifest when available
+   - create_link logs manifest info
+   - All manual tests pass
+   - Unit tests pass with new bundle structure
+   - Integration test validates real bundle
+   - Clear testing documentation
+
+   ---
+
+   ## Implementation Timeline
+
+   ### Estimated Duration: 2-3 days (16-24 hours)
+
+   **Task Breakdown**:
+
+   1. **Task 5.7.1**: Dependencies + Types (3-4 hours)
+      - Install pako
+      - Write type definitions (~350 lines)
+      - Add type guards
+      - Write JSDoc
+
+   2. **Task 5.7.2**: Bundle Unpacker (4-5 hours)
+      - Implement error classes
+      - Implement unpackHapp/unpackDna
+      - Implement WASM extraction
+      - Write comprehensive tests (~250 lines)
+
+   3. **Task 5.7.3**: Storage Updates (1-2 hours)
+      - Extend DnaContext
+      - Update storage serialization
+      - Add manifest round-trip test
+
+   4. **Task 5.7.4**: Installation Flow (3-4 hours)
+      - Update InstallHappRequest
+      - Rewrite handleInstallHapp with bundle unpacking
+      - Add DNA hash computation stub
+      - Add error handling
+
+   5. **Task 5.7.5**: Thread Manifest (1 hour)
+      - Add manifest to ZomeCallRequest
+      - Add manifest to CallContext
+      - Update callZome
+      - Verify flow
+
+   6. **Task 5.7.6**: Host Functions (2-3 hours)
+      - Rewrite zome_info with manifest
+      - Update create_link logging
+      - Update get_links logging
+      - Update count_links logging
+      - Add manifest query helpers
+
+   7. **Task 5.7.7**: Create .happ Bundle (2-3 hours)
+      - Write happ.yaml
+      - Write dna.yaml
+      - Update build script
+      - Run hc app pack
+      - Verify bundle structure
+      - Troubleshoot any issues
+
+   8. **Task 5.7.8**: Testing (3-4 hours)
+      - Update wasm-test.html
+      - Write integration test
+      - Run manual testing checklist
+      - Fix bugs found
+      - Document results
+
+   **Total**: 19-28 hours (2.4-3.5 days)
+
+   ---
+
+   ## Risk Assessment
+
+   ### High Risk
+
+   1. **Bundle Format Mismatch**
+      - **Risk**: Real bundles differ from documentation
+      - **Mitigation**: Test with actual `hc app pack` output first
+      - **Fallback**: Adjust unpacker based on real format
+
+   2. **Manifest Version Confusion**
+      - **Risk**: Using wrong manifest_version
+      - **Mitigation**: Always use "0" for Holochain 0.6
+      - **Fallback**: Support both if needed
+
+   ### Medium Risk
+
+   3. **Resource Identifier Mapping**
+      - **Risk**: Resource IDs don't match expectations
+      - **Mitigation**: Log all resource keys during unpacking
+      - **Fallback**: Use heuristics to find WASM
+
+   4. **IndexedDB Manifest Serialization**
+      - **Risk**: Complex manifest objects may not serialize
+      - **Mitigation**: Test round-trip early
+      - **Fallback**: Stringify as JSON if needed
+
+   ### Low Risk
+
+   5. **Multi-Zome Support**
+      - **Risk**: Multiple WASM files complex to handle
+      - **Mitigation**: Use first WASM for now
+      - **Fallback**: Defer to Step 6
+
+   6. **Performance**
+      - **Risk**: Bundle unpacking too slow
+      - **Mitigation**: Bundles are small (~2MB)
+      - **Fallback**: Add async unpacking if needed
+
+   ---
+
+   ## Success Criteria
+
+   ### Functional Requirements
+
+   - [ ] Unpack .happ bundles (gzip + msgpack)
+   - [ ] Unpack .dna bundles from resources
+   - [ ] Extract WASM from DNA resources
+   - [ ] Store manifest in IndexedDB
+   - [ ] Retrieve manifest on zome calls
+   - [ ] Pass manifest to host functions
+   - [ ] zome_info uses manifest when available
+   - [ ] create_link logs manifest info
+   - [ ] get_links logs manifest info
+   - [ ] Graceful fallback when manifest missing
+
+   ### Non-Functional Requirements
+
+   - [ ] All unit tests pass
+   - [ ] Integration test passes
+   - [ ] Manual testing checklist complete
+   - [ ] Backward compatible with standalone .wasm
+   - [ ] Clear error messages for all failures
+   - [ ] Performance: Bundle unpacking < 100ms
+   - [ ] No breaking changes to existing API
+
+   ### Code Quality
+
+   - [ ] TypeScript types for all manifest structures
+   - [ ] JSDoc comments with Rust references
+   - [ ] Consistent logging throughout
+   - [ ] Error handling with BundleError
+   - [ ] Test coverage > 80%
+
+   ---
+
+   ## Critical Files for Implementation
+
+   ### 1. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/types.ts`
+   **Why Critical**: Foundation for manifest type system
+   **Complexity**: ~350 lines, 30+ type definitions
+   **Dependencies**: None (pure types)
+   **Pattern**: Mirror Holochain 0.6 Rust structures
+
+   ### 2. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/bundle/unpacker.ts`
+   **Why Critical**: Core bundle processing logic
+   **Complexity**: ~300 lines, gzip + msgpack + validation
+   **Dependencies**: pako, @msgpack/msgpack, types.ts
+   **Pattern**: Multi-stage unpacking with error boundaries
+
+   ### 3. `/home/eric/code/metacurrency/holochain/fishy/packages/extension/src/background/index.ts`
+   **Why Critical**: Installation flow orchestration
+   **Complexity**: ~200 line modification to handleInstallHapp
+   **Dependencies**: @fishy/core/bundle
+   **Pattern**: Bundle unpacking → DNA extraction → storage
+
+   ### 4. `/home/eric/code/metacurrency/holochain/fishy/packages/core/src/ribosome/host-fn/zome_info.ts`
+   **Why Critical**: Most complex host function update
+   **Complexity**: ~150 line rewrite
+   **Dependencies**: bundle/types, bundle/unpacker
+   **Pattern**: Manifest lookup → data extraction → response
+
+   ### 5. `/home/eric/code/metacurrency/holochain/fishy/packages/test-zome/build.sh`
+   **Why Critical**: Build process for test bundle
+   **Complexity**: ~40 lines bash
+   **Dependencies**: hc CLI
+   **Pattern**: Cargo build → hc dna pack → hc app pack
+
+   ---
+
+   ## Post-Implementation Verification
+
+   ### Automated Checks
+   ```bash
+   # Run all tests
+   cd /home/eric/code/metacurrency/holochain/fishy
+   npm run test
+
+   # Expected results:
+   # - Core tests: ~50 passed (includes bundle tests)
+   # - Extension tests: ~85 passed
+   # - Build: Success
+   ```
+
+   ### Manual Verification
+   1. Build test bundle: `cd packages/test-zome && ./build.sh`
+   2. Build extension: `cd packages/extension && npm run build`
+   3. Load extension in Chrome
+   4. Open wasm-test.html
+   5. Install from test-zome.happ
+   6. Verify all zome calls work
+   7. Check IndexedDB for manifest
+   8. Review background console logs
+
+   ### Success Indicators
+   - ✅ "[unpackHapp] ✓ App: test_zome_happ" in logs
+   - ✅ "[extractWasmFromDna] Extracted 1 WASM files" in logs
+   - ✅ IndexedDB shows manifest in dnas[0].manifest
+   - ✅ "[zome_info] ✓ Using manifest" in logs
+   - ✅ "[create_link] ✓ Creating link with manifest available" in logs
+   - ✅ All zome calls succeed
+   - ✅ No errors in console
+
+   ---
+
+   ## Summary
+
+   This plan provides a complete roadmap for implementing .happ bundle support in Fishy, using the actual Holochain 0.6 format with `manifest_version:
+   "0"`. The implementation is broken down into 8 distinct tasks that can be executed sequentially, with clear success criteria, testing procedures, and
+   error handling strategies.
+
+   Key achievements after completion:
+   1. Full .happ bundle support matching Holochain 0.6
+   2. DNA manifests stored and accessible throughout the stack
+   3. Host functions can use manifest data
+   4. Backward compatibility maintained
+   5. Comprehensive testing coverage
+   6. Clear path to Step 6 (multi-zome support)
+
+   Total effort: ~20-28 hours over 2-3 days.

@@ -1,0 +1,10 @@
+{
+  "name": "@fishy/test-zome",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "RUSTFLAGS='--cfg getrandom_backend=\"custom\"' cargo build --release --target wasm32-unknown-unknown",
+    "pack": "./pack.sh",
+    "clean": "cargo clean && rm -rf bundle"
+  }
+}

@@ -12,6 +12,10 @@
 // Re-export shared types
 export * from "@fishy/shared";
 
+// Re-export bundle types
+export * from './bundle';
+export type { DnaManifestRuntime } from './types/bundle-types';
+
 // Placeholder - conductor interface to be implemented
 export interface Conductor {
   // Install a hApp from a web context
@@ -93,6 +97,9 @@ export interface DnaContext {
 
   /** Properties for this DNA */
   properties?: Record<string, unknown>;
+
+  /** DNA manifest (from .happ bundle) */
+  manifest?: DnaManifestRuntime;
 }
 
 /**
@@ -105,8 +112,8 @@ export interface InstallHappRequest {
   /** App version (optional) */
   appVersion?: string;
 
-  /** DNAs to install */
-  dnas: DnaConfig[];
+  /** .happ bundle bytes (gzipped MessagePack) */
+  happBundle: Uint8Array;
 }
 
 export const VERSION = "0.0.1";

@@ -32,14 +32,38 @@ interface CreateLinkInput {
  * Step 6 will add real link storage.
  */
 export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+  const { callContext, instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
+  const input = deserializeFromWasm(
+    instance,
+    inputPtr,
+    inputLen
+  ) as CreateLinkInput;
 
-  // Generate mock create link action hash
-  const actionHash = new Uint8Array(32);
+  const manifest = callContext.dnaManifest;
+
+  // Log link creation with manifest info
+  console.log("[create_link] Creating link", {
+    zome: callContext.zome,
+    hasManifest: !!manifest,
+    linkType: input.link_type,
+  });
+
+  // TODO: Validate link_type against manifest in Step 6
+  // For now, just log a warning if manifest is missing
+  if (!manifest) {
+    console.warn(
+      "[create_link] No DNA manifest available - link type validation skipped"
+    );
+  }
+
+  // Generate mock action hash (39 bytes: 3 prefix + 32 hash + 4 location)
+  const actionHash = new Uint8Array(39);
   crypto.getRandomValues(actionHash);
+  actionHash[0] = 0x84; // Action hash prefix
+  actionHash[1] = 0x29; // ActionHash-specific byte (not 0x20 which is AgentPubKey)
+  actionHash[2] = 0x24;
 
   console.warn(
     "[create_link] Using MOCK action hash - Step 6 will add real persistence"

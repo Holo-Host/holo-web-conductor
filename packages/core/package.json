@@ -17,9 +17,13 @@
     "@fishy/shared": "*",
     "@holochain/client": "^0.20.1",
     "@msgpack/msgpack": "^3.0.0",
-    "libsodium-wrappers": "^0.7.13"
+    "js-yaml": "^4.1.0",
+    "libsodium-wrappers": "^0.7.13",
+    "pako": "^2.1.0"
   },
   "devDependencies": {
-    "@types/libsodium-wrappers": "^0.7.14"
+    "@types/js-yaml": "^4.0.9",
+    "@types/libsodium-wrappers": "^0.7.14",
+    "@types/pako": "^2.0.3"
   }
 }

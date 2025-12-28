@@ -49,10 +49,30 @@ interface Link {
  * Step 6 will add real link queries.
  */
 export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+  const { callContext, instance } = context;
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as GetLinksInput;
+  const input = deserializeFromWasm(
+    instance,
+    inputPtr,
+    inputLen
+  ) as GetLinksInput;
+
+  const manifest = callContext.dnaManifest;
+
+  console.log("[get_links] Getting links", {
+    zome: callContext.zome,
+    hasManifest: !!manifest,
+    linkType: input.link_type,
+  });
+
+  // TODO: Use manifest to filter links by type in Step 6
+  // For now, return empty array (no link storage yet)
+  if (!manifest) {
+    console.warn(
+      "[get_links] No DNA manifest available - returning empty links"
+    );
+  }
 
   // Return empty array (no links found)
   const links: Link[] = [];

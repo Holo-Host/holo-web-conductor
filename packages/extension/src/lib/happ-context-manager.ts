@@ -7,10 +7,19 @@
  * - Permission manager (authorization)
  */
 
-import type { HappContext, InstallHappRequest, CellId } from "@fishy/core";
+import type { HappContext, InstallHappRequest, CellId, DnaContext } from "@fishy/core";
 import { HappContextStorage, getHappContextStorage } from "./happ-context-storage";
 import { createLairClient, type ILairClient } from "@fishy/lair";
 import { getPermissionManager, type PermissionManager } from "./permissions";
+import {
+  unpackHappBundle,
+  unpackDnaBundle,
+  createRuntimeManifest,
+  getFirstWasm,
+  BundleError,
+} from "@fishy/core/bundle";
+import { encodeHashToBase64 } from "@holochain/client";
+import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@fishy/core/bundle";
 
 /**
  * hApp context manager
@@ -62,6 +71,15 @@ export class HappContextManager {
   }
 
   /**
+   * Compute DNA hash from WASM bytes
+   * TODO: Proper hashing with network seed and properties (Step 6)
+   */
+  private async computeDnaHash(wasm: Uint8Array): Promise<Uint8Array> {
+    const hashBuffer = await crypto.subtle.digest("SHA-256", wasm);
+    return new Uint8Array(hashBuffer);
+  }
+
+  /**
    * Install a hApp for a domain
    *
    * @throws Error if domain not authorized
@@ -70,61 +88,142 @@ export class HappContextManager {
   async installHapp(domain: string, request: InstallHappRequest): Promise<HappContext> {
     await this.ensureReady();
 
-    // 1. Check permission
-    const permission = await this.permissionManager.checkPermission(domain);
-    if (!permission?.granted) {
-      throw new Error(`Domain ${domain} is not authorized`);
+    console.log(`[HappContextManager] Installing hApp for domain: ${domain}`);
+
+    try {
+      // 1. Check permission
+      const permission = await this.permissionManager.checkPermission(domain);
+      if (!permission?.granted) {
+        throw new Error(`Domain ${domain} is not authorized`);
+      }
+
+      // 2. Check if context already exists
+      const existing = await this.storage.getContextByDomain(domain);
+      if (existing) {
+        throw new Error(`hApp already installed for ${domain}`);
+      }
+
+      // 3. Unpack .happ bundle
+      console.log(
+        `[HappContextManager] Unpacking .happ bundle (${request.happBundle.length} bytes)`
+      );
+      const appBundle: AppBundle = unpackHappBundle(request.happBundle);
+
+      console.log(`[HappContextManager] hApp manifest:`, {
+        name: appBundle.manifest.name,
+        roles: appBundle.manifest.roles.length,
+        resources: appBundle.resources.size,
+      });
+
+      // 4. Create or get agent key for this domain
+      const agentKeyTag = `${domain}:agent`;
+      console.log(`[HappContextManager] Creating agent key: ${agentKeyTag}`);
+
+      const lair = await this.getLairClient();
+      const keyResult = await lair.newSeed(agentKeyTag, false);
+      const agentPubKey = keyResult.entry_info.ed25519_pub_key;
+
+      // 5. Process each DNA role
+      const dnaContexts: DnaContext[] = [];
+
+      for (const role of appBundle.manifest.roles) {
+        if (!role.dna.path) {
+          console.warn(
+            `[HappContextManager] Role ${role.name} has no DNA path, skipping`
+          );
+          continue;
+        }
+
+        // Get DNA bundle from resources
+        const dnaBytes = appBundle.resources.get(role.dna.path);
+        if (!dnaBytes) {
+          throw new BundleError(
+            `Missing DNA bundle for role: ${role.name} at ${role.dna.path}`,
+            "MISSING_RESOURCE"
+          );
+        }
+
+        // Unpack DNA bundle
+        console.log(
+          `[HappContextManager] Unpacking DNA bundle for role: ${role.name}`
+        );
+        const dnaBundle: DnaBundle = unpackDnaBundle(dnaBytes);
+
+        // Create runtime manifest
+        const runtimeManifest: DnaManifestRuntime = createRuntimeManifest(
+          dnaBundle.manifest,
+          dnaBundle.resources
+        );
+
+        // Get WASM (use first available for now - multi-zome support in Step 6)
+        const wasm = getFirstWasm(dnaBundle);
+        if (!wasm) {
+          throw new BundleError(
+            `No WASM found in DNA bundle for role: ${role.name}`,
+            "MISSING_RESOURCE"
+          );
+        }
+
+        // Compute DNA hash (TODO: proper hash with modifiers)
+        const dnaHash = await this.computeDnaHash(wasm);
+
+        // Create DnaContext with manifest
+        const dnaContext: DnaContext = {
+          hash: dnaHash,
+          wasm,
+          name: dnaBundle.manifest.name,
+          properties:
+            role.dna.modifiers?.properties ||
+            dnaBundle.manifest.integrity.properties,
+          manifest: runtimeManifest,
+        };
+
+        dnaContexts.push(dnaContext);
+
+        // Store DNA WASM separately for deduplication
+        await this.storage.putDnaWasm(dnaHash, wasm);
+
+        console.log(`[HappContextManager] Processed DNA: ${dnaContext.name}`, {
+          hash: encodeHashToBase64(dnaHash),
+          wasmSize: wasm.length,
+          integrityZomes: runtimeManifest.integrity_zomes.length,
+          coordinatorZomes: runtimeManifest.coordinator_zomes.length,
+        });
+      }
+
+      if (dnaContexts.length === 0) {
+        throw new Error("No DNAs were successfully processed from .happ bundle");
+      }
+
+      // 6. Create HappContext
+      // Use first DNA hash as context ID (base64-encoded)
+      const contextId = encodeHashToBase64(dnaContexts[0].hash);
+      const context: HappContext = {
+        id: contextId,
+        domain,
+        agentPubKey,
+        agentKeyTag,
+        dnas: dnaContexts,
+        appName: appBundle.manifest.name,
+        appVersion: request.appVersion,
+        installedAt: Date.now(),
+        lastUsed: Date.now(),
+        enabled: true,
+      };
+
+      // 7. Store context
+      await this.storage.putContext(context);
+
+      console.log(`[HappContextManager] Installed hApp: ${context.appName}`, {
+        id: context.id,
+        dnas: context.dnas.length,
+      });
+
+      return context;
+    } catch (error) {
+      console.error("[HappContextManager] Failed to install hApp:", error);
+      throw error;
     }
-
-    // 2. Check if context already exists
-    const existing = await this.storage.getContextByDomain(domain);
-    if (existing) {
-      throw new Error(`hApp already installed for ${domain}`);
-    }
-
-    // 3. Generate context ID
-    const contextId = crypto.randomUUID();
-
-    // 4. Create agent key in Lair
-    const agentKeyTag = `${domain}:agent`;
-    console.log(`[HappContextManager] Creating agent key: ${agentKeyTag}`);
-
-    const lair = await this.getLairClient();
-    const keyResult = await lair.newSeed(agentKeyTag, false);
-    const agentPubKey = keyResult.entry_info.ed25519_pub_key;
-
-    // 5. Store DNA WASM separately
-    console.log(`[HappContextManager] Storing ${request.dnas.length} DNA(s) for ${domain}`);
-    for (const dna of request.dnas) {
-      await this.storage.putDnaWasm(dna.hash, dna.wasm);
-    }
-
-    // 6. Create context
-    const context: HappContext = {
-      id: contextId,
-      domain,
-      agentPubKey,
-      agentKeyTag,
-      dnas: request.dnas.map((dna) => ({
-        hash: dna.hash,
-        wasm: dna.wasm,
-        name: dna.name,
-        properties: dna.properties,
-      })),
-      appName: request.appName,
-      appVersion: request.appVersion,
-      installedAt: Date.now(),
-      lastUsed: Date.now(),
-      enabled: true,
-    };
-
-    await this.storage.putContext(context);
-
-    console.log(
-      `[HappContextManager] Installed hApp "${request.appName || contextId}" for ${domain}`
-    );
-
-    return context;
   }
 
   /**

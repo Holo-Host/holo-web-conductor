@@ -435,9 +435,14 @@ async function handleCallZome(
       fn: fn_name,
       payload: payloadBytes,
       provenance: provenanceBytes,
+      dnaManifest: dna.manifest,
     };
 
-    console.log(`[CallZome] Executing ${zome_name}::${fn_name}`);
+    console.log(`[CallZome] Executing ${zome_name}::${fn_name}`, {
+      hasManifest: !!dna.manifest,
+      integrityZomes: dna.manifest?.integrity_zomes.length || 0,
+      coordinatorZomes: dna.manifest?.coordinator_zomes.length || 0,
+    });
 
     // Execute via ribosome - returns ZomeCallResult {result, signals}
     const zomeCallResult = await callZome(zomeCallRequest);
@@ -570,26 +575,22 @@ async function handleInstallHapp(
     console.log("Install hApp request from:", origin);
 
     const request = message.payload as InstallHappRequest;
-    if (!request || !request.dnas || request.dnas.length === 0) {
-      return createErrorResponse(message.id, "Invalid install request - dnas required");
+    if (!request || !request.happBundle) {
+      return createErrorResponse(message.id, "Invalid install request - happBundle required");
     }
 
-    // Convert any serialized Uint8Arrays back to actual Uint8Arrays
+    // Convert serialized Uint8Array back to actual Uint8Array
     const normalizedRequest: InstallHappRequest = {
       appName: request.appName,
       appVersion: request.appVersion,
-      dnas: request.dnas.map((dna) => ({
-        hash: toUint8Array(dna.hash),
-        wasm: toUint8Array(dna.wasm),
-        name: dna.name,
-        properties: dna.properties,
-      })),
+      happBundle: toUint8Array(request.happBundle),
     };
 
     const context = await happContextManager.installHapp(origin, normalizedRequest);
 
     return createSuccessResponse(message.id, {
       contextId: context.id,
+      appName: context.appName,
       agentPubKey: context.agentPubKey,
       cells: happContextManager.getCellIds(context),
     });

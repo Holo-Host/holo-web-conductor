@@ -28,9 +28,12 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Deserialize input
   const _input = deserializeFromWasm(instance, inputPtr, inputLen) as DeleteInput;
 
-  // Generate mock delete action hash
-  const actionHash = new Uint8Array(32);
+  // Generate mock delete action hash (39 bytes: 3 prefix + 32 hash + 4 location)
+  const actionHash = new Uint8Array(39);
   crypto.getRandomValues(actionHash);
+  actionHash[0] = 0x84; // Action hash prefix
+  actionHash[1] = 0x29; // ActionHash-specific byte
+  actionHash[2] = 0x24;
 
   console.warn(
     "[delete] Using MOCK action hash - Step 6 will add real persistence"

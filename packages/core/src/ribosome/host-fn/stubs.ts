@@ -43,7 +43,11 @@ function createNotImplementedStub(name: string): HostFunctionImpl {
 // DHT / Agent Activity
 export const getAgentActivity = createEmptyArrayStub("get_agent_activity");
 export const mustGetAgentActivity = createNullStub("must_get_agent_activity");
-export const getDetails = createNullStub("get_details");
+// get_details returns Vec<Option<Details>>, so return [null] = [None]
+export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
+  console.warn(`[HostFn] get_details called (STUB - returns [null])`);
+  return serializeResult(context.instance, [null]);
+};
 export const getLinksDetails = createEmptyArrayStub("get_links_details");
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");
 

@@ -43,32 +43,54 @@ export interface ZomeInfo {
 export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
-  // Encode empty properties as SerializedBytes (msgpack of {})
-  const emptyProps = {};
-  const propertiesBytes = new Uint8Array(encode(emptyProps));
+  // Get manifest from call context
+  const manifest = callContext.dnaManifest;
 
-  // Create a mock entry definition for test_entry
-  // Matches the TestEntry in the test zome
-  const entryDefs = [
-    {
-      id: { App: "test_entry" }, // EntryDefId::App(AppEntryName)
-      visibility: "Public", // EntryVisibility::Public
-      required_validations: 5, // From #[entry_type(required_validations = 5)]
-      cache_at_agent_activity: false,
-    },
+  // Find current zome in manifest
+  const allZomes = [
+    ...(manifest?.integrity_zomes || []),
+    ...(manifest?.coordinator_zomes || []),
   ];
+
+  const currentZome = allZomes.find((z) => z.name === callContext.zome);
+  const zomeIndex = currentZome?.index ?? 0;
+
+  // Encode properties
+  const propertiesBytes = new Uint8Array(encode(manifest?.properties || {}));
+
+  // Build entry_defs (for now, empty - proper entry type extraction in Step 6)
+  const entryDefs: unknown[] = [];
+
+  // Build zome_types
+  const zomeTypes = {
+    entries: [] as Array<[number, number[]]>,
+    links: [] as Array<[number, number[]]>,
+  };
+
+  // If we have manifest, include current zome in zome_types
+  if (currentZome) {
+    // For now, assume zome has entry def index 0 (proper extraction in Step 6)
+    zomeTypes.entries.push([zomeIndex, [0]]);
+
+    // For links, assume zome has link type 0 (proper extraction in Step 6)
+    zomeTypes.links.push([zomeIndex, [0]]);
+  }
 
   const zomeInfoData: ZomeInfo = {
     name: callContext.zome,
-    id: 0, // Mock zome ID
+    id: zomeIndex,
     properties: propertiesBytes,
     entry_defs: entryDefs,
-    extern_fns: [], // Empty function list for mock
-    zome_types: {
-      entries: [[0, [0]]], // Current zome (index 0) has entry def index 0
-      links: [], // No link types
-    },
+    extern_fns: [], // TODO: Extract from manifest in Step 6
+    zome_types: zomeTypes,
   };
+
+  console.log(`[zome_info] Returning info for zome: ${callContext.zome}`, {
+    index: zomeIndex,
+    hasManifest: !!manifest,
+    integrityZomes: manifest?.integrity_zomes.length || 0,
+    coordinatorZomes: manifest?.coordinator_zomes.length || 0,
+  });
 
   return serializeResult(instance, zomeInfoData);
 };

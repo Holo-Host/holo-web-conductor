@@ -52,7 +52,7 @@ export interface ZomeCallResult {
  * @throws {RibosomeError} If compilation, instantiation, or execution fails
  */
 export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult> {
-  const { dnaWasm, cellId, zome, fn, payload, provenance } = request;
+  const { dnaWasm, cellId, zome, fn, payload, provenance, dnaManifest } = request;
 
   console.log(
     `[Ribosome] Calling zome function: ${zome}::${fn}`
@@ -73,6 +73,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     fn,
     payload,
     provenance,
+    dnaManifest,
   };
 
   // Create a mutable instance reference that will be updated after instantiation
