@@ -5,7 +5,11 @@
  */
 
 import sodium from "libsodium-wrappers";
-import { ZomeCallRequest, CallContext } from "./call-context";
+import {
+  ZomeCallRequest,
+  CallContext,
+  EmittedSignal,
+} from "./call-context";
 import { getRibosomeRuntime } from "./runtime";
 import { getHostFunctionRegistry } from "./host-fn";
 import {
@@ -19,6 +23,17 @@ import {
 } from "./error";
 
 /**
+ * Result of a zome call execution
+ */
+export interface ZomeCallResult {
+  /** Deserialized result from the zome function */
+  result: unknown;
+
+  /** Signals emitted during zome execution */
+  signals: EmittedSignal[];
+}
+
+/**
  * Execute a zome function call
  *
  * This is the main entry point for executing WASM zome functions.
@@ -30,12 +45,13 @@ import {
  * 4. Serialize input payload to WASM memory
  * 5. Call zome function
  * 6. Deserialize result from WASM memory
+ * 7. Collect any emitted signals
  *
  * @param request - Zome call request
- * @returns Deserialized result from zome function
+ * @returns Object with result and emitted signals
  * @throws {RibosomeError} If compilation, instantiation, or execution fails
  */
-export async function callZome(request: ZomeCallRequest): Promise<unknown> {
+export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult> {
   const { dnaWasm, cellId, zome, fn, payload, provenance } = request;
 
   console.log(
@@ -116,11 +132,22 @@ export async function callZome(request: ZomeCallRequest): Promise<unknown> {
   // Deserialize result from WASM memory
   const result = deserializeFromWasm(instance, resultPtr, resultLen);
 
-  return result;
+  // Collect any emitted signals
+  const signals = context.emittedSignals || [];
+
+  return {
+    result,
+    signals,
+  };
 }
 
 // Re-export key types and utilities
-export type { ZomeCallRequest, CallContext, CellId } from "./call-context";
+export type {
+  ZomeCallRequest,
+  CallContext,
+  CellId,
+  EmittedSignal,
+} from "./call-context";
 export type { HostFunctionContext, HostFunctionImpl } from "./host-fn/base";
 export { getHostFunctionRegistry } from "./host-fn";
 export { RibosomeError, RibosomeErrorType } from "./error";

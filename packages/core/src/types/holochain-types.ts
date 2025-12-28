@@ -1,0 +1,256 @@
+/**
+ * Holochain Type Definitions for Host Function Input/Output
+ *
+ * This file contains TypeScript type definitions for Holochain types that are not
+ * available in holochain-client-js but are needed for host function implementation.
+ *
+ * Types are based on Rust definitions from:
+ * /home/eric/code/metacurrency/holochain/holochain/crates/holochain_zome_types/
+ * /home/eric/code/metacurrency/holochain/holochain/crates/holochain_integrity_types/
+ */
+
+// Import reusable types from @holochain/client
+import type {
+  AgentPubKey,
+  ActionHash,
+  EntryHash,
+  DnaHash,
+  AnyDhtHash,
+  Action,
+  Entry,
+  Record,
+  Link,
+  SignedActionHashed,
+  Timestamp,
+} from '@holochain/client';
+
+// Re-export commonly used types for convenience
+export type {
+  AgentPubKey,
+  ActionHash,
+  EntryHash,
+  DnaHash,
+  AnyDhtHash,
+  Action,
+  Entry,
+  Record,
+  Link,
+  SignedActionHashed,
+  Timestamp,
+};
+
+// ============================================================================
+// Chain and Entry Types
+// ============================================================================
+
+/**
+ * Chain top ordering for action creation
+ */
+export type ChainTopOrdering = 'Strict' | 'Relaxed';
+
+/**
+ * Entry visibility
+ */
+export type EntryVisibility = 'Public' | 'Private';
+
+/**
+ * Get strategy for retrieval operations
+ */
+export type GetStrategy = 'Network' | 'Local';
+
+/**
+ * Options for get operations
+ */
+export interface GetOptions {
+  strategy: GetStrategy;
+}
+
+/**
+ * App entry definition location
+ */
+export interface AppEntryDefLocation {
+  zome_index: number;
+  entry_def_index: number;
+}
+
+/**
+ * Entry definition location (discriminated union)
+ */
+export type EntryDefLocation =
+  | { App: AppEntryDefLocation }
+  | 'CapClaim'
+  | 'CapGrant';
+
+// ============================================================================
+// CRUD Operation Input Types
+// ============================================================================
+
+/**
+ * Input for create_entry host function
+ */
+export interface CreateInput {
+  entry_location: EntryDefLocation;
+  entry_visibility: EntryVisibility;
+  entry: Entry;
+  chain_top_ordering: ChainTopOrdering;
+}
+
+/**
+ * Input for update host function
+ */
+export interface UpdateInput {
+  original_action_address: ActionHash;
+  entry: Entry;
+  chain_top_ordering: ChainTopOrdering;
+}
+
+/**
+ * Input for delete/delete_entry host function
+ */
+export interface DeleteInput {
+  deletes_action_hash: ActionHash;
+  chain_top_ordering: ChainTopOrdering;
+}
+
+/**
+ * Input for get host function
+ */
+export interface GetInput {
+  any_dht_hash: AnyDhtHash;
+  get_options: GetOptions;
+}
+
+// ============================================================================
+// Link Operation Input Types
+// ============================================================================
+
+/**
+ * Any linkable hash (EntryHash, ActionHash, or external hash)
+ */
+export type AnyLinkableHash = EntryHash | ActionHash;
+
+/**
+ * Link type filter for get_links
+ */
+export type LinkTypeFilter =
+  | { Type: Array<[number, number[]]> }  // [zome_index, [link_types]]
+  | { Dependencies: number[] };          // [zome_indices]
+
+/**
+ * Input for create_link host function
+ */
+export interface CreateLinkInput {
+  base_address: AnyLinkableHash;
+  target_address: AnyLinkableHash;
+  zome_index: number;
+  link_type: number;
+  tag: Uint8Array;
+  chain_top_ordering: ChainTopOrdering;
+}
+
+/**
+ * Input for delete_link host function
+ */
+export interface DeleteLinkInput {
+  address: ActionHash;
+  chain_top_ordering: ChainTopOrdering;
+  get_options: GetOptions;
+}
+
+/**
+ * Input for get_links host function
+ */
+export interface GetLinksInput {
+  base_address: AnyLinkableHash;
+  link_type: LinkTypeFilter;
+  get_options: GetOptions;
+  tag_prefix?: Uint8Array;
+  after?: Timestamp;
+  before?: Timestamp;
+  author?: AgentPubKey;
+}
+
+// ============================================================================
+// Must Get Input Types (Newtypes)
+// ============================================================================
+
+/**
+ * Input for must_get_entry host function
+ */
+export type MustGetEntryInput = EntryHash;
+
+/**
+ * Input for must_get_action host function
+ */
+export type MustGetActionInput = ActionHash;
+
+// ============================================================================
+// Signal Types
+// ============================================================================
+
+/**
+ * App signal payload (ExternIO wrapper - msgpack-encoded bytes)
+ */
+export type AppSignal = Uint8Array;
+
+// ============================================================================
+// Retrieval Operation Return Types
+// ============================================================================
+
+/**
+ * Record entry variants
+ */
+export type RecordEntry =
+  | { Present: Entry }
+  | 'Hidden'
+  | 'NotApplicable'
+  | 'NotStored';
+
+/**
+ * Validation status for records
+ */
+export type ValidationStatus =
+  | 'Valid'
+  | 'Invalid'
+  | 'Rejected'
+  | 'Abandoned';
+
+/**
+ * Entry DHT status
+ */
+export type EntryDhtStatus = 'Live' | 'Dead';
+
+/**
+ * Record details (returned by get_details for ActionHash)
+ */
+export interface RecordDetails {
+  record: Record;
+  validation_status: ValidationStatus;
+  deletes: SignedActionHashed[];
+  updates: SignedActionHashed[];
+}
+
+/**
+ * Entry details (returned by get_details for EntryHash)
+ */
+export interface EntryDetails {
+  entry: Entry;
+  actions: SignedActionHashed[];
+  rejected_actions: SignedActionHashed[];
+  deletes: SignedActionHashed[];
+  updates: SignedActionHashed[];
+  entry_dht_status: EntryDhtStatus;
+}
+
+/**
+ * Details union type (returned by get_details)
+ */
+export type Details =
+  | { Record: RecordDetails }
+  | { Entry: EntryDetails };
+
+/**
+ * Link details (returned by get_link_details)
+ * Each element is: [CreateLink action, [DeleteLink actions]]
+ */
+export type LinkDetails = Array<[SignedActionHashed, SignedActionHashed[]]>;

@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 hdk = "0.6"
 serde = "1"
-getrandom = "0.3"
+getrandom = "0.3.3"
 holochain_serialized_bytes = "=0.0.56"
 
 [profile.release]

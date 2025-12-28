@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@fishy/shared": "*",
+    "@holochain/client": "^0.20.1",
     "@msgpack/msgpack": "^3.0.0",
     "libsodium-wrappers": "^0.7.13"
   },

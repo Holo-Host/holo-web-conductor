@@ -83,6 +83,59 @@ fn get_test_entry(hash: ActionHash) -> ExternResult<Option<Record>> {
     get(hash, GetOptions::default())
 }
 
+/// Test emit_signal host function
+/// Emits a signal with the provided message
+#[hdk_extern]
+fn emit_signal_test(message: String) -> ExternResult<()> {
+    emit_signal(&message)?;
+    Ok(())
+}
+
+/// Test query host function
+/// Queries the local source chain for all TestEntry records
+#[hdk_extern]
+fn query_test(_: ()) -> ExternResult<Vec<Record>> {
+    let filter = ChainQueryFilter::new();
+    query(filter)
+}
+
+/// Input for create_test_link
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct CreateLinkInput {
+    pub base: ActionHash,
+    pub target: ActionHash,
+}
+
+/// Test create_link host function
+/// Creates a link from one action hash to another
+#[hdk_extern]
+fn create_test_link(input: CreateLinkInput) -> ExternResult<ActionHash> {
+    create_link(input.base, input.target, LinkTypes::Placeholder, ())
+}
+
+/// Test get_links host function
+/// Gets all links from a base
+#[hdk_extern]
+fn get_test_links(base: ActionHash) -> ExternResult<Vec<Link>> {
+    let query = LinkQuery::try_new(base, LinkTypes::Placeholder)?;
+    get_links(query, GetStrategy::default())
+}
+
+/// Test delete_link host function
+/// Deletes a link by its create action hash
+#[hdk_extern]
+fn delete_test_link(link_add_hash: ActionHash) -> ExternResult<ActionHash> {
+    delete_link(link_add_hash, GetOptions::default())
+}
+
+/// Test count_links host function
+/// Counts links from a base
+#[hdk_extern]
+fn count_test_links(base: ActionHash) -> ExternResult<usize> {
+    let query = LinkQuery::try_new(base, LinkTypes::Placeholder)?;
+    count_links(query)
+}
+
 /// Entry types enum (required by HDK)
 #[hdk_entry_types]
 #[unit_enum(UnitEntryTypes)]

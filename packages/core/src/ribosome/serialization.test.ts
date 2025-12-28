@@ -285,9 +285,9 @@ describe("I64 Result Handling", () => {
       expect(ptr).toBeGreaterThanOrEqual(0);
       expect(len).toBeGreaterThan(0);
 
-      // Verify data
+      // Verify data is wrapped in Result::Ok
       const deserialized = deserializeFromWasm(instance, ptr, len);
-      expect(deserialized).toEqual(data);
+      expect(deserialized).toEqual({ Ok: data });
     });
   });
 });

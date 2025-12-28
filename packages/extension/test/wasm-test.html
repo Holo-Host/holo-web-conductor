@@ -172,6 +172,12 @@
             <button id="test-signing-btn" disabled>Test Signing</button>
             <button id="test-create-btn" disabled>Create Entry</button>
             <button id="test-get-btn" disabled>Get Entry</button>
+            <button id="test-emit-signal-btn" disabled>Emit Signal</button>
+            <button id="test-query-btn" disabled>Query Chain</button>
+            <button id="test-create-link-btn" disabled>Create Link</button>
+            <button id="test-get-links-btn" disabled>Get Links</button>
+            <button id="test-delete-link-btn" disabled>Delete Link</button>
+            <button id="test-count-links-btn" disabled>Count Links</button>
             <div id="zome-test-status"></div>
         </div>
 
@@ -373,6 +379,12 @@
                         document.getElementById('test-signing-btn').disabled = false;
                         document.getElementById('test-create-btn').disabled = false;
                         document.getElementById('test-get-btn').disabled = false;
+                        document.getElementById('test-emit-signal-btn').disabled = false;
+                        document.getElementById('test-query-btn').disabled = false;
+                        document.getElementById('test-create-link-btn').disabled = false;
+                        document.getElementById('test-get-links-btn').disabled = false;
+                        document.getElementById('test-delete-link-btn').disabled = false;
+                        document.getElementById('test-count-links-btn').disabled = false;
 
                         markChecked('check-4');
                     }
@@ -466,6 +478,12 @@
                 document.getElementById('test-signing-btn').disabled = false;
                 document.getElementById('test-create-btn').disabled = false;
                 document.getElementById('test-get-btn').disabled = false;
+                document.getElementById('test-emit-signal-btn').disabled = false;
+                document.getElementById('test-query-btn').disabled = false;
+                document.getElementById('test-create-link-btn').disabled = false;
+                document.getElementById('test-get-links-btn').disabled = false;
+                document.getElementById('test-delete-link-btn').disabled = false;
+                document.getElementById('test-count-links-btn').disabled = false;
             } catch (error) {
                 log(`Installation failed: ${error.message}`, true);
                 showStatus('install-status',
@@ -652,6 +670,148 @@
                 markChecked('check-14');
             } catch (error) {
                 log(`get_test_entry failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-emit-signal-btn').addEventListener('click', async () => {
+            log('Calling emit_signal_test()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'emit_signal_test',
+                    payload: 'Test signal at ' + new Date().toISOString()
+                });
+
+                log(`✓ Signal emitted! Result: ${JSON.stringify(result)}`);
+                console.log('Emit signal result:', result);
+                showStatus('zome-test-status', '<strong>Success!</strong> Signal emitted.', 'success');
+            } catch (error) {
+                log(`emit_signal_test failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-query-btn').addEventListener('click', async () => {
+            log('Calling query_test()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'query_test',
+                    payload: null
+                });
+
+                const formatted = formatForDisplay(result);
+                log(`✓ Chain queried! Found ${Array.isArray(result) ? result.length : 0} records`);
+                log(`Records: ${JSON.stringify(formatted, null, 2)}`);
+                console.log('Query result:', formatted);
+                showStatus('zome-test-status', '<strong>Success!</strong> Chain queried.', 'success');
+            } catch (error) {
+                log(`query_test failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        let lastLinkHash = null;
+
+        document.getElementById('test-create-link-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create two entries first!', 'info');
+                return;
+            }
+            log('Calling create_test_link()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'create_test_link',
+                    payload: {
+                        base: lastCreatedHash,
+                        target: lastCreatedHash  // Link to itself for testing
+                    }
+                });
+
+                lastLinkHash = result;
+                const formatted = formatForDisplay(result);
+                log(`✓ Link created! LinkHash: ${formatted}`);
+                console.log('Create link result:', formatted);
+                showStatus('zome-test-status', '<strong>Success!</strong> Link created.', 'success');
+            } catch (error) {
+                log(`create_test_link failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-get-links-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create an entry first!', 'info');
+                return;
+            }
+            log('Calling get_test_links()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_test_links',
+                    payload: lastCreatedHash
+                });
+
+                const formatted = formatForDisplay(result);
+                log(`✓ Links retrieved! Found ${Array.isArray(result) ? result.length : 0} links`);
+                log(`Links: ${JSON.stringify(formatted, null, 2)}`);
+                console.log('Get links result:', formatted);
+                showStatus('zome-test-status', '<strong>Success!</strong> Links retrieved.', 'success');
+            } catch (error) {
+                log(`get_test_links failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-delete-link-btn').addEventListener('click', async () => {
+            if (!lastLinkHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create a link first!', 'info');
+                return;
+            }
+            log('Calling delete_test_link()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'delete_test_link',
+                    payload: lastLinkHash
+                });
+
+                const formatted = formatForDisplay(result);
+                log(`✓ Link deleted! DeleteHash: ${formatted}`);
+                console.log('Delete link result:', formatted);
+                showStatus('zome-test-status', '<strong>Success!</strong> Link deleted.', 'success');
+            } catch (error) {
+                log(`delete_test_link failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('test-count-links-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create an entry first!', 'info');
+                return;
+            }
+            log('Calling count_test_links()...');
+            try {
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'count_test_links',
+                    payload: lastCreatedHash
+                });
+
+                log(`✓ Links counted! Count: ${result}`);
+                console.log('Count links result:', result);
+                showStatus('zome-test-status', `<strong>Success!</strong> Found ${result} links.`, 'success');
+            } catch (error) {
+                log(`count_test_links failed: ${error.message}`, true);
                 showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
             }
         });

@@ -439,27 +439,29 @@ async function handleCallZome(
 
     console.log(`[CallZome] Executing ${zome_name}::${fn_name}`);
 
-    // Execute via ribosome
-    const result = await callZome(zomeCallRequest);
-    console.log(`[CallZome] Result received:`, result);
+    // Execute via ribosome - returns ZomeCallResult {result, signals}
+    const zomeCallResult = await callZome(zomeCallRequest);
+    console.log(`[CallZome] ZomeCallResult received:`, zomeCallResult);
+
+    // Extract the result and signals from ZomeCallResult
+    const { result: zomeResult, signals } = zomeCallResult;
 
     // Unwrap Result<T, E> - throw if Err
-    if (result && typeof result === 'object' && 'Err' in result) {
-      const errorMsg = typeof result.Err === 'string'
-        ? result.Err
-        : JSON.stringify(result.Err);
+    if (zomeResult && typeof zomeResult === 'object' && 'Err' in zomeResult) {
+      const errorMsg = typeof zomeResult.Err === 'string'
+        ? zomeResult.Err
+        : JSON.stringify(zomeResult.Err);
       throw new Error(`Zome call failed: ${errorMsg}`);
     }
 
     // Extract Ok value if present
-    const unwrappedResult = (result && typeof result === 'object' && 'Ok' in result)
-      ? result.Ok
-      : result;
+    const unwrappedResult = (zomeResult && typeof zomeResult === 'object' && 'Ok' in zomeResult)
+      ? zomeResult.Ok
+      : zomeResult;
 
     // Debug: log what type of data we're returning
     console.log(`[CallZome] Unwrapped result type:`,
       unwrappedResult instanceof Uint8Array ? 'Uint8Array' :
-      unwrappedResult instanceof Buffer ? 'Buffer' :
       Array.isArray(unwrappedResult) ? 'Array' :
       typeof unwrappedResult,
       `length:`, unwrappedResult?.length);
@@ -476,6 +478,11 @@ async function handleCallZome(
     // By explicitly converting to Arrays, we preserve the data cleanly
     const transportSafeResult = serializeForTransport(decodedResult);
     console.log(`[CallZome] Transport-safe result:`, transportSafeResult);
+
+    // TODO: Handle signals - for now just log them
+    if (signals && signals.length > 0) {
+      console.log(`[CallZome] Signals emitted:`, signals);
+    }
 
     // Update last used timestamp
     await happContextManager.touchContext(context.id);
