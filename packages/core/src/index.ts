@@ -16,6 +16,9 @@ export * from "@fishy/shared";
 export * from './bundle';
 export type { DnaManifestRuntime } from './types/bundle-types';
 
+// Re-export storage types and classes
+export * from './storage';
+
 // Placeholder - conductor interface to be implemented
 export interface Conductor {
   // Install a hApp from a web context
@@ -99,7 +102,7 @@ export interface DnaContext {
   properties?: Record<string, unknown>;
 
   /** DNA manifest (from .happ bundle) */
-  manifest?: DnaManifestRuntime;
+  manifest?: import('./types/bundle-types').DnaManifestRuntime;
 }
 
 /**

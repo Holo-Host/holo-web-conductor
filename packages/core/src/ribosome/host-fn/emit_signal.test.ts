@@ -116,6 +116,11 @@ describe("emit_signal", () => {
 
     const resultI64 = emit_signal(hostContext, ptr, len);
 
+    // Ensure result is not a Promise (should never happen for emit_signal)
+    if (resultI64 instanceof Promise) {
+      throw new Error('emit_signal returned Promise unexpectedly');
+    }
+
     // Extract ptr and len from i64 result
     const resultPtr = Number(resultI64 >> 32n);
     const resultLen = Number(resultI64 & 0xffffffffn);

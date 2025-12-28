@@ -17,9 +17,9 @@ import {
   createRuntimeManifest,
   getFirstWasm,
   BundleError,
-} from "@fishy/core/bundle";
+} from "@fishy/core";
 import { encodeHashToBase64 } from "@holochain/client";
-import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@fishy/core/bundle";
+import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@fishy/core";
 
 /**
  * hApp context manager
@@ -196,15 +196,15 @@ export class HappContextManager {
       }
 
       // 6. Create HappContext
-      // Use first DNA hash as context ID (base64-encoded)
-      const contextId = encodeHashToBase64(dnaContexts[0].hash);
+      // Generate unique context ID (UUID v4)
+      const contextId = crypto.randomUUID();
       const context: HappContext = {
         id: contextId,
         domain,
         agentPubKey,
         agentKeyTag,
         dnas: dnaContexts,
-        appName: appBundle.manifest.name,
+        appName: request.appName || appBundle.manifest.name,
         appVersion: request.appVersion,
         installedAt: Date.now(),
         lastUsed: Date.now(),

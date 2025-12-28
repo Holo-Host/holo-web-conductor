@@ -24,15 +24,16 @@ export interface HostFunctionContext {
  * All host functions follow this pattern:
  * - Receive pointer and length of serialized input (MessagePack)
  * - Return i64 with ptr in high 32 bits, len in low 32 bits
- * - Must be synchronous (WASM imports can't be async)
- *   - libsodium is initialized before WASM instantiation (ribosome/index.ts)
- *   - Lair operations should be awaited before calling zome (Step 6+)
+ * - Can be synchronous or asynchronous
+ *   - Async host functions are NOT truly supported by WASM spec
+ *   - Workaround: We'll handle async by making zome execution itself async
+ *   - Storage reads/writes use IndexedDB (async), so host functions must support await
  */
 export type HostFunctionImpl = (
   context: HostFunctionContext,
   inputPtr: number,
   inputLen: number
-) => bigint;
+) => bigint | Promise<bigint>;
 
 /**
  * Wrap a host function with error handling
@@ -64,7 +65,18 @@ export function wrapHostFunction(
           callContext: context,
           instance: instanceRef.current,
         };
-        return impl(hostContext, inputPtr, inputLen);
+        const result = impl(hostContext, inputPtr, inputLen);
+
+        // If result is a Promise, we can't handle it synchronously from WASM
+        // This should not happen in Step 6 with our session cache pattern
+        if (result instanceof Promise) {
+          throw new Error(
+            `Host function ${name} returned Promise - async not supported in WASM context ` +
+            `(Step 7+ will add proper async support)`
+          );
+        }
+
+        return result;
       } catch (error) {
         // Re-throw RibosomeErrors as-is
         if (error instanceof Error && error.name === "RibosomeError") {

@@ -30,8 +30,9 @@ describe("Bundle Unpacker", () => {
           {
             name: "test-role",
             provisioning: {
-              strategy: "create",
-              deferred: false,
+              Create: {
+                deferred: false,
+              },
             },
             dna: {
               path: "test.dna",
@@ -91,12 +92,12 @@ describe("Bundle Unpacker", () => {
         roles: [
           {
             name: "role-1",
-            provisioning: { strategy: "create", deferred: false },
+            provisioning: { Create: { deferred: false } },
             dna: { path: "dna1.dna" },
           },
           {
             name: "role-2",
-            provisioning: { strategy: "create", deferred: false },
+            provisioning: { Create: { deferred: false } },
             dna: { path: "dna2.dna" },
           },
         ],

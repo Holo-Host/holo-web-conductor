@@ -462,34 +462,191 @@ The Holochain `hc` CLI packs manifests as MessagePack-serialized objects, NOT as
 
 ---
 
-### Step 6: Local Chain Data Storage
+### Step 6: Storage Infrastructure ⏳ IN PROGRESS
 
-**Goal**: Implement real source chain storage for create/update/delete operations.
+**Goal**: Build IndexedDB-based source chain storage layer with full CRUD for actions, entries, and links.
 
 **Dependencies**: Steps 5.x
 
-**Sub-tasks**:
-1. **6.1** Design source chain data model (actions, entries, hashes)
-2. **6.2** Implement chain storage (IndexedDB)
-3. **6.3** Implement `create` - write entry to chain
-4. **6.4** Implement `update` - create update action
-5. **6.5** Implement `delete` - create delete action
-6. **6.6** Implement `query` - query local chain
-7. **6.7** Implement `get` - retrieve from local chain
-8. **6.8** Implement link storage
-9. **6.9** Hash computation (action hash, entry hash)
+**Status**: ⏳ Partial - Storage layer complete, host function integration ongoing
 
-**Key Files**:
-- `packages/core/src/conductor/source_chain.ts`
-- `packages/core/src/conductor/chain_storage.ts`
+**What was accomplished**:
+- ✅ Created comprehensive TypeScript types for Holochain data structures (Action, Entry, Link, ChainHead)
+- ✅ Implemented SourceChainStorage class with IndexedDB backend (4 stores: actions, entries, links, chainHeads)
+- ✅ Added transaction support for atomic chain updates (critical for data integrity)
+- ✅ Implemented session cache for synchronous WASM host function access
+- ✅ Created utility function for action serialization (toHolochainAction) with proper format:
+  - Internally tagged enum format (`{type: "Create", ...}`)
+  - snake_case field names
+  - Omits null/undefined fields (Holochain Option<T> expects omission, not nil)
+  - Converts BigInt timestamps to Number for MessagePack
+  - Converts 32-byte author to 39-byte prefixed AgentPubKey
+- ✅ Updated host functions to use storage:
+  - `create`, `get`, `update`, `delete`, `query` - full entry CRUD
+  - `create_link`, `get_links`, `delete_link`, `count_links` - link operations
+  - `agent_info` - returns real chain head
+- ⏳ Ongoing: `get_details` serialization fixes (deferred)
+
+**Sub-tasks**:
+1. **6.1** ✅ Define data types - `packages/core/src/storage/types.ts` (~350 lines)
+   - Action types (Create, Update, Delete, CreateLink, DeleteLink, DNA init actions)
+   - StoredEntry, StoredRecord, ChainHead, Link, RecordDetails
+   - Storable versions for IndexedDB (Uint8Array → number[] conversion)
+2. **6.2** ✅ Implement SourceChainStorage class - `packages/core/src/storage/source-chain-storage.ts` (~1,200 lines)
+   - IndexedDB schema with 4 stores and composite indexes
+   - Transaction support for atomic updates
+   - Session cache for synchronous WASM access
+   - Chain head tracking per cell
+   - CRUD operations for actions, entries, links
+3. **6.3** ✅ Add transaction support - Modified in 6.2
+   - `beginTransaction()`, `commitTransaction()`, `rollbackTransaction()`
+   - All chain operations within a zome call are atomic
+   - Prevents partial failures from corrupting chain
+4. **6.4** ✅ Create storage module exports - `packages/core/src/storage/index.ts`
+5. **6.5** ✅ Add unit tests - `packages/core/src/storage/source-chain-storage.test.ts` (~100 lines)
+   - Chain head operations
+   - Action storage and retrieval
+   - Entry storage
+   - Link storage and deletion
+
+**Key Files Created** (~1,650 lines):
+- `packages/core/src/storage/types.ts` (350 lines)
+- `packages/core/src/storage/source-chain-storage.ts` (1,200 lines)
+- `packages/core/src/storage/index.ts` (2 lines)
+- `packages/core/src/storage/source-chain-storage.test.ts` (100 lines)
+
+**Key Files Modified** (~400 lines):
+- `packages/core/src/ribosome/host-fn/action-serialization.ts` (70 lines) - Shared action converter
+- `packages/core/src/ribosome/host-fn/create.ts` - Use storage
+- `packages/core/src/ribosome/host-fn/get.ts` - Use storage + toHolochainAction
+- `packages/core/src/ribosome/host-fn/update.ts` - Use storage
+- `packages/core/src/ribosome/host-fn/delete.ts` - Use storage
+- `packages/core/src/ribosome/host-fn/query.ts` - Use storage + toHolochainAction
+- `packages/core/src/ribosome/host-fn/create_link.ts` - Use storage
+- `packages/core/src/ribosome/host-fn/get_links.ts` - Use storage + proper Link structure
+- `packages/core/src/ribosome/host-fn/delete_link.ts` - Use storage
+- `packages/core/src/ribosome/host-fn/count_links.ts` - Use storage
+- `packages/core/src/ribosome/host-fn/agent_info.ts` - Return real chain head
+- `packages/core/src/ribosome/host-fn/stubs.ts` - Real get_details (partial)
+- `packages/core/src/index.ts` - Export storage module
 
 **Tests**:
-- Create stores entry and action
-- Query returns created entries
-- Update creates proper chain linkage
-- Delete marks entries appropriately
+- ✅ Unit tests for storage layer passing
+- ✅ Manual testing in browser shows persistence working
+- ✅ Entry CRUD operations persist and retrieve correctly
+- ✅ Link operations persist and query correctly
+- ✅ Chain head tracking works
+
+**Critical Discoveries**:
+1. **Action Serialization Format**: Holochain uses internally tagged enums with snake_case:
+   - Must use `{type: "Create", action_seq: 5, ...}` NOT `{actionType: "Create", actionSeq: 5, ...}`
+   - Must omit fields when null/undefined (Option<T> expects omission, not nil)
+   - Example: `prev_action` should be omitted entirely when None, not set to null
+2. **Link Structure**: Complete Link type requires all fields:
+   - `target`, `timestamp`, `tag`, `create_link_hash`, `base`, `author`, `zome_index`, `link_type`
+   - `link_type` is newtype struct `LinkType(u8)` - serializes as single number, not array
+3. **BigInt Handling**: MessagePack doesn't support BigInt - must convert timestamps to Number
+4. **Agent PubKey Format**: Must convert 32-byte keys to 39-byte prefixed format for Holochain
+
+**Known Limitations**:
+- `get_details` has serialization issues with action format (deferred to later)
+- Hash computation is simplified (random) - proper Blake2b hashing deferred
+- Signatures are mock - Lair integration deferred
+- Transaction support works but not extensively tested with failures
 
 ---
+
+### Step 6.5: Host Function Integration ⏳ IN PROGRESS
+
+**Goal**: Wire up existing host functions to use the new storage layer, replacing mock implementations with real persistence.
+
+**Dependencies**: Step 6 (Storage Infrastructure)
+
+**Status**: ⏳ Mostly complete - Entry/link operations working, get_details deferred
+
+**What was accomplished**:
+- ✅ Wrapped all zome calls in storage transactions for atomic updates
+- ✅ Updated entry operations (create, get, update, delete, query) to use SourceChainStorage
+- ✅ Updated link operations (create_link, get_links, delete_link, count_links) to use storage
+- ✅ Fixed action serialization across all host functions (internally tagged enum format)
+- ✅ Fixed Link structure to include all required fields (base, author, zome_index, link_type)
+- ✅ Updated agent_info to return real chain head from storage
+- ⏳ get_details partially working (known serialization issues, deferred)
+
+**Sub-tasks**:
+1. **6.5.0** ✅ Wrap zome calls in transactions - `packages/core/src/ribosome/index.ts`
+   - `beginTransaction()` before WASM execution
+   - `commitTransaction()` on success
+   - `rollbackTransaction()` on error
+   - Ensures atomic chain updates
+2. **6.5.1** ✅ Wire up entry operations - All using `SourceChainStorage.getInstance()`
+   - `create.ts` - Store entry + action, update chain head
+   - `get.ts` - Retrieve from cache, use toHolochainAction
+   - `update.ts` - Create Update action with original references
+   - `delete.ts` - Create Delete action
+   - `query.ts` - Query actions from cache, use toHolochainAction
+3. **6.5.2** ✅ Wire up link operations
+   - `create_link.ts` - Store CreateLinkAction + Link record
+   - `get_links.ts` - Query links, filter by type/tag, return proper structure
+   - `delete_link.ts` - Mark link deleted, store DeleteLinkAction
+   - `count_links.ts` - Count non-deleted links
+4. **6.5.3** ⏳ Wire up get_details - Partial (serialization issues)
+   - Uses `getDetailsFromCache()` for synchronous access
+   - Returns Details with record + validation status + deletes + updates
+   - Known issue: Action serialization format needs fixing
+5. **6.5.4** ✅ Wire up agent_info - Returns real chain head
+   - Queries `getChainHead()` from storage
+   - Returns current sequence number and action hash
+6. **6.5.5** ✅ Update host function signatures - Support async operations
+   - Host functions can return `number | Promise<number>`
+   - Pre-load chain data into session cache before WASM execution
+   - Makes host functions synchronous from WASM perspective
+7. **6.5.6** ⏳ Add test zome functions - For atomic operations testing
+   - `create_entry_with_link` - Atomic entry + link creation
+   - `create_entry_then_fail` - Test rollback behavior
+8. **6.5.7** ✅ Integration testing - Manual testing in wasm-test.html
+   - Create → Get round-trip verified
+   - Link persistence verified
+   - Update/Delete operations verified
+   - Chain head tracking verified
+
+**Files Modified**:
+- `packages/core/src/ribosome/index.ts` - Transaction wrapping
+- `packages/core/src/ribosome/host-fn/action-serialization.ts` - Shared serialization
+- `packages/core/src/ribosome/host-fn/create.ts`
+- `packages/core/src/ribosome/host-fn/get.ts`
+- `packages/core/src/ribosome/host-fn/update.ts`
+- `packages/core/src/ribosome/host-fn/delete.ts`
+- `packages/core/src/ribosome/host-fn/query.ts`
+- `packages/core/src/ribosome/host-fn/create_link.ts`
+- `packages/core/src/ribosome/host-fn/get_links.ts`
+- `packages/core/src/ribosome/host-fn/delete_link.ts`
+- `packages/core/src/ribosome/host-fn/count_links.ts`
+- `packages/core/src/ribosome/host-fn/stubs.ts`
+- `packages/core/src/ribosome/host-fn/agent_info.ts`
+
+**Tests**:
+- ✅ Manual browser testing shows full persistence
+- ✅ Entry CRUD verified working
+- ✅ Link operations verified working
+- ✅ Chain head updates correctly
+- ⏳ Automated integration tests pending
+
+**Known Issues**:
+- `get_details` has action serialization format issues (will fix in future iteration)
+- No automated tests for atomic rollback behavior
+- Hash computation still uses random values (proper hashing deferred)
+
+---
+### Step 6.6: better integration testing
+
+**Goal**: have automated integration tests that simulate/excersice the path of a web-page making requests of the extension, especially all the zome call tests where the a fix requires rebuilding the extension, reloading the web-page and clicking through verious setups as this is very time-consuming manually.
+
+---
+### Step 6.7: holochain validation
+
+**Goal**: Add in holochain app validation when commiting entries
+
 
 ### Step 7: hc-http-gw Extensions
 

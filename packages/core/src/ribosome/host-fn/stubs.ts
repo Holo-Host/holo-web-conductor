@@ -10,6 +10,8 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { toHolochainAction } from "./action-serialization";
 
 /**
  * Helper to create a stub that returns null
@@ -43,10 +45,90 @@ function createNotImplementedStub(name: string): HostFunctionImpl {
 // DHT / Agent Activity
 export const getAgentActivity = createEmptyArrayStub("get_agent_activity");
 export const mustGetAgentActivity = createNullStub("must_get_agent_activity");
-// get_details returns Vec<Option<Details>>, so return [null] = [None]
+
+// get_details returns Vec<Option<Details>>
 export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  console.warn(`[HostFn] get_details called (STUB - returns [null])`);
-  return serializeResult(context.instance, [null]);
+  const { callContext, instance } = context;
+  const storage = SourceChainStorage.getInstance();
+
+  // Input is Vec<GetInput> with GetInput = { any_dht_hash, get_options }
+  const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as Array<{
+    any_dht_hash: Uint8Array;
+    get_options?: unknown;
+  }>;
+
+  const input = inputs[0]; // Get first element
+
+  console.log("[get_details] Getting details for hash", {
+    hash: Array.from(input.any_dht_hash.slice(0, 8)),
+  });
+
+  const [dnaHash, agentPubKey] = callContext.cellId;
+
+  // Try to get as action hash first
+  const actionResult = storage.getAction(input.any_dht_hash);
+  if (actionResult instanceof Promise) {
+    console.warn("[get_details] Action not in session cache - returning [null]");
+    return serializeResult(instance, [null]);
+  }
+
+  const action = actionResult;
+
+  if (action && "entryHash" in action && action.entryHash) {
+    // Get full details for this entry from cache
+    const details = storage.getDetailsFromCache(action.entryHash, dnaHash, agentPubKey);
+    if (details) {
+      const result = {
+        record: {
+          signed_action: {
+            hashed: {
+              content: toHolochainAction(details.record.action),
+              hash: details.record.actionHash,
+            },
+            signature: details.record.action.signature,
+          },
+          entry: details.record.entry
+            ? {
+                Present: {
+                  entry_type: "App",
+                  entry: details.record.entry.entryContent,
+                },
+              }
+            : null,
+        },
+        validation_status: details.validationStatus,
+        deletes: details.deletes.map((d: any) => ({
+          signed_action: {
+            hashed: {
+              content: toHolochainAction(d.deleteAction),
+              hash: d.deleteHash,
+            },
+            signature: d.deleteAction.signature,
+          },
+        })),
+        updates: details.updates.map((u: any) => ({
+          signed_action: {
+            hashed: {
+              content: toHolochainAction(u.updateAction),
+              hash: u.updateHash,
+            },
+            signature: u.updateAction.signature,
+          },
+        })),
+      };
+
+      console.log("[get_details] Found details", {
+        deletes: details.deletes.length,
+        updates: details.updates.length,
+      });
+
+      return serializeResult(instance, [result]);
+    }
+  }
+
+  // Not found
+  console.log("[get_details] No details found");
+  return serializeResult(instance, [null]);
 };
 export const getLinksDetails = createEmptyArrayStub("get_links_details");
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");

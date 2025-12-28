@@ -8,6 +8,65 @@ import { HappContextStorage } from "./happ-context-storage";
 import { LairClient, type ILairClient } from "@fishy/lair";
 import { PermissionManager } from "./permissions";
 import type { InstallHappRequest, HappContext } from "@fishy/core";
+import * as bundle from "@fishy/core";
+
+// Mock the bundle unpacker functions
+vi.mock("@fishy/core", async () => {
+  const actual = await vi.importActual("@fishy/core");
+  return {
+    ...actual,
+    unpackHappBundle: vi.fn((bytes: Uint8Array) => ({
+      manifest: {
+        name: "test-app",
+        roles: [
+          {
+            name: "test-role",
+            dna: {
+              path: "test.dna",
+            },
+            provisioning: { Create: { deferred: false } },
+          },
+        ],
+      },
+      resources: new Map([
+        ["test.dna", new Uint8Array([1, 2, 3, 4])],
+      ]),
+    })),
+    unpackDnaBundle: vi.fn((bytes: Uint8Array) => ({
+      manifest: {
+        name: "test-dna",
+        integrity: {
+          network_seed: "test-seed",
+          properties: {},
+          zomes: [
+            {
+              name: "test_zome",
+              path: "test_zome.wasm",
+            },
+          ],
+        },
+        coordinator: {
+          zomes: [],
+        },
+      },
+      resources: new Map([
+        ["test_zome.wasm", new Uint8Array([10, 20, 30, 40])],
+      ]),
+    })),
+    createRuntimeManifest: vi.fn((manifest: any, resources: any) => ({
+      name: manifest.name,
+      network_seed: manifest.integrity.network_seed,
+      properties: manifest.integrity.properties,
+      integrity_zomes: manifest.integrity.zomes.map((z: any, i: number) => ({
+        name: z.name,
+        index: i,
+        wasm: resources.get(z.path),
+        dependencies: [],
+      })),
+      coordinator_zomes: [],
+    })),
+  };
+});
 
 // Mock dependencies
 function createMockStorage(): HappContextStorage {
@@ -23,6 +82,11 @@ function createMockLairClient(): ILairClient {
 function createMockPermissionManager(): PermissionManager {
   const permissions = new PermissionManager();
   return permissions;
+}
+
+// Helper to create a mock .happ bundle (doesn't need to be real since unpacker is mocked)
+function createMockHappBundle(): Uint8Array {
+  return new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
 }
 
 describe("HappContextManager", () => {
@@ -60,13 +124,7 @@ describe("HappContextManager", () => {
       const request: InstallHappRequest = {
         appName: "Test App",
         appVersion: "1.0.0",
-        dnas: [
-          {
-            hash: new Uint8Array([1, 2, 3, 4]),
-            wasm: new Uint8Array([10, 20, 30, 40]),
-            name: "test-dna",
-          },
-        ],
+        happBundle: createMockHappBundle(),
       };
 
       const context = await manager.installHapp(domain, request);
@@ -89,7 +147,7 @@ describe("HappContextManager", () => {
       const domain = "https://unauthorized.com";
 
       const request: InstallHappRequest = {
-        dnas: [],
+        happBundle: createMockHappBundle(),
       };
 
       await expect(manager.installHapp(domain, request)).rejects.toThrow(
@@ -104,12 +162,7 @@ describe("HappContextManager", () => {
       await permissions.grantPermission(domain);
 
       const request: InstallHappRequest = {
-        dnas: [
-          {
-            hash: new Uint8Array([1, 2]),
-            wasm: new Uint8Array([3, 4]),
-          },
-        ],
+        happBundle: createMockHappBundle(),
       };
 
       // First install should succeed
@@ -129,7 +182,7 @@ describe("HappContextManager", () => {
       await permissions.grantPermission(domain2);
 
       const request: InstallHappRequest = {
-        dnas: [],
+        happBundle: createMockHappBundle(),
       };
 
       const context1 = await manager.installHapp(domain1, request);
@@ -145,7 +198,7 @@ describe("HappContextManager", () => {
       await permissions.grantPermission(domain);
 
       const request: InstallHappRequest = {
-        dnas: [],
+        happBundle: createMockHappBundle(),
       };
 
       const context = await manager.installHapp(domain, request);
@@ -162,7 +215,7 @@ describe("HappContextManager", () => {
 
       const request: InstallHappRequest = {
         appName: "Get Test",
-        dnas: [],
+        happBundle: createMockHappBundle(),
       };
 
       const installed = await manager.installHapp(domain, request);
@@ -186,12 +239,7 @@ describe("HappContextManager", () => {
       await permissions.grantPermission(domain);
 
       const request: InstallHappRequest = {
-        dnas: [
-          {
-            hash: new Uint8Array([1, 2]),
-            wasm: new Uint8Array([3, 4]),
-          },
-        ],
+        happBundle: createMockHappBundle(),
       };
 
       const context = await manager.installHapp(domain, request);
@@ -225,7 +273,7 @@ describe("HappContextManager", () => {
 
       await permissions.grantPermission(domain);
 
-      const context = await manager.installHapp(domain, { dnas: [] });
+      const context = await manager.installHapp(domain, { happBundle: createMockHappBundle() });
 
       // Should be enabled by default
       expect(context.enabled).toBe(true);
@@ -250,8 +298,8 @@ describe("HappContextManager", () => {
       await permissions.grantPermission(domain1);
       await permissions.grantPermission(domain2);
 
-      await manager.installHapp(domain1, { dnas: [] });
-      await manager.installHapp(domain2, { dnas: [] });
+      await manager.installHapp(domain1, { happBundle: createMockHappBundle() });
+      await manager.installHapp(domain2, { happBundle: createMockHappBundle() });
 
       const contexts = await manager.listContexts();
       expect(contexts).toHaveLength(2);
@@ -265,7 +313,7 @@ describe("HappContextManager", () => {
 
       await permissions.grantPermission(domain);
 
-      const context = await manager.installHapp(domain, { dnas: [] });
+      const context = await manager.installHapp(domain, { happBundle: createMockHappBundle() });
       const originalLastUsed = context.lastUsed;
 
       // Wait a bit to ensure timestamp changes
@@ -286,26 +334,15 @@ describe("HappContextManager", () => {
       await permissions.grantPermission(domain);
 
       const request: InstallHappRequest = {
-        dnas: [
-          {
-            hash: new Uint8Array([1, 2, 3]),
-            wasm: new Uint8Array([4, 5, 6]),
-          },
-          {
-            hash: new Uint8Array([7, 8, 9]),
-            wasm: new Uint8Array([10, 11, 12]),
-          },
-        ],
+        happBundle: createMockHappBundle(),
       };
 
       const context = await manager.installHapp(domain, request);
       const cellIds = manager.getCellIds(context);
 
-      expect(cellIds).toHaveLength(2);
-      expect(cellIds[0][0]).toEqual(new Uint8Array([1, 2, 3])); // DNA hash
+      expect(cellIds).toHaveLength(1); // Mock returns 1 DNA
+      expect(cellIds[0][0]).toBeInstanceOf(Uint8Array); // DNA hash
       expect(cellIds[0][1]).toEqual(context.agentPubKey); // Agent pub key
-      expect(cellIds[1][0]).toEqual(new Uint8Array([7, 8, 9]));
-      expect(cellIds[1][1]).toEqual(context.agentPubKey);
     });
   });
 });

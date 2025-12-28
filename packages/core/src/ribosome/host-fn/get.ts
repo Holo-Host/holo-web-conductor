@@ -6,6 +6,8 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { toHolochainAction } from "./action-serialization";
 
 /**
  * Get input structure
@@ -54,75 +56,66 @@ interface Record {
 /**
  * get host function implementation
  *
- * NOTE: This is a MOCK implementation for Step 5.
- * Returns a mock record structure. Always returns Some(record), never None.
- * Step 6 will add real chain/DHT storage lookups.
+ * Retrieves record from storage (uses session cache for synchronous reads)
  */
 export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { callContext, instance } = context;
+  const { instance } = context;
+  const storage = SourceChainStorage.getInstance();
 
   // Deserialize input - it's an array of GetInput objects
   const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as GetInput[];
   const input = inputs[0]; // Get first element
   const { any_dht_hash } = input;
 
-  // Debug: Check what we received
-  console.log(`[get] Received hash:`,
-    any_dht_hash instanceof Uint8Array ? `Uint8Array(${any_dht_hash.length})` : typeof any_dht_hash,
-    `first 10 bytes:`, any_dht_hash instanceof Uint8Array ? Array.from(any_dht_hash.slice(0, 10)) : 'N/A');
+  console.log(`[get] Getting record for hash:`, Array.from(any_dht_hash.slice(0, 8)));
 
-  // Create mock record
-  const [_dnaHash, rawAgentPubKey] = callContext.cellId;
+  // Try to get action from storage (synchronous if in cache)
+  const actionResult = storage.getAction(any_dht_hash);
 
-  // Construct AgentPubKey (39 bytes): [prefix(3)][hash(32)][location(4)]
-  const agentPubKey = new Uint8Array(39);
-  agentPubKey.set([132, 32, 36], 0); // AGENT_PREFIX
-  agentPubKey.set(rawAgentPubKey, 3); // 32-byte public key
-  agentPubKey.set([0, 0, 0, 0], 35); // location (all zeros)
+  // If it's a Promise, we can't handle it synchronously yet (Step 7+)
+  // For now, return null if not in cache
+  if (actionResult instanceof Promise || actionResult === null) {
+    console.warn('[get] Record not in session cache - returning null (Step 7+ will support async reads)');
+    // Return Vec<Option<Record>> with None = [null]
+    return serializeResult(instance, [null]);
+  }
 
-  // Create a mock previous action hash (39 bytes) - not genesis
-  const prevActionHash = new Uint8Array(39);
-  prevActionHash.set([132, 41, 36], 0); // ACTION_PREFIX
-  prevActionHash.set(new Uint8Array(32).fill(1), 3); // Different hash content
-  prevActionHash.set([0, 0, 0, 0], 35); // location
+  const action = actionResult;
 
-  // Create a mock entry hash (39 bytes) with ENTRY_PREFIX
-  const entryHash = new Uint8Array(39);
-  entryHash.set([132, 33, 36], 0); // ENTRY_PREFIX (not ACTION_PREFIX!)
-  entryHash.set(any_dht_hash.slice(3, 35), 3); // Copy hash content from input
-  entryHash.set([0, 0, 0, 0], 35); // location
+  // Get entry if action has one
+  let entry = null;
+  if ('entryHash' in action && action.entryHash) {
+    const entryResult = storage.getEntry(action.entryHash);
+    if (!(entryResult instanceof Promise) && entryResult !== null) {
+      entry = entryResult;
+    }
+  }
 
-  const mockRecord: Record = {
+  // Convert action to Holochain format with internally tagged enum
+  const actionContent = toHolochainAction(action);
+
+  // Build record structure matching Holochain's Record format
+  const record: Record = {
     signed_action: {
       hashed: {
-        content: {
-          type: "Create",
-          author: agentPubKey, // 39-byte AgentPubKey
-          timestamp: Date.now() * 1000, // microseconds
-          action_seq: 1, // Not genesis
-          prev_action: prevActionHash, // Previous action hash
-          entry_type: { App: { entry_index: 0, zome_index: 0, visibility: "Public" } },
-          entry_hash: entryHash, // 39-byte EntryHash with correct prefix
-          entry_index: 0, // Index of entry in action
-          weight: { bucket_id: 0, units: 0, rate_bytes: 0 }, // EntryRateWeight
-        },
-        hash: any_dht_hash, // 39-byte ActionHash (input hash)
+        content: actionContent,
+        hash: action.actionHash,
       },
-      signature: new Uint8Array(64), // Empty signature
+      signature: action.signature,
     },
-    entry: {
+    entry: entry ? {
       Present: {
-        entry_type: "App",  // serde tag field
-        entry: new Uint8Array(0),  // serde content field (AppEntryBytes - empty for mock)
+        entry_type: "App",
+        entry: entry.entryContent,
       },
-    },
+    } : null,
   };
 
-  console.warn(
-    "[get] Returning MOCK record - Step 6 will add real storage"
-  );
+  console.log('[get] Found record in cache', {
+    actionType: action.actionType,
+    hasEntry: !!entry,
+  });
 
-  // Return Vec<Option<Record>> - the zome expects a vector of optional records
-  // Some(record) is represented as the record itself (not null)
-  return serializeResult(instance, [mockRecord]);
+  // Return Vec<Option<Record>> - HDK host function signature
+  return serializeResult(instance, [record]);
 };

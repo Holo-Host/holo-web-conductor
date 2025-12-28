@@ -5,6 +5,7 @@
   "scripts": {
     "build": "RUSTFLAGS='--cfg getrandom_backend=\"custom\"' cargo build --release --target wasm32-unknown-unknown",
     "pack": "./pack.sh",
-    "clean": "cargo clean && rm -rf bundle"
+    "clean": "cargo clean && rm -rf bundle",
+    "test": "echo 'No JavaScript tests for Rust WASM zome'"
   }
 }

@@ -104,9 +104,9 @@ export function unpackHappBundle(bytes: Uint8Array): AppBundle {
     if (error instanceof BundleError) throw error;
 
     throw new BundleError(
-      `Failed to unpack .happ bundle: ${error.message}`,
+      `Failed to unpack .happ bundle: ${error instanceof Error ? error.message : String(error)}`,
       BundleErrorCode.INVALID_FORMAT,
-      error
+      error instanceof Error ? error : undefined
     );
   }
 }
@@ -149,9 +149,9 @@ export function unpackDnaBundle(bytes: Uint8Array): DnaBundle {
     if (error instanceof BundleError) throw error;
 
     throw new BundleError(
-      `Failed to unpack .dna bundle: ${error.message}`,
+      `Failed to unpack .dna bundle: ${error instanceof Error ? error.message : String(error)}`,
       BundleErrorCode.INVALID_FORMAT,
-      error
+      error instanceof Error ? error : undefined
     );
   }
 }

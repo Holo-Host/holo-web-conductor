@@ -183,6 +183,8 @@
             <button id="test-get-links-btn" disabled>Get Links</button>
             <button id="test-delete-link-btn" disabled>Delete Link</button>
             <button id="test-count-links-btn" disabled>Count Links</button>
+            <button id="test-atomic-entry-link-btn" disabled>Atomic Entry+Link</button>
+            <button id="test-atomic-rollback-btn" disabled>Test Rollback</button>
             <div id="zome-test-status"></div>
         </div>
 
@@ -216,6 +218,7 @@
 
     <script type="module">
         import { encodeHashToBase64 } from 'https://esm.sh/@holochain/client@0.20.1';
+        import { decode as msgpackDecode } from 'https://esm.sh/@msgpack/msgpack@3.0.0-beta2';
 
         let output = document.getElementById('output');
         let connectionEstablished = false;
@@ -394,6 +397,8 @@
                         document.getElementById('test-get-links-btn').disabled = false;
                         document.getElementById('test-delete-link-btn').disabled = false;
                         document.getElementById('test-count-links-btn').disabled = false;
+                        document.getElementById('test-atomic-entry-link-btn').disabled = false;
+                        document.getElementById('test-atomic-rollback-btn').disabled = false;
 
                         markChecked('check-4');
                     }
@@ -487,6 +492,8 @@
                 document.getElementById('test-get-links-btn').disabled = false;
                 document.getElementById('test-delete-link-btn').disabled = false;
                 document.getElementById('test-count-links-btn').disabled = false;
+                document.getElementById('test-atomic-entry-link-btn').disabled = false;
+                document.getElementById('test-atomic-rollback-btn').disabled = false;
             } catch (error) {
                 log(`Installation failed: ${error.message}`, true);
                 showStatus('install-status',
@@ -638,29 +645,26 @@
         });
 
         document.getElementById('test-create-btn').addEventListener('click', async () => {
+            const entryContent = 'Test entry created at ' + new Date().toISOString();
             log('Calling create_test_entry()...');
+            log(`Entry content: "${entryContent}"`);
             try {
                 const result = await window.holochain.callZome({
                     contextId,
                     zome: 'test_zome',
                     function: 'create_test_entry',
-                    payload: 'Test entry created at ' + new Date().toISOString()
+                    payload: entryContent
                 });
-
-                // Log raw result details
-                log(`Raw result type: ${Array.isArray(result) ? 'Array' : typeof result}`);
-                log(`Raw result length: ${result.length}`);
-                log(`Raw result first 10 bytes: [${result.slice(0, 10).join(', ')}]`);
 
                 lastCreatedHash = result;
 
                 // Format for display (will convert to base64 if it's a hash)
                 const formatted = formatForDisplay(result);
-                log(`✓ Entry created! ActionHash: ${formatted}`);
-                console.log('Create entry result (raw):', result);
-                console.log('Create entry result (formatted):', formatted);
+                log(`✓ Entry created!`);
+                log(`  ActionHash: ${formatted}`);
+                log(`  Content: "${entryContent}"`);
 
-                showStatus('zome-test-status', '<strong>Success!</strong> Entry created. Now try "Get Entry".', 'success');
+                showStatus('zome-test-status', '<strong>Success!</strong> Entry created with content. Now try "Get Entry".', 'success');
                 markChecked('check-13');
             } catch (error) {
                 log(`create_test_entry failed: ${error.message}`, true);
@@ -682,16 +686,41 @@
                     payload: lastCreatedHash
                 });
 
-                // Format result with base64 hashes and hex signatures
-                const formatted = formatForDisplay(result);
-                log(`✓ Entry retrieved: ${JSON.stringify(formatted, null, 2)}`);
-                console.log('Get entry result (formatted):', formatted);
+                // The zome returns Option<Record> which becomes either a Record object or null
+                // The HDK unwraps Vec<Option<Record>> from the host function to Option<Record> for the zome
+                if (!result) {
+                    log('✗ Entry not found', true);
+                    showStatus('zome-test-status', 'Entry not found!', 'error');
+                    return;
+                }
 
-                showStatus('zome-test-status', 'Entry retrieved (mock data from Step 5).', 'success');
+                const record = result;
+
+                // Extract entry content from Record
+                const entryPresent = record.entry?.Present;
+                if (!entryPresent) {
+                    log('✗ Entry has no content', true);
+                    showStatus('zome-test-status', 'Entry has no content!', 'error');
+                    return;
+                }
+
+                // Deserialize the entry content (MessagePack-encoded TestEntry)
+                const entryBytes = maybeUint8Array(entryPresent.entry);
+                const decodedEntry = msgpackDecode(entryBytes);
+
+                log(`✓ Entry retrieved successfully!`);
+                log(`  ActionHash: ${formatForDisplay(lastCreatedHash)}`);
+                log(`  Action sequence: ${record.signed_action.hashed.content.action_seq}`);
+                log(`  Author: ${formatForDisplay(record.signed_action.hashed.content.author)}`);
+                log(`  Entry content: "${decodedEntry.content}"`);
+                log(`  Entry timestamp: ${new Date(Number(decodedEntry.timestamp) / 1000).toISOString()}`);
+
+                showStatus('zome-test-status', '<strong>Success!</strong> Entry retrieved and deserialized with real data from storage!', 'success');
                 markChecked('check-14');
             } catch (error) {
                 log(`get_test_entry failed: ${error.message}`, true);
                 showStatus('zome-test-status', `Error: ${error.message}`, 'error');
+                console.error('Get entry error:', error);
             }
         });
 
@@ -914,6 +943,151 @@
                 showStatus('zome-test-status', `<strong>Success!</strong> Found ${result} links.`, 'success');
             } catch (error) {
                 log(`count_test_links failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        // Test atomic entry + link creation
+        document.getElementById('test-atomic-entry-link-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', '<strong>Info:</strong> Create an entry first (will be used as target)!', 'info');
+                return;
+            }
+            log('=== Testing Atomic Entry + Link Creation ===');
+            log('This creates an entry AND a link in one zome call.');
+            log('Both operations should succeed atomically or both should fail.');
+
+            try {
+                // Get chain head before operation
+                const agentInfoBefore = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_agent_info',
+                    payload: null
+                });
+                const chainSeqBefore = agentInfoBefore[1][1]; // [agent_pubkey, [action_hash, seq, timestamp]]
+                log(`Chain sequence before: ${chainSeqBefore}`);
+
+                // Call atomic function
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'create_entry_with_link',
+                    payload: lastCreatedHash
+                });
+
+                const [entryHash, linkHash] = result;
+                const formattedEntry = formatForDisplay(entryHash);
+                const formattedLink = formatForDisplay(linkHash);
+
+                log(`✓ Atomic operation succeeded!`);
+                log(`  Entry created: ${formattedEntry}`);
+                log(`  Link created: ${formattedLink}`);
+
+                // Get chain head after operation
+                const agentInfoAfter = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_agent_info',
+                    payload: null
+                });
+                const chainSeqAfter = agentInfoAfter[1][1];
+                log(`Chain sequence after: ${chainSeqAfter}`);
+                log(`Chain advanced by: ${chainSeqAfter - chainSeqBefore} (expected 2)`);
+
+                // Verify entry exists
+                const getResult = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_test_entry',
+                    payload: entryHash
+                });
+
+                if (getResult) {
+                    log('✓ Entry verified - persisted in storage');
+                } else {
+                    log('✗ Entry not found!', true);
+                }
+
+                // Verify link exists
+                const links = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_test_links',
+                    payload: entryHash
+                });
+
+                if (links && links.length > 0) {
+                    log(`✓ Link verified - found ${links.length} link(s)`);
+                } else {
+                    log('✗ Link not found!', true);
+                }
+
+                showStatus('zome-test-status',
+                    '<strong>Success!</strong> Atomic entry+link operation completed. Both entry and link persisted.',
+                    'success');
+            } catch (error) {
+                log(`create_entry_with_link failed: ${error.message}`, true);
+                showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
+            }
+        });
+
+        // Test atomic rollback
+        document.getElementById('test-atomic-rollback-btn').addEventListener('click', async () => {
+            log('=== Testing Atomic Transaction Rollback ===');
+            log('This creates an entry then intentionally fails.');
+            log('The entry should NOT be persisted (transaction should roll back).');
+
+            try {
+                // Get chain head before test
+                const agentInfoBefore = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_agent_info',
+                    payload: null
+                });
+                const chainSeqBefore = agentInfoBefore[1][1];
+                log(`Chain sequence before: ${chainSeqBefore}`);
+
+                // Call function that will fail
+                try {
+                    await window.holochain.callZome({
+                        contextId,
+                        zome: 'test_zome',
+                        function: 'create_entry_then_fail',
+                        payload: null
+                    });
+                    log('✗ Function should have failed!', true);
+                    showStatus('zome-test-status', '<strong>Error:</strong> Function should have failed but succeeded!', 'error');
+                    return;
+                } catch (expectedError) {
+                    log(`✓ Function failed as expected: ${expectedError.message}`);
+                }
+
+                // Get chain head after failed call
+                const agentInfoAfter = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_agent_info',
+                    payload: null
+                });
+                const chainSeqAfter = agentInfoAfter[1][1];
+                log(`Chain sequence after: ${chainSeqAfter}`);
+
+                // Chain should NOT have advanced
+                if (chainSeqBefore === chainSeqAfter) {
+                    log('✓ Chain did not advance - transaction rolled back successfully!');
+                    showStatus('zome-test-status',
+                        '<strong>Success!</strong> Transaction rolled back. Chain unchanged after failed operation.',
+                        'success');
+                } else {
+                    log(`✗ Chain advanced from ${chainSeqBefore} to ${chainSeqAfter} - rollback FAILED!`, true);
+                    showStatus('zome-test-status',
+                        `<strong>Failed!</strong> Chain advanced (${chainSeqBefore} → ${chainSeqAfter}). Rollback did not work!`,
+                        'error');
+                }
+            } catch (error) {
+                log(`Rollback test failed: ${error.message}`, true);
                 showStatus('zome-test-status', `<strong>Error:</strong> ${error.message}`, 'error');
             }
         });

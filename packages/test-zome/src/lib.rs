@@ -176,6 +176,48 @@ fn count_test_links(base: ActionHash) -> ExternResult<usize> {
     count_links(query)
 }
 
+/// Test atomic operations: create entry + link in single zome call
+/// If link creation fails, entry should not be persisted
+/// Returns: (entry_action_hash, link_action_hash)
+#[hdk_extern]
+fn create_entry_with_link(target_hash: ActionHash) -> ExternResult<(ActionHash, ActionHash)> {
+    // Create entry
+    let entry = TestEntry {
+        content: "Entry with link".to_string(),
+        timestamp: sys_time()?,
+    };
+
+    let entry_hash = create_entry(&EntryTypes::TestEntry(entry))?;
+
+    // Create link to target
+    let link_hash = create_link(
+        entry_hash.clone(),
+        target_hash,
+        LinkTypes::Placeholder,
+        (),
+    )?;
+
+    Ok((entry_hash, link_hash))
+}
+
+/// Test function that INTENTIONALLY fails after creating entry
+/// Used to test rollback behavior
+#[hdk_extern]
+fn create_entry_then_fail(_: ()) -> ExternResult<ActionHash> {
+    // Create entry
+    let entry = TestEntry {
+        content: "This should roll back".to_string(),
+        timestamp: sys_time()?,
+    };
+
+    let _entry_hash = create_entry(&EntryTypes::TestEntry(entry))?;
+
+    // Intentionally fail
+    Err(wasm_error!(WasmErrorInner::Guest(
+        "Intentional failure for rollback test".to_string()
+    )))
+}
+
 /// Entry types enum (required by HDK)
 #[hdk_entry_types]
 #[unit_enum(UnitEntryTypes)]

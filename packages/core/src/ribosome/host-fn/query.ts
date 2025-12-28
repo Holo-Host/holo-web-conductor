@@ -6,18 +6,28 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { toHolochainAction } from "./action-serialization";
 
 /**
- * Query filter structure
+ * Query input structure (matches Holochain's ChainQueryFilter)
  */
-interface QueryFilter {
-  /** Filter type */
-  filter_type?: string;
+interface QueryInput {
+  /** Sequence range to query */
+  sequence_range?: {
+    Unbounded?: null;
+    ActionSeqRange?: [number, number];
+  };
 
-  /** Entry type to filter by */
-  entry_type?: string | { App: { id: number; zome_id: number } };
+  /** Entry type filter */
+  entry_type?: {
+    App?: {
+      zome_index: number;
+      entry_index: number;
+    };
+  };
 
-  /** Action type to filter by */
+  /** Action type filter */
   action_type?: string;
 
   /** Include entries in results */
@@ -25,32 +35,75 @@ interface QueryFilter {
 }
 
 /**
- * Query input structure
- */
-interface QueryInput {
-  /** Filter to apply */
-  filter: QueryFilter;
-}
-
-/**
  * query host function implementation
  *
- * NOTE: This is a MOCK implementation for Step 5.
- * Always returns an empty array.
- * Step 6 will add real chain queries.
+ * Queries the source chain and returns matching records.
  */
 export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+  const { callContext, instance } = context;
+  const storage = SourceChainStorage.getInstance();
 
   // Deserialize input
-  const _input = deserializeFromWasm(instance, inputPtr, inputLen) as QueryInput;
+  const input = deserializeFromWasm(instance, inputPtr, inputLen) as QueryInput;
 
-  // Return empty array (no records found)
-  const results: any[] = [];
+  console.log("[query] Querying source chain", {
+    sequenceRange: input.sequence_range,
+    actionType: input.action_type,
+    includeEntries: input.include_entries,
+  });
 
-  console.warn(
-    "[query] Returning empty results - Step 6 will add real chain queries"
-  );
+  const [dnaHash, agentPubKey] = callContext.cellId;
 
-  return serializeResult(instance, results);
+  // Query actions from session cache (synchronous)
+  const actions = storage.queryActionsFromCache(dnaHash, agentPubKey, {
+    actionType: input.action_type,
+  });
+
+  // Check if actions are in cache
+  if (actions === null) {
+    console.warn("[query] Actions not in session cache - returning empty array (Step 7+ will support async queries)");
+    return serializeResult(instance, []);
+  }
+  const records = [];
+  for (const action of actions) {
+    let entry = undefined;
+
+    // Fetch entry if needed and if action has one
+    if (input.include_entries !== false && "entryHash" in action && action.entryHash) {
+      const entryResult = storage.getEntry(action.entryHash);
+
+      if (entryResult instanceof Promise) {
+        // Entry not in cache, skip it for now
+        console.warn("[query] Entry not in session cache, skipping");
+        continue;
+      }
+
+      entry = entryResult;
+    }
+
+    // Build record structure with Holochain-formatted action
+    const record = {
+      signed_action: {
+        hashed: {
+          content: toHolochainAction(action),
+          hash: action.actionHash,
+        },
+        signature: action.signature,
+      },
+      entry: entry
+        ? {
+            Present: {
+              entry_type: "App",
+              entry: entry.entryContent,
+            },
+          }
+        : null,
+    };
+
+    records.push(record);
+  }
+
+  console.log("[query] Found records:", records.length);
+
+  return serializeResult(instance, records);
 };
