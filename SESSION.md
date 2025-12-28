@@ -644,7 +644,7 @@ Begin **Step 5: WASM Execution**
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and claude.md to understand where we are. Steps 1, 2, 2.5, 3, and 4 are complete. Step 5 is in progress as we are working on Step 5.5 which you can read in STEPS.5_PLAN.md but crucially also STEP5.5.5_PLAN.md because claude has been unable to solve the serialization issues well.
+> I'm continuing the Fishy project. Please read SESSION.md and claude.md to understand where we are. Steps 1, 2, 2.5, 3, and 4 are complete. Step 5 is in progress as we are working on Step 5.5 which you can read in STEPS.5_PLAN.md but crucially also STEP5.5.5_PLAN.md because claude has been unable to solve the serialization issues well.  From the 5.5.5 plan notice that the investigation of byte level comparison is complete.  Now it's time to work on Step 5 and Step 6.
 
 ---
 
