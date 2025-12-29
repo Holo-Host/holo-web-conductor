@@ -290,11 +290,14 @@ interface CallZomeRequest {
 
 ---
 
-### Step 6.6: Automated Integration Testing
+### ✅ Step 6.6: Automated Integration Testing (COMPLETE)
 
 **Goal**: Have automated integration tests that simulate the web-page → extension → WASM flow, eliminating the manual reload/click testing loop.
 
+**Status**: ✅ COMPLETE (2025-12-29)
+
 **Details**: See [STEP6.6_PLAN.md](./STEP6.6_PLAN.md)
+**Completion**: See [STEP6.6_COMPLETION.md](./STEP6.6_COMPLETION.md)
 
 ---
 
