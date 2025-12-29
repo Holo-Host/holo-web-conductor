@@ -118,6 +118,17 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Update the instance reference so host functions use the real instance
     instanceRef.current = instance;
 
+    // Initialize entry_defs immediately after instantiation (before any zome calls)
+    // This ensures entry_defs are available for validation in all zome calls
+    if (dnaManifest) {
+      for (const z of dnaManifest.integrity_zomes) {
+        if (!z.entryDefs) {
+          console.log('[Ribosome] Initializing entry_defs for zome:', z.name);
+          z.entryDefs = await initializeEntryDefs(instance, z.name);
+        }
+      }
+    }
+
     // Serialize input payload to WASM memory
     const { ptr: dataPtr, len: dataLen } = serializeToWasm(instance, payload);
 
@@ -153,16 +164,6 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
     // Collect any emitted signals
     const signals = context.emittedSignals || [];
-
-    // Initialize entry_defs after first successful zome call (if not already cached)
-    if (dnaManifest) {
-      for (const z of dnaManifest.integrity_zomes) {
-        if (!z.entryDefs) {
-          console.log('[Ribosome] Initializing entry_defs for zome:', z.name);
-          z.entryDefs = await initializeEntryDefs(instance, z.name);
-        }
-      }
-    }
 
     // Commit transaction - all chain updates succeed atomically
     await storage.commitTransaction();

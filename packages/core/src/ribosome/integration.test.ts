@@ -591,6 +591,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_entry",
         payload: "Entry 1",
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const { result: result2 } = await callZomeAsExtension({
@@ -600,6 +601,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_entry",
         payload: "Entry 2",
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const base = new Uint8Array(result1 as number[]);
@@ -613,10 +615,11 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_link",
         payload: { base, target },
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
-      const linkHash = linkResult as number[];
-      expect(Array.isArray(linkHash)).toBe(true);
+      const linkHash = linkResult as Uint8Array;
+      expect(linkHash instanceof Uint8Array).toBe(true);
       expect(linkHash.length).toBe(39);
     });
 
@@ -629,6 +632,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_entry",
         payload: "Base entry",
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const base = new Uint8Array(createResult as number[]);
@@ -641,6 +645,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "get_test_links",
         payload: base,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const links = linksResult as any[];
@@ -655,6 +660,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_entry",
         payload: "Base entry",
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const base = new Uint8Array(createResult as number[]);
@@ -666,6 +672,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "count_test_links",
         payload: base,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const count = countResult as number;
@@ -682,6 +689,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_entry",
         payload: "Entry 1",
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const { result: result2 } = await callZomeAsExtension({
@@ -691,6 +699,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_entry",
         payload: "Entry 2",
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const base = new Uint8Array(result1 as number[]);
@@ -703,6 +712,7 @@ describe("Ribosome Integration Tests", () => {
         fn: "create_test_link",
         payload: { base, target },
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
       const linkHash = new Uint8Array(linkResult as number[]);
@@ -715,10 +725,11 @@ describe("Ribosome Integration Tests", () => {
         fn: "delete_test_link",
         payload: linkHash,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
-      const deleteHash = deleteResult as number[];
-      expect(Array.isArray(deleteHash)).toBe(true);
+      const deleteHash = deleteResult as Uint8Array;
+      expect(deleteHash instanceof Uint8Array).toBe(true);
       expect(deleteHash.length).toBe(39);
     });
   });

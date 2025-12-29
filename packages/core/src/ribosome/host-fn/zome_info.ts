@@ -60,7 +60,7 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const propertiesBytes = new Uint8Array(encode(manifest?.properties || {}));
 
   // Build entry_defs from cached WASM entry_defs callback result
-  const entryDefs: unknown[] = currentZome?.entryDefs || [];
+  const entryDefs: EntryDef[] = currentZome?.entryDefs || [];
 
   console.log('[zome_info] entry_defs:', {
     hasCurrentZome: !!currentZome,
@@ -68,18 +68,19 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entryDefsLength: entryDefs.length,
   });
 
-  // Build zome_types
+  // Build zome_types from actual entry_defs
   const zomeTypes = {
     entries: [] as Array<[number, number[]]>,
     links: [] as Array<[number, number[]]>,
   };
 
-  // If we have manifest, include current zome in zome_types
-  if (currentZome) {
-    // For now, assume zome has entry def index 0 (proper extraction in Step 6)
-    zomeTypes.entries.push([zomeIndex, [0]]);
+  // Populate entry def indices from loaded entry_defs
+  // The index in the entry_defs array IS the entry def index
+  if (currentZome && entryDefs.length > 0) {
+    const entryDefIndices = entryDefs.map((_, index) => index);
+    zomeTypes.entries.push([zomeIndex, entryDefIndices]);
 
-    // For links, assume zome has link type 0 (proper extraction in Step 6)
+    // For links, assume zome has link type 0 (TODO: extract from link_types callback)
     zomeTypes.links.push([zomeIndex, [0]]);
   }
 
