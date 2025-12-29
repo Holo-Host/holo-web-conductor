@@ -1,25 +1,36 @@
 # Fishy Development Session
 
 **Last Updated**: 2025-12-29
-**Current Step**: Step 6.7 - Test with profiles ✅ COMPLETE
-**Status**: COMPLETE - Signal infrastructure added, profiles test page working, 111 tests passing
+**Current Step**: Step 7 - Network Host Functions
+**Status**: Research phase (7.0) complete, ready for implementation (7.1)
 
 ## Current Step Progress
 
-### Step 6.7: Test with profiles ✅ COMPLETE
+### Step 7: Network Host Functions
 
-**Goal**: Create a test page using the real profiles WASM to exercise the fishy browser extension with actual holochain-open-dev patterns.
+**Goal**: Add network data retrieval to fishy, implementing a cascade pattern for host functions like `get` to fetch from local storage first, then network.
 
-**Details**: See [STEP6.7_PLAN.md](./STEP6.7_PLAN.md)
+**Research Findings** (7.0 Complete):
+- ✅ 7.0.1: Offscreen Document spike created (`spikes/offscreen-test/`)
+- ✅ 7.0.2: JSPI spike created (`spikes/jspi-test/`)
+- ✅ 7.0.3: SharedArrayBuffer evaluated (not recommended)
+- ✅ 7.0.4: Research findings documented in `STEP7_RESEARCH.md`
+- ✅ 7.0.5: Plan updated with chosen approach
 
-**Completion status**:
-- ✅ Signal subscription API added (`on("signal", callback)`, `myPubKey`, `installedAppId`)
-- ✅ Signal delivery wired up: background -> content -> page
-- ✅ Profiles test page created with full CRUD workflow
-- ✅ Multi-port serve script for testing multiple origins
-- ✅ get_details fixed for UPDATE action hashes
-- ✅ 111 integration tests passing
-- ✅ UI terminology consistency (Authorize vs Connect)
+**Chosen Approach**: Offscreen Document
+- Run WASM in offscreen document where sync XHR works
+- Standard Chrome extension API, no experimental flags needed
+- Future migration path to JSPI when standardized
+
+**Next Tasks** (7.1 - Extension Architecture Update):
+- 7.1.1: Add offscreen permission to manifest
+- 7.1.2: Create offscreen document HTML
+- 7.1.3: Create offscreen document script
+- 7.1.4: Move WASM execution to offscreen
+- 7.1.5: Update background to proxy via offscreen
+- 7.1.6: Test extension still works
+
+**Details**: See [STEP7_PLAN.md](./STEP7_PLAN.md) and [STEP7_RESEARCH.md](./STEP7_RESEARCH.md)
 
 ## Completed Steps
 
@@ -93,18 +104,15 @@ Any serialization changes MUST:
    cat CLAUDE.md   # Full project plan
    ```
 
-3. **Verify previous step is complete**:
+3. **Read the current step plan**:
    ```bash
-   cd packages/extension
-   npm install     # If needed
-   npm run build
-   npm test
+   cat STEP7_PLAN.md
+   cat STEP7_RESEARCH.md
    ```
 
-4. **Read the current step plan**:
-   ```bash
-   cat STEP6.7_PLAN.md  # Or next step plan
-   ```
+4. **Test spikes if needed**:
+   - Offscreen spike: Load `spikes/offscreen-test/` as unpacked extension in Chrome
+   - JSPI spike: Open `spikes/jspi-test/jspi-browser-test.html` in Chrome with flag enabled
 
 ---
 
@@ -115,6 +123,12 @@ Any serialization changes MUST:
 - `SESSION.md` - This file - current session state
 - `STEPX_PLAN.md` - Detailed plans for each step
 - `STEPX_COMPLETION.md` - Completion notes for finished steps
+
+### Step 7 Specific
+- `STEP7_PLAN.md` - Detailed implementation plan
+- `STEP7_RESEARCH.md` - Research findings on sync/async approaches
+- `spikes/offscreen-test/` - Offscreen document spike
+- `spikes/jspi-test/` - JSPI spike
 
 ### Extension Package
 - `packages/extension/src/lib/messaging.ts` - Core message protocol
@@ -157,4 +171,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 6.7 (Profiles Test Page) is complete. The next step is Step 6.8 - Holochain Validation.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.0 (Research) is complete. The chosen approach is Offscreen Document - run WASM in offscreen document where sync XHR works. Now starting Step 7.1 (Extension Architecture Update).
