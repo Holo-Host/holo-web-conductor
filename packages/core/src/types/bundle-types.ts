@@ -129,6 +129,9 @@ export interface ZomeDefinition {
 
   /** Link types (cached from WASM link_types callback) */
   linkTypes?: unknown[];  // TODO: Add proper LinkType type when implementing link functionality
+
+  /** Count of link types (from link_types callback) */
+  linkTypeCount?: number;
 }
 
 // ============================================================================

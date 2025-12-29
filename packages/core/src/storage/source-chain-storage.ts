@@ -894,21 +894,32 @@ export class SourceChainStorage {
     const actions = Array.from(this.sessionCache.actions.values());
     if (actions.length === 0) return null;
 
-    // Find the Create action for this entry
-    const createAction = actions.find(
+    // Find the action that created this entry version (Create or Update)
+    // First try Create
+    let originatingAction = actions.find(
       a => a.actionType === 'Create' &&
            'entryHash' in a &&
            this.hashesEqual(a.entryHash, entryHash)
-    ) as CreateAction | undefined;
+    ) as CreateAction | UpdateAction | undefined;
 
-    if (!createAction) return null;
+    // If no Create found, try Update (Update actions create new entry versions)
+    if (!originatingAction) {
+      originatingAction = actions.find(
+        a => a.actionType === 'Update' &&
+             'entryHash' in a &&
+             this.hashesEqual((a as UpdateAction).entryHash, entryHash)
+      ) as UpdateAction | undefined;
+    }
+
+    if (!originatingAction) return null;
 
     // Get entry from cache
     const entryCacheKey = this.hashToKey(entryHash);
     const entry = this.sessionCache.entries.get(entryCacheKey);
     if (!entry) return null;
 
-    // Find all updates and deletes
+    // Find all updates and deletes for THIS entry
+    // (Updates that reference this entry's hash as their originalEntryHash)
     const updates = actions
       .filter(a => a.actionType === 'Update' && this.hashesEqual((a as UpdateAction).originalEntryHash, entryHash))
       .map(a => ({
@@ -925,8 +936,8 @@ export class SourceChainStorage {
 
     return {
       record: {
-        actionHash: createAction.actionHash,
-        action: createAction,
+        actionHash: originatingAction.actionHash,
+        action: originatingAction,
         entry,
       },
       validationStatus: 'Valid',

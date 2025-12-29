@@ -119,3 +119,25 @@ function injectAPI() {
 
 // Inject the API
 injectAPI();
+
+/**
+ * Listen for push messages from the background script (e.g., signals)
+ * These are not request/response pairs but one-way messages
+ */
+chrome.runtime.onMessage.addListener((message, sender) => {
+  // Only handle messages from our extension (not from web pages)
+  if (sender.id !== chrome.runtime.id) return;
+
+  // Handle signal messages
+  if (message.type === "signal") {
+    console.log("[Content] Forwarding signal to page:", message.payload);
+    window.postMessage(
+      {
+        source: "fishy-content",
+        type: "signal",
+        payload: message.payload,
+      },
+      "*"
+    );
+  }
+});

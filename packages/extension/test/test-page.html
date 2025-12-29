@@ -104,6 +104,19 @@
     </div>
 
     <div class="test-section">
+      <h2>Signal Test</h2>
+      <p>Subscribe to signals and trigger a zome call that emits a signal.</p>
+      <button id="subscribe-signals-btn" disabled>Subscribe to Signals</button>
+      <button id="unsubscribe-signals-btn" disabled>Unsubscribe</button>
+      <button id="trigger-signal-btn" disabled>Trigger Signal (emit_signal_test)</button>
+      <div id="signal-status" class="status info">Not subscribed</div>
+      <div id="signals-received">
+        <h3>Signals Received: <span id="signal-count">0</span></h3>
+        <pre id="signal-log" style="max-height: 200px; overflow-y: auto;"></pre>
+      </div>
+    </div>
+
+    <div class="test-section">
       <h2>Test Log</h2>
       <pre id="log"></pre>
     </div>
@@ -143,6 +156,9 @@
             detected: true,
             version: window.holochain.version,
             isFishy: window.holochain.isFishy,
+            hasOnMethod: typeof window.holochain.on === "function",
+            hasMyPubKey: "myPubKey" in window.holochain,
+            hasInstalledAppId: "installedAppId" in window.holochain,
           });
 
           // Enable test buttons
@@ -250,6 +266,91 @@
             showResult("zomecall-result", { error: error.message });
           }
         });
+
+      // Signal subscription state
+      let signalUnsubscribe = null;
+      let signalCount = 0;
+      const signalLog = document.getElementById("signal-log");
+      const signalCountEl = document.getElementById("signal-count");
+
+      function addSignalLog(signal) {
+        signalCount++;
+        signalCountEl.textContent = signalCount;
+        const timestamp = new Date().toISOString().split("T")[1].split(".")[0];
+        signalLog.textContent += `[${timestamp}] Signal #${signalCount}:\n${JSON.stringify(signal, null, 2)}\n\n`;
+        signalLog.scrollTop = signalLog.scrollHeight;
+      }
+
+      // Subscribe to Signals button
+      document.getElementById("subscribe-signals-btn").addEventListener("click", () => {
+        if (!window.holochain || !window.holochain.on) {
+          addLog("✗ Signal subscription not available (holochain.on not defined)");
+          return;
+        }
+
+        addLog("Subscribing to signals...");
+        signalUnsubscribe = window.holochain.on("signal", (signal) => {
+          addLog("📡 Signal received!");
+          addSignalLog(signal);
+        });
+
+        showStatus("signal-status", "success", "✓ Subscribed to signals");
+        document.getElementById("subscribe-signals-btn").disabled = true;
+        document.getElementById("unsubscribe-signals-btn").disabled = false;
+        document.getElementById("trigger-signal-btn").disabled = false;
+        addLog("✓ Signal subscription active");
+      });
+
+      // Unsubscribe button
+      document.getElementById("unsubscribe-signals-btn").addEventListener("click", () => {
+        if (signalUnsubscribe) {
+          signalUnsubscribe();
+          signalUnsubscribe = null;
+        }
+        showStatus("signal-status", "info", "Unsubscribed");
+        document.getElementById("subscribe-signals-btn").disabled = false;
+        document.getElementById("unsubscribe-signals-btn").disabled = true;
+        document.getElementById("trigger-signal-btn").disabled = true;
+        addLog("Signal subscription cancelled");
+      });
+
+      // Trigger Signal button - calls emit_signal_test zome function
+      document.getElementById("trigger-signal-btn").addEventListener("click", async () => {
+        addLog("Triggering signal via zome call (emit_signal_test)...");
+        try {
+          // Get app info first to get proper cell_id
+          const appInfo = await window.holochain.appInfo();
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            addLog("✗ No hApp installed. Install a hApp first.");
+            return;
+          }
+
+          const cellId = appInfo.cells[0];
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "test_zome",
+            fn_name: "emit_signal_test",
+            payload: "Test signal from UI button!",
+            provenance: cellId[1],
+            cap_secret: null,
+          });
+          addLog("✓ Zome call completed (signal should have been emitted)");
+          addLog(`  Result: ${JSON.stringify(result)}`);
+        } catch (error) {
+          addLog(`✗ Signal trigger failed: ${error.message}`);
+        }
+      });
+
+      // Enable signal buttons after connection
+      const originalConnectHandler = document.getElementById("connect-btn").onclick;
+      document.getElementById("connect-btn").addEventListener("click", () => {
+        // Signal subscribe button enabled after connection
+        setTimeout(() => {
+          if (window.holochain && window.holochain.on) {
+            document.getElementById("subscribe-signals-btn").disabled = false;
+          }
+        }, 500);
+      });
 
       addLog("Test page loaded. Click buttons to test extension functionality.");
     </script>

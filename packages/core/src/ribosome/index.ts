@@ -22,6 +22,7 @@ import {
   wasmInstantiationError,
 } from "./error";
 import { SourceChainStorage } from "../storage";
+import type { EntryDef } from "../types/holochain-types";
 
 /**
  * Result of a zome call execution
@@ -80,9 +81,33 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Ensure libsodium is ready (required for signing host functions)
     await sodium.ready;
 
+    // Find the correct WASM for the target zome
+    // Each zome (integrity or coordinator) has its own WASM module
+    let zomeWasm = dnaWasm; // Default fallback
+
+    if (dnaManifest) {
+      // Check integrity zomes
+      const integrityZome = dnaManifest.integrity_zomes.find(z => z.name === zome);
+      if (integrityZome?.wasm) {
+        console.log(`[Ribosome] Using WASM from integrity zome: ${zome}`);
+        zomeWasm = integrityZome.wasm;
+      } else {
+        // Check coordinator zomes
+        const coordinatorZome = dnaManifest.coordinator_zomes?.find(z => z.name === zome);
+        if (coordinatorZome?.wasm) {
+          console.log(`[Ribosome] Using WASM from coordinator zome: ${zome}`);
+          zomeWasm = coordinatorZome.wasm;
+        } else {
+          console.warn(`[Ribosome] Zome '${zome}' not found in manifest, using default WASM`);
+        }
+      }
+    }
+
     // Get runtime and compile/cache module
+    // Use zome-specific WASM hash for caching (so different zomes get different modules)
     const runtime = getRibosomeRuntime();
-    const module = await runtime.getOrCompileModule(dnaHash, dnaWasm);
+    const zomeWasmHash = new Uint8Array([...dnaHash, ...new TextEncoder().encode(zome)]);
+    const module = await runtime.getOrCompileModule(zomeWasmHash, zomeWasm);
 
     // Create call context
     const context: CallContext = {
@@ -118,13 +143,44 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Update the instance reference so host functions use the real instance
     instanceRef.current = instance;
 
-    // Initialize entry_defs immediately after instantiation (before any zome calls)
-    // This ensures entry_defs are available for validation in all zome calls
+    // Initialize entry_defs and link_types for integrity zomes
+    // Each integrity zome has its own WASM that exports entry_defs and link_types
+    // We need to instantiate each integrity WASM separately to get these
     if (dnaManifest) {
-      for (const z of dnaManifest.integrity_zomes) {
-        if (!z.entryDefs) {
-          console.log('[Ribosome] Initializing entry_defs for zome:', z.name);
-          z.entryDefs = await initializeEntryDefs(instance, z.name);
+      for (const integrityZome of dnaManifest.integrity_zomes) {
+        const needsEntryDefs = !integrityZome.entryDefs;
+        const needsLinkTypes = integrityZome.linkTypeCount === undefined;
+
+        if ((needsEntryDefs || needsLinkTypes) && integrityZome.wasm) {
+          console.log('[Ribosome] Initializing metadata for integrity zome:', integrityZome.name);
+
+          // Compile and instantiate the integrity zome's WASM
+          const integrityWasmHash = new Uint8Array([...dnaHash, ...new TextEncoder().encode(integrityZome.name)]);
+          const integrityModule = await runtime.getOrCompileModule(integrityWasmHash, integrityZome.wasm);
+          const integrityInstanceRef = { current: null as WebAssembly.Instance | null };
+          const integrityContext: CallContext = {
+            cellId,
+            zome: integrityZome.name,
+            fn: '__init__',
+            payload: null,
+            provenance,
+            dnaManifest,
+          };
+          const integrityImports = registry.buildImportObject(integrityInstanceRef, integrityContext);
+          const integrityInstance = await runtime.instantiateModule(integrityModule, integrityImports);
+          integrityInstanceRef.current = integrityInstance;
+
+          // Get entry_defs from integrity WASM
+          if (needsEntryDefs) {
+            console.log('[Ribosome] Getting entry_defs from integrity zome:', integrityZome.name);
+            integrityZome.entryDefs = await initializeEntryDefs(integrityInstance, integrityZome.name);
+          }
+
+          // Get link_types from integrity WASM
+          if (needsLinkTypes) {
+            console.log('[Ribosome] Getting link_types from integrity zome:', integrityZome.name);
+            integrityZome.linkTypeCount = initializeLinkTypes(integrityInstance, integrityZome.name);
+          }
         }
       }
     }
@@ -192,7 +248,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 async function initializeEntryDefs(
   instance: WebAssembly.Instance,
   zomeName: string
-): Promise<unknown[]> {
+): Promise<EntryDef[]> {
   // Check if entry_defs export exists
   const entryDefsFn = instance.exports.entry_defs as
     | ((ptr: number, len: number) => bigint)
@@ -236,7 +292,7 @@ async function initializeEntryDefs(
 
       // Ok value is { Defs: [array of EntryDef] }
       if (okValue && typeof okValue === 'object' && 'Defs' in okValue) {
-        return okValue.Defs as unknown[];
+        return okValue.Defs as EntryDef[];
       }
     }
   } catch (error) {
@@ -244,6 +300,47 @@ async function initializeEntryDefs(
   }
 
   return [];
+}
+
+/**
+ * Link type definition from link_types callback
+ */
+interface LinkTypeDef {
+  name: string;
+  index: number;
+}
+
+/**
+ * Get the number of link types from the WASM __num_link_types export
+ * This is a simple export that returns the count directly (no serialization needed)
+ */
+function initializeLinkTypes(
+  instance: WebAssembly.Instance,
+  zomeName: string
+): number {
+  // HDI generates __num_link_types export that returns the count directly
+  const numLinkTypesFn = instance.exports.__num_link_types as
+    | (() => number)
+    | undefined;
+
+  if (numLinkTypesFn) {
+    const count = numLinkTypesFn();
+    console.log(`[initializeLinkTypes] __num_link_types() returned ${count} for zome: ${zomeName}`);
+    return count;
+  }
+
+  // Fallback: try link_types callback (older style)
+  const linkTypesFn = instance.exports.link_types as
+    | ((ptr: number, len: number) => bigint)
+    | undefined;
+
+  if (!linkTypesFn) {
+    console.log(`[initializeLinkTypes] No link_types export found for zome: ${zomeName}`);
+    return 0;
+  }
+
+  console.log(`[initializeLinkTypes] link_types callback not supported, returning 0`);
+  return 0;
 }
 
 // Re-export key types and utilities

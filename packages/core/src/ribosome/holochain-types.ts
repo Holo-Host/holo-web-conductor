@@ -140,6 +140,7 @@ export interface DeleteAction extends ActionCommon {
   type: "Delete";
   deletes_address: Uint8Array;        // ActionHash
   deletes_entry_address: Uint8Array;  // EntryHash
+  weight?: { bucket_id: number; units: number; rate_bytes: number };
 }
 
 /**

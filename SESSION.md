@@ -1,26 +1,25 @@
 # Fishy Development Session
 
 **Last Updated**: 2025-12-29
-**Current Step**: Step 6.6 - Automated Integration Testing ✅ COMPLETE
-**Status**: COMPLETE - 25 integration tests passing, manual testing minimized to <10%
+**Current Step**: Step 6.7 - Test with profiles ✅ COMPLETE
+**Status**: COMPLETE - Signal infrastructure added, profiles test page working, 111 tests passing
 
 ## Current Step Progress
 
-### Step 6.6: Automated Integration Testing ✅ COMPLETE
+### Step 6.7: Test with profiles ✅ COMPLETE
 
-**Goal**: Have automated integration tests that simulate the web-page -> extension -> WASM flow, eliminating the manual reload/click testing loop.
+**Goal**: Create a test page using the real profiles WASM to exercise the fishy browser extension with actual holochain-open-dev patterns.
 
-**Details**: See [STEP6.6_PLAN.md](./STEP6.6_PLAN.md)
+**Details**: See [STEP6.7_PLAN.md](./STEP6.7_PLAN.md)
 
 **Completion status**:
-- ✅ 25 integration tests passing in ~750ms
-- ✅ All major host functions covered (CRUD, links, atomic operations, query, signing, etc.)
-- ✅ Tests run automatically via `npm test`
-- ✅ Convenience scripts added (`test:integration`, `test:unit`, `test:watch`)
-- ✅ Manual testing reduced to <10% of development time
-- ✅ Fast feedback loop for development (edit → test → see results)
-
-**Note**: Rollback testing deferred - transaction mechanism is simple and well-contained. Breaking changes would be caught by existing tests (transaction state errors, missing data, etc.). Following "perfect is enemy of good" - 25 tests provide sufficient regression protection.
+- ✅ Signal subscription API added (`on("signal", callback)`, `myPubKey`, `installedAppId`)
+- ✅ Signal delivery wired up: background -> content -> page
+- ✅ Profiles test page created with full CRUD workflow
+- ✅ Multi-port serve script for testing multiple origins
+- ✅ get_details fixed for UPDATE action hashes
+- ✅ 111 integration tests passing
+- ✅ UI terminology consistency (Authorize vs Connect)
 
 ## Completed Steps
 
@@ -35,6 +34,7 @@ Completion notes for each step are in separate files:
 - **Step 5.6**: Complete Host Functions and Data Types - See [STEP5.6_COMPLETION.md](./STEP5.6_COMPLETION.md)
 - **Step 5.7**: .happ Bundle Support with DNA Manifest Integration - See [STEP5.7_COMPLETION.md](./STEP5.7_COMPLETION.md)
 - **Step 6.6**: Automated Integration Testing - See [STEP6.6_COMPLETION.md](./STEP6.6_COMPLETION.md)
+- **Step 6.7**: Test with profiles - See [STEP6.7_COMPLETION.md](./STEP6.7_COMPLETION.md)
 
 ---
 
@@ -103,7 +103,7 @@ Any serialization changes MUST:
 
 4. **Read the current step plan**:
    ```bash
-   cat STEP6.6_PLAN.md
+   cat STEP6.7_PLAN.md  # Or next step plan
    ```
 
 ---
@@ -157,4 +157,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. The current step is Step 6.6 - Automated Integration Testing. Read STEP6.6_PLAN.md for the detailed plan.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 6.7 (Profiles Test Page) is complete. The next step is Step 6.8 - Holochain Validation.

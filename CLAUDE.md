@@ -301,7 +301,22 @@ interface CallZomeRequest {
 
 ---
 
-### Step 6.7: Holochain Validation
+### Step 6.7: Test with profiles ✅ COMPLETE
+
+**Goal**: Create a test page using the real profiles WASM to exercise the fishy browser extension with actual holochain-open-dev patterns:
+
+     1. Add signal subscription support to the extension API
+     2. Create a single-file test page with CDN imports
+     3. Exercise create-profile and list-profiles functionality
+     4. Validate extension works with real Holochain app patterns
+
+**Status**: COMPLETE (2025-12-29) - Signal infrastructure added, profiles test page working, get_details fixed for UPDATE actions
+
+**Completion**: See [STEP6.7_COMPLETION.md](./STEP6.7_COMPLETION.md)
+
+---
+
+### Step 6.8: Holochain Validation
 
 **Goal**: Add Holochain app validation when committing entries.
 

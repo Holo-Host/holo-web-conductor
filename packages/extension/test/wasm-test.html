@@ -123,11 +123,11 @@
             <div id="extension-status"></div>
         </div>
 
-        <!-- Connection -->
+        <!-- Authorization -->
         <div class="section">
-            <h2>2. Connection</h2>
-            <button id="connect-btn">Connect to Fishy</button>
-            <button id="disconnect-btn" disabled>Disconnect</button>
+            <h2>2. Authorization</h2>
+            <button id="connect-btn">Authorize Domain</button>
+            <button id="disconnect-btn" disabled>Revoke</button>
             <div id="connect-status"></div>
         </div>
 
@@ -200,7 +200,7 @@
             <ul class="checklist">
                 <li id="check-1">Extension loads without errors in chrome://extensions/</li>
                 <li id="check-2">Extension status check succeeds</li>
-                <li id="check-3">Connection request succeeds (authorization popup if first time)</li>
+                <li id="check-3">Authorization request succeeds (popup if first time)</li>
                 <li id="check-4">hApp installs with real HDK test zome WASM</li>
                 <li id="check-5">Background console shows ribosome initialization with 20 host functions</li>
                 <li id="check-6">Background console shows module caching messages</li>
@@ -341,7 +341,64 @@
                     'success');
                 markChecked('check-1');
                 markChecked('check-2');
-                document.getElementById('connect-btn').disabled = false;
+
+                // Check if already authorized by trying connect()
+                try {
+                    await window.holochain.connect();
+                    log('✓ Already authorized!');
+                    connectionEstablished = true;
+                    showStatus('connect-status',
+                        '<strong>Already authorized!</strong>',
+                        'success');
+                    markChecked('check-3');
+                    document.getElementById('connect-btn').disabled = true;
+                    document.getElementById('disconnect-btn').disabled = false;
+                    document.getElementById('install-happ-btn').disabled = false;
+
+                    // Check if hApp is already installed
+                    try {
+                        const appInfo = await window.holochain.appInfo();
+                        if (appInfo && appInfo.contextId) {
+                            contextId = appInfo.contextId;
+                            log(`✓ Found existing hApp! Context ID: ${contextId}`);
+                            log(`  App: ${appInfo.appName} v${appInfo.appVersion}`);
+                            showStatus('install-status',
+                                `<strong>hApp already installed!</strong><br>
+                                Context ID: <code>${contextId}</code><br>
+                                App: ${appInfo.appName} v${appInfo.appVersion}`,
+                                'success');
+
+                            // Enable zome test buttons
+                            document.getElementById('test-agent-info-btn').disabled = false;
+                            document.getElementById('test-zome-info-btn').disabled = false;
+                            document.getElementById('test-random-btn').disabled = false;
+                            document.getElementById('test-timestamp-btn').disabled = false;
+                            document.getElementById('test-trace-btn').disabled = false;
+                            document.getElementById('test-signing-btn').disabled = false;
+                            document.getElementById('test-create-btn').disabled = false;
+                            document.getElementById('test-get-btn').disabled = false;
+                            document.getElementById('test-get-details-btn').disabled = false;
+                            document.getElementById('test-update-btn').disabled = false;
+                            document.getElementById('test-delete-entry-btn').disabled = false;
+                            document.getElementById('test-emit-signal-btn').disabled = false;
+                            document.getElementById('test-query-btn').disabled = false;
+                            document.getElementById('test-create-link-btn').disabled = false;
+                            document.getElementById('test-get-links-btn').disabled = false;
+                            document.getElementById('test-delete-link-btn').disabled = false;
+                            document.getElementById('test-count-links-btn').disabled = false;
+                            document.getElementById('test-atomic-entry-link-btn').disabled = false;
+                            document.getElementById('test-atomic-rollback-btn').disabled = false;
+
+                            markChecked('check-4');
+                        }
+                    } catch (e) {
+                        log('No existing hApp found - install one to test zome functions');
+                    }
+                } catch (e) {
+                    // Not authorized yet
+                    log('Not authorized yet - click Authorize Domain');
+                    document.getElementById('connect-btn').disabled = false;
+                }
             } else {
                 log('Extension not found. Please load the extension first.', true);
                 showStatus('extension-status',
@@ -350,15 +407,15 @@
             }
         });
 
-        // Connect
+        // Authorize
         document.getElementById('connect-btn').addEventListener('click', async () => {
-            log('Connecting to Fishy...');
+            log('Requesting authorization...');
             try {
                 const response = await window.holochain.connect();
-                log(`Connected! Response: ${JSON.stringify(response)}`);
+                log(`Authorized! Response: ${JSON.stringify(response)}`);
                 connectionEstablished = true;
                 showStatus('connect-status',
-                    `<strong>Connected!</strong> Origin: ${response.origin}`,
+                    `<strong>Authorized!</strong> Origin: ${response.origin}`,
                     'success');
                 markChecked('check-3');
                 document.getElementById('connect-btn').disabled = true;
@@ -407,26 +464,26 @@
                     log('No existing hApp found - install one to test zome functions');
                 }
             } catch (error) {
-                log(`Connection failed: ${error.message}`, true);
+                log(`Authorization failed: ${error.message}`, true);
                 showStatus('connect-status',
-                    `<strong>Connection failed:</strong> ${error.message}`,
+                    `<strong>Authorization failed:</strong> ${error.message}`,
                     'error');
             }
         });
 
-        // Disconnect
+        // Revoke authorization
         document.getElementById('disconnect-btn').addEventListener('click', async () => {
-            log('Disconnecting...');
+            log('Revoking authorization...');
             try {
                 const response = await window.holochain.disconnect();
-                log(`Disconnected! Response: ${JSON.stringify(response)}`);
+                log(`Authorization revoked! Response: ${JSON.stringify(response)}`);
                 connectionEstablished = false;
-                showStatus('connect-status', '<strong>Disconnected</strong>', 'info');
+                showStatus('connect-status', '<strong>Authorization revoked</strong>', 'info');
                 document.getElementById('connect-btn').disabled = false;
                 document.getElementById('disconnect-btn').disabled = true;
                 document.getElementById('install-happ-btn').disabled = true;
             } catch (error) {
-                log(`Disconnect failed: ${error.message}`, true);
+                log(`Revoke failed: ${error.message}`, true);
             }
         });
 

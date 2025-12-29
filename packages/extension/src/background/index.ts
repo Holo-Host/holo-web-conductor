@@ -556,9 +556,40 @@ async function handleCallZome(
     const transportSafeResult = serializeForTransport(decodedResult);
     console.log(`[CallZome] Transport-safe result:`, transportSafeResult);
 
-    // TODO: Handle signals - for now just log them
+    // Deliver signals to the content script which will forward to the page
     if (signals && signals.length > 0) {
-      console.log(`[CallZome] Signals emitted:`, signals);
+      const tabId = sender.tab?.id;
+      if (tabId) {
+        console.log(`[CallZome] Delivering ${signals.length} signals to tab ${tabId}`);
+        for (const signal of signals) {
+          try {
+            // Decode the signal payload from msgpack
+            const decodedPayload = decode(signal.signal as Uint8Array);
+
+            // Format as Holochain AppSignal structure
+            const appSignal = {
+              type: "app",
+              value: {
+                cell_id: serializeForTransport(signal.cell_id),
+                zome_name: signal.zome_name,
+                payload: serializeForTransport(decodedPayload),
+              },
+            };
+
+            // Send to content script
+            chrome.tabs.sendMessage(tabId, {
+              type: "signal",
+              payload: appSignal,
+            }).catch((err) => {
+              console.warn("[CallZome] Failed to send signal to tab:", err);
+            });
+          } catch (err) {
+            console.error("[CallZome] Error processing signal:", err);
+          }
+        }
+      } else {
+        console.warn("[CallZome] No tab ID available for signal delivery");
+      }
     }
 
     // Update last used timestamp

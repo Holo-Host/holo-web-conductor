@@ -1,0 +1,76 @@
+# Step 6.7 Completion: Profiles Test Page
+
+**Completed**: 2025-12-29
+**Status**: COMPLETE
+
+## Summary
+
+Created a profiles test page using the real profiles WASM to exercise the fishy browser extension with actual holochain-open-dev patterns. Also added signal subscription infrastructure and fixed get_details to handle UPDATE action hashes.
+
+## What Was Accomplished
+
+### 1. Signal Infrastructure
+- Added `on("signal", callback)` method to inject script returning unsubscribe function
+- Added `myPubKey` and `installedAppId` getters populated from appInfo on connect
+- Wired up signal delivery: background -> content script -> page via postMessage
+- Signal handlers stored in Set with proper cleanup on unsubscribe
+
+### 2. Profiles Test Page (`packages/extension/test/profiles-test.html`)
+- Single-file test page with CDN imports (msgpack from esm.sh)
+- Full workflow: Authorize -> Install -> Connect -> Create Profile -> View Profiles
+- FishyAppClient adapter wrapping window.holochain API
+- SimpleProfilesClient for direct zome calls (create_profile, get_my_profile, get_agents_with_profile)
+- Profile list display with signal log
+- Proper msgpack decoding for entry bytes
+
+### 3. Multi-Port Serve Script
+- Updated `serve.sh` to run two servers on ports 8080 (wasm-test) and 8081 (profiles-test)
+- Supports one-app-per-origin design constraint
+- Clean shutdown handling for both servers
+
+### 4. get_details Fix
+- Fixed `getDetailsFromCache` to handle entries created by UPDATE actions
+- Previously only looked for CREATE actions, now also finds UPDATE actions that created entry versions
+- Both `get_details(original_hash)` and `get_details(update_hash)` return valid details
+
+### 5. UI Consistency
+- Renamed "Connect" to "Authorize Domain" in wasm-test.html for consistent terminology
+- Added already-authorized detection on page reload
+
+## Test Results
+
+- 111 integration tests passing
+- New test: "should get_details on update action hash returning details with empty updates"
+- Profiles test page manually verified: create profile, view profiles working
+
+## Files Created/Modified
+
+### New Files
+- `packages/extension/test/profiles-test.html` - Profiles test page
+- `packages/extension/test/fixtures/profiles-test.happ` - Profiles hApp bundle
+- `packages/core/test/fixtures/profiles-test.happ` - Copy for integration tests
+- `packages/core/test/profiles-integration.test.ts` - Profiles integration tests
+- `STEP6.7_PLAN.md` - Detailed implementation plan
+
+### Modified Files
+- `packages/extension/src/inject/index.ts` - Added signal subscription, myPubKey, installedAppId
+- `packages/extension/src/content/index.ts` - Added signal bridge from background
+- `packages/extension/src/background/index.ts` - Added signal delivery to tabs
+- `packages/extension/test/serve.sh` - Multi-port support
+- `packages/extension/test/wasm-test.html` - Authorize terminology, already-authorized check
+- `packages/core/src/storage/source-chain-storage.ts` - get_details handles UPDATE actions
+- `packages/core/src/ribosome/host-fn/stubs.ts` - Simplified get_details entry hash lookup
+- `packages/core/src/ribosome/integration.test.ts` - Added get_details update test
+
+## Key Decisions
+
+1. **One-app-per-origin**: Different ports = different origins for testing multiple hApps
+2. **Signal delivery**: Push model from background to page via content script bridge
+3. **Entry decoding**: UI responsible for msgpack decoding entry bytes (not automatic)
+4. **get_details semantics**: Each action hash returns details about THAT action, not redirects
+
+## Known Limitations
+
+1. Signals are delivered but not yet used by profiles UI (signals logged only)
+2. Multi-agent testing not supported (would need multiple browser profiles)
+3. Network operations not implemented (local-only for now)

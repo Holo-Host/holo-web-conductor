@@ -62,6 +62,7 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log("[get_details] Getting details for hash", {
     hash: Array.from(input.any_dht_hash.slice(0, 8)),
+    fullHash: Array.from(input.any_dht_hash),
   });
 
   const [dnaHash, agentPubKey] = callContext.cellId;
@@ -75,9 +76,19 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const action = actionResult;
 
-  if (action && "entryHash" in action && action.entryHash) {
+  console.log("[get_details] Action lookup result", {
+    found: !!action,
+    actionType: action?.actionType,
+    hasEntryHash: action && "entryHash" in action,
+    entryHash: action && "entryHash" in action ? Array.from((action as any).entryHash?.slice(0, 8) || []) : null,
+  });
+
+  // Get the entry hash from the action
+  const entryHashToQuery = action && "entryHash" in action ? action.entryHash : null;
+
+  if (entryHashToQuery) {
     // Get full details for this entry from cache
-    const details = storage.getDetailsFromCache(action.entryHash, dnaHash, agentPubKey);
+    const details = storage.getDetailsFromCache(entryHashToQuery, dnaHash, agentPubKey);
     if (details) {
       // Build RecordDetails structure
       const recordDetails = {
@@ -129,9 +140,9 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
     }
   }
 
-  // Not found - Option<Details> None serializes as null
+  // Not found - Vec<Option<Details>> with one None element
   console.log("[get_details] No details found");
-  return serializeResult(instance, null);
+  return serializeResult(instance, [null]);
 };
 export const getLinksDetails = createEmptyArrayStub("get_links_details");
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");

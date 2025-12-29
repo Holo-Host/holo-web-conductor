@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fishy Profiles Test</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      h1 { color: #333; }
+      h2 { color: #555; margin-top: 0; }
+      .section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin: 5px;
+      }
+      button:hover { background: #0056b3; }
+      button:disabled { background: #ccc; cursor: not-allowed; }
+      button.secondary { background: #6c757d; }
+      button.secondary:hover { background: #545b62; }
+      button.success { background: #28a745; }
+      button.success:hover { background: #218838; }
+      input[type="text"], input[type="file"] {
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        margin: 5px;
+      }
+      input[type="text"] { width: 200px; }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+      .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+      .status.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+      .status.warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+      pre {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .profile-card {
+        border: 1px solid #ddd;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+      .profile-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: #007bff;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: bold;
+      }
+      .profile-info { flex: 1; }
+      .profile-nickname { font-size: 18px; font-weight: bold; }
+      .profile-key { font-size: 10px; color: #888; font-family: monospace; }
+      .hidden { display: none; }
+      #log { font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <h1>Fishy Profiles Test Page</h1>
+    <p>Test the Fishy extension with the real Holochain profiles hApp.</p>
+
+    <!-- Step 1: Extension Detection -->
+    <div class="section">
+      <h2>1. Extension Detection</h2>
+      <div id="detection-status" class="status info">Checking for Fishy extension...</div>
+    </div>
+
+    <!-- Step 2: Authorize (Connect) -->
+    <div class="section">
+      <h2>2. Authorize</h2>
+      <button id="authorize-btn" disabled>Authorize Domain</button>
+      <div id="authorize-status" class="status info">Not authorized</div>
+    </div>
+
+    <!-- Step 3: Install hApp -->
+    <div class="section">
+      <h2>3. Install Profiles hApp</h2>
+      <p>Uses bundled <code>fixtures/profiles-test.happ</code></p>
+      <button id="install-btn" disabled>Install hApp</button>
+      <div id="install-status" class="status info">Authorize first</div>
+    </div>
+
+    <!-- Step 4: Connect -->
+    <div class="section">
+      <h2>4. Connect</h2>
+      <button id="connect-btn" disabled>Connect</button>
+      <div id="connect-status" class="status info">Install hApp first</div>
+      <div id="app-info" class="hidden">
+        <h3>App Info</h3>
+        <pre id="app-info-content"></pre>
+      </div>
+    </div>
+
+    <!-- Step 5: Create Profile -->
+    <div class="section hidden" id="create-profile-section">
+      <h2>5. Create Profile</h2>
+      <form id="create-profile-form">
+        <label>
+          Nickname:
+          <input type="text" name="nickname" required minlength="3" placeholder="Enter nickname (min 3 chars)" />
+        </label>
+        <button type="submit" class="success">Create Profile</button>
+      </form>
+      <div id="create-profile-status"></div>
+    </div>
+
+    <!-- Step 6: View My Profile -->
+    <div class="section hidden" id="my-profile-section">
+      <h2>6. My Profile</h2>
+      <button id="refresh-my-profile-btn">Refresh My Profile</button>
+      <div id="my-profile-display"></div>
+    </div>
+
+    <!-- Step 7: List All Profiles -->
+    <div class="section hidden" id="list-profiles-section">
+      <h2>7. All Profiles</h2>
+      <button id="list-profiles-btn">List All Profiles</button>
+      <div id="profiles-list"></div>
+    </div>
+
+    <!-- Signals -->
+    <div class="section">
+      <h2>Signals Received</h2>
+      <div id="signal-count">0 signals</div>
+      <pre id="signal-log"></pre>
+    </div>
+
+    <!-- Debug Log -->
+    <div class="section">
+      <h2>Debug Log</h2>
+      <pre id="log"></pre>
+    </div>
+
+    <script type="module">
+      // Import msgpack for decoding entry bytes
+      import { decode as msgpackDecode } from "https://esm.sh/@msgpack/msgpack@3.0.0-beta2";
+
+      // ============================================================
+      // Logging utilities
+      // ============================================================
+      const logEl = document.getElementById("log");
+      function log(msg) {
+        const ts = new Date().toISOString().split("T")[1].split(".")[0];
+        logEl.textContent += `[${ts}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(msg);
+      }
+
+      function showStatus(id, type, msg) {
+        const el = document.getElementById(id);
+        el.className = `status ${type}`;
+        el.textContent = msg;
+      }
+
+      // ============================================================
+      // Helper: Convert Chrome message object back to Uint8Array
+      // ============================================================
+      function toUint8Array(data) {
+        if (!data) return null;
+        if (data instanceof Uint8Array) return data;
+        if (Array.isArray(data)) return new Uint8Array(data);
+        if (typeof data === "object") {
+          const values = Object.values(data);
+          return new Uint8Array(values);
+        }
+        return null;
+      }
+
+      // ============================================================
+      // Helper: Decode msgpack-encoded entry bytes to object
+      // ============================================================
+      function decodeEntry(entryBytes) {
+        const bytes = toUint8Array(entryBytes);
+        if (!bytes) return null;
+        try {
+          return msgpackDecode(bytes);
+        } catch (e) {
+          log(`Failed to decode entry: ${e.message}`);
+          return null;
+        }
+      }
+
+      // ============================================================
+      // FishyAppClient - Adapter for window.holochain
+      // ============================================================
+      class FishyAppClient {
+        constructor() {
+          this._myPubKey = null;
+          this._installedAppId = null;
+          this._connected = false;
+        }
+
+        get myPubKey() {
+          return this._myPubKey;
+        }
+
+        get installedAppId() {
+          return this._installedAppId;
+        }
+
+        async connect() {
+          const holochain = window.holochain;
+          if (!holochain) throw new Error("Fishy extension not detected");
+
+          await holochain.connect();
+          const appInfo = await holochain.appInfo();
+
+          this._myPubKey = toUint8Array(appInfo.agentPubKey);
+          this._installedAppId = appInfo.contextId;
+          this._connected = true;
+
+          // Set up signal forwarding
+          if (holochain.on) {
+            holochain.on("signal", (signal) => {
+              this._dispatchSignal(signal);
+            });
+          }
+
+          return appInfo;
+        }
+
+        _signalHandlers = new Set();
+
+        on(event, callback) {
+          if (event === "signal") {
+            this._signalHandlers.add(callback);
+            return () => this._signalHandlers.delete(callback);
+          }
+          return () => {};
+        }
+
+        _dispatchSignal(signal) {
+          this._signalHandlers.forEach((h) => {
+            try { h(signal); } catch (e) { console.error("Signal handler error:", e); }
+          });
+        }
+
+        async callZome(request) {
+          const holochain = window.holochain;
+          const appInfo = await holochain.appInfo();
+          const cellId = appInfo.cells[0];
+
+          return holochain.callZome({
+            cell_id: cellId,
+            zome_name: request.zome_name,
+            fn_name: request.fn_name,
+            payload: request.payload,
+            provenance: cellId[1],
+            cap_secret: null,
+          });
+        }
+
+        async appInfo() {
+          return window.holochain.appInfo();
+        }
+      }
+
+      // ============================================================
+      // SimpleProfilesClient - Direct zome calls
+      // ============================================================
+      class SimpleProfilesClient {
+        constructor(client, zomeName = "profiles") {
+          this.client = client;
+          this.zomeName = zomeName;
+        }
+
+        async createProfile(profile) {
+          log(`Creating profile: ${JSON.stringify(profile)}`);
+          return this.client.callZome({
+            zome_name: this.zomeName,
+            fn_name: "create_profile",
+            payload: profile,
+          });
+        }
+
+        async getMyProfile() {
+          log("Getting my profile...");
+          return this.client.callZome({
+            zome_name: this.zomeName,
+            fn_name: "get_my_profile",
+            payload: null,
+          });
+        }
+
+        async getAgentsWithProfile() {
+          log("Getting agents with profile...");
+          return this.client.callZome({
+            zome_name: this.zomeName,
+            fn_name: "get_agents_with_profile",
+            payload: { input: null, local: true },
+          });
+        }
+
+        async getAgentProfile(agentPubKey) {
+          log(`Getting profile for agent: ${Array.from(agentPubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}...`);
+          return this.client.callZome({
+            zome_name: this.zomeName,
+            fn_name: "get_agent_profile",
+            payload: { input: agentPubKey, local: true },
+          });
+        }
+
+        onSignal(callback) {
+          return this.client.on("signal", (signal) => {
+            if (signal.value?.zome_name === this.zomeName) {
+              callback(signal.value.payload);
+            }
+          });
+        }
+      }
+
+      // ============================================================
+      // Global state
+      // ============================================================
+      let appClient = null;
+      let profilesClient = null;
+      let signalCount = 0;
+
+      // ============================================================
+      // Signal handling
+      // ============================================================
+      const signalLogEl = document.getElementById("signal-log");
+      const signalCountEl = document.getElementById("signal-count");
+
+      function addSignal(signal) {
+        signalCount++;
+        signalCountEl.textContent = `${signalCount} signals`;
+        const ts = new Date().toISOString().split("T")[1].split(".")[0];
+        signalLogEl.textContent += `[${ts}] Signal #${signalCount}:\n${JSON.stringify(signal, null, 2)}\n\n`;
+        signalLogEl.scrollTop = signalLogEl.scrollHeight;
+      }
+
+      // ============================================================
+      // UI: Profile display
+      // ============================================================
+      function displayProfile(profile, agentPubKey, container) {
+        const initials = profile.nickname
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2);
+
+        const keyHex = agentPubKey
+          ? Array.from(toUint8Array(agentPubKey).slice(0, 8))
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("")
+          : "unknown";
+
+        container.innerHTML = `
+          <div class="profile-card">
+            <div class="profile-avatar">${initials}</div>
+            <div class="profile-info">
+              <div class="profile-nickname">${profile.nickname}</div>
+              <div class="profile-key">${keyHex}...</div>
+              ${Object.entries(profile.fields || {})
+                .map(([k, v]) => `<div><small>${k}: ${v}</small></div>`)
+                .join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // ============================================================
+      // App name constant
+      // ============================================================
+      const APP_NAME = "fishy-profiles-test";
+
+      // ============================================================
+      // Step 1: Check extension and existing state
+      // ============================================================
+      async function checkExtension() {
+        if (window.holochain && window.holochain.isFishy) {
+          log("Extension detected: " + window.holochain.version);
+          showStatus("detection-status", "success", `Extension detected (v${window.holochain.version})`);
+
+          // Check if app is already installed
+          try {
+            const appInfo = await window.holochain.appInfo();
+            if (appInfo && appInfo.appName === APP_NAME) {
+              log("App already installed: " + APP_NAME);
+              showStatus("authorize-status", "success", "Authorized");
+              showStatus("install-status", "success", `Already installed: ${APP_NAME}`);
+              document.getElementById("authorize-btn").disabled = true;
+              document.getElementById("install-btn").disabled = true;
+              document.getElementById("connect-btn").disabled = false;
+              return true;
+            }
+          } catch (e) {
+            // No app installed yet
+            log("No existing app found");
+          }
+
+          // Check if already authorized by trying connect()
+          try {
+            await window.holochain.connect();
+            log("Already authorized");
+            showStatus("authorize-status", "success", "Authorized");
+            document.getElementById("authorize-btn").disabled = true;
+            document.getElementById("install-btn").disabled = false;
+            showStatus("install-status", "info", "Ready to install");
+            return true;
+          } catch (e) {
+            // Not authorized yet
+            log("Not authorized yet");
+          }
+
+          // Enable authorize button
+          document.getElementById("authorize-btn").disabled = false;
+          return true;
+        } else {
+          showStatus("detection-status", "error", "Extension not detected. Please install Fishy.");
+          return false;
+        }
+      }
+
+      window.addEventListener("fishy:ready", checkExtension);
+      setTimeout(checkExtension, 100);
+
+      // ============================================================
+      // Step 2: Authorize domain
+      // ============================================================
+      const authorizeBtn = document.getElementById("authorize-btn");
+
+      authorizeBtn.addEventListener("click", async () => {
+        log("Requesting authorization...");
+        showStatus("authorize-status", "warning", "Requesting authorization...");
+
+        try {
+          // connect() triggers the authorization popup
+          await window.holochain.connect();
+
+          showStatus("authorize-status", "success", "Authorized");
+          log("Domain authorized");
+          authorizeBtn.disabled = true;
+          document.getElementById("install-btn").disabled = false;
+          showStatus("install-status", "info", "Ready to install");
+        } catch (error) {
+          log(`Authorization failed: ${error.message}`);
+          showStatus("authorize-status", "error", `Failed: ${error.message}`);
+        }
+      });
+
+      // ============================================================
+      // Step 3: Install hApp
+      // ============================================================
+      const installBtn = document.getElementById("install-btn");
+
+      installBtn.addEventListener("click", async () => {
+        log("Fetching bundled hApp...");
+        showStatus("install-status", "warning", "Loading hApp bundle...");
+
+        try {
+          // Fetch the bundled hApp from fixtures
+          const response = await fetch("fixtures/profiles-test.happ");
+          if (!response.ok) {
+            throw new Error(`Failed to fetch hApp: ${response.status} ${response.statusText}`);
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          const happBundle = new Uint8Array(arrayBuffer);
+
+          log(`Installing hApp (${happBundle.length} bytes)...`);
+          showStatus("install-status", "warning", "Installing...");
+
+          await window.holochain.installHapp({
+            happBundle,
+            appName: APP_NAME,
+            appVersion: "0.1.0",
+          });
+
+          showStatus("install-status", "success", "hApp installed successfully");
+          log("hApp installed");
+          document.getElementById("connect-btn").disabled = false;
+          showStatus("connect-status", "info", "Ready to connect");
+          installBtn.disabled = true;
+        } catch (error) {
+          log(`Install failed: ${error.message}`);
+          showStatus("install-status", "error", `Install failed: ${error.message}`);
+        }
+      });
+
+      // ============================================================
+      // Step 4: Connect
+      // ============================================================
+      document.getElementById("connect-btn").addEventListener("click", async () => {
+        log("Connecting...");
+        showStatus("connect-status", "warning", "Connecting...");
+
+        try {
+          appClient = new FishyAppClient();
+          const appInfo = await appClient.connect();
+
+          profilesClient = new SimpleProfilesClient(appClient);
+
+          // Subscribe to signals
+          profilesClient.onSignal((signal) => {
+            log("Signal received from profiles zome");
+            addSignal(signal);
+          });
+
+          showStatus("connect-status", "success", "Connected");
+          document.getElementById("app-info").classList.remove("hidden");
+          document.getElementById("app-info-content").textContent = JSON.stringify(appInfo, null, 2);
+
+          // Show profile sections
+          document.getElementById("create-profile-section").classList.remove("hidden");
+          document.getElementById("my-profile-section").classList.remove("hidden");
+          document.getElementById("list-profiles-section").classList.remove("hidden");
+
+          log("Connected and ready");
+        } catch (error) {
+          log(`Connect failed: ${error.message}`);
+          showStatus("connect-status", "error", `Connect failed: ${error.message}`);
+        }
+      });
+
+      // ============================================================
+      // Step 5: Create Profile
+      // ============================================================
+      document.getElementById("create-profile-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const nickname = e.target.nickname.value.trim();
+        if (nickname.length < 3) {
+          showStatus("create-profile-status", "error", "Nickname must be at least 3 characters");
+          return;
+        }
+
+        log(`Creating profile: ${nickname}`);
+        showStatus("create-profile-status", "warning", "Creating profile...");
+
+        try {
+          const result = await profilesClient.createProfile({
+            nickname,
+            fields: {},
+          });
+
+          showStatus("create-profile-status", "success", "Profile created successfully");
+          log(`Profile created: ${JSON.stringify(result)}`);
+
+          // Refresh my profile
+          refreshMyProfile();
+        } catch (error) {
+          log(`Create profile failed: ${error.message}`);
+          showStatus("create-profile-status", "error", `Failed: ${error.message}`);
+        }
+      });
+
+      // ============================================================
+      // Step 6: My Profile
+      // ============================================================
+      async function refreshMyProfile() {
+        const container = document.getElementById("my-profile-display");
+        container.innerHTML = "<p>Loading...</p>";
+
+        try {
+          const record = await profilesClient.getMyProfile();
+          log(`My profile result: ${JSON.stringify(record)}`);
+
+          if (record && record.entry) {
+            // Extract and decode profile from record
+            // The entry is msgpack-encoded in entry.Present.entry
+            let profile;
+            if (record.entry?.Present?.entry) {
+              profile = decodeEntry(record.entry.Present.entry);
+            } else if (record.entry?.Present) {
+              profile = decodeEntry(record.entry.Present);
+            } else {
+              profile = record.entry;
+            }
+
+            if (profile) {
+              displayProfile(profile, appClient.myPubKey, container);
+            } else {
+              container.innerHTML = "<p>Failed to decode profile.</p>";
+            }
+          } else {
+            container.innerHTML = "<p>No profile found. Create one above.</p>";
+          }
+        } catch (error) {
+          log(`Get my profile failed: ${error.message}`);
+          container.innerHTML = `<p class="status error">Error: ${error.message}</p>`;
+        }
+      }
+
+      document.getElementById("refresh-my-profile-btn").addEventListener("click", refreshMyProfile);
+
+      // ============================================================
+      // Step 7: List All Profiles
+      // ============================================================
+      document.getElementById("list-profiles-btn").addEventListener("click", async () => {
+        const container = document.getElementById("profiles-list");
+        container.innerHTML = "<p>Loading...</p>";
+
+        try {
+          const agents = await profilesClient.getAgentsWithProfile();
+          log(`Agents with profile: ${JSON.stringify(agents)}`);
+
+          if (!agents || agents.length === 0) {
+            container.innerHTML = "<p>No profiles found.</p>";
+            return;
+          }
+
+          container.innerHTML = "";
+
+          for (const agentPubKey of agents) {
+            try {
+              const record = await profilesClient.getAgentProfile(toUint8Array(agentPubKey));
+              if (record && record.entry) {
+                let profile;
+                if (record.entry?.Present?.entry) {
+                  profile = decodeEntry(record.entry.Present.entry);
+                } else if (record.entry?.Present) {
+                  profile = decodeEntry(record.entry.Present);
+                } else {
+                  profile = record.entry;
+                }
+
+                if (profile) {
+                  const profileContainer = document.createElement("div");
+                  displayProfile(profile, agentPubKey, profileContainer);
+                  container.appendChild(profileContainer);
+                }
+              }
+            } catch (err) {
+              log(`Failed to get profile for agent: ${err.message}`);
+            }
+          }
+
+          if (container.innerHTML === "") {
+            container.innerHTML = "<p>No profiles could be loaded.</p>";
+          }
+        } catch (error) {
+          log(`List profiles failed: ${error.message}`);
+          container.innerHTML = `<p class="status error">Error: ${error.message}</p>`;
+        }
+      });
+
+      log("Profiles test page loaded");
+    </script>
+  </body>
+</html>

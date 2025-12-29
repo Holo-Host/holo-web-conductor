@@ -40,6 +40,7 @@ export interface ZomeInfo {
  * zome_info host function implementation
  *
  * Returns current zome name and metadata.
+ * For coordinator zomes, entry_defs come from dependent integrity zomes.
  */
 export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
@@ -48,56 +49,95 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const manifest = callContext.dnaManifest;
 
   // Find current zome in manifest
-  const allZomes = [
-    ...(manifest?.integrity_zomes || []),
-    ...(manifest?.coordinator_zomes || []),
-  ];
+  const integrityZomes = manifest?.integrity_zomes || [];
+  const coordinatorZomes = manifest?.coordinator_zomes || [];
+  const allZomes = [...integrityZomes, ...coordinatorZomes];
 
   const currentZome = allZomes.find((z) => z.name === callContext.zome);
   const zomeIndex = currentZome?.index ?? 0;
 
+  // Check if current zome is a coordinator zome
+  const isCoordinator = coordinatorZomes.some((z) => z.name === callContext.zome);
+
   // Encode properties
   const propertiesBytes = new Uint8Array(encode(manifest?.properties || {}));
 
-  // Build entry_defs from cached WASM entry_defs callback result
-  const entryDefs: EntryDef[] = currentZome?.entryDefs || [];
-
-  console.log('[zome_info] entry_defs:', {
-    hasCurrentZome: !!currentZome,
-    hasEntryDefs: !!currentZome?.entryDefs,
-    entryDefsLength: entryDefs.length,
-  });
-
-  // Build zome_types from actual entry_defs
+  // Build zome_types from entry_defs
+  // For coordinator zomes, we need to look up entry_defs from dependent integrity zomes
   const zomeTypes = {
     entries: [] as Array<[number, number[]]>,
     links: [] as Array<[number, number[]]>,
   };
 
-  // Populate entry def indices from loaded entry_defs
-  // The index in the entry_defs array IS the entry def index
-  if (currentZome && entryDefs.length > 0) {
-    const entryDefIndices = entryDefs.map((_, index) => index);
-    zomeTypes.entries.push([zomeIndex, entryDefIndices]);
+  // Collect all entry_defs that are in scope for this zome
+  let allEntryDefs: EntryDef[] = [];
 
-    // For links, assume zome has link type 0 (TODO: extract from link_types callback)
-    zomeTypes.links.push([zomeIndex, [0]]);
+  if (isCoordinator && currentZome) {
+    // Coordinator zome: get entry_defs and link_types from dependent integrity zomes
+    const dependencies = currentZome.dependencies || [];
+    console.log(`[zome_info] Coordinator zome '${callContext.zome}' dependencies:`, dependencies);
+
+    for (const depName of dependencies) {
+      const integrityZome = integrityZomes.find((z) => z.name === depName);
+      if (integrityZome) {
+        // Add entry_defs
+        if (integrityZome.entryDefs && integrityZome.entryDefs.length > 0) {
+          const entryDefIndices = integrityZome.entryDefs.map((_, index) => index);
+          zomeTypes.entries.push([integrityZome.index, entryDefIndices]);
+          allEntryDefs = allEntryDefs.concat(integrityZome.entryDefs);
+        }
+
+        // Add link_types - use the actual count from link_types callback
+        const linkTypeCount = integrityZome.linkTypeCount ?? 0;
+        if (linkTypeCount > 0) {
+          const linkTypeIndices = Array.from({ length: linkTypeCount }, (_, i) => i);
+          zomeTypes.links.push([integrityZome.index, linkTypeIndices]);
+        }
+
+        console.log(`[zome_info] Added from integrity zome '${depName}':`, {
+          zomeIndex: integrityZome.index,
+          entryDefsCount: integrityZome.entryDefs?.length || 0,
+          linkTypeCount,
+        });
+      }
+    }
+  } else if (currentZome) {
+    // Integrity zome: use own entry_defs and link_types
+    if (currentZome.entryDefs) {
+      allEntryDefs = currentZome.entryDefs;
+      const entryDefIndices = allEntryDefs.map((_, index) => index);
+      zomeTypes.entries.push([zomeIndex, entryDefIndices]);
+    }
+
+    const linkTypeCount = currentZome.linkTypeCount ?? 0;
+    if (linkTypeCount > 0) {
+      const linkTypeIndices = Array.from({ length: linkTypeCount }, (_, i) => i);
+      zomeTypes.links.push([zomeIndex, linkTypeIndices]);
+    }
   }
+
+  console.log('[zome_info] entry_defs:', {
+    hasCurrentZome: !!currentZome,
+    isCoordinator,
+    entryDefsLength: allEntryDefs.length,
+    zomeTypesEntries: zomeTypes.entries,
+  });
 
   const zomeInfoData: ZomeInfo = {
     name: callContext.zome,
     id: zomeIndex,
     properties: propertiesBytes,
-    entry_defs: entryDefs,
-    extern_fns: [], // TODO: Extract from manifest in Step 6
+    entry_defs: allEntryDefs,
+    extern_fns: [], // TODO: Extract from manifest
     zome_types: zomeTypes,
   };
 
   console.log(`[zome_info] Returning info for zome: ${callContext.zome}`, {
     index: zomeIndex,
     hasManifest: !!manifest,
-    integrityZomes: manifest?.integrity_zomes.length || 0,
-    coordinatorZomes: manifest?.coordinator_zomes.length || 0,
+    integrityZomes: integrityZomes.length,
+    coordinatorZomes: coordinatorZomes.length,
+    entryDefs: allEntryDefs.length,
   });
 
   return serializeResult(instance, zomeInfoData);

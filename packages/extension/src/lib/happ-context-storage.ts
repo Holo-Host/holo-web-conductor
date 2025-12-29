@@ -117,6 +117,52 @@ export class HappContextStorage {
   }
 
   /**
+   * Serialize manifest for storage (convert nested WASM Uint8Arrays to Arrays)
+   */
+  private serializeManifest(manifest: import('@fishy/core').DnaManifestRuntime | undefined): Record<string, unknown> | undefined {
+    if (!manifest) return undefined;
+
+    return {
+      ...manifest,
+      integrity_zomes: manifest.integrity_zomes.map(z => ({
+        ...z,
+        wasm: z.wasm ? Array.from(z.wasm) : undefined,
+      })),
+      coordinator_zomes: manifest.coordinator_zomes.map(z => ({
+        ...z,
+        wasm: z.wasm ? Array.from(z.wasm) : undefined,
+      })),
+    };
+  }
+
+  /**
+   * Deserialize manifest from storage (convert nested WASM Arrays back to Uint8Arrays)
+   */
+  private deserializeManifest(stored: Record<string, unknown> | undefined): import('@fishy/core').DnaManifestRuntime | undefined {
+    if (!stored) return undefined;
+
+    const manifest = stored as {
+      name: string;
+      network_seed?: string;
+      properties?: Record<string, unknown>;
+      integrity_zomes: Array<{ name: string; index: number; wasm?: number[] | Uint8Array; dependencies: string[]; entryDefs?: unknown[] }>;
+      coordinator_zomes: Array<{ name: string; index: number; wasm?: number[] | Uint8Array; dependencies: string[] }>;
+    };
+
+    return {
+      ...manifest,
+      integrity_zomes: manifest.integrity_zomes.map(z => ({
+        ...z,
+        wasm: z.wasm ? new Uint8Array(z.wasm as number[]) : undefined,
+      })),
+      coordinator_zomes: manifest.coordinator_zomes.map(z => ({
+        ...z,
+        wasm: z.wasm ? new Uint8Array(z.wasm as number[]) : undefined,
+      })),
+    };
+  }
+
+  /**
    * Convert HappContext to storable format (Uint8Array → Array)
    */
   private toStorable(context: HappContext): StorableContext {
@@ -130,7 +176,7 @@ export class HappContextStorage {
         wasm: Array.from(dna.wasm),
         name: dna.name,
         properties: dna.properties,
-        manifest: dna.manifest,
+        manifest: this.serializeManifest(dna.manifest),
       })),
       appName: context.appName,
       appVersion: context.appVersion,
@@ -154,7 +200,7 @@ export class HappContextStorage {
         wasm: new Uint8Array(dna.wasm),
         name: dna.name,
         properties: dna.properties,
-        manifest: dna.manifest as import('@fishy/core').DnaManifestRuntime | undefined,
+        manifest: this.deserializeManifest(dna.manifest),
       })),
       appName: stored.appName,
       appVersion: stored.appVersion,

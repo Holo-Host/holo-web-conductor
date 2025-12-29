@@ -49,6 +49,9 @@ describe("Ribosome Integration Tests", () => {
     const wasmBuffer = await readFile(wasmPath);
     testZomeWasm = new Uint8Array(wasmBuffer);
 
+    // Set the WASM in the manifest so entry_defs can be initialized
+    testDnaManifest.integrity_zomes[0].wasm = testZomeWasm;
+
     // Initialize storage
     storage = SourceChainStorage.getInstance();
     await storage.init();
@@ -581,6 +584,159 @@ describe("Ribosome Integration Tests", () => {
       });
 
       expect(getResult).toBeNull();
+    });
+
+    it("should get_details showing update status for updated entry", async () => {
+      // Create entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Entry to update for get_details test",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const originalHash = createResult as Uint8Array;
+      expect(originalHash).toBeInstanceOf(Uint8Array);
+
+      // Update the entry
+      const { result: updateResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "update_test_entry",
+        payload: {
+          original_hash: originalHash,
+          new_content: "Updated content for get_details test",
+        },
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const updateHash = updateResult as Uint8Array;
+      expect(updateHash).toBeInstanceOf(Uint8Array);
+
+      // Get details on the original entry - should show the update
+      const { result: detailsResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_details_test",
+        payload: originalHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(detailsResult).not.toBeNull();
+
+      // Details is adjacently-tagged enum: { type: "Record", content: {...} }
+      const detailsEnum = detailsResult as any;
+      expect(detailsEnum).toHaveProperty("type");
+      expect(detailsEnum.type).toBe("Record");
+      expect(detailsEnum).toHaveProperty("content");
+
+      // Extract RecordDetails from the content field
+      const details = detailsEnum.content;
+
+      // Verify structure
+      expect(details).toHaveProperty("record");
+      expect(details).toHaveProperty("validation_status");
+      expect(details).toHaveProperty("deletes");
+      expect(details).toHaveProperty("updates");
+
+      // Verify the record is the original create
+      expect(details.record).toHaveProperty("signed_action");
+      expect(details.record).toHaveProperty("entry");
+
+      // Verify validation status
+      expect(details.validation_status).toBe("Valid");
+
+      // Verify deletes array is empty (not deleted)
+      expect(Array.isArray(details.deletes)).toBe(true);
+      expect(details.deletes.length).toBe(0);
+
+      // Verify updates array contains the update action
+      expect(Array.isArray(details.updates)).toBe(true);
+      expect(details.updates.length).toBe(1);
+      expect(details.updates[0]).toHaveProperty("hashed");
+      expect(details.updates[0]).toHaveProperty("signature");
+    });
+
+    it("should get_details on update action hash returning details with empty updates", async () => {
+      // Create entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Entry to update for update-hash get_details test",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const originalHash = createResult as Uint8Array;
+      expect(originalHash).toBeInstanceOf(Uint8Array);
+
+      // Update the entry
+      const { result: updateResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "update_test_entry",
+        payload: {
+          original_hash: originalHash,
+          new_content: "Updated content for update-hash get_details test",
+        },
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const updateHash = updateResult as Uint8Array;
+      expect(updateHash).toBeInstanceOf(Uint8Array);
+
+      // Get details on the UPDATE action hash - should return the update entry with no further updates
+      const { result: updateDetailsResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_details_test",
+        payload: updateHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(updateDetailsResult).not.toBeNull();
+
+      // Details is adjacently-tagged enum: { type: "Record", content: {...} }
+      const updateDetailsEnum = updateDetailsResult as any;
+      expect(updateDetailsEnum).toHaveProperty("type");
+      expect(updateDetailsEnum.type).toBe("Record");
+      expect(updateDetailsEnum).toHaveProperty("content");
+
+      const updateDetails = updateDetailsEnum.content;
+
+      // Verify structure
+      expect(updateDetails).toHaveProperty("record");
+      expect(updateDetails).toHaveProperty("validation_status");
+      expect(updateDetails).toHaveProperty("deletes");
+      expect(updateDetails).toHaveProperty("updates");
+
+      // Verify the record is the update action
+      expect(updateDetails.record).toHaveProperty("signed_action");
+      expect(updateDetails.record).toHaveProperty("entry");
+
+      // Verify validation status
+      expect(updateDetails.validation_status).toBe("Valid");
+
+      // Verify deletes array is empty (not deleted)
+      expect(Array.isArray(updateDetails.deletes)).toBe(true);
+      expect(updateDetails.deletes.length).toBe(0);
+
+      // Verify updates array is EMPTY (nothing has updated this update action)
+      expect(Array.isArray(updateDetails.updates)).toBe(true);
+      expect(updateDetails.updates.length).toBe(0);
     });
 
     it("should get_details showing delete status for deleted entry", async () => {

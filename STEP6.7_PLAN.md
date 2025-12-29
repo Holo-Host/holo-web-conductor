@@ -1,0 +1,193 @@
+# STEP6.P_PLAN.md - Profiles Test Page Implementation
+
+## Overview
+
+Create a test page using the real profiles WASM to exercise the fishy browser extension with actual holochain-open-dev patterns.
+
+## Goals
+
+1. Add signal subscription support to the extension API
+2. Create a single-file test page with CDN imports
+3. Exercise create-profile and list-profiles functionality
+4. Validate extension works with real Holochain app patterns
+
+---
+
+## Phase 1: Extension Signal Infrastructure
+
+### Task 1.1: Add Signal Events to Inject Script
+
+**File:** `packages/extension/src/inject/index.ts`
+
+Add:
+- Signal handler registry (`Set<(signal) => void>`)
+- `on("signal", callback)` method returning unsubscribe function
+- `myPubKey` getter (populated on connect from appInfo)
+- `installedAppId` getter (populated on connect)
+- Listener for signal messages from content script
+
+```typescript
+// New state
+const signalHandlers = new Set<(signal: any) => void>();
+let _myPubKey: Uint8Array | null = null;
+let _installedAppId: string | null = null;
+
+// Add to HolochainAPI interface and implementation:
+on(event: "signal", callback: (signal: any) => void): () => void;
+get myPubKey(): Uint8Array | null;
+get installedAppId(): string | null;
+
+// Signal message listener
+window.addEventListener("message", (event) => {
+  if (event.data?.source === "fishy-content" && event.data?.type === "signal") {
+    signalHandlers.forEach(h => h(event.data.payload));
+  }
+});
+```
+
+### Task 1.2: Signal Delivery from Background
+
+**File:** `packages/extension/src/background/index.ts` (line 559-562)
+
+Replace the TODO block with actual signal delivery:
+
+```typescript
+if (signals && signals.length > 0) {
+  const tabId = sender.tab?.id;
+  if (tabId) {
+    for (const signal of signals) {
+      const decodedPayload = decode(signal.signal);
+      chrome.tabs.sendMessage(tabId, {
+        type: "signal",
+        payload: {
+          type: "app",
+          value: {
+            cell_id: serializeForTransport(signal.cell_id),
+            zome_name: signal.zome_name,
+            payload: serializeForTransport(decodedPayload),
+          },
+        },
+      });
+    }
+  }
+}
+```
+
+### Task 1.3: Content Script Signal Bridge
+
+**File:** `packages/extension/src/content/index.ts`
+
+Add listener for background push messages:
+
+```typescript
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (sender.id !== chrome.runtime.id) return;
+  if (message.type === "signal") {
+    window.postMessage({
+      source: "fishy-content",
+      type: "signal",
+      payload: message.payload,
+    }, "*");
+  }
+});
+```
+
+---
+
+## Phase 2: Test Page
+
+**File:** `packages/extension/test/profiles-test.html`
+
+Single HTML file with:
+
+### Structure
+1. hApp file picker + Install button
+2. Connect button
+3. Create Profile form (nickname input)
+4. Profiles list display
+5. Signal log
+
+### Inline Components
+
+**FishyAppClient** - Adapter wrapping `window.holochain`:
+- `connect()` - calls holochain.connect(), caches myPubKey from appInfo
+- `callZome(request)` - maps to holochain.callZome()
+- `on("signal", cb)` - wraps holochain.on("signal", ...)
+- `myPubKey` getter
+- `installedAppId` getter
+
+**SimpleProfilesClient** - Direct zome calls:
+- `createProfile({nickname, fields})` - calls `create_profile`
+- `getMyProfile()` - calls `get_my_profile`
+- `getAgentsWithProfile()` - calls `get_agents_with_profile` with `{input: null, local: true}`
+- `getAgentProfile(agentPubKey)` - calls `get_agent_profile` with `{input: agentPubKey, local: true}`
+- `onSignal(callback)` - filters signals by zome_name
+
+### Dependencies (via esm.sh CDN)
+- `@msgpack/msgpack` for decoding if needed
+
+---
+
+## Implementation Order
+
+1. **Task 1.1** - Inject script signal events + properties
+2. **Task 1.2** - Background signal delivery
+3. **Task 1.3** - Content script bridge
+4. **Phase 2** - Test page HTML
+5. **Test** - Build extension, load profiles-test.happ, verify flow
+
+---
+
+## Critical Files
+
+| File | Changes |
+|------|---------|
+| `packages/extension/src/inject/index.ts` | Add on(), myPubKey, installedAppId, signal listener |
+| `packages/extension/src/background/index.ts` | Replace TODO at line 559-562 with signal delivery |
+| `packages/extension/src/content/index.ts` | Add chrome.runtime.onMessage listener for signals |
+| `packages/extension/test/profiles-test.html` | New test page (single file) |
+
+---
+
+## Profiles Zome Reference
+
+**Functions to call:**
+- `create_profile(Profile)` -> `Record`
+- `get_my_profile()` -> `Option<Record>`
+- `get_agents_with_profile({input: null, local: bool})` -> `Vec<AgentPubKey>`
+- `get_agent_profile({input: AgentPubKey, local: bool})` -> `Option<Record>`
+
+**Profile type:**
+```typescript
+interface Profile {
+  nickname: string;
+  fields: Record<string, string>;
+}
+```
+
+**Signal types emitted by post_commit:**
+- `EntryCreated { action, app_entry }`
+- `EntryUpdated { action, app_entry, original_app_entry }`
+- `LinkCreated { action, link_type }`
+
+---
+
+## Testing
+
+1. Build extension: `cd packages/extension && npm run build`
+2. Load unpacked extension in Chrome
+3. Open profiles-test.html
+4. Click file picker, select `../profiles/workdir/profiles-test.happ`
+5. Click "Install hApp"
+6. Click "Connect" (approve in popup)
+7. Enter nickname, click "Create Profile"
+8. Verify profile appears in list
+9. Check signal log shows EntryCreated + LinkCreated signals
+
+---
+
+## Risks
+
+1. **Uint8Array serialization** - Chrome converts to objects; extension normalizes but test carefully
+2. **ZomeFnInput wrapper** - Some zome functions expect `{input: T, local: Option<bool>}` format
+3. **Path operations** - `get_agents_with_profile` uses TypedPath; relies on path.ensure() in create_profile
