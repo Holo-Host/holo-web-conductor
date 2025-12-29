@@ -26,6 +26,9 @@ import type {
   DeleteAction,
   CreateLinkAction,
   DeleteLinkAction,
+  DnaAction,
+  AgentValidationPkgAction,
+  InitZomesCompleteAction,
 } from './types';
 
 const DB_NAME = 'fishy_source_chain';
@@ -473,6 +476,26 @@ export class SourceChainStorage {
           baseAddress: new Uint8Array(storable.baseAddress!),
         } as DeleteLinkAction;
 
+      case 'Dna':
+        return {
+          ...base,
+          actionType: 'Dna',
+          dnaHash: new Uint8Array(storable.dnaHash!),
+        } as DnaAction;
+
+      case 'AgentValidationPkg':
+        return {
+          ...base,
+          actionType: 'AgentValidationPkg',
+          membraneProof: storable.membraneProof ? new Uint8Array(storable.membraneProof) : undefined,
+        } as AgentValidationPkgAction;
+
+      case 'InitZomesComplete':
+        return {
+          ...base,
+          actionType: 'InitZomesComplete',
+        } as InitZomesCompleteAction;
+
       default:
         return base as Action;
     }
@@ -548,13 +571,13 @@ export class SourceChainStorage {
   /**
    * Update chain head after adding action
    */
-  updateChainHead(
+  async updateChainHead(
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array,
     actionSeq: number,
     actionHash: Uint8Array,
     timestamp: bigint
-  ): void | Promise<void> {
+  ): Promise<void> {
     const cellId = this.getCellId(dnaHash, agentPubKey);
 
     if (this.pendingTransaction) {
@@ -577,8 +600,16 @@ export class SourceChainStorage {
       return;
     }
 
-    // Direct write (no transaction) - async
-    return this.updateChainHeadDirect(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
+    // Direct write (no transaction) - async, and update session cache
+    await this.updateChainHeadDirect(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
+
+    // CRITICAL: Also update session cache so subsequent reads are synchronous
+    this.sessionCache.chainHeads.set(cellId, {
+      cellId,
+      actionSeq,
+      actionHash,
+      timestamp,
+    });
   }
 
   private async updateChainHeadDirect(
@@ -614,7 +645,7 @@ export class SourceChainStorage {
   /**
    * Add action to source chain
    */
-  putAction(action: Action, dnaHash: Uint8Array, agentPubKey: Uint8Array): void | Promise<void> {
+  async putAction(action: Action, dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {
     if (this.pendingTransaction) {
       // Add to transaction (synchronous - just buffers in memory)
       this.pendingTransaction.actions.push({ action, dnaHash, agentPubKey });
@@ -624,8 +655,12 @@ export class SourceChainStorage {
       return;
     }
 
-    // Direct write (no transaction) - async
-    return this.putActionDirect(action, dnaHash, agentPubKey);
+    // Direct write (no transaction) - async, and update session cache
+    await this.putActionDirect(action, dnaHash, agentPubKey);
+
+    // CRITICAL: Also update session cache so subsequent reads are synchronous
+    const key = this.hashToKey(action.actionHash);
+    this.sessionCache.actions.set(key, action);
   }
 
   private async putActionDirect(action: Action, dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {
@@ -736,7 +771,7 @@ export class SourceChainStorage {
   /**
    * Store entry content
    */
-  putEntry(entry: StoredEntry, dnaHash: Uint8Array, agentPubKey: Uint8Array): void | Promise<void> {
+  async putEntry(entry: StoredEntry, dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {
     if (this.pendingTransaction) {
       // Add to transaction (synchronous - just buffers in memory)
       this.pendingTransaction.entries.push({ entry, dnaHash, agentPubKey });
@@ -746,8 +781,12 @@ export class SourceChainStorage {
       return;
     }
 
-    // Direct write (no transaction) - async
-    return this.putEntryDirect(entry, dnaHash, agentPubKey);
+    // Direct write (no transaction) - async, and update session cache
+    await this.putEntryDirect(entry, dnaHash, agentPubKey);
+
+    // CRITICAL: Also update session cache so subsequent reads are synchronous
+    const key = this.hashToKey(entry.entryHash);
+    this.sessionCache.entries.set(key, entry);
   }
 
   private async putEntryDirect(entry: StoredEntry, dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {

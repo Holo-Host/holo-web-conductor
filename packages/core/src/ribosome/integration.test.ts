@@ -5,17 +5,37 @@
  * of host functions in a real execution environment.
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { callZome, ZomeCallResult } from "./index";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { readFile } from "fs/promises";
 import { resolve } from "path";
+import { SourceChainStorage } from "../storage";
+import { callZomeAsExtension } from "./test-helpers";
+import type { DnaManifestRuntime } from "../types/bundle-types";
 
-describe.skip("Ribosome Integration Tests", () => {
+describe("Ribosome Integration Tests", () => {
   let testZomeWasm: Uint8Array;
+  let storage: SourceChainStorage;
+  // Use 32-byte raw hashes (not 39-byte prefixed format)
   const testCellId: [Uint8Array, Uint8Array] = [
-    new Uint8Array(39).fill(1), // DNA hash
-    new Uint8Array(39).fill(2), // Agent pub key
+    new Uint8Array(32).fill(1), // DNA hash (32 bytes raw)
+    new Uint8Array(32).fill(2), // Agent pub key (32 bytes raw)
   ];
+
+  // DNA manifest for test zome
+  const testDnaManifest: DnaManifestRuntime = {
+    name: "test-dna",
+    network_seed: "00000000-0000-0000-0000-000000000000",
+    properties: {},
+    integrity_zomes: [
+      {
+        name: "test_zome",
+        index: 0,
+        wasm: undefined, // Will be set from testZomeWasm
+        dependencies: [],
+      },
+    ],
+    coordinator_zomes: [],
+  };
 
   beforeAll(async () => {
     // Load the compiled test zome WASM
@@ -25,13 +45,22 @@ describe.skip("Ribosome Integration Tests", () => {
     );
     const wasmBuffer = await readFile(wasmPath);
     testZomeWasm = new Uint8Array(wasmBuffer);
+
+    // Initialize storage
+    storage = SourceChainStorage.getInstance();
+    await storage.init();
+  });
+
+  beforeEach(async () => {
+    // Clear storage between tests for isolation
+    await storage.clear();
   });
 
   describe("emit_signal host function", () => {
     it("should emit signal and return it in result", async () => {
       const message = "Hello from test zome!";
 
-      const result: ZomeCallResult = await callZome({
+      const { result, signals } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -41,17 +70,17 @@ describe.skip("Ribosome Integration Tests", () => {
       });
 
       // Check signals were emitted
-      expect(result.signals).toBeDefined();
-      expect(result.signals.length).toBeGreaterThan(0);
+      expect(signals).toBeDefined();
+      expect(signals.length).toBeGreaterThan(0);
 
-      const signal = result.signals[0];
+      const signal = signals[0];
       expect(signal.zome_name).toBe("test_zome");
       expect(signal.cell_id).toBe(testCellId);
       expect(signal.signal).toBeInstanceOf(Uint8Array);
       expect(signal.timestamp).toBeGreaterThan(0);
 
-      // Function should return Ok(())
-      expect(result.result).toEqual({ Ok: null });
+      // Function should return null (unit type)
+      expect(result).toBeNull();
     });
 
     it("should handle multiple signal emissions", async () => {
@@ -62,28 +91,106 @@ describe.skip("Ribosome Integration Tests", () => {
   });
 
   describe("query host function", () => {
-    it("should query the source chain", async () => {
-      const result: ZomeCallResult = await callZome({
+    it("should return genesis actions on fresh chain", async () => {
+      // First query on a fresh chain should return 4 genesis actions
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
         fn: "query_test",
         payload: null,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
-      // Should return Ok(Vec<Record>)
-      expect(result.result).toHaveProperty("Ok");
-      const records = (result.result as { Ok: unknown[] }).Ok;
-      expect(Array.isArray(records)).toBe(true);
-      // Initial chain should have DNA and init actions
-      expect(records.length).toBeGreaterThanOrEqual(0);
+      // Should return Vec<Record>
+      expect(Array.isArray(result)).toBe(true);
+      const records = result as unknown[];
+
+      // Should have exactly 4 genesis actions
+      expect(records.length).toBe(4);
+
+      // Verify the genesis actions are in the correct order
+      const actionTypes = records.map((r: any) =>
+        r.signed_action?.hashed?.content?.type
+      );
+
+      expect(actionTypes).toEqual([
+        'Dna',
+        'AgentValidationPkg',
+        'Create', // Agent entry
+        'InitZomesComplete'
+      ]);
+
+      // Verify sequence numbers
+      const actionSeqs = records.map((r: any) =>
+        r.signed_action?.hashed?.content?.action_seq
+      );
+      expect(actionSeqs).toEqual([0, 1, 2, 3]);
+
+      // Verify prev_action chain
+      const record0 = records[0] as any;
+      const record1 = records[1] as any;
+      const record2 = records[2] as any;
+      const record3 = records[3] as any;
+
+      // First action has no previous
+      expect(record0.signed_action.hashed.content.prev_action).toBeNull();
+
+      // Each subsequent action points to the previous
+      expect(record1.signed_action.hashed.content.prev_action).toBeTruthy();
+      expect(record2.signed_action.hashed.content.prev_action).toBeTruthy();
+      expect(record3.signed_action.hashed.content.prev_action).toBeTruthy();
+
+      // Agent entry (record 2) should have an entry
+      expect(record2.entry).toBeTruthy();
+      expect(record2.entry.Present).toBeTruthy();
+      expect(record2.entry.Present.entry_type).toBe('Agent');
+    });
+
+    it("should include user entries in query results", async () => {
+      // Create a user entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Test entry for query",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(createResult).toBeInstanceOf(Uint8Array);
+
+      // Query should now return 5 records (4 genesis + 1 user)
+      const { result } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "query_test",
+        payload: null,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(Array.isArray(result)).toBe(true);
+      const records = result as unknown[];
+      expect(records.length).toBe(5);
+
+      // Last record should be the user entry at seq 4
+      const userRecord = records[4] as any;
+      expect(userRecord.signed_action.hashed.content.type).toBe('Create');
+      expect(userRecord.signed_action.hashed.content.action_seq).toBe(4);
+
+      // Should have prev_action pointing to InitZomesComplete
+      expect(userRecord.signed_action.hashed.content.prev_action).toBeTruthy();
+      expect(userRecord.signed_action.hashed.content.prev_action).not.toBeNull();
     });
   });
 
   describe("agent_info host function", () => {
     it("should return agent info", async () => {
-      const result: ZomeCallResult = await callZome({
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -92,16 +199,15 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      expect(result.result).toHaveProperty("Ok");
-      const agentInfo = (result.result as { Ok: any }).Ok;
+      const agentInfo = result as any;
       expect(agentInfo).toHaveProperty("agent_initial_pubkey");
-      expect(agentInfo).toHaveProperty("agent_latest_pubkey");
+      expect(agentInfo).toHaveProperty("chain_head");
     });
   });
 
   describe("random_bytes host function", () => {
     it("should return random bytes", async () => {
-      const result: ZomeCallResult = await callZome({
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -110,14 +216,13 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      expect(result.result).toHaveProperty("Ok");
-      const randomBytes = (result.result as { Ok: Uint8Array }).Ok;
-      expect(randomBytes).toBeInstanceOf(Uint8Array);
-      expect(randomBytes.length).toBe(32);
+      // MessagePack decode returns Arrays for binary data
+      expect(Array.isArray(result)).toBe(true);
+      expect((result as number[]).length).toBe(32);
     });
 
     it("should return different bytes on each call", async () => {
-      const result1: ZomeCallResult = await callZome({
+      const { result: result1 } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -126,7 +231,7 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const result2: ZomeCallResult = await callZome({
+      const { result: result2 } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -135,8 +240,8 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const bytes1 = (result1.result as { Ok: Uint8Array }).Ok;
-      const bytes2 = (result2.result as { Ok: Uint8Array }).Ok;
+      const bytes1 = result1 as number[];
+      const bytes2 = result2 as number[];
 
       // Extremely unlikely to be the same
       expect(bytes1).not.toEqual(bytes2);
@@ -147,7 +252,7 @@ describe.skip("Ribosome Integration Tests", () => {
     it("should return current timestamp", async () => {
       const beforeTime = Date.now() * 1000; // Convert to microseconds
 
-      const result: ZomeCallResult = await callZome({
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -158,8 +263,7 @@ describe.skip("Ribosome Integration Tests", () => {
 
       const afterTime = Date.now() * 1000;
 
-      expect(result.result).toHaveProperty("Ok");
-      const timestamp = (result.result as { Ok: number }).Ok;
+      const timestamp = result as number;
       expect(timestamp).toBeGreaterThanOrEqual(beforeTime);
       expect(timestamp).toBeLessThanOrEqual(afterTime);
     });
@@ -169,7 +273,7 @@ describe.skip("Ribosome Integration Tests", () => {
     it("should log trace message without error", async () => {
       const message = "Test trace message";
 
-      const result: ZomeCallResult = await callZome({
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -178,14 +282,14 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      // Should return Ok(())
-      expect(result.result).toEqual({ Ok: null });
+      // Should return () (unit type becomes null)
+      expect(result).toBeNull();
     });
   });
 
   describe("signing host functions", () => {
     it("should sign and verify with ephemeral keys", async () => {
-      const result: ZomeCallResult = await callZome({
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -194,66 +298,238 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      // Should return Ok(true) indicating signature verified
-      expect(result.result).toEqual({ Ok: true });
+      // Should return true indicating signature verified
+      expect(result).toBe(true);
     });
   });
 
   describe("CRUD host functions", () => {
+    it("should return null when getting non-existent entry", async () => {
+      // Create a fake action hash that doesn't exist
+      const fakeHash = new Uint8Array(39);
+      fakeHash.set([132, 41, 36], 0); // ACTION_PREFIX
+      crypto.getRandomValues(fakeHash.subarray(3, 35)); // Random hash
+
+      const { result } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_test_entry",
+        payload: fakeHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      // Should return null/None for non-existent entry
+      expect(result).toBeNull();
+    });
+
     it("should create entry and return action hash", async () => {
       const content = "Test entry content";
 
-      const result: ZomeCallResult = await callZome({
+      const { result } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
         fn: "create_test_entry",
         payload: content,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
-      expect(result.result).toHaveProperty("Ok");
-      const actionHash = (result.result as { Ok: Uint8Array }).Ok;
+      const actionHash = result as Uint8Array;
       expect(actionHash).toBeInstanceOf(Uint8Array);
       expect(actionHash.length).toBe(39); // ActionHash is 39 bytes
     });
 
-    it("should get entry by action hash", async () => {
-      // First create an entry
-      const createResult: ZomeCallResult = await callZome({
+    it("should get created entry", async () => {
+      // Create an entry
+      const content = "Test content for get";
+      const { result: createResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
         fn: "create_test_entry",
-        payload: "Test content",
+        payload: content,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
-      const actionHash = (createResult.result as { Ok: Uint8Array }).Ok;
+      const actionHash = createResult as Uint8Array;
 
-      // Then get it
-      const getResult: ZomeCallResult = await callZome({
+      // Get the created entry
+      const { result: getResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
         fn: "get_test_entry",
         payload: actionHash,
         provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
       });
 
-      expect(getResult.result).toHaveProperty("Ok");
-      const record = (getResult.result as { Ok: any }).Ok;
+      // Should return a Record with signed_action and entry
+      expect(getResult).not.toBeNull();
+      const record = getResult as any;
+      expect(record).toHaveProperty("signed_action");
+      expect(record).toHaveProperty("entry");
+    });
 
-      // For now, our mock returns null (not implemented yet)
-      // When implemented, record should have signed_action and entry
-      expect(record).toBeDefined();
+    it("should update entry and return new action hash", async () => {
+      // Create original entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Original content",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const originalHash = createResult as Uint8Array;
+
+      // Update the entry
+      const { result: updateResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "update_test_entry",
+        payload: {
+          original_hash: originalHash,
+          new_content: "Updated content",
+        },
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const updateHash = updateResult as Uint8Array;
+      expect(updateHash).toBeInstanceOf(Uint8Array);
+      expect(updateHash.length).toBe(39);
+      // Update hash should be different from original
+      expect(updateHash).not.toEqual(originalHash);
+    });
+
+    it("should get updated entry", async () => {
+      // Create and update entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Original content",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const originalHash = createResult as Uint8Array;
+
+      const { result: updateResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "update_test_entry",
+        payload: {
+          original_hash: originalHash,
+          new_content: "Updated content",
+        },
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const updateHash = updateResult as Uint8Array;
+
+      // Get by update hash - should return updated entry
+      const { result: getResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_test_entry",
+        payload: updateHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(getResult).not.toBeNull();
+      const record = getResult as any;
+      expect(record).toHaveProperty("signed_action");
+      expect(record).toHaveProperty("entry");
+      // TODO: verify entry content is "Updated content"
+    });
+
+    it("should delete entry and return delete action hash", async () => {
+      // Create entry to delete
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Entry to delete",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const actionHash = createResult as Uint8Array;
+
+      // Delete the entry
+      const { result: deleteResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "delete_test_entry",
+        payload: actionHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const deleteHash = deleteResult as Uint8Array;
+      expect(deleteHash).toBeInstanceOf(Uint8Array);
+      expect(deleteHash.length).toBe(39);
+    });
+
+    it("should show entry as deleted when getting after delete", async () => {
+      // Create, then delete entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Entry to delete",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const actionHash = createResult as Uint8Array;
+
+      await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "delete_test_entry",
+        payload: actionHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      // Get should return null for deleted entry
+      const { result: getResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_test_entry",
+        payload: actionHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(getResult).toBeNull();
     });
   });
 
   describe("Link host functions", () => {
     it("should create link between entries", async () => {
       // Create two entries to link
-      const create1: ZomeCallResult = await callZome({
+      const { result: result1 } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -262,7 +538,7 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const create2: ZomeCallResult = await callZome({
+      const { result: result2 } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -271,11 +547,11 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const base = (create1.result as { Ok: Uint8Array }).Ok;
-      const target = (create2.result as { Ok: Uint8Array }).Ok;
+      const base = new Uint8Array(result1 as number[]);
+      const target = new Uint8Array(result2 as number[]);
 
       // Create link
-      const linkResult: ZomeCallResult = await callZome({
+      const { result: linkResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -284,15 +560,14 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      expect(linkResult.result).toHaveProperty("Ok");
-      const linkHash = (linkResult.result as { Ok: Uint8Array }).Ok;
-      expect(linkHash).toBeInstanceOf(Uint8Array);
+      const linkHash = linkResult as number[];
+      expect(Array.isArray(linkHash)).toBe(true);
       expect(linkHash.length).toBe(39);
     });
 
     it("should get links from base", async () => {
       // Create an entry to use as base
-      const createResult: ZomeCallResult = await callZome({
+      const { result: createResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -301,10 +576,10 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const base = (createResult.result as { Ok: Uint8Array }).Ok;
+      const base = new Uint8Array(createResult as number[]);
 
       // Get links (should return empty array for mock)
-      const linksResult: ZomeCallResult = await callZome({
+      const { result: linksResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -313,13 +588,12 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      expect(linksResult.result).toHaveProperty("Ok");
-      const links = (linksResult.result as { Ok: any[] }).Ok;
+      const links = linksResult as any[];
       expect(Array.isArray(links)).toBe(true);
     });
 
     it("should count links from base", async () => {
-      const createResult: ZomeCallResult = await callZome({
+      const { result: createResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -328,9 +602,9 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const base = (createResult.result as { Ok: Uint8Array }).Ok;
+      const base = new Uint8Array(createResult as number[]);
 
-      const countResult: ZomeCallResult = await callZome({
+      const { result: countResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -339,15 +613,14 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      expect(countResult.result).toHaveProperty("Ok");
-      const count = (countResult.result as { Ok: number }).Ok;
+      const count = countResult as number;
       expect(typeof count).toBe("number");
       expect(count).toBeGreaterThanOrEqual(0);
     });
 
     it("should delete link", async () => {
       // Create entries and link
-      const create1: ZomeCallResult = await callZome({
+      const { result: result1 } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -356,7 +629,7 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const create2: ZomeCallResult = await callZome({
+      const { result: result2 } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -365,10 +638,10 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const base = (create1.result as { Ok: Uint8Array }).Ok;
-      const target = (create2.result as { Ok: Uint8Array }).Ok;
+      const base = new Uint8Array(result1 as number[]);
+      const target = new Uint8Array(result2 as number[]);
 
-      const linkResult: ZomeCallResult = await callZome({
+      const { result: linkResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -377,10 +650,10 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      const linkHash = (linkResult.result as { Ok: Uint8Array }).Ok;
+      const linkHash = new Uint8Array(linkResult as number[]);
 
       // Delete link
-      const deleteResult: ZomeCallResult = await callZome({
+      const { result: deleteResult } = await callZomeAsExtension({
         dnaWasm: testZomeWasm,
         cellId: testCellId,
         zome: "test_zome",
@@ -389,9 +662,8 @@ describe.skip("Ribosome Integration Tests", () => {
         provenance: testCellId[1],
       });
 
-      expect(deleteResult.result).toHaveProperty("Ok");
-      const deleteHash = (deleteResult.result as { Ok: Uint8Array }).Ok;
-      expect(deleteHash).toBeInstanceOf(Uint8Array);
+      const deleteHash = deleteResult as number[];
+      expect(Array.isArray(deleteHash)).toBe(true);
       expect(deleteHash.length).toBe(39);
     });
   });

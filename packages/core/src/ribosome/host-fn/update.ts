@@ -53,27 +53,32 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   console.log("[update] Input:", {
     hasOriginalActionAddress: !!input.original_action_address,
     hasEntry: !!input.entry,
-    hasEntryLocation: !!input.entry_location,
     entryKeys: input.entry ? Object.keys(input.entry) : [],
   });
 
-  // Extract entry content from the nested structure
-  const entryContent = input.entry?.entry as Uint8Array;
+  // Extract entry from input
+  // HDK sends: { entry: { entry_type: ..., entry: Uint8Array }, ... }
+  const entryWrapper = input.entry;
+  if (!entryWrapper) {
+    throw new Error('[update] Missing entry field');
+  }
 
+  const entryContent = entryWrapper.entry as Uint8Array;
   if (!entryContent || !(entryContent instanceof Uint8Array)) {
     throw new Error('[update] Invalid entry structure - entry.entry must be Uint8Array');
   }
 
-  // Check if entry_location exists
-  if (!input.entry_location || !input.entry_location.App) {
-    throw new Error('[update] Invalid input structure - entry_location.App missing');
-  }
+  // Get entry location from manifest (zomeIndex and entryDefIndex)
+  const manifest = callContext.dnaManifest;
+  const currentZome = manifest?.integrity_zomes?.find(z => z.name === callContext.zome);
+  const zomeIndex = currentZome?.index ?? 0;
+  const entryDefIndex = 0; // For now, assume first entry def
 
   console.log("[update] Updating entry", {
     originalActionHash: Array.from(input.original_action_address.slice(0, 8)),
     entrySize: entryContent.length,
-    zomeIndex: input.entry_location.App.zome_index,
-    entryDefIndex: input.entry_location.App.entry_def_index,
+    zomeIndex,
+    entryDefIndex,
   });
 
   // Hash the new entry content (simple deterministic hash)
@@ -140,8 +145,8 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
     signature,
     entryHash,
     entryType: {
-      zome_id: input.entry_location.App.zome_index,
-      entry_index: input.entry_location.App.entry_def_index,
+      zome_id: zomeIndex,
+      entry_index: entryDefIndex,
     },
     originalActionHash: input.original_action_address,
     originalEntryHash,
@@ -152,8 +157,8 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entryHash,
     entryContent: entryContent,
     entryType: {
-      zome_id: input.entry_location.App.zome_index,
-      entry_index: input.entry_location.App.entry_def_index,
+      zome_id: zomeIndex,
+      entry_index: entryDefIndex,
     },
   };
 

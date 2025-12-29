@@ -29,7 +29,7 @@ import { createLairClient, type EncryptedExport } from "@fishy/lair";
 import type { InstallHappRequest } from "@fishy/core";
 import { callZome, type ZomeCallRequest } from "@fishy/core/ribosome";
 import { decodeResult } from "../utils/result-decoder.js";
-import { encode } from "@msgpack/msgpack";
+import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 
 console.log("Fishy background service worker loaded");
@@ -142,6 +142,51 @@ function serializeForTransport(data: any): any {
 
   // Primitives pass through
   return data;
+}
+
+/**
+ * Helper to decode and log MessagePack bytes for debugging
+ * Converts Uint8Array to decoded object with hashes as base64 and signatures as hex
+ */
+function decodeMsgPackForLogging(bytes: Uint8Array): any {
+  try {
+    const decoded = decode(bytes);
+
+    // Convert Uint8Arrays to readable formats based on context
+    const convertForDisplay = (obj: any, key?: string): any => {
+      if (obj instanceof Uint8Array) {
+        // Convert signatures (64 bytes) to hex
+        if (obj.length === 64 && (key === 'signature' || key?.includes('signature'))) {
+          return Array.from(obj).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        // Convert hashes (39 bytes or other) to base64
+        if (obj.length === 39 || key?.includes('hash') || key?.includes('Hash') ||
+            key === 'author' || key?.includes('address') || key?.includes('Address')) {
+          return btoa(String.fromCharCode(...obj));
+        }
+        // Other byte arrays to hex
+        return Array.from(obj).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+      if (Array.isArray(obj)) {
+        return obj.map((item, i) => convertForDisplay(item, String(i)));
+      }
+      if (obj && typeof obj === 'object') {
+        const converted: any = {};
+        for (const [k, value] of Object.entries(obj)) {
+          converted[k] = convertForDisplay(value, k);
+        }
+        return converted;
+      }
+      return obj;
+    };
+
+    return convertForDisplay(decoded);
+  } catch (error) {
+    return {
+      error: 'Failed to decode MessagePack',
+      rawBytes: Array.from(bytes.slice(0, 100)), // First 100 bytes
+    };
+  }
 }
 
 /**
@@ -453,9 +498,36 @@ async function handleCallZome(
 
     // Unwrap Result<T, E> - throw if Err
     if (zomeResult && typeof zomeResult === 'object' && 'Err' in zomeResult) {
-      const errorMsg = typeof zomeResult.Err === 'string'
+      let errorMsg = typeof zomeResult.Err === 'string'
         ? zomeResult.Err
         : JSON.stringify(zomeResult.Err);
+
+      // If this is a Deserialize error, try to decode the msgpack for debugging
+      if (errorMsg.includes('Deserialize')) {
+        // Check if error contains msgpack bytes in Deserialize field
+        const errObj = zomeResult.Err as any;
+        if (errObj && typeof errObj === 'object' && errObj.error && errObj.error.Deserialize) {
+          const deserializeField = errObj.error.Deserialize;
+
+          // Check if it's an object with numeric keys (serialized Uint8Array)
+          if (typeof deserializeField === 'object' && !Array.isArray(deserializeField)) {
+            const keys = Object.keys(deserializeField);
+            const isUint8ArrayLike = keys.length > 0 &&
+              keys.every((k, i) => k === String(i)) &&
+              keys.every(k => typeof deserializeField[k] === 'number');
+
+            if (isUint8ArrayLike) {
+              // Convert to Uint8Array and decode
+              const bytes = new Uint8Array(Object.values(deserializeField) as number[]);
+              const decoded = decodeMsgPackForLogging(bytes);
+
+              // Replace the error message with decoded version (hashes in base64, signatures in hex)
+              errorMsg = `${errObj.file}:${errObj.line} - Deserialize error. Decoded MessagePack:\n${JSON.stringify(decoded, null, 2)}`;
+            }
+          }
+        }
+      }
+
       throw new Error(`Zome call failed: ${errorMsg}`);
     }
 

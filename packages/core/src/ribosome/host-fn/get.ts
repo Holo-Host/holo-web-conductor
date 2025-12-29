@@ -8,6 +8,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
+import type { Record as HolochainRecord, Entry } from "../holochain-types";
 
 /**
  * Get input structure
@@ -24,34 +25,7 @@ interface GetInput {
   };
 }
 
-/**
- * Record structure
- */
-interface Record {
-  signed_action: {
-    hashed: {
-      content: {
-        type: string;
-        author: Uint8Array;
-        timestamp: number;
-        action_seq: number;
-        prev_action: Uint8Array | null;
-        entry_type?: { App: { entry_index: number; zome_index: number; visibility: string } };
-        entry_hash?: Uint8Array;
-        entry_index?: number;
-        weight?: { bucket_id: number; units: number; rate_bytes: number };
-      };
-      hash: Uint8Array;
-    };
-    signature: Uint8Array;
-  };
-  entry?: {
-    Present: {
-      entry_type: string;  // "App", "Agent", etc. (serde tag)
-      entry: Uint8Array;   // The actual entry bytes (serde content)
-    };
-  } | null;
-}
+// Using HolochainRecord type from holochain-types.ts
 
 /**
  * get host function implementation
@@ -59,7 +33,7 @@ interface Record {
  * Retrieves record from storage (uses session cache for synchronous reads)
  */
 export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+  const { callContext, instance } = context;
   const storage = SourceChainStorage.getInstance();
 
   // Deserialize input - it's an array of GetInput objects
@@ -82,6 +56,29 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const action = actionResult;
 
+  // Check if this action has been deleted
+  // Get all Delete actions from session cache and see if any target this action
+  const [dnaHash, agentPubKey] = callContext.cellId;
+  const deleteActions = storage.queryActionsFromCache(dnaHash, agentPubKey, { actionType: 'Delete' });
+
+  if (deleteActions && deleteActions.length > 0) {
+    const isDeleted = deleteActions.some((deleteAction: any) => {
+      if (deleteAction.actionType === 'Delete') {
+        const deletesHash = deleteAction.deletesActionHash;
+        // Compare hashes byte by byte
+        if (deletesHash && deletesHash.length === any_dht_hash.length) {
+          return deletesHash.every((byte: number, i: number) => byte === any_dht_hash[i]);
+        }
+      }
+      return false;
+    });
+
+    if (isDeleted) {
+      console.log('[get] Record has been deleted - returning null');
+      return serializeResult(instance, [null]);
+    }
+  }
+
   // Get entry if action has one
   let entry = null;
   if ('entryHash' in action && action.entryHash) {
@@ -95,7 +92,7 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const actionContent = toHolochainAction(action);
 
   // Build record structure matching Holochain's Record format
-  const record: Record = {
+  const record: HolochainRecord = {
     signed_action: {
       hashed: {
         content: actionContent,
@@ -105,10 +102,9 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
     },
     entry: entry ? {
       Present: {
-        entry_type: "App",
-        entry: entry.entryContent,
-      },
-    } : null,
+        Agent: entry.entryContent,  // TODO: determine proper Entry variant based on entry.entryType
+      } as Entry
+    } : "NA",
   };
 
   console.log('[get] Found record in cache', {

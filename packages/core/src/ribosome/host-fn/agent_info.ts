@@ -89,8 +89,11 @@ export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
     hasChainHead: !!chainHeadResult,
   });
 
-  // AgentInfo serializes as tuple: [agent_initial_pubkey, chain_head]
-  const agentInfoArray = [agentPubKey, chainHead];
+  // AgentInfo is a struct: { agent_initial_pubkey, chain_head }
+  const agentInfoObject = {
+    agent_initial_pubkey: agentPubKey,
+    chain_head: chainHead,
+  };
 
-  return serializeResult(instance, agentInfoArray);
+  return serializeResult(instance, agentInfoObject);
 };

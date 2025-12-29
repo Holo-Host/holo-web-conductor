@@ -225,6 +225,40 @@ export function serializeResult(
   // Wrap in Result::Ok - HDK expects Result<T, WasmError>
   const result = { Ok: data };
   const { ptr, len } = serializeToWasm(instance, result);
+
+  // Debug: decode what we just encoded to verify structure
+  // This helps catch serialization bugs before WASM tries to deserialize
+  if (len > 100 && Array.isArray(data)) {
+    try {
+      const memory = (instance.exports.memory as WebAssembly.Memory).buffer;
+      const bytes = new Uint8Array(memory, ptr, len);
+      const decoded = decode(bytes) as any;
+
+      // Convert Uint8Arrays to arrays for cleaner logging
+      const convertUint8Arrays = (obj: any): any => {
+        if (obj instanceof Uint8Array) {
+          return { type: 'Buffer', data: Array.from(obj) };
+        }
+        if (Array.isArray(obj)) {
+          return obj.map(convertUint8Arrays);
+        }
+        if (obj && typeof obj === 'object') {
+          const converted: any = {};
+          for (const [key, value] of Object.entries(obj)) {
+            converted[key] = convertUint8Arrays(value);
+          }
+          return converted;
+        }
+        return obj;
+      };
+
+      const readable = convertUint8Arrays(decoded);
+      console.log('[serializeResult] Decoded MessagePack for verification:', JSON.stringify(readable, null, 2));
+    } catch (error) {
+      console.error('[serializeResult] Failed to decode for verification:', error);
+    }
+  }
+
   return createI64Result(ptr, len);
 }
 

@@ -63,8 +63,12 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
   const storage = SourceChainStorage.getInstance();
   await storage.init();
 
-  // Pre-load entire chain into session cache for synchronous reads during WASM execution
+  // Initialize genesis actions if this is a new cell
   const [dnaHash, agentPubKey] = cellId;
+  const { initializeGenesis } = await import('../storage/genesis');
+  await initializeGenesis(storage, dnaHash, agentPubKey);
+
+  // Pre-load entire chain into session cache for synchronous reads during WASM execution
   await storage.preloadChainForCell(dnaHash, agentPubKey);
   console.log('[Ribosome] Chain pre-loaded into session cache');
 

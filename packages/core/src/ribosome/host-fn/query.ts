@@ -8,6 +8,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
+import type { Record, RecordEntry, Entry } from "../holochain-types";
 
 /**
  * Query input structure (matches Holochain's ChainQueryFilter)
@@ -82,23 +83,43 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
     }
 
     // Build record structure with Holochain-formatted action
+    // RecordEntry enum: Present(Entry) | Hidden | NA | NotStored
+    let recordEntry;
+    if (entry) {
+      // Entry enum: Agent(AgentPubKey) | App(bytes) | CapClaim | CapGrant
+      let entryVariant;
+      if (entry.entryType === 'Agent') {
+        entryVariant = { Agent: entry.entryContent };
+      } else if (entry.entryType === 'CapClaim') {
+        entryVariant = { CapClaim: entry.entryContent };
+      } else if (entry.entryType === 'CapGrant') {
+        entryVariant = { CapGrant: entry.entryContent };
+      } else {
+        entryVariant = { App: entry.entryContent };
+      }
+      recordEntry = { Present: entryVariant };
+    } else {
+      // No entry for this action (Dna, AgentValidationPkg, InitZomesComplete, etc.)
+      recordEntry = "NA";
+    }
+
+    const actionContent = toHolochainAction(action);
+
     const record = {
       signed_action: {
         hashed: {
-          content: toHolochainAction(action),
+          content: actionContent,
           hash: action.actionHash,
         },
         signature: action.signature,
       },
-      entry: entry
-        ? {
-            Present: {
-              entry_type: "App",
-              entry: entry.entryContent,
-            },
-          }
-        : null,
+      entry: recordEntry,
     };
+
+    console.log(`[query] Record ${records.length}:`, {
+      actionType: actionContent.type,
+      entryType: typeof recordEntry === 'string' ? recordEntry : 'Present',
+    });
 
     records.push(record);
   }
