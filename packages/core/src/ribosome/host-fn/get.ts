@@ -8,7 +8,8 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
-import type { Record as HolochainRecord, Entry } from "../holochain-types";
+import { buildEntry } from "./entry-utils";
+import type { Record as HolochainRecord } from "../holochain-types";
 
 /**
  * Get input structure
@@ -101,9 +102,7 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
       signature: action.signature,
     },
     entry: entry ? {
-      Present: {
-        Agent: entry.entryContent,  // TODO: determine proper Entry variant based on entry.entryType
-      } as Entry
+      Present: buildEntry(entry.entryType, entry.entryContent)
     } : "NA",
   };
 

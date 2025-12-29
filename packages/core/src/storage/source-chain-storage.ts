@@ -718,7 +718,7 @@ export class SourceChainStorage {
     filter?: { actionType?: string }
   ): Action[] | null {
     // Get all actions from session cache
-    const actions: Action[] = Array.from(this.sessionCache.actions.values());
+    let actions: Action[] = Array.from(this.sessionCache.actions.values());
 
     if (actions.length === 0) {
       return null; // Not in cache
@@ -726,8 +726,15 @@ export class SourceChainStorage {
 
     // Apply filter if provided
     if (filter?.actionType) {
-      return actions.filter(a => a.actionType === filter.actionType);
+      actions = actions.filter(a => a.actionType === filter.actionType);
     }
+
+    // Sort by actionSeq (Dna action has implicit seq of 0)
+    actions.sort((a, b) => {
+      const seqA = a.actionType === 'Dna' ? 0 : a.actionSeq;
+      const seqB = b.actionType === 'Dna' ? 0 : b.actionSeq;
+      return seqA - seqB;
+    });
 
     return actions;
   }

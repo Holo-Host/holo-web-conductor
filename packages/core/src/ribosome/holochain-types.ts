@@ -23,13 +23,28 @@ export type EntryType =
 
 // ============================================================================
 // Entry (from holochain_integrity_types/src/entry.rs)
+//
+// Source: holochain/crates/holochain_integrity_types/src/entry.rs
+// Rust definition:
+//   #[serde(tag = "entry_type", content = "entry")]
+//   pub enum Entry {
+//       Agent(AgentPubKey),
+//       App(AppEntryBytes),
+//       CounterSign(Box<CounterSigningSessionData>, AppEntryBytes),
+//       CapClaim(CapClaimEntry),
+//       CapGrant(CapGrantEntry),
+//   }
+//
+// This uses serde's internally tagged enum format, which serializes as:
+//   { "entry_type": "Agent", "entry": <AgentPubKey> }
+//   { "entry_type": "App", "entry": <AppEntryBytes> }
 // ============================================================================
 
 export type Entry =
-  | { Agent: Uint8Array }              // Agent(AgentPubKey)
-  | { App: Uint8Array }                // App(AppEntryBytes)
-  | { CapClaim: any }                  // CapClaim(CapClaimEntry)
-  | { CapGrant: any };                 // CapGrant(CapGrantEntry)
+  | { entry_type: "Agent"; entry: Uint8Array }              // Agent(AgentPubKey)
+  | { entry_type: "App"; entry: Uint8Array }                // App(AppEntryBytes)
+  | { entry_type: "CapClaim"; entry: any }                  // CapClaim(CapClaimEntry)
+  | { entry_type: "CapGrant"; entry: any };                 // CapGrant(CapGrantEntry)
 
 // ============================================================================
 // RecordEntry (from holochain_integrity_types/src/record.rs)
@@ -69,9 +84,15 @@ export interface ActionCommon {
 
 /**
  * Dna action (first action in chain)
+ *
+ * Source: holochain/crates/holochain_integrity_types/src/action.rs
+ * Note: Dna action does NOT have action_seq or prev_action fields
+ * (action_seq is implicitly 0, prev_action is implicitly None)
  */
-export interface DnaAction extends ActionCommon {
+export interface DnaAction {
   type: "Dna";
+  author: Uint8Array;          // AgentPubKey (39 bytes)
+  timestamp: number;           // Timestamp (microseconds as i64)
   hash: Uint8Array;            // DnaHash (39 bytes)
 }
 

@@ -47,9 +47,12 @@ export function toHolochainAction(act: StorageAction): Action {
       dnaHashPrefixed.set(act.dnaHash, 3);
       dnaHashPrefixed.set([0, 0, 0, 0], 35); // location (all zeros)
 
+      // Note: Dna action does NOT have action_seq or prev_action fields
+      // (they are implicitly 0 and None respectively)
       return {
         type: 'Dna',
-        ...common,
+        author: authorPrefixed,
+        timestamp: Number(act.timestamp),
         hash: dnaHashPrefixed,
       };
     }

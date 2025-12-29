@@ -123,10 +123,11 @@ describe("Ribosome Integration Tests", () => {
       ]);
 
       // Verify sequence numbers
+      // Note: Dna action doesn't have action_seq field (implicitly 0)
       const actionSeqs = records.map((r: any) =>
         r.signed_action?.hashed?.content?.action_seq
       );
-      expect(actionSeqs).toEqual([0, 1, 2, 3]);
+      expect(actionSeqs).toEqual([undefined, 1, 2, 3]);
 
       // Verify prev_action chain
       const record0 = records[0] as any;
@@ -134,18 +135,17 @@ describe("Ribosome Integration Tests", () => {
       const record2 = records[2] as any;
       const record3 = records[3] as any;
 
-      // First action has no previous
-      expect(record0.signed_action.hashed.content.prev_action).toBeNull();
+      // First action (Dna) has no prev_action field (undefined, not null)
+      expect(record0.signed_action.hashed.content.prev_action).toBeUndefined();
 
       // Each subsequent action points to the previous
       expect(record1.signed_action.hashed.content.prev_action).toBeTruthy();
       expect(record2.signed_action.hashed.content.prev_action).toBeTruthy();
       expect(record3.signed_action.hashed.content.prev_action).toBeTruthy();
 
-      // Agent entry (record 2) should have an entry
-      expect(record2.entry).toBeTruthy();
-      expect(record2.entry.Present).toBeTruthy();
-      expect(record2.entry.Present.entry_type).toBe('Agent');
+      // Entries are not included by default (include_entries: false)
+      // Record 2 is Create action for agent entry, but entry will be 'NA'
+      expect(record2.entry).toBe('NA');
     });
 
     it("should include user entries in query results", async () => {

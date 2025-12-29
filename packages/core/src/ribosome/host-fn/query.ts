@@ -8,7 +8,8 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
-import type { Record, RecordEntry, Entry } from "../holochain-types";
+import { buildEntry } from "./entry-utils";
+import type { Record, RecordEntry } from "../holochain-types";
 
 /**
  * Query input structure (matches Holochain's ChainQueryFilter)
@@ -71,7 +72,18 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
     // Fetch entry if needed and if action has one
     if (input.include_entries !== false && "entryHash" in action && action.entryHash) {
+      console.log("[query] Looking up entry for action:", {
+        actionType: action.actionType,
+        entryHash: Array.from(action.entryHash.slice(0, 8)),
+      });
+
       const entryResult = storage.getEntry(action.entryHash);
+
+      console.log("[query] Entry result:", {
+        isPromise: entryResult instanceof Promise,
+        isNull: entryResult === null,
+        hasValue: !!entryResult && !(entryResult instanceof Promise),
+      });
 
       if (entryResult instanceof Promise) {
         // Entry not in cache, skip it for now
@@ -84,19 +96,10 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
     // Build record structure with Holochain-formatted action
     // RecordEntry enum: Present(Entry) | Hidden | NA | NotStored
-    let recordEntry;
+    let recordEntry: RecordEntry;
     if (entry) {
-      // Entry enum: Agent(AgentPubKey) | App(bytes) | CapClaim | CapGrant
-      let entryVariant;
-      if (entry.entryType === 'Agent') {
-        entryVariant = { Agent: entry.entryContent };
-      } else if (entry.entryType === 'CapClaim') {
-        entryVariant = { CapClaim: entry.entryContent };
-      } else if (entry.entryType === 'CapGrant') {
-        entryVariant = { CapGrant: entry.entryContent };
-      } else {
-        entryVariant = { App: entry.entryContent };
-      }
+      // Build Entry enum variant using shared helper (internally tagged format)
+      const entryVariant = buildEntry(entry.entryType, entry.entryContent);
       recordEntry = { Present: entryVariant };
     } else {
       // No entry for this action (Dna, AgentValidationPkg, InitZomesComplete, etc.)

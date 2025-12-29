@@ -58,7 +58,7 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Encode properties
   const propertiesBytes = new Uint8Array(encode(manifest?.properties || {}));
 
-  // Build entry_defs (for now, empty - proper entry type extraction in Step 6)
+  // Build entry_defs (for now, empty - proper entry type extraction in Step 6+)
   const entryDefs: unknown[] = [];
 
   // Build zome_types
