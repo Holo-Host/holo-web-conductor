@@ -316,26 +316,39 @@ interface CallZomeRequest {
 
 ---
 
-### Step 6.8: Holochain Validation
+### Step 7: Network Host Functions
 
-**Goal**: Add Holochain app validation when committing entries.
+**Goal**: Implement host functions that make real network requests via hc-http-gw.
+
+**Dependencies**: Step 6.X
+
+**Sub-tasks**:
+1. **7.1** Implement a query cascade for get that tries local chain first, network cache, and then makes network requests (the latter being mocked to start with)
+2. **7.2** Replace mock network with network fetch from local test instance of hc-http-gw
+
+**Key Files**:
+- `packages/core/src/conductor/network.ts`
+- `packages/core/src/ribosome/host_fn/get.ts` (updated)
+
+**Tests**:
+- Get retrieves data from appropriate place in the cascade network
 
 ---
 
-### Step 7: hc-http-gw Extensions
+### Step 8: hc-http-gw Extensions
 
 **Goal**: Extend hc-http-gw to support zero-arc node publish operations.
 
-**Dependencies**: Step 6
+**Dependencies**: Step 7
 
 **Reference**: `../hc-http-gw/src/`
 
 **Sub-tasks**:
-1. **7.1** Analyze current hc-http-gw endpoints
-2. **7.2** Design publish endpoint for zero-arc nodes
-3. **7.3** Implement `/publish` endpoint for committing to DHT
-4. **7.4** Implement authentication for publish requests
-5. **7.5** Handle publish responses in extension
+1. **8.1** Analyze current hc-http-gw endpoints
+2. **8.2** Design publish endpoint for zero-arc nodes
+3. **8.3** Implement `/publish` endpoint for committing to DHT
+4. **8.4** Implement authentication for publish requests
+5. **8.5** Handle publish responses in extension
 
 **Key Files**:
 - `../hc-http-gw/src/routes/publish.rs` (new)
@@ -347,84 +360,33 @@ interface CallZomeRequest {
 
 ---
 
-### Step 8: Network Host Functions
+### Step 9: Additional Holochain Features
 
-**Goal**: Implement host functions that make real network requests via hc-http-gw.
-
-**Dependencies**: Step 7
+**Goal**: Add Holochain other holochain features that make things more robust: app validation when committing entries;
 
 **Sub-tasks**:
-1. **8.1** Implement network client for hc-http-gw
-2. **8.2** Replace mock `get` with network fetch
-3. **8.3** Implement `must_get_*` functions (DHT retrieval)
-4. **8.4** Implement `get_agent_activity`
-5. **8.5** Implement `send_remote_signal` via gateway
-6. **8.6** Implement `call` for cross-cell calls
+1. **9.1** Implement `get_agent_activity`
+2. **9.2** Implement `send_remote_signal` via gateway
+3. **9.3** Implement `call` for cross-cell calls
 
-**Key Files**:
-- `packages/core/src/conductor/network.ts`
-- `packages/core/src/ribosome/host_fn/get.ts` (updated)
 
 **Tests**:
-- Get retrieves data from network
-- Published data is retrievable
 - Remote signals delivered
+- Call works
+- get agent activity works
 
 ---
 
-### Step 9: Integration Testing
+### Step 10: Integration Testing
 
 **Goal**: Test with existing Holochain hApps.
 
 **Dependencies**: All previous steps
 
 **Sub-tasks**:
-1. **9.1** Select test hApps (simple CRUD, links, signals)
-2. **9.2** Create test harness for running hApp UIs
-3. **9.3** Test basic CRUD operations end-to-end
-4. **9.4** Test link operations
-5. **9.5** Test multi-agent scenarios (if applicable)
-6. **9.6** Performance testing
-7. **9.7** Fix discovered issues
-
----
-
-## Dependency Graph
-
-```
-Step 0 ✓
-    │
-    v
-Step 1 (Extension Base) ✓
-    │
-    v
-Step 2 (Lair Client) ✓
-    │
-    v
-Step 2.5 (Lair UI) ✓
-    │
-    └──────┬───────────┐
-           v           v
-       Step 3      Step 4
-       (Auth)      (hApp Context)
-           │           │
-           └─────┬─────┘
-                 v
-             Step 5 (WASM + Mock Host Fn)
-                 │
-                 v
-             Step 6 (Local Chain)
-                 │
-                 v
-             Step 7 (hc-http-gw)
-                 │
-                 v
-             Step 8 (Network Host Fn)
-                 │
-                 v
-             Step 9 (Integration Tests)
-```
-
+1. **10.1** created updated version of @holochain/client that detects in-browser-extension context
+2. **10.2** Test version of scaffold created forum app in this context
+3. **10.3** Test version of kando in this context
 
 ---
 
