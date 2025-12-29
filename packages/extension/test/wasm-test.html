@@ -986,7 +986,7 @@
                     function: 'get_agent_info',
                     payload: null
                 });
-                const chainSeqBefore = agentInfoBefore[1][1]; // [agent_pubkey, [action_hash, seq, timestamp]]
+                const chainSeqBefore = agentInfoBefore.chain_head[1]; // chain_head is [action_hash, seq, timestamp]
                 log(`Chain sequence before: ${chainSeqBefore}`);
 
                 // Call atomic function
@@ -1012,7 +1012,7 @@
                     function: 'get_agent_info',
                     payload: null
                 });
-                const chainSeqAfter = agentInfoAfter[1][1];
+                const chainSeqAfter = agentInfoAfter.chain_head[1];
                 log(`Chain sequence after: ${chainSeqAfter}`);
                 log(`Chain advanced by: ${chainSeqAfter - chainSeqBefore} (expected 2)`);
 
@@ -1092,7 +1092,7 @@
                     function: 'get_agent_info',
                     payload: null
                 });
-                const chainSeqAfter = agentInfoAfter[1][1];
+                const chainSeqAfter = agentInfoAfter.chain_head[1];
                 log(`Chain sequence after: ${chainSeqAfter}`);
 
                 // Chain should NOT have advanced

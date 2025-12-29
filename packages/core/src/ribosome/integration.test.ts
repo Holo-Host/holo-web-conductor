@@ -807,5 +807,101 @@ describe("Ribosome Integration Tests", () => {
       expect(deleteHash instanceof Uint8Array).toBe(true);
       expect(deleteHash.length).toBe(39);
     });
+
+    it("should atomically create entry and link in one zome call", async () => {
+      // Create target entry first
+      const { result: targetResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Target entry",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const targetHash = new Uint8Array(targetResult as number[]);
+
+      // Get chain head before atomic operation
+      const { result: agentInfoBefore } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_agent_info",
+        payload: null,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const chainHeadBefore = (agentInfoBefore as any).chain_head;
+      const chainSeqBefore = chainHeadBefore[1]; // [action_hash, seq, timestamp]
+
+      // Call atomic entry+link creation
+      const { result: atomicResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_entry_with_link",
+        payload: targetHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      // Should return tuple (entry_hash, link_hash)
+      expect(Array.isArray(atomicResult)).toBe(true);
+      expect((atomicResult as any[]).length).toBe(2);
+
+      const [entryHash, linkHash] = atomicResult as [number[], number[]];
+      const entryHashBytes = new Uint8Array(entryHash);
+      const linkHashBytes = new Uint8Array(linkHash);
+
+      expect(entryHashBytes.length).toBe(39);
+      expect(linkHashBytes.length).toBe(39);
+
+      // Get chain head after atomic operation
+      const { result: agentInfoAfter } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_agent_info",
+        payload: null,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const chainHeadAfter = (agentInfoAfter as any).chain_head;
+      const chainSeqAfter = chainHeadAfter[1];
+
+      // Chain should advance by 2 (create entry + create link)
+      expect(chainSeqAfter).toBe(chainSeqBefore + 2);
+
+      // Verify entry exists
+      const { result: getEntryResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_test_entry",
+        payload: entryHashBytes,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(getEntryResult).not.toBeNull();
+
+      // Verify link exists by getting links from the new entry to target
+      const { result: linksResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_test_links",
+        payload: entryHashBytes,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const links = linksResult as any[];
+      expect(Array.isArray(links)).toBe(true);
+      expect(links.length).toBe(1);
+    });
   });
 });
