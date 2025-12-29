@@ -579,6 +579,81 @@ describe("Ribosome Integration Tests", () => {
 
       expect(getResult).toBeNull();
     });
+
+    it("should get_details showing delete status for deleted entry", async () => {
+      // Create entry
+      const { result: createResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "create_test_entry",
+        payload: "Entry to delete for get_details test",
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const actionHash = createResult as Uint8Array;
+      expect(actionHash).toBeInstanceOf(Uint8Array);
+
+      // Delete the entry
+      const { result: deleteResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "delete_test_entry",
+        payload: actionHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const deleteHash = deleteResult as Uint8Array;
+      expect(deleteHash).toBeInstanceOf(Uint8Array);
+
+      // Get details on the original entry
+      const { result: detailsResult } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_details_test",
+        payload: actionHash,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      expect(detailsResult).not.toBeNull();
+
+      // Details is adjacently-tagged enum: { type: "Record", content: {...} }
+      const detailsEnum = detailsResult as any;
+      expect(detailsEnum).toHaveProperty("type");
+      expect(detailsEnum.type).toBe("Record");
+      expect(detailsEnum).toHaveProperty("content");
+
+      // Extract RecordDetails from the content field
+      const details = detailsEnum.content;
+
+      // Verify structure
+      expect(details).toHaveProperty("record");
+      expect(details).toHaveProperty("validation_status");
+      expect(details).toHaveProperty("deletes");
+      expect(details).toHaveProperty("updates");
+
+      // Verify the record is the original create
+      expect(details.record).toHaveProperty("signed_action");
+      expect(details.record).toHaveProperty("entry");
+
+      // Verify validation status
+      expect(details.validation_status).toBe("Valid");
+
+      // Verify deletes array contains the delete action
+      expect(Array.isArray(details.deletes)).toBe(true);
+      expect(details.deletes.length).toBe(1);
+      expect(details.deletes[0]).toHaveProperty("hashed");
+      expect(details.deletes[0]).toHaveProperty("signature");
+
+      // Verify updates array is empty
+      expect(Array.isArray(details.updates)).toBe(true);
+      expect(details.updates.length).toBe(0);
+    });
   });
 
   describe("Link host functions", () => {

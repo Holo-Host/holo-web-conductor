@@ -739,6 +739,27 @@
                 });
 
                 const formatted = formatForDisplay(result);
+
+                // Decode entry content if present AFTER formatting
+                if (formatted?.content?.record?.entry?.Present?.entry) {
+                    let entryBytes = formatted.content.record.entry.Present.entry;
+
+                    // Convert to Uint8Array if it's an array of numbers
+                    if (Array.isArray(entryBytes)) {
+                        entryBytes = new Uint8Array(entryBytes);
+                    }
+
+                    try {
+                        // Entry is MessagePack-encoded, decode it
+                        const entryData = msgpackDecode(entryBytes);
+                        log(`✓ Entry content decoded: ${JSON.stringify(entryData, null, 2)}`);
+                        // Replace the raw bytes with decoded data for display
+                        formatted.content.record.entry.Present.entry = entryData;
+                    } catch (e) {
+                        log(`Note: Could not decode entry content (${e.message})`);
+                    }
+                }
+
                 log(`✓ Entry details retrieved: ${JSON.stringify(formatted, null, 2)}`);
                 console.log('Get details result (formatted):', formatted);
 

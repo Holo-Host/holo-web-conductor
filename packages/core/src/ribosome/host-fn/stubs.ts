@@ -12,6 +12,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
+import { buildEntry } from "./entry-utils";
 
 /**
  * Helper to create a stub that returns null
@@ -78,7 +79,8 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
     // Get full details for this entry from cache
     const details = storage.getDetailsFromCache(action.entryHash, dnaHash, agentPubKey);
     if (details) {
-      const result = {
+      // Build RecordDetails structure
+      const recordDetails = {
         record: {
           signed_action: {
             hashed: {
@@ -89,32 +91,32 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
           },
           entry: details.record.entry
             ? {
-                Present: {
-                  entry_type: "App",
-                  entry: details.record.entry.entryContent,
-                },
+                Present: buildEntry(details.record.entry.entryType, details.record.entry.entryContent)
               }
-            : null,
+            : "NA",
         },
         validation_status: details.validationStatus,
         deletes: details.deletes.map((d: any) => ({
-          signed_action: {
-            hashed: {
-              content: toHolochainAction(d.deleteAction),
-              hash: d.deleteHash,
-            },
-            signature: d.deleteAction.signature,
+          hashed: {
+            content: toHolochainAction(d.deleteAction),
+            hash: d.deleteHash,
           },
+          signature: d.deleteAction.signature,
         })),
         updates: details.updates.map((u: any) => ({
-          signed_action: {
-            hashed: {
-              content: toHolochainAction(u.updateAction),
-              hash: u.updateHash,
-            },
-            signature: u.updateAction.signature,
+          hashed: {
+            content: toHolochainAction(u.updateAction),
+            hash: u.updateHash,
           },
+          signature: u.updateAction.signature,
         })),
+      };
+
+      // Wrap in adjacently-tagged Details enum
+      // Details is: #[serde(tag = "type", content = "content")]
+      const result = {
+        type: "Record",
+        content: recordDetails,
       };
 
       console.log("[get_details] Found details", {
@@ -122,13 +124,14 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
         updates: details.updates.length,
       });
 
+      // Return Vec<Option<Details>> - host function returns array
       return serializeResult(instance, [result]);
     }
   }
 
-  // Not found
+  // Not found - Option<Details> None serializes as null
   console.log("[get_details] No details found");
-  return serializeResult(instance, [null]);
+  return serializeResult(instance, null);
 };
 export const getLinksDetails = createEmptyArrayStub("get_links_details");
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");

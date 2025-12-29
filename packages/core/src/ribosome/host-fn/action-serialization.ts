@@ -100,6 +100,7 @@ export function toHolochainAction(act: StorageAction): Action {
         ...common,
         deletes_address: act.deletesActionHash,
         deletes_entry_address: act.deletesEntryHash,
+        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
       };
 
     case 'CreateLink':
