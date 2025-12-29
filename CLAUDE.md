@@ -437,8 +437,56 @@ See [LESSONS_LEARNED.md](./LESSONS_LEARNED.md) for complete details.
 
 To support picking up work across sessions:
 
-1. **This file** (`claude.md`) serves as the source of truth for project state
-2. **Git commits** should be atomic and well-described
-3. **TODO comments** in code should reference step numbers (e.g., `// TODO(Step 5.3): implement agent_info`)
-4. **Each step** should be completable in isolation once dependencies are met
-5. **Tests** verify step completion - all tests pass = step complete
+1. **This file** (`CLAUDE.md`) serves as the source of truth for project plan and overall state
+2. **SESSION.md** tracks the current step in progress with status and notes
+3. **STEPX_PLAN.md** files contain detailed plans for each step (created before implementation)
+4. **STEPX_COMPLETION.md** files contain completion notes for finished steps
+5. **Git commits** should be atomic and well-described
+6. **TODO comments** in code should reference step numbers (e.g., `// TODO(Step 5.3): implement agent_info`)
+7. **Each step** should be completable in isolation once dependencies are met
+8. **Tests** verify step completion - all tests pass = step complete
+
+### File Structure
+
+```
+/
+├── CLAUDE.md              # Main project plan (this file)
+├── SESSION.md             # Current session state (current step only)
+├── STEPX_PLAN.md          # Detailed plan for step X
+├── STEPX_COMPLETION.md    # Completion notes for step X
+└── LESSONS_LEARNED.md     # Serialization debugging lessons
+```
+
+### Workflow for Starting a New Step
+
+1. **Create STEPX_PLAN.md** before implementation with detailed sub-tasks
+2. **Update SESSION.md** to show the new current step
+3. **Update CLAUDE.md** step status to "IN PROGRESS"
+
+### Workflow for Completing a Step
+
+When a step is complete:
+
+1. **Create STEPX_COMPLETION.md** with:
+   - Completion date and status
+   - Summary of what was accomplished
+   - Test results
+   - Issues found and fixed
+   - Key architectural decisions
+   - Files created/modified
+   - Known limitations
+
+2. **Update SESSION.md**:
+   - Update "Last Updated" date
+   - Update "Current Step" to the next step
+   - Add link to the new STEPX_COMPLETION.md in the "Completed Steps" section
+   - Update the "Claude Context Prompt for Resuming"
+
+3. **Update CLAUDE.md**:
+   - Mark completed step with checkmark
+   - Update step status to "COMPLETE"
+   - Add any new sub-steps if the plan evolved
+
+4. **Commit documentation**:
+   - Include STEPX_COMPLETION.md, SESSION.md, and CLAUDE.md in the commit
+   - Use commit message format: "docs: Step X complete"
