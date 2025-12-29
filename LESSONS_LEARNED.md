@@ -9,6 +9,7 @@
 - [Meta-Lesson: Debugging the Wrong Layer](#meta-lesson-debugging-the-wrong-layer)
 - [Failed Solutions Archive](#failed-solutions-archive)
 - [Serialization Testing Strategy](#serialization-testing-strategy)
+- [Development Patterns Analysis](#development-patterns-analysis)
 
 ---
 
@@ -638,3 +639,153 @@ const payloadBytes = debugEncode(paramBytes, 'EXTERN_IO');
 ```
 
 This produces detailed logs for comparing with Rust output.
+
+---
+
+## Development Patterns Analysis
+
+> **Purpose**: This section documents recurring development patterns identified across all STEP*_PLAN.md completion notes. These patterns represent problems that consumed significant debugging time and could be predicted/avoided in future work.
+
+### Pattern 1: Debugging the Wrong Layer
+
+**Evidence**: See [Meta-Lesson](#meta-lesson-debugging-the-wrong-layer) above.
+
+**Summary**: Hours were spent debugging serialization at the WASM boundary (ExternIO, msgpack encoding, codec compatibility) when the actual problem was deserialization at the UI boundary. The fix was a single missing `decodeResult()` call in the background script.
+
+**Prevention**:
+- Before deep-diving into any layer, trace the full data flow: Input → Encode → WASM → Decode → Transport → UI
+- Verify each boundary has proper handling before assuming any one boundary is the problem
+- Check the "simple stuff" first (is decode() being called where needed?)
+
+---
+
+### Pattern 2: Re-attempting Failed Solutions
+
+**Evidence**:
+- Result wrapper removal: Attempted 3+ times across sessions, always failing with "invalid type: sequence, expected `Ok` or `Err`"
+- msgpack-bridge: Built, tested, failed, reverted, then reconsidered in later sessions
+- ExternIO double-encoding: Attempted at multiple boundaries (inputs, outputs, returns), reverted each time
+
+**Summary**: Without documenting failed approaches, the same solutions get retried. Each retry wastes hours before reaching the same conclusion.
+
+**Prevention**:
+- When a solution fails, document it immediately in the Failed Solutions Archive with:
+  - What was tried
+  - Why it failed (exact error messages)
+  - Why it seemed like a good idea
+  - Why it cannot work
+- Before attempting any fix, check LESSONS_LEARNED.md for previous attempts
+- A new attempt must differ fundamentally from archived failures
+
+---
+
+### Pattern 3: Protocol/Contract Misunderstanding
+
+**Evidence**:
+- STEP6_PLAN.md: "Action serialization requires internally tagged enum format with snake_case" - discovered after multiple failures
+- LESSONS_LEARNED.md: "HDK explicitly requires Result<T, WasmError> from host functions" - tried removing 3+ times
+- STEP5.7_PLAN.md: "AgentPubKey requires 39-byte format (32-byte key + 7-byte prefix)" - wrong format caused failures
+
+**Summary**: Assumptions about data formats without verifying against the actual protocol. Many hours spent before realizing Holochain has specific contracts that must be followed exactly.
+
+**Key Contracts (DO NOT VIOLATE)**:
+- Host functions MUST return `Result<T, WasmError>` - never remove the `{Ok: data}` wrapper
+- Action serialization: internally tagged enum with snake_case fields (`{"type": "create", "author": ...}`)
+- AgentPubKey/ActionHash/EntryHash: 39-byte format (Core 32 bytes + 3-byte type prefix + 4-byte location bytes)
+- Link structures require all fields populated (base, target, tag, etc.)
+
+**Prevention**:
+- Find the canonical source in ../holochain/ codebase before implementing
+- Document the exact format contract before writing code
+- Create a reference test that verifies format matches Holochain's expectations
+- Never assume a wrapper can be removed or format changed without checking HDK requirements
+
+---
+
+### Pattern 4: Measuring After Coding
+
+**Evidence**:
+- STEP5.5.5_PLAN.md entire approach: "Empirical measurement before code changes... NOT assuming codec incompatibility without proof"
+- Multiple codec changes were made without byte-level comparison to see what was actually different
+- msgpack-bridge was built based on assumption of codec incompatibility, not measured proof
+
+**Summary**: Jumping to solutions based on symptoms rather than root cause analysis. Making changes without knowing the exact byte differences leads to repeated failed attempts.
+
+**Prevention**:
+- Capture exact bytes from the working reference (Holochain/Rust)
+- Capture exact bytes from our implementation
+- Compare byte-for-byte to identify exact differences
+- Only then form a hypothesis about the cause
+- Test fix against the byte comparison, not just functional tests
+
+---
+
+### Pattern 5: Chrome Extension Boundary Handling
+
+**Evidence**:
+- LESSONS_LEARNED.md: "Chrome message passing required special handling (Uint8Array → Array)"
+- STEP5_PLAN.md: Message passing serialization requirements
+- Actual bug: Chrome's `runtime.sendMessage` converts Uint8Array to `{0: 1, 1: 2, ...}` object
+
+**Summary**: Chrome's message passing API doesn't preserve Uint8Array types - it converts them to plain objects with numeric keys. This caused data corruption that wasn't obvious because the object still "looked like" an array.
+
+**Prevention**:
+- All Uint8Array data must be converted to Array before Chrome message passing
+- All received data must be normalized back to Uint8Array after message passing
+- Test the full background → content script → page pipeline, not just individual parts
+- Use `serializeForTransport()` and `normalizeUint8Arrays()` consistently
+
+---
+
+### Pattern 6: Reference Source Priority
+
+**Evidence**:
+- STEP6.6_PLAN.md: "Use ../holochain/ as canonical source... Web searches can lead to outdated documentation"
+- Multiple instances of using web docs that didn't match actual 0.6 implementation
+- Time wasted on approaches based on outdated information
+
+**Summary**: Referencing online documentation or web searches led to outdated or incorrect information. The local Holochain repo has the authoritative implementation.
+
+**Prevention**:
+Reference sources in priority order:
+1. **First**: Local `../holochain/` repository (authoritative for 0.6)
+2. **Second**: `holochain-client-js` for TypeScript type patterns
+3. **Third**: Official Holochain documentation (may lag behind code)
+4. **Avoid**: Web searches for implementation details (often outdated or wrong version)
+
+---
+
+### Pattern 7: Testing Strategy Gaps
+
+**Evidence**:
+- STEP5.5.5_PLAN.md: "Create automated tests FIRST for fast iteration... Manual browser testing is time-consuming"
+- STEP6.6_PLAN.md: Three-tier testing strategy recommendation
+- Multiple debugging sessions slowed by reliance on manual testing (reload extension, click buttons, read console)
+
+**Summary**: Over-reliance on manual browser testing slowed iteration. Each change took minutes to verify instead of seconds. Automated tests would have caught many issues immediately.
+
+**Prevention**:
+Testing priority order:
+1. **Unit tests** for individual functions (run in seconds)
+2. **Integration tests** with mock WASM (run in seconds)
+3. **Byte-level comparison tests** for serialization (validates against Rust reference)
+4. **Manual browser testing** ONLY for final verification after automated tests pass
+
+Create the automated test FIRST (test-driven), then implement the fix. Only use manual testing when automated tests pass.
+
+---
+
+### Quick Reference Checklist
+
+Before starting serialization work:
+- [ ] Read Failed Solutions Archive in this document
+- [ ] Identify exact bytes from Holochain reference (measure first)
+- [ ] Check protocol contracts (Result wrapper, field names, byte formats)
+- [ ] Verify Chrome boundary handling (Uint8Array ↔ Array)
+- [ ] Write automated test before implementing fix
+
+Before any significant debugging:
+- [ ] Trace full data flow (Input → Encode → WASM → Decode → Transport → UI)
+- [ ] Check each boundary, not just the one you suspect
+- [ ] Look for simple missing steps (decode not called, etc.)
+- [ ] Reference ../holochain/ not web searches

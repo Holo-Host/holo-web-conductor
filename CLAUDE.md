@@ -33,7 +33,18 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
    - DO NOT assume version incompatibilities without proof
 7. **Strong typing**: when possible allways use strong typeing in typescript, ESPECIALLY when serializing and deserializing accross WASM boundaries.  Look in Holochain code base for types and make typscript equivalents, paying atttention the the serde serialization method being used (which is generally internal, i.e. type: "name")
 8. **Holochain reference sources**: We are using Holochain 0.6.  The source for this is local and lives at the same level as this repo. DO NOT USE .cargo files or web searches to research holochain, just look locally.
-9. **Serialization Errors**: Make sure to look at TRACE output when trying to figure out serialization problems, the WASM will tell you what was wrong in that error message. 
+9. **Serialization Errors**: Make sure to look at TRACE output when trying to figure out serialization problems, the WASM will tell you what was wrong in that error message.
+
+---
+
+## Development Strategy
+
+- **Trace full data flow** before deep-diving into any layer (Input → Encode → WASM → Decode → Transport → UI)
+- **Check LESSONS_LEARNED.md** before any serialization work - failed solutions are archived there
+- **Use ../holochain/ as canonical reference**, not web searches (docs may be outdated)
+- **Measure first, code second** - capture byte-level output before making changes
+- **Automated tests first**, manual browser testing only for final verification
+- **Chrome message passing** loses Uint8Array types - convert to/from Array at boundaries
 
 ---
 
