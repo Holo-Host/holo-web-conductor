@@ -81,6 +81,83 @@ export type EntryDefLocation =
   | 'CapClaim'
   | 'CapGrant';
 
+/**
+ * Entry definition ID
+ *
+ * Source: holochain/crates/holochain_integrity_types/src/entry_def.rs
+ * ```rust
+ * pub enum EntryDefId {
+ *     App(AppEntryName),
+ *     CapClaim,
+ *     CapGrant,
+ * }
+ * pub struct AppEntryName(pub Cow<'static, str>);
+ * ```
+ */
+export type EntryDefId =
+  | { App: string }  // AppEntryName serializes as string
+  | 'CapClaim'
+  | 'CapGrant';
+
+/**
+ * Required validations count (0-50)
+ *
+ * Source: holochain/crates/holochain_integrity_types/src/entry_def.rs
+ * ```rust
+ * pub type RequiredValidations = u8;
+ * const DEFAULT_REQUIRED_VALIDATIONS: u8 = 5;
+ * ```
+ */
+export type RequiredValidations = number;
+
+/**
+ * Entry definition for a zome entry type
+ *
+ * Source: holochain/crates/holochain_integrity_types/src/entry_def.rs
+ * ```rust
+ * pub struct EntryDef {
+ *     pub id: EntryDefId,
+ *     pub visibility: EntryVisibility,
+ *     pub required_validations: RequiredValidations,
+ *     pub cache_at_agent_activity: bool,
+ * }
+ * ```
+ */
+export interface EntryDef {
+  /** Zome-unique identifier for this entry type */
+  id: EntryDefId;
+  /** Public or Private */
+  visibility: EntryVisibility;
+  /** How many validations to receive before considered "network saturated" (max 50) */
+  required_validations: RequiredValidations;
+  /** Should this entry be cached with agent activity authorities */
+  cache_at_agent_activity: boolean;
+}
+
+/**
+ * All entry definitions for an integrity zome
+ *
+ * Source: holochain/crates/holochain_integrity_types/src/entry_def.rs
+ * ```rust
+ * pub struct EntryDefs(pub Vec<EntryDef>);
+ * ```
+ */
+export type EntryDefs = EntryDef[];
+
+/**
+ * Result from entry_defs callback
+ *
+ * Source: holochain/crates/holochain_integrity_types/src/entry_def.rs
+ * ```rust
+ * pub enum EntryDefsCallbackResult {
+ *     Defs(EntryDefs),
+ * }
+ * ```
+ */
+export interface EntryDefsCallbackResult {
+  Defs: EntryDefs;
+}
+
 // ============================================================================
 // CRUD Operation Input Types
 // ============================================================================

@@ -4,6 +4,7 @@
  */
 
 import type { DnaHash, EntryHash } from '@holochain/client';
+import type { EntryDef } from './holochain-types';
 
 // ============================================================================
 // App Manifest Types (happ.yaml)
@@ -122,6 +123,12 @@ export interface ZomeDefinition {
 
   /** Dependencies on other zomes */
   dependencies: string[];
+
+  /** Entry definitions (cached from WASM entry_defs callback) */
+  entryDefs?: EntryDef[];
+
+  /** Link types (cached from WASM link_types callback) */
+  linkTypes?: unknown[];  // TODO: Add proper LinkType type when implementing link functionality
 }
 
 // ============================================================================

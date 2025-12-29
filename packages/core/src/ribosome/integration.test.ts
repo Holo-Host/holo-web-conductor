@@ -205,6 +205,61 @@ describe("Ribosome Integration Tests", () => {
     });
   });
 
+  describe("zome_info host function", () => {
+    it("should call entry_defs callback successfully", async () => {
+      // First test: call entry_defs directly
+      const { result } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_entry_defs_test",
+        payload: null,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      console.log('[TEST] entry_defs result:', result);
+
+      // Should have Defs variant
+      expect(result).toHaveProperty('Defs');
+      const defs = (result as any).Defs;
+      expect(Array.isArray(defs)).toBe(true);
+      expect(defs.length).toBeGreaterThan(0);
+    });
+
+    it("should return entry_defs from zome_info", async () => {
+      // Call a function that internally calls zome_info
+      // The test-zome should have TestEntry in its entry_defs
+      const { result } = await callZomeAsExtension({
+        dnaWasm: testZomeWasm,
+        cellId: testCellId,
+        zome: "test_zome",
+        fn: "get_zome_info",
+        payload: null,
+        provenance: testCellId[1],
+        dnaManifest: testDnaManifest,
+      });
+
+      const zomeInfo = result as any;
+
+      // Should have basic zome info
+      expect(zomeInfo.name).toBe("test_zome");
+      expect(zomeInfo.id).toBe(0);
+
+      // Should have entry_defs populated from WASM
+      expect(zomeInfo.entry_defs).toBeDefined();
+      expect(Array.isArray(zomeInfo.entry_defs)).toBe(true);
+      expect(zomeInfo.entry_defs.length).toBeGreaterThan(0);
+
+      // Should have TestEntry definition
+      // Note: id is { App: "test_entry" } in snake_case, not "TestEntry"
+      const testEntryDef = zomeInfo.entry_defs.find((def: any) => def.id?.App === "test_entry");
+      expect(testEntryDef).toBeDefined();
+      expect(testEntryDef.visibility).toBe("Public");
+      expect(testEntryDef.required_validations).toBe(5);
+    });
+  });
+
   describe("random_bytes host function", () => {
     it("should return random bytes", async () => {
       const { result } = await callZomeAsExtension({

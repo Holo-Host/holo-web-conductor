@@ -27,6 +27,12 @@ fn get_zome_info(_: ()) -> ExternResult<ZomeInfo> {
     zome_info()
 }
 
+/// Test entry_defs callback directly
+#[hdk_extern]
+fn get_entry_defs_test(_: ()) -> ExternResult<EntryDefsCallbackResult> {
+    entry_defs(())
+}
+
 /// Test random_bytes host function
 /// Returns 32 random bytes
 #[hdk_extern]

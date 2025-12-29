@@ -154,6 +154,16 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Collect any emitted signals
     const signals = context.emittedSignals || [];
 
+    // Initialize entry_defs after first successful zome call (if not already cached)
+    if (dnaManifest) {
+      for (const z of dnaManifest.integrity_zomes) {
+        if (!z.entryDefs) {
+          console.log('[Ribosome] Initializing entry_defs for zome:', z.name);
+          z.entryDefs = await initializeEntryDefs(instance, z.name);
+        }
+      }
+    }
+
     // Commit transaction - all chain updates succeed atomically
     await storage.commitTransaction();
     console.log('[Ribosome] Transaction committed successfully');
@@ -172,6 +182,67 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Re-throw error for caller to handle
     throw error;
   }
+}
+
+/**
+ * Initialize entry_defs by calling the raw entry_defs callback export
+ * This is called after WASM instantiation when host functions are available
+ */
+async function initializeEntryDefs(
+  instance: WebAssembly.Instance,
+  zomeName: string
+): Promise<unknown[]> {
+  // Check if entry_defs export exists
+  const entryDefsFn = instance.exports.entry_defs as
+    | ((ptr: number, len: number) => bigint)
+    | undefined;
+
+  if (!entryDefsFn) {
+    console.log(`[initializeEntryDefs] No entry_defs export found for zome: ${zomeName}`);
+    return [];
+  }
+
+  console.log(`[initializeEntryDefs] Calling entry_defs() for zome: ${zomeName}`);
+
+  try {
+    // Serialize unit type () as input - HDK expects SerializedBytes wrapping unit
+    // Unit type () serializes as nil (0xC0 = 192) in MessagePack
+    // Wrap in Uint8Array: ExternIO expects SerializedBytes(Vec<u8>) containing the msgpack bytes
+    const { ptr: inputPtr, len: inputLen } = serializeToWasm(instance, new Uint8Array([192]));
+
+    // Call the entry_defs callback
+    const resultI64 = entryDefsFn(inputPtr, inputLen);
+
+    // Extract ptr and len
+    const resultPtr = Number(resultI64 >> 32n);
+    const resultLen = Number(resultI64 & 0xffffffffn);
+
+    // Deserialize the result
+    const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+    console.log(`[initializeEntryDefs] Got result:`, result);
+
+    // Result is wrapped in Ok/Err
+    if (result && typeof result === 'object' && 'Ok' in result) {
+      let okValue = (result as any).Ok;
+
+      // If Ok value is Uint8Array, decode it (ExternIO output wrapper)
+      if (okValue instanceof Uint8Array) {
+        const { decode } = await import('@msgpack/msgpack');
+        okValue = decode(okValue);
+        console.log(`[initializeEntryDefs] Decoded Ok value:`, okValue);
+      }
+
+      // Ok value is { Defs: [array of EntryDef] }
+      if (okValue && typeof okValue === 'object' && 'Defs' in okValue) {
+        return okValue.Defs as unknown[];
+      }
+    }
+  } catch (error) {
+    console.warn(`[initializeEntryDefs] Failed to initialize entry_defs:`, error);
+  }
+
+  return [];
 }
 
 // Re-export key types and utilities

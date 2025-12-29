@@ -7,6 +7,7 @@
 import { encode } from "@msgpack/msgpack";
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import type { EntryDef } from "../../types/holochain-types";
 
 /**
  * Zome info response structure
@@ -23,7 +24,7 @@ export interface ZomeInfo {
   properties: Uint8Array;
 
   /** Entry definitions for this zome */
-  entry_defs: Array<unknown>;
+  entry_defs: EntryDef[];
 
   /** Exported function names */
   extern_fns: string[];
@@ -58,8 +59,14 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Encode properties
   const propertiesBytes = new Uint8Array(encode(manifest?.properties || {}));
 
-  // Build entry_defs (for now, empty - proper entry type extraction in Step 6+)
-  const entryDefs: unknown[] = [];
+  // Build entry_defs from cached WASM entry_defs callback result
+  const entryDefs: unknown[] = currentZome?.entryDefs || [];
+
+  console.log('[zome_info] entry_defs:', {
+    hasCurrentZome: !!currentZome,
+    hasEntryDefs: !!currentZome?.entryDefs,
+    entryDefsLength: entryDefs.length,
+  });
 
   // Build zome_types
   const zomeTypes = {
