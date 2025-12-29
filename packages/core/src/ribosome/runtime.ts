@@ -18,6 +18,14 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
+ * Cached zome metadata (entry_defs, link_types)
+ */
+export interface ZomeMetadata {
+  entryDefs: unknown[];
+  linkTypeCount: number;
+}
+
+/**
  * WASM runtime for Holochain ribosome
  *
  * Handles compilation and caching of WASM modules.
@@ -25,6 +33,9 @@ function toBase64(bytes: Uint8Array): string {
 export class RibosomeRuntime {
   /** Cache of compiled modules by DNA hash */
   private moduleCache = new Map<string, WebAssembly.Module>();
+
+  /** Cache of zome metadata by "dnaHash:zomeName" */
+  private metadataCache = new Map<string, ZomeMetadata>();
 
   /**
    * Compile WASM bytes into a module
@@ -89,18 +100,45 @@ export class RibosomeRuntime {
   }
 
   /**
+   * Get cached zome metadata
+   *
+   * @param dnaHash - DNA hash
+   * @param zomeName - Zome name
+   * @returns Cached metadata or undefined if not cached
+   */
+  getZomeMetadata(dnaHash: Uint8Array, zomeName: string): ZomeMetadata | undefined {
+    const key = `${toBase64(dnaHash)}:${zomeName}`;
+    return this.metadataCache.get(key);
+  }
+
+  /**
+   * Cache zome metadata
+   *
+   * @param dnaHash - DNA hash
+   * @param zomeName - Zome name
+   * @param metadata - Metadata to cache
+   */
+  setZomeMetadata(dnaHash: Uint8Array, zomeName: string, metadata: ZomeMetadata): void {
+    const key = `${toBase64(dnaHash)}:${zomeName}`;
+    this.metadataCache.set(key, metadata);
+    console.log(`[Ribosome] Cached metadata for ${zomeName}: ${metadata.entryDefs.length} entry_defs, ${metadata.linkTypeCount} link_types`);
+  }
+
+  /**
    * Clear the module cache
    */
   clearCache(): void {
     this.moduleCache.clear();
+    this.metadataCache.clear();
   }
 
   /**
    * Get cache statistics
    */
-  getCacheStats(): { size: number } {
+  getCacheStats(): { moduleCount: number; metadataCount: number } {
     return {
-      size: this.moduleCache.size,
+      moduleCount: this.moduleCache.size,
+      metadataCount: this.metadataCache.size,
     };
   }
 }

@@ -78,7 +78,7 @@ describe("RibosomeRuntime", () => {
       expect(module1).toBe(module2);
 
       const stats = runtime.getCacheStats();
-      expect(stats.size).toBe(1);
+      expect(stats.moduleCount).toBe(1);
     });
 
     it("should cache different modules separately", async () => {
@@ -92,7 +92,7 @@ describe("RibosomeRuntime", () => {
       expect(module1).not.toBe(module2);
 
       const stats = runtime.getCacheStats();
-      expect(stats.size).toBe(2);
+      expect(stats.moduleCount).toBe(2);
     });
   });
 
@@ -101,11 +101,11 @@ describe("RibosomeRuntime", () => {
       const dnaHash = new Uint8Array(32).fill(1);
       await runtime.getOrCompileModule(dnaHash, minimalWasmBytes);
 
-      expect(runtime.getCacheStats().size).toBe(1);
+      expect(runtime.getCacheStats().moduleCount).toBe(1);
 
       runtime.clearCache();
 
-      expect(runtime.getCacheStats().size).toBe(0);
+      expect(runtime.getCacheStats().moduleCount).toBe(0);
     });
   });
 });

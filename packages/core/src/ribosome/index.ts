@@ -146,8 +146,18 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Initialize entry_defs and link_types for integrity zomes
     // Each integrity zome has its own WASM that exports entry_defs and link_types
     // We need to instantiate each integrity WASM separately to get these
+    // Check runtime cache first to avoid repeated WASM calls
     if (dnaManifest) {
       for (const integrityZome of dnaManifest.integrity_zomes) {
+        // Check runtime cache first
+        const cachedMetadata = runtime.getZomeMetadata(dnaHash, integrityZome.name);
+        if (cachedMetadata) {
+          // Use cached metadata
+          integrityZome.entryDefs = cachedMetadata.entryDefs as EntryDef[];
+          integrityZome.linkTypeCount = cachedMetadata.linkTypeCount;
+          continue;
+        }
+
         const needsEntryDefs = !integrityZome.entryDefs;
         const needsLinkTypes = integrityZome.linkTypeCount === undefined;
 
@@ -181,6 +191,12 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
             console.log('[Ribosome] Getting link_types from integrity zome:', integrityZome.name);
             integrityZome.linkTypeCount = initializeLinkTypes(integrityInstance, integrityZome.name);
           }
+
+          // Cache the metadata for future calls
+          runtime.setZomeMetadata(dnaHash, integrityZome.name, {
+            entryDefs: integrityZome.entryDefs || [],
+            linkTypeCount: integrityZome.linkTypeCount ?? 0,
+          });
         }
       }
     }
