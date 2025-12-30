@@ -97,6 +97,27 @@ export interface NetworkService {
   ): NetworkLink[];
 
   /**
+   * Fetch record details by hash (synchronous version)
+   * Returns null if not found
+   */
+  getDetailsSync?(
+    dnaHash: DnaHash,
+    hash: AnyDhtHash,
+    options?: NetworkFetchOptions
+  ): any | null;
+
+  /**
+   * Count links by base address (synchronous version)
+   * Returns 0 if none found
+   */
+  countLinksSync?(
+    dnaHash: DnaHash,
+    baseAddress: AnyDhtHash,
+    linkType?: number,
+    options?: NetworkFetchOptions
+  ): number;
+
+  /**
    * Check if the network service is available
    */
   isAvailable(): boolean;

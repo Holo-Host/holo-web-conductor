@@ -26,28 +26,70 @@ function toBase64Url(bytes: Uint8Array): string {
 }
 
 /**
+ * Convert Uint8Array to standard base64
+ */
+function toBase64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+/**
  * Default timeout for network requests (30 seconds)
  */
 const DEFAULT_TIMEOUT = 30000;
 
 /**
+ * Configuration for SyncXHRNetworkService
+ */
+export interface SyncXHRConfig {
+  /** Gateway base URL */
+  gatewayUrl: string;
+  /** Default timeout in ms */
+  timeout?: number;
+  /** Session token for authenticated requests */
+  sessionToken?: string;
+}
+
+/**
  * Synchronous XHR network service for offscreen document context
  *
  * Note: This service is designed for use with hc-http-gw or similar gateway.
- * The actual endpoints will be configured in Step 8.
  *
- * Expected gateway endpoints:
+ * Gateway endpoints:
  * - GET /dht/{dna_hash}/record/{hash} - Fetch a record by hash
- * - GET /dht/{dna_hash}/links/{base_hash}?type={link_type} - Fetch links
+ * - GET /dht/{dna_hash}/details/{hash} - Fetch details for a hash
+ * - GET /dht/{dna_hash}/links?base={base}&type={type} - Fetch links
+ * - GET /dht/{dna_hash}/links/count?base={base}&type={type} - Count links
  */
 export class SyncXHRNetworkService implements NetworkService {
   private gatewayUrl: string;
   private defaultTimeout: number;
+  private sessionToken: string | null;
 
-  constructor(gatewayUrl: string, defaultTimeout: number = DEFAULT_TIMEOUT) {
-    // Remove trailing slash
-    this.gatewayUrl = gatewayUrl.replace(/\/$/, '');
-    this.defaultTimeout = defaultTimeout;
+  constructor(config: SyncXHRConfig | string, defaultTimeout: number = DEFAULT_TIMEOUT) {
+    if (typeof config === 'string') {
+      // Legacy constructor: just gatewayUrl
+      this.gatewayUrl = config.replace(/\/$/, '');
+      this.defaultTimeout = defaultTimeout;
+      this.sessionToken = null;
+    } else {
+      this.gatewayUrl = config.gatewayUrl.replace(/\/$/, '');
+      this.defaultTimeout = config.timeout ?? DEFAULT_TIMEOUT;
+      this.sessionToken = config.sessionToken ?? null;
+    }
+  }
+
+  /**
+   * Set the session token for authenticated requests
+   */
+  setSessionToken(token: string | null): void {
+    this.sessionToken = token;
+  }
+
+  /**
+   * Get the current session token
+   */
+  getSessionToken(): string | null {
+    return this.sessionToken;
   }
 
   /**
@@ -60,6 +102,15 @@ export class SyncXHRNetworkService implements NetworkService {
   }
 
   /**
+   * Build URL for fetching details
+   */
+  private buildDetailsUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
+    const dnaHashB64 = toBase64Url(dnaHash);
+    const hashB64 = toBase64Url(hash);
+    return `${this.gatewayUrl}/dht/${dnaHashB64}/details/${hashB64}`;
+  }
+
+  /**
    * Build URL for fetching links
    */
   private buildLinksUrl(
@@ -68,12 +119,40 @@ export class SyncXHRNetworkService implements NetworkService {
     linkType?: number
   ): string {
     const dnaHashB64 = toBase64Url(dnaHash);
-    const baseB64 = toBase64Url(baseAddress);
-    let url = `${this.gatewayUrl}/dht/${dnaHashB64}/links/${baseB64}`;
+    const baseB64 = toBase64(baseAddress);
+    const params = new URLSearchParams();
+    params.set('base', baseB64);
     if (linkType !== undefined) {
-      url += `?type=${linkType}`;
+      params.set('type', linkType.toString());
     }
-    return url;
+    return `${this.gatewayUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
+  }
+
+  /**
+   * Build URL for counting links
+   */
+  private buildCountLinksUrl(
+    dnaHash: DnaHash,
+    baseAddress: AnyDhtHash,
+    linkType?: number
+  ): string {
+    const dnaHashB64 = toBase64Url(dnaHash);
+    const baseB64 = toBase64(baseAddress);
+    const params = new URLSearchParams();
+    params.set('base', baseB64);
+    if (linkType !== undefined) {
+      params.set('type', linkType.toString());
+    }
+    return `${this.gatewayUrl}/dht/${dnaHashB64}/links/count?${params.toString()}`;
+  }
+
+  /**
+   * Add auth headers to XHR request
+   */
+  private addAuthHeaders(xhr: XMLHttpRequest): void {
+    if (this.sessionToken) {
+      xhr.setRequestHeader('X-Session-Token', this.sessionToken);
+    }
   }
 
   /**
@@ -178,6 +257,7 @@ export class SyncXHRNetworkService implements NetworkService {
       xhr.open('GET', url, false); // false = synchronous
       xhr.timeout = timeout;
       xhr.setRequestHeader('Accept', 'application/json');
+      this.addAuthHeaders(xhr);
       xhr.send();
 
       if (xhr.status === 200) {
@@ -216,6 +296,7 @@ export class SyncXHRNetworkService implements NetworkService {
       xhr.open('GET', url, false); // false = synchronous
       xhr.timeout = timeout;
       xhr.setRequestHeader('Accept', 'application/json');
+      this.addAuthHeaders(xhr);
       xhr.send();
 
       if (xhr.status === 200) {
@@ -238,6 +319,83 @@ export class SyncXHRNetworkService implements NetworkService {
     }
   }
 
+  getDetailsSync(
+    dnaHash: DnaHash,
+    hash: AnyDhtHash,
+    options?: NetworkFetchOptions
+  ): any | null {
+    const url = this.buildDetailsUrl(dnaHash, hash);
+    const timeout = options?.timeout ?? this.defaultTimeout;
+
+    console.log(`[SyncXHR] Fetching details: ${url}`);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, false); // false = synchronous
+      xhr.timeout = timeout;
+      xhr.setRequestHeader('Accept', 'application/json');
+      this.addAuthHeaders(xhr);
+      xhr.send();
+
+      if (xhr.status === 200) {
+        const details = JSON.parse(xhr.responseText);
+        console.log(`[SyncXHR] Details fetched successfully`);
+        return details;
+      } else if (xhr.status === 404) {
+        console.log(`[SyncXHR] Details not found (404)`);
+        return null;
+      } else {
+        console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
+        throw new Error(`Network error: ${xhr.status} ${xhr.statusText}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Network error:')) {
+        throw error;
+      }
+      console.error(`[SyncXHR] Request failed:`, error);
+      throw new Error(`Network request failed: ${error}`);
+    }
+  }
+
+  countLinksSync(
+    dnaHash: DnaHash,
+    baseAddress: AnyDhtHash,
+    linkType?: number,
+    options?: NetworkFetchOptions
+  ): number {
+    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType);
+    const timeout = options?.timeout ?? this.defaultTimeout;
+
+    console.log(`[SyncXHR] Counting links: ${url}`);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, false); // false = synchronous
+      xhr.timeout = timeout;
+      xhr.setRequestHeader('Accept', 'application/json');
+      this.addAuthHeaders(xhr);
+      xhr.send();
+
+      if (xhr.status === 200) {
+        const count = JSON.parse(xhr.responseText);
+        console.log(`[SyncXHR] Link count: ${count}`);
+        return typeof count === 'number' ? count : 0;
+      } else if (xhr.status === 404) {
+        console.log(`[SyncXHR] No links found (404)`);
+        return 0;
+      } else {
+        console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
+        throw new Error(`Network error: ${xhr.status} ${xhr.statusText}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Network error:')) {
+        throw error;
+      }
+      console.error(`[SyncXHR] Request failed:`, error);
+      throw new Error(`Network request failed: ${error}`);
+    }
+  }
+
   isAvailable(): boolean {
     // Check if we're in a DOM context where sync XHR works
     return typeof XMLHttpRequest !== 'undefined';
@@ -245,5 +403,100 @@ export class SyncXHRNetworkService implements NetworkService {
 
   getGatewayUrl(): string | null {
     return this.gatewayUrl;
+  }
+
+  /**
+   * Request an authentication challenge (nonce) from the gateway
+   */
+  requestChallenge(): { nonce: string; expires_at: number } {
+    const url = `${this.gatewayUrl}/auth/challenge`;
+
+    console.log(`[SyncXHR] Requesting auth challenge: ${url}`);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, false); // false = synchronous
+      xhr.timeout = this.defaultTimeout;
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send();
+
+      if (xhr.status === 200) {
+        const challenge = JSON.parse(xhr.responseText);
+        console.log(`[SyncXHR] Auth challenge received`);
+        return challenge;
+      } else {
+        console.error(`[SyncXHR] Auth challenge failed: ${xhr.status} ${xhr.statusText}`);
+        throw new Error(`Auth challenge failed: ${xhr.status} ${xhr.statusText}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Auth challenge failed:')) {
+        throw error;
+      }
+      console.error(`[SyncXHR] Auth challenge request failed:`, error);
+      throw new Error(`Auth challenge request failed: ${error}`);
+    }
+  }
+
+  /**
+   * Verify a signed challenge and get a session token
+   *
+   * @param agentPubKey - Agent public key (base64 encoded)
+   * @param signature - Signature of the nonce (base64 encoded)
+   * @param nonce - The nonce that was signed
+   */
+  verifyChallenge(
+    agentPubKey: string,
+    signature: string,
+    nonce: string
+  ): { token: string; expires_at: number } {
+    const url = `${this.gatewayUrl}/auth/verify`;
+
+    console.log(`[SyncXHR] Verifying auth challenge: ${url}`);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, false); // false = synchronous
+      xhr.timeout = this.defaultTimeout;
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({
+        agent_pub_key: agentPubKey,
+        signature: signature,
+        nonce: nonce,
+      }));
+
+      if (xhr.status === 200) {
+        const session = JSON.parse(xhr.responseText);
+        console.log(`[SyncXHR] Auth verified, session token received`);
+        // Automatically set the session token
+        this.sessionToken = session.token;
+        return session;
+      } else if (xhr.status === 401 || xhr.status === 403) {
+        console.error(`[SyncXHR] Auth verification failed: unauthorized`);
+        throw new Error(`Auth verification failed: unauthorized`);
+      } else {
+        console.error(`[SyncXHR] Auth verification failed: ${xhr.status} ${xhr.statusText}`);
+        throw new Error(`Auth verification failed: ${xhr.status} ${xhr.statusText}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Auth verification failed:')) {
+        throw error;
+      }
+      console.error(`[SyncXHR] Auth verification request failed:`, error);
+      throw new Error(`Auth verification request failed: ${error}`);
+    }
+  }
+
+  /**
+   * Check if the service has a valid session token
+   */
+  hasSession(): boolean {
+    return this.sessionToken !== null;
+  }
+
+  /**
+   * Clear the current session
+   */
+  clearSession(): void {
+    this.sessionToken = null;
   }
 }
