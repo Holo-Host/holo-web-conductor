@@ -15,17 +15,24 @@ export default defineConfig({
         authorize: resolve(__dirname, "src/popup/authorize.html"),
         permissions: resolve(__dirname, "src/popup/permissions.html"),
         happs: resolve(__dirname, "src/popup/happs.html"),
+        offscreen: resolve(__dirname, "src/offscreen/offscreen.html"),
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          // Put popup scripts in popup/ directory
+          // Put scripts in appropriate directories
+          if (chunkInfo.name === "offscreen") {
+            return "offscreen/[name].js";
+          }
           return "popup/[name].js";
         },
         chunkFileNames: "lib/[name]-[hash].js",
         assetFileNames: (assetInfo) => {
           if (assetInfo.name?.endsWith(".html")) {
-            // Keep HTML files in popup directory with original names
+            // Keep HTML files in appropriate directories
             const baseName = assetInfo.name.replace(/^.*[\\/]/, "");
+            if (baseName === "offscreen.html") {
+              return `offscreen/${baseName}`;
+            }
             return `popup/${baseName}`;
           }
           return "assets/[name]-[hash][extname]";
@@ -131,34 +138,83 @@ export default defineConfig({
           },
         });
 
+        // Build offscreen script as IIFE (runs in offscreen document)
+        await viteBuild({
+          configFile: false,
+          build: {
+            outDir: distDir,
+            emptyOutDir: false,
+            lib: {
+              entry: resolve(__dirname, "src/offscreen/index.ts"),
+              formats: ["iife"],
+              name: "FishyOffscreen",
+              fileName: () => "offscreen/offscreen.js",
+            },
+            sourcemap: true,
+            target: "es2020",
+            minify: false,
+            rollupOptions: {
+              output: {
+                extend: true,
+              },
+            },
+          },
+          resolve: {
+            alias: {
+              "@fishy/shared": resolve(__dirname, "../shared/src"),
+              "@fishy/core": resolve(__dirname, "../core/src"),
+              "@fishy/lair": resolve(__dirname, "../lair/src"),
+            },
+          },
+        });
+
         // Copy manifest.json to dist folder
         copyFileSync(
           resolve(__dirname, "manifest.json"),
           resolve(distDir, "manifest.json")
         );
 
-        // Move HTML files from dist/src/popup/*.html to dist/popup/*.html if needed
-        const srcPopupDir = resolve(distDir, "src/popup");
-        const destPopupDir = resolve(distDir, "popup");
+        // Move HTML files from dist/src/ to appropriate directories
+        const srcDir = resolve(distDir, "src");
 
-        if (existsSync(srcPopupDir)) {
-          // Ensure destination directory exists
-          if (!existsSync(destPopupDir)) {
-            mkdirSync(destPopupDir, { recursive: true });
+        if (existsSync(srcDir)) {
+          // Move popup HTML files
+          const srcPopupDir = resolve(srcDir, "popup");
+          const destPopupDir = resolve(distDir, "popup");
+
+          if (existsSync(srcPopupDir)) {
+            if (!existsSync(destPopupDir)) {
+              mkdirSync(destPopupDir, { recursive: true });
+            }
+
+            const popupHtmlFiles = ["index.html", "lair.html", "authorize.html", "permissions.html", "happs.html"];
+            popupHtmlFiles.forEach((file) => {
+              const srcPath = resolve(srcPopupDir, file);
+              const destPath = resolve(destPopupDir, file);
+              if (existsSync(srcPath)) {
+                copyFileSync(srcPath, destPath);
+              }
+            });
           }
 
-          // Copy all HTML files
-          const htmlFiles = ["index.html", "lair.html", "authorize.html", "permissions.html", "happs.html"];
-          htmlFiles.forEach((file) => {
-            const srcPath = resolve(srcPopupDir, file);
-            const destPath = resolve(destPopupDir, file);
+          // Move offscreen HTML file
+          const srcOffscreenDir = resolve(srcDir, "offscreen");
+          const destOffscreenDir = resolve(distDir, "offscreen");
+
+          if (existsSync(srcOffscreenDir)) {
+            if (!existsSync(destOffscreenDir)) {
+              mkdirSync(destOffscreenDir, { recursive: true });
+            }
+
+            const srcPath = resolve(srcOffscreenDir, "offscreen.html");
+            const destPath = resolve(destOffscreenDir, "offscreen.html");
             if (existsSync(srcPath)) {
               copyFileSync(srcPath, destPath);
             }
-          });
+          }
 
           // Remove the dist/src directory
-          rmSync(resolve(distDir, "src"), { recursive: true, force: true });
+          rmSync(srcDir, { recursive: true, force: true });
         }
       },
     },

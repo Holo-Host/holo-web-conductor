@@ -5,7 +5,8 @@
   "description": "Browser extension implementation of Holochain conductor",
   "permissions": [
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"

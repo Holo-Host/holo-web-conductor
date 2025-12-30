@@ -27,12 +27,118 @@ import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
 import type { InstallHappRequest } from "@fishy/core";
-import { callZome, type ZomeCallRequest } from "@fishy/core/ribosome";
-import { decodeResult } from "../utils/result-decoder.js";
+import type { ZomeCallRequest } from "@fishy/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 
 console.log("Fishy background service worker loaded");
+
+// ============================================================================
+// Offscreen Document Management
+// ============================================================================
+
+const OFFSCREEN_DOCUMENT_PATH = "offscreen/offscreen.html";
+let creatingOffscreen: Promise<void> | null = null;
+
+/**
+ * Check if the offscreen document exists
+ */
+async function hasOffscreenDocument(): Promise<boolean> {
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+    documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
+  });
+  return contexts.length > 0;
+}
+
+/**
+ * Create the offscreen document if it doesn't exist
+ */
+async function ensureOffscreenDocument(): Promise<void> {
+  if (await hasOffscreenDocument()) {
+    return;
+  }
+
+  // Avoid creating multiple offscreen documents
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+    return;
+  }
+
+  console.log("[Background] Creating offscreen document...");
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: OFFSCREEN_DOCUMENT_PATH,
+    reasons: [chrome.offscreen.Reason.WORKERS],
+    justification: "Running WASM with synchronous network access for zome calls",
+  });
+
+  await creatingOffscreen;
+  creatingOffscreen = null;
+  console.log("[Background] Offscreen document created");
+}
+
+/**
+ * Minimal zome call request - only includes data needed by offscreen
+ * WASM and manifest are fetched from shared IndexedDB by the offscreen document
+ */
+interface MinimalZomeCallRequest {
+  contextId: string;
+  dnaHashBase64: string;
+  cellId: [number[], number[]]; // [dnaHash, agentPubKey] as arrays
+  zome: string;
+  fn: string;
+  payload: number[];
+  provenance: number[];
+}
+
+/**
+ * Execute a zome call via the offscreen document
+ * The offscreen document can make synchronous XHR calls that host functions need
+ *
+ * IMPORTANT: We only send minimal data through message passing.
+ * The offscreen document fetches WASM and manifest from shared IndexedDB.
+ */
+async function executeZomeCallViaOffscreen(
+  contextId: string,
+  zomeCallRequest: ZomeCallRequest
+): Promise<{ result: unknown; signals: any[] }> {
+  await ensureOffscreenDocument();
+
+  const requestId = crypto.randomUUID();
+  const dnaHashBase64 = btoa(String.fromCharCode(...zomeCallRequest.cellId[0]));
+
+  // Build minimal request - no WASM or manifest, just references
+  const minimalRequest: MinimalZomeCallRequest = {
+    contextId,
+    dnaHashBase64,
+    cellId: [
+      Array.from(zomeCallRequest.cellId[0]),
+      Array.from(zomeCallRequest.cellId[1]),
+    ],
+    zome: zomeCallRequest.zome,
+    fn: zomeCallRequest.fn,
+    payload: Array.from(zomeCallRequest.payload),
+    provenance: Array.from(zomeCallRequest.provenance),
+  };
+
+  console.log(`[Background] Sending zome call to offscreen: ${zomeCallRequest.zome}::${zomeCallRequest.fn} (context: ${contextId})`);
+
+  const response = await chrome.runtime.sendMessage({
+    target: "offscreen",
+    type: "EXECUTE_ZOME_CALL",
+    requestId,
+    zomeCallRequest: minimalRequest,
+  });
+
+  if (!response.success) {
+    throw new Error(response.error || "Offscreen zome call failed");
+  }
+
+  return {
+    result: response.result,
+    signals: response.signals || [],
+  };
+}
 
 // Singleton instances
 const lairLock = getLairLock();
@@ -472,88 +578,24 @@ async function handleCallZome(
     const payloadBytes = new Uint8Array(encode(normalizedPayload));
     console.log(`[CallZome] Payload serialized: ${payloadBytes.length} bytes`);
 
-    // Build zome call request
+    // Build minimal zome call request
+    // WASM and manifest are NOT sent - offscreen fetches from shared IndexedDB
     const zomeCallRequest: ZomeCallRequest = {
-      dnaWasm: toUint8Array(dna.wasm),
+      dnaWasm: new Uint8Array(0), // Not used - offscreen fetches from storage
       cellId,
       zome: zome_name,
       fn: fn_name,
       payload: payloadBytes,
       provenance: provenanceBytes,
-      dnaManifest: dna.manifest,
+      dnaManifest: undefined, // Not used - offscreen fetches from storage
     };
 
-    console.log(`[CallZome] Executing ${zome_name}::${fn_name}`, {
-      hasManifest: !!dna.manifest,
-      integrityZomes: dna.manifest?.integrity_zomes.length || 0,
-      coordinatorZomes: dna.manifest?.coordinator_zomes.length || 0,
-    });
+    console.log(`[CallZome] Executing ${zome_name}::${fn_name} via offscreen (context: ${context.id})`);
 
-    // Execute via ribosome - returns ZomeCallResult {result, signals}
-    const zomeCallResult = await callZome(zomeCallRequest);
-    console.log(`[CallZome] ZomeCallResult received:`, zomeCallResult);
-
-    // Extract the result and signals from ZomeCallResult
-    const { result: zomeResult, signals } = zomeCallResult;
-
-    // Unwrap Result<T, E> - throw if Err
-    if (zomeResult && typeof zomeResult === 'object' && 'Err' in zomeResult) {
-      let errorMsg = typeof zomeResult.Err === 'string'
-        ? zomeResult.Err
-        : JSON.stringify(zomeResult.Err);
-
-      // If this is a Deserialize error, try to decode the msgpack for debugging
-      if (errorMsg.includes('Deserialize')) {
-        // Check if error contains msgpack bytes in Deserialize field
-        const errObj = zomeResult.Err as any;
-        if (errObj && typeof errObj === 'object' && errObj.error && errObj.error.Deserialize) {
-          const deserializeField = errObj.error.Deserialize;
-
-          // Check if it's an object with numeric keys (serialized Uint8Array)
-          if (typeof deserializeField === 'object' && !Array.isArray(deserializeField)) {
-            const keys = Object.keys(deserializeField);
-            const isUint8ArrayLike = keys.length > 0 &&
-              keys.every((k, i) => k === String(i)) &&
-              keys.every(k => typeof deserializeField[k] === 'number');
-
-            if (isUint8ArrayLike) {
-              // Convert to Uint8Array and decode
-              const bytes = new Uint8Array(Object.values(deserializeField) as number[]);
-              const decoded = decodeMsgPackForLogging(bytes);
-
-              // Replace the error message with decoded version (hashes in base64, signatures in hex)
-              errorMsg = `${errObj.file}:${errObj.line} - Deserialize error. Decoded MessagePack:\n${JSON.stringify(decoded, null, 2)}`;
-            }
-          }
-        }
-      }
-
-      throw new Error(`Zome call failed: ${errorMsg}`);
-    }
-
-    // Extract Ok value if present
-    const unwrappedResult = (zomeResult && typeof zomeResult === 'object' && 'Ok' in zomeResult)
-      ? zomeResult.Ok
-      : zomeResult;
-
-    // Debug: log what type of data we're returning
-    console.log(`[CallZome] Unwrapped result type:`,
-      unwrappedResult instanceof Uint8Array ? 'Uint8Array' :
-      Array.isArray(unwrappedResult) ? 'Array' :
-      typeof unwrappedResult,
-      `length:`, unwrappedResult?.length);
-
-    // Decode the msgpack-wrapped result and convert hashes to base64
-    const decodedResult = unwrappedResult instanceof Uint8Array
-      ? decodeResult(unwrappedResult)
-      : unwrappedResult;
-
-    console.log(`[CallZome] Decoded result:`, decodedResult);
-
-    // Convert Uint8Arrays to regular Arrays for Chrome message passing
-    // Chrome's structured cloning converts Uint8Arrays to objects with numeric keys
-    // By explicitly converting to Arrays, we preserve the data cleanly
-    const transportSafeResult = serializeForTransport(decodedResult);
+    // Execute via offscreen document (which can make sync XHR calls)
+    // The offscreen document fetches WASM/manifest from IndexedDB
+    const { result: transportSafeResult, signals } = await executeZomeCallViaOffscreen(context.id, zomeCallRequest);
+    console.log(`[CallZome] Result from offscreen:`, transportSafeResult);
     console.log(`[CallZome] Transport-safe result:`, transportSafeResult);
 
     // Deliver signals to the content script which will forward to the page
@@ -563,14 +605,18 @@ async function handleCallZome(
         console.log(`[CallZome] Delivering ${signals.length} signals to tab ${tabId}`);
         for (const signal of signals) {
           try {
-            // Decode the signal payload from msgpack
-            const decodedPayload = decode(signal.signal as Uint8Array);
+            // Convert signal payload from Array back to Uint8Array and decode
+            const signalBytes = Array.isArray(signal.signal)
+              ? new Uint8Array(signal.signal)
+              : toUint8Array(signal.signal);
+            const decodedPayload = decode(signalBytes);
 
             // Format as Holochain AppSignal structure
+            // cell_id is already serialized for transport from offscreen
             const appSignal = {
               type: "app",
               value: {
-                cell_id: serializeForTransport(signal.cell_id),
+                cell_id: signal.cell_id, // Already serialized as arrays
                 zome_name: signal.zome_name,
                 payload: serializeForTransport(decodedPayload),
               },

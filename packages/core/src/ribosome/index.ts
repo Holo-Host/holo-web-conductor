@@ -83,7 +83,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
     // Find the correct WASM for the target zome
     // Each zome (integrity or coordinator) has its own WASM module
-    let zomeWasm = dnaWasm; // Default fallback
+    let zomeWasm: Uint8Array | null = null;
 
     if (dnaManifest) {
       // Check integrity zomes
@@ -97,9 +97,17 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
         if (coordinatorZome?.wasm) {
           console.log(`[Ribosome] Using WASM from coordinator zome: ${zome}`);
           zomeWasm = coordinatorZome.wasm;
-        } else {
-          console.warn(`[Ribosome] Zome '${zome}' not found in manifest, using default WASM`);
         }
+      }
+    }
+
+    // Fallback to dnaWasm if zome not found in manifest
+    if (!zomeWasm || zomeWasm.length === 0) {
+      if (dnaWasm && dnaWasm.length > 0) {
+        console.log(`[Ribosome] Using fallback dnaWasm for zome: ${zome}`);
+        zomeWasm = dnaWasm;
+      } else {
+        throw new Error(`No WASM available for zome: ${zome}. Check manifest or provide dnaWasm.`);
       }
     }
 
