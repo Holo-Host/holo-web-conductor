@@ -1,36 +1,38 @@
 # Fishy Development Session
 
 **Last Updated**: 2025-12-29
-**Current Step**: Step 7 - Network Host Functions
-**Status**: Research phase (7.0) complete, ready for implementation (7.1)
+**Current Step**: Step 7.2 - Gateway Network Integration
+**Status**: Implementation complete, pending integration testing with Holochain sandbox
 
 ## Current Step Progress
 
-### Step 7: Network Host Functions
+### Step 7.2: Gateway Network Integration
 
-**Goal**: Add network data retrieval to fishy, implementing a cascade pattern for host functions like `get` to fetch from local storage first, then network.
+**Goal**: Connect fishy extension to hc-http-gw for real network requests, implementing authentication and DHT query endpoints.
 
-**Research Findings** (7.0 Complete):
-- ✅ 7.0.1: Offscreen Document spike created (`spikes/offscreen-test/`)
-- ✅ 7.0.2: JSPI spike created (`spikes/jspi-test/`)
-- ✅ 7.0.3: SharedArrayBuffer evaluated (not recommended)
-- ✅ 7.0.4: Research findings documented in `STEP7_RESEARCH.md`
-- ✅ 7.0.5: Plan updated with chosen approach
+**Completed**:
+- ✅ Phase 1: Created dht_util zome (in hc-http-gw/fixture/dht_util/)
+  - get_record, get_details, get_links_by_base, count_links functions
+  - Compiles to WASM with getrandom custom backend
+- ✅ Phase 2: Gateway Extensions (hc-http-gw fishy branch)
+  - AgentAuthenticator trait and ConfigListAuthenticator implementation
+  - /auth/challenge and /auth/verify endpoints
+  - /dht/{dna}/record/{hash}, /dht/{dna}/details/{hash}, /dht/{dna}/links, /dht/{dna}/links/count endpoints
+  - Session verification in route handlers
+  - 70 tests passing (16 new auth tests)
+- ✅ Phase 3: Extension Integration (fishy)
+  - SyncXHRNetworkService updated with auth flow
+  - Session token management (setSessionToken/getSessionToken/clearSession)
+  - Auth headers on all DHT requests
+  - getDetailsSync() and countLinksSync() methods added
+  - requestChallenge() and verifyChallenge() for auth flow
+  - 79 tests passing
 
-**Chosen Approach**: Offscreen Document
-- Run WASM in offscreen document where sync XHR works
-- Standard Chrome extension API, no experimental flags needed
-- Future migration path to JSPI when standardized
+**Remaining**:
+- [ ] Test dht_util zome with hc sandbox
+- [ ] Integration test with real gateway + sandbox
 
-**Next Tasks** (7.1 - Extension Architecture Update):
-- 7.1.1: Add offscreen permission to manifest
-- 7.1.2: Create offscreen document HTML
-- 7.1.3: Create offscreen document script
-- 7.1.4: Move WASM execution to offscreen
-- 7.1.5: Update background to proxy via offscreen
-- 7.1.6: Test extension still works
-
-**Details**: See [STEP7_PLAN.md](./STEP7_PLAN.md) and [STEP7_RESEARCH.md](./STEP7_RESEARCH.md)
+**Details**: See [STEP7.2_PLAN.md](./STEP7.2_PLAN.md)
 
 ## Completed Steps
 
@@ -46,6 +48,22 @@ Completion notes for each step are in separate files:
 - **Step 5.7**: .happ Bundle Support with DNA Manifest Integration - See [STEP5.7_COMPLETION.md](./STEP5.7_COMPLETION.md)
 - **Step 6.6**: Automated Integration Testing - See [STEP6.6_COMPLETION.md](./STEP6.6_COMPLETION.md)
 - **Step 6.7**: Test with profiles - See [STEP6.7_COMPLETION.md](./STEP6.7_COMPLETION.md)
+- **Step 7.0**: Network Research - See [STEP7_RESEARCH.md](./STEP7_RESEARCH.md)
+
+---
+
+## Related Repositories
+
+### hc-http-gw (fishy branch)
+Located at `../hc-http-gw`, contains:
+- `fixture/dht_util/` - Utility zome for DHT operations
+- `src/auth/` - Authentication module (trait, ConfigListAuthenticator, SessionManager)
+- `src/routes/auth.rs` - /auth/challenge and /auth/verify endpoints
+- `src/routes/dht.rs` - /dht/* endpoints
+
+**Commits**:
+- `7ad959e` feat: add DHT endpoints and agent authentication for browser extensions
+- `d3d02f9` chore: add gitignore for fixture build artifacts
 
 ---
 
@@ -96,6 +114,9 @@ Any serialization changes MUST:
    ```bash
    cd /path/to/holochain/fishy
    git pull
+   cd ../hc-http-gw
+   git checkout fishy
+   git pull
    ```
 
 2. **Read session state**:
@@ -106,13 +127,14 @@ Any serialization changes MUST:
 
 3. **Read the current step plan**:
    ```bash
-   cat STEP7_PLAN.md
-   cat STEP7_RESEARCH.md
+   cat STEP7.2_PLAN.md
    ```
 
-4. **Test spikes if needed**:
-   - Offscreen spike: Load `spikes/offscreen-test/` as unpacked extension in Chrome
-   - JSPI spike: Open `spikes/jspi-test/jspi-browser-test.html` in Chrome with flag enabled
+4. **Run tests to verify state**:
+   ```bash
+   npm test  # fishy tests (79 passing)
+   cd ../hc-http-gw && cargo test  # gateway tests (70 passing)
+   ```
 
 ---
 
@@ -124,11 +146,13 @@ Any serialization changes MUST:
 - `STEPX_PLAN.md` - Detailed plans for each step
 - `STEPX_COMPLETION.md` - Completion notes for finished steps
 
-### Step 7 Specific
-- `STEP7_PLAN.md` - Detailed implementation plan
-- `STEP7_RESEARCH.md` - Research findings on sync/async approaches
-- `spikes/offscreen-test/` - Offscreen document spike
-- `spikes/jspi-test/` - JSPI spike
+### Step 7.2 Specific
+- `STEP7.2_PLAN.md` - Gateway integration plan and checklist
+- `packages/core/src/network/sync-xhr-service.ts` - Network service with auth
+- `packages/core/src/network/types.ts` - NetworkService interface
+- `../hc-http-gw/src/auth/` - Gateway auth module
+- `../hc-http-gw/src/routes/dht.rs` - Gateway DHT endpoints
+- `../hc-http-gw/fixture/dht_util/` - Utility zome
 
 ### Extension Package
 - `packages/extension/src/lib/messaging.ts` - Core message protocol
@@ -139,6 +163,7 @@ Any serialization changes MUST:
 ### Core Package
 - `packages/core/src/ribosome/` - WASM ribosome and host functions
 - `packages/core/src/types/` - TypeScript type definitions
+- `packages/core/src/network/` - Network layer (cascade, services)
 
 ### Lair Package
 - `packages/lair/src/client.ts` - Lair client implementation
@@ -171,4 +196,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.0 (Research) is complete. The chosen approach is Offscreen Document - run WASM in offscreen document where sync XHR works. Now starting Step 7.1 (Extension Architecture Update).
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is mostly complete - dht_util zome created, gateway auth and DHT endpoints implemented, SyncXHRNetworkService updated with auth flow. Remaining tasks are integration testing with a real Holochain sandbox.
