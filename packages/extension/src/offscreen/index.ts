@@ -12,8 +12,12 @@ import { callZome, type ZomeCallRequest } from "@fishy/core/ribosome";
 import { decodeResult } from "../utils/result-decoder";
 import { encode, decode } from "@msgpack/msgpack";
 import { getHappContextStorage } from "../lib/happ-context-storage";
+import { SyncXHRNetworkService, setNetworkService } from "@fishy/core/network";
 
 console.log("[Offscreen] Document loaded");
+
+// Network service will be initialized when we receive configuration
+let networkService: SyncXHRNetworkService | null = null;
 
 // Initialize storage access (shared IndexedDB with background)
 const storage = getHappContextStorage();
@@ -238,6 +242,19 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    if (message.type === "CONFIGURE_NETWORK") {
+      const { gatewayUrl, sessionToken } = message;
+      initializeNetworkService({ gatewayUrl, sessionToken });
+      sendResponse({ success: true, requestId: message.requestId || "config" });
+      return true;
+    }
+
+    if (message.type === "UPDATE_SESSION_TOKEN") {
+      updateSessionToken(message.sessionToken);
+      sendResponse({ success: true, requestId: message.requestId || "token" });
+      return true;
+    }
+
     if (message.type === "EXECUTE_ZOME_CALL") {
       const { requestId, zomeCallRequest } = message;
 
@@ -273,6 +290,33 @@ chrome.runtime.onMessage.addListener(
     return false;
   }
 );
+
+/**
+ * Initialize network service with gateway configuration
+ */
+function initializeNetworkService(config: { gatewayUrl: string; sessionToken?: string }): void {
+  console.log(`[Offscreen] Initializing network service with gateway: ${config.gatewayUrl}`);
+
+  networkService = new SyncXHRNetworkService({
+    gatewayUrl: config.gatewayUrl,
+    sessionToken: config.sessionToken,
+  });
+
+  // Make it available to cascade lookups
+  setNetworkService(networkService);
+
+  console.log("[Offscreen] Network service initialized");
+}
+
+/**
+ * Update session token (after authentication)
+ */
+function updateSessionToken(token: string | null): void {
+  if (networkService) {
+    networkService.setSessionToken(token);
+    console.log(`[Offscreen] Session token ${token ? 'set' : 'cleared'}`);
+  }
+}
 
 // Notify background that offscreen document is ready
 console.log("[Offscreen] Sending ready signal");
