@@ -56,6 +56,10 @@ export enum MessageType {
   ENABLE_HAPP = "enable_happ",
   DISABLE_HAPP = "disable_happ",
 
+  // Gateway Configuration (for network requests via hc-http-gw)
+  GATEWAY_CONFIGURE = "gateway_configure",
+  GATEWAY_GET_STATUS = "gateway_get_status",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -101,7 +105,9 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.UNINSTALL_HAPP
     | MessageType.LIST_HAPPS
     | MessageType.ENABLE_HAPP
-    | MessageType.DISABLE_HAPP;
+    | MessageType.DISABLE_HAPP
+    | MessageType.GATEWAY_CONFIGURE
+    | MessageType.GATEWAY_GET_STATUS;
   payload?: unknown;
 }
 
@@ -257,7 +263,9 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.UNINSTALL_HAPP ||
     message.type === MessageType.LIST_HAPPS ||
     message.type === MessageType.ENABLE_HAPP ||
-    message.type === MessageType.DISABLE_HAPP
+    message.type === MessageType.DISABLE_HAPP ||
+    message.type === MessageType.GATEWAY_CONFIGURE ||
+    message.type === MessageType.GATEWAY_GET_STATUS
   );
 }
 

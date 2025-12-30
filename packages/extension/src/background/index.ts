@@ -39,6 +39,11 @@ console.log("Fishy background service worker loaded");
 
 const OFFSCREEN_DOCUMENT_PATH = "offscreen/offscreen.html";
 let creatingOffscreen: Promise<void> | null = null;
+let networkConfigured = false;
+
+// Gateway configuration - can be set via popup settings or environment
+// Default to null (no network) until configured
+let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
 
 /**
  * Check if the offscreen document exists
@@ -75,6 +80,65 @@ async function ensureOffscreenDocument(): Promise<void> {
   await creatingOffscreen;
   creatingOffscreen = null;
   console.log("[Background] Offscreen document created");
+
+  // Configure network if we have a gateway URL
+  if (gatewayConfig && !networkConfigured) {
+    await configureOffscreenNetwork(gatewayConfig);
+  }
+}
+
+/**
+ * Configure the network service in the offscreen document
+ */
+async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void> {
+  console.log(`[Background] Configuring offscreen network with gateway: ${config.gatewayUrl}`);
+
+  try {
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "CONFIGURE_NETWORK",
+      gatewayUrl: config.gatewayUrl,
+      sessionToken: config.sessionToken,
+    });
+    networkConfigured = true;
+    console.log("[Background] Offscreen network configured");
+  } catch (error) {
+    console.error("[Background] Failed to configure offscreen network:", error);
+  }
+}
+
+/**
+ * Set the gateway configuration
+ * Call this to enable network requests via hc-http-gw
+ */
+function setGatewayConfig(url: string, sessionToken?: string): void {
+  gatewayConfig = { gatewayUrl: url, sessionToken };
+  networkConfigured = false; // Will be configured on next offscreen use
+
+  console.log(`[Background] Gateway config set: ${url}`);
+}
+
+/**
+ * Update the session token for the gateway
+ */
+async function updateGatewaySessionToken(token: string | null): Promise<void> {
+  if (gatewayConfig) {
+    gatewayConfig.sessionToken = token || undefined;
+  }
+
+  // If offscreen is running, update it too
+  if (networkConfigured) {
+    try {
+      await chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "UPDATE_SESSION_TOKEN",
+        sessionToken: token,
+      });
+      console.log("[Background] Session token updated in offscreen");
+    } catch (error) {
+      console.error("[Background] Failed to update session token:", error);
+    }
+  }
 }
 
 /**
@@ -392,6 +456,13 @@ async function handleMessage(
 
       case MessageType.AUTH_REQUEST_INFO:
         return handleAuthRequestInfo(message);
+
+      // Gateway configuration
+      case MessageType.GATEWAY_CONFIGURE:
+        return handleGatewayConfigure(message);
+
+      case MessageType.GATEWAY_GET_STATUS:
+        return handleGatewayGetStatus(message);
 
       default:
         return createErrorResponse(
@@ -1382,6 +1453,54 @@ async function handleAuthRequestInfo(
       error instanceof Error ? error.message : String(error)
     );
   }
+}
+
+// ============================================================================
+// Gateway Configuration Handlers
+// ============================================================================
+
+/**
+ * Handle gateway configuration
+ * Payload: { gatewayUrl: string }
+ */
+async function handleGatewayConfigure(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { gatewayUrl } = message.payload as { gatewayUrl: string };
+
+    if (!gatewayUrl) {
+      return createErrorResponse(message.id, "gatewayUrl is required");
+    }
+
+    setGatewayConfig(gatewayUrl);
+
+    // If offscreen document is already running, configure it now
+    if (await hasOffscreenDocument()) {
+      await configureOffscreenNetwork({ gatewayUrl });
+    }
+
+    return createSuccessResponse(message.id, { configured: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle gateway status request
+ */
+async function handleGatewayGetStatus(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  return createSuccessResponse(message.id, {
+    configured: gatewayConfig !== null,
+    gatewayUrl: gatewayConfig?.gatewayUrl || null,
+    hasSession: !!gatewayConfig?.sessionToken,
+    networkConfigured,
+  });
 }
 
 /**
