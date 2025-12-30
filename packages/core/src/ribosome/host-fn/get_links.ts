@@ -1,12 +1,14 @@
 /**
  * get_links host function
  *
- * Retrieves links from a base address using storage.
+ * Retrieves links from a base address using cascade pattern.
+ * Order: Local storage → Network cache → Network
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 
 /**
  * Get links input structure (matches Holochain HDK GetLinksInput)
@@ -55,7 +57,7 @@ interface Link {
 /**
  * get_links host function implementation
  *
- * Retrieves links from storage (uses session cache for synchronous reads).
+ * Uses Cascade pattern: local storage → network cache → network
  */
 export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
@@ -77,21 +79,17 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
     ? (typeof input.link_type === 'number' ? input.link_type : input.link_type.App?.id)
     : undefined;
 
-  // Get links from storage (synchronous if in cache)
-  const linksResult = storage.getLinks(input.base_address, dnaHash, agentPubKey, linkTypeFilter);
+  // Create cascade for this lookup
+  // Uses global network service if configured (MockNetworkService for testing, SyncXHRNetworkService for production)
+  const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
 
-  // If it's a Promise, we can't handle it synchronously yet (Step 7+)
-  // For now, return empty array if not in cache
-  if (linksResult instanceof Promise) {
-    console.warn('[get_links] Links not in session cache - returning empty array (Step 7+ will support async reads)');
-    return serializeResult(instance, []);
-  }
-
-  let storedLinks = linksResult;
+  // Try cascade: local → cache → network
+  const networkLinks = cascade.fetchLinks(dnaHash, agentPubKey, input.base_address, linkTypeFilter);
 
   // Filter by tag prefix if specified
+  let filteredLinks = networkLinks;
   if (input.tag_prefix && input.tag_prefix.length > 0) {
-    storedLinks = storedLinks.filter(link => {
+    filteredLinks = networkLinks.filter(link => {
       if (link.tag.length < input.tag_prefix!.length) return false;
       for (let i = 0; i < input.tag_prefix!.length; i++) {
         if (link.tag[i] !== input.tag_prefix![i]) return false;
@@ -100,34 +98,32 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
     });
   }
 
-  // Filter out deleted links
-  storedLinks = storedLinks.filter(link => !link.deleted);
-
-  // Convert to Holochain Link format
-  // Convert 32-byte author to 39-byte prefixed version
-  const links: Link[] = storedLinks.map(link => {
-    const authorPrefixed = new Uint8Array(39);
+  // Convert NetworkLink to Holochain Link format
+  const links: Link[] = filteredLinks.map(link => {
+    // Convert 32-byte author to 39-byte prefixed version if needed
+    let authorPrefixed: Uint8Array;
     if (link.author.length === 32) {
+      authorPrefixed = new Uint8Array(39);
       authorPrefixed.set([0x84, 0x20, 0x24], 0); // AGENT_PREFIX
       authorPrefixed.set(link.author, 3);
       authorPrefixed.set([0, 0, 0, 0], 35);
     } else {
-      authorPrefixed.set(link.author);
+      authorPrefixed = link.author;
     }
 
     return {
-      target: link.targetAddress,
-      timestamp: Number(link.timestamp),
+      target: link.target,
+      timestamp: typeof link.timestamp === 'bigint' ? Number(link.timestamp) : link.timestamp,
       tag: link.tag,
-      create_link_hash: link.createLinkHash,
-      base: link.baseAddress,
+      create_link_hash: link.create_link_hash,
+      base: link.base,
       author: authorPrefixed,
-      zome_index: link.zomeIndex,
-      link_type: link.linkType,
+      zome_index: link.zome_index,
+      link_type: link.link_type,
     };
   });
 
-  console.log('[get_links] Found links in cache:', links.length);
+  console.log('[get_links] Found links via cascade:', links.length);
 
   // HDK expects Vec<Vec<Link>> (array of arrays)
   // The outer array is for batching multiple get_links queries

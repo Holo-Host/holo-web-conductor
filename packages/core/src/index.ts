@@ -19,6 +19,9 @@ export type { DnaManifestRuntime } from './types/bundle-types';
 // Re-export storage types and classes
 export * from './storage';
 
+// Re-export network module
+export * from './network';
+
 // Placeholder - conductor interface to be implemented
 export interface Conductor {
   // Install a hApp from a web context

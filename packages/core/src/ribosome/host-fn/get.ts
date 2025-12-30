@@ -1,14 +1,15 @@
 /**
  * get host function
  *
- * Retrieves a record from the source chain or DHT.
+ * Retrieves a record from the source chain or DHT using cascade pattern.
+ * Order: Local storage → Network cache → Network
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
-import { buildEntry } from "./entry-utils";
+import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import type { Record as HolochainRecord } from "../holochain-types";
 
 /**
@@ -31,7 +32,7 @@ interface GetInput {
 /**
  * get host function implementation
  *
- * Retrieves record from storage (uses session cache for synchronous reads)
+ * Uses Cascade pattern: local storage → network cache → network
  */
 export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
@@ -44,31 +45,30 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log(`[get] Getting record for hash:`, Array.from(any_dht_hash.slice(0, 8)));
 
-  // Try to get action from storage (synchronous if in cache)
-  const actionResult = storage.getAction(any_dht_hash);
+  const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // If it's a Promise, we can't handle it synchronously yet (Step 7+)
-  // For now, return null if not in cache
-  if (actionResult instanceof Promise || actionResult === null) {
-    console.warn('[get] Record not in session cache - returning null (Step 7+ will support async reads)');
-    // Return Vec<Option<Record>> with None = [null]
+  // Create cascade for this lookup
+  // Uses global network service if configured (MockNetworkService for testing, SyncXHRNetworkService for production)
+  const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
+
+  // Try cascade: local → cache → network
+  const networkRecord = cascade.fetchRecord(dnaHash, any_dht_hash);
+
+  if (!networkRecord) {
+    console.log('[get] Record not found in cascade');
     return serializeResult(instance, [null]);
   }
 
-  const action = actionResult;
-
   // Check if this action has been deleted
-  // Get all Delete actions from session cache and see if any target this action
-  const [dnaHash, agentPubKey] = callContext.cellId;
   const deleteActions = storage.queryActionsFromCache(dnaHash, agentPubKey, { actionType: 'Delete' });
 
   if (deleteActions && deleteActions.length > 0) {
+    const actionHash = networkRecord.signed_action.hashed.hash;
     const isDeleted = deleteActions.some((deleteAction: any) => {
       if (deleteAction.actionType === 'Delete') {
         const deletesHash = deleteAction.deletesActionHash;
-        // Compare hashes byte by byte
-        if (deletesHash && deletesHash.length === any_dht_hash.length) {
-          return deletesHash.every((byte: number, i: number) => byte === any_dht_hash[i]);
+        if (deletesHash && deletesHash.length === actionHash.length) {
+          return deletesHash.every((byte: number, i: number) => byte === actionHash[i]);
         }
       }
       return false;
@@ -80,35 +80,51 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
     }
   }
 
-  // Get entry if action has one
-  let entry = null;
-  if ('entryHash' in action && action.entryHash) {
-    const entryResult = storage.getEntry(action.entryHash);
-    if (!(entryResult instanceof Promise) && entryResult !== null) {
-      entry = entryResult;
+  // The cascade returns NetworkRecord format, which we need to convert to Holochain Record format
+  // NetworkRecord has: signed_action, entry (NetworkEntry)
+  // HolochainRecord needs: signed_action with toHolochainAction format, entry
+
+  // Check if this came from local storage (has our internal action format)
+  // or from network (has Holochain wire format)
+  const action = networkRecord.signed_action.hashed.content as any;
+
+  // If from local storage, convert to Holochain format
+  // Local actions have actionType as string, network actions have type as object
+  let actionContent: any;
+  const localActionType = action.actionType;
+  if (typeof localActionType === 'string') {
+    // Local format - convert
+    actionContent = toHolochainAction(action);
+  } else {
+    // Already in network/Holochain format
+    actionContent = action;
+  }
+
+  // Build entry from network record
+  // Cascade now produces entries in correct Holochain format: { entry_type: "App", entry: content }
+  let entry: any = "NA";
+  const recordEntry = networkRecord.entry as any;
+  if (recordEntry !== "NotApplicable" && recordEntry !== "NA" && recordEntry !== 'NotStored' && recordEntry !== 'Hidden') {
+    const presentEntry = recordEntry?.Present;
+    if (presentEntry) {
+      entry = { Present: presentEntry };
     }
   }
 
-  // Convert action to Holochain format with internally tagged enum
-  const actionContent = toHolochainAction(action);
-
-  // Build record structure matching Holochain's Record format
   const record: HolochainRecord = {
     signed_action: {
       hashed: {
         content: actionContent,
-        hash: action.actionHash,
+        hash: networkRecord.signed_action.hashed.hash,
       },
-      signature: action.signature,
+      signature: networkRecord.signed_action.signature,
     },
-    entry: entry ? {
-      Present: buildEntry(entry.entryType, entry.entryContent)
-    } : "NA",
+    entry,
   };
 
-  console.log('[get] Found record in cache', {
-    actionType: action.actionType,
-    hasEntry: !!entry,
+  console.log('[get] Found record via cascade', {
+    actionType: actionContent.type || localActionType,
+    hasEntry: entry !== "NA",
   });
 
   // Return Vec<Option<Record>> - HDK host function signature
