@@ -1,8 +1,8 @@
 # Fishy Development Session
 
-**Last Updated**: 2025-12-29
+**Last Updated**: 2025-12-30
 **Current Step**: Step 7.2 - Gateway Network Integration
-**Status**: Implementation complete, pending integration testing with Holochain sandbox
+**Status**: Phase 4 (Integration Testing) in progress - DHT endpoint tests passing
 
 ## Current Step Progress
 
@@ -19,7 +19,7 @@
   - /auth/challenge and /auth/verify endpoints
   - /dht/{dna}/record/{hash}, /dht/{dna}/details/{hash}, /dht/{dna}/links, /dht/{dna}/links/count endpoints
   - Session verification in route handlers
-  - 70 tests passing (16 new auth tests)
+  - **Fixed hash encoding**: Added `parse_any_dht_hash()` and `parse_any_linkable_hash()` to properly convert hash strings to types before msgpack encoding
 - ✅ Phase 3: Extension Integration (fishy)
   - SyncXHRNetworkService updated with auth flow
   - Session token management (setSessionToken/getSessionToken/clearSession)
@@ -27,10 +27,17 @@
   - getDetailsSync() and countLinksSync() methods added
   - requestChallenge() and verifyChallenge() for auth flow
   - 79 tests passing
+- ✅ Phase 4: Integration Testing (hc-http-gw)
+  - Added dht_util zome to fixture DNA (fixture/package/dna1/dna.yaml)
+  - Created tests/dht.rs with 4 integration tests:
+    - `dht_get_record_found` - creates entry and fetches it
+    - `dht_get_record_not_found` - verifies null for non-existent hash
+    - `dht_get_links_empty` - verifies empty array response
+    - `dht_count_links_zero` - verifies zero count
+  - **All 4 tests passing** (must run with `--test-threads=1`)
 
 **Remaining**:
-- [ ] Test dht_util zome with hc sandbox
-- [ ] Integration test with real gateway + sandbox
+- [ ] End-to-end test with fishy extension -> gateway -> Holochain
 
 **Details**: See [STEP7.2_PLAN.md](./STEP7.2_PLAN.md)
 
@@ -59,11 +66,19 @@ Located at `../hc-http-gw`, contains:
 - `fixture/dht_util/` - Utility zome for DHT operations
 - `src/auth/` - Authentication module (trait, ConfigListAuthenticator, SessionManager)
 - `src/routes/auth.rs` - /auth/challenge and /auth/verify endpoints
-- `src/routes/dht.rs` - /dht/* endpoints
+- `src/routes/dht.rs` - /dht/* endpoints with proper hash encoding
+- `tests/dht.rs` - Integration tests for DHT endpoints
 
-**Commits**:
+**Recent Commits on fishy branch**:
+- `c25d70f` fix: properly encode hashes for DHT zome calls
 - `7ad959e` feat: add DHT endpoints and agent authentication for browser extensions
 - `d3d02f9` chore: add gitignore for fixture build artifacts
+
+**Running DHT tests** (must be serial due to init() callback conflicts):
+```bash
+cd ../hc-http-gw
+cargo test --test dht -- --test-threads=1
+```
 
 ---
 
@@ -133,7 +148,7 @@ Any serialization changes MUST:
 4. **Run tests to verify state**:
    ```bash
    npm test  # fishy tests (79 passing)
-   cd ../hc-http-gw && cargo test  # gateway tests (70 passing)
+   cd ../hc-http-gw && cargo test --test dht -- --test-threads=1  # DHT tests (4 passing)
    ```
 
 ---
@@ -151,8 +166,9 @@ Any serialization changes MUST:
 - `packages/core/src/network/sync-xhr-service.ts` - Network service with auth
 - `packages/core/src/network/types.ts` - NetworkService interface
 - `../hc-http-gw/src/auth/` - Gateway auth module
-- `../hc-http-gw/src/routes/dht.rs` - Gateway DHT endpoints
+- `../hc-http-gw/src/routes/dht.rs` - Gateway DHT endpoints (with hash parsing helpers)
 - `../hc-http-gw/fixture/dht_util/` - Utility zome
+- `../hc-http-gw/tests/dht.rs` - Integration tests
 
 ### Extension Package
 - `packages/extension/src/lib/messaging.ts` - Core message protocol
@@ -196,4 +212,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is mostly complete - dht_util zome created, gateway auth and DHT endpoints implemented, SyncXHRNetworkService updated with auth flow. Remaining tasks are integration testing with a real Holochain sandbox.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is complete up through Phase 4 - the hc-http-gw fishy branch has DHT endpoints with proper hash encoding and 4 passing integration tests. The remaining task is end-to-end testing with the fishy extension connecting to a real gateway.
