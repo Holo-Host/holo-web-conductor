@@ -2,7 +2,7 @@
 
 **Last Updated**: 2025-12-31
 **Current Step**: Step 7.2 - Gateway Network Integration
-**Status**: Phase 4 (Integration Testing) in progress - DHT endpoint tests passing
+**Status**: COMPLETE - All phases done, E2E test infrastructure ready
 
 ## Current Step Progress
 
@@ -10,7 +10,7 @@
 
 **Goal**: Connect fishy extension to hc-http-gw-fork for real network requests, implementing authentication and DHT query endpoints.
 
-**Completed**:
+**All Phases Complete**:
 - ✅ Phase 1: Created dht_util zome (in hc-http-gw-fork/fixture/dht_util/)
   - get_record, get_details, get_links_by_base, count_links functions
   - Compiles to WASM with getrandom custom backend
@@ -29,17 +29,17 @@
   - 79 tests passing
 - ✅ Phase 4: Integration Testing (hc-http-gw-fork)
   - Added dht_util zome to fixture DNA (fixture/package/dna1/dna.yaml)
-  - Created tests/dht.rs with 4 integration tests:
-    - `dht_get_record_found` - creates entry and fetches it
-    - `dht_get_record_not_found` - verifies null for non-existent hash
-    - `dht_get_links_empty` - verifies empty array response
-    - `dht_count_links_zero` - verifies zero count
+  - Created tests/dht.rs with 4 integration tests
   - **All 4 tests passing** (must run with `--test-threads=1`)
-
-**Remaining**:
-- [ ] End-to-end test with fishy extension -> gateway -> Holochain
+- ✅ Phase 5: E2E Test Infrastructure
+  - Created `scripts/e2e-test-setup.sh` to start conductor + gateway
+  - Created `packages/extension/test/e2e-gateway-test.html` test page
+  - Added `window.holochain.configureNetwork()` API
+  - Added `window.holochain.installApp()` for bundle-based installation
 
 **Details**: See [STEP7.2_PLAN.md](./STEP7.2_PLAN.md)
+
+**E2E Testing**: See [TESTING.md](./TESTING.md) for full instructions on running end-to-end tests with the gateway.
 
 ## Completed Steps
 

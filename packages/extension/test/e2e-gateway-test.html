@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fishy E2E Gateway Test</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #1a1a2e;
+        color: #eee;
+      }
+      h1 {
+        color: #4cc9f0;
+        border-bottom: 2px solid #4cc9f0;
+        padding-bottom: 10px;
+      }
+      h2 {
+        color: #7209b7;
+        margin-top: 30px;
+      }
+      .test-section {
+        background: #16213e;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        border: 1px solid #0f3460;
+      }
+      button {
+        background: #4cc9f0;
+        color: #1a1a2e;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        margin: 5px;
+        transition: all 0.2s;
+      }
+      button:hover {
+        background: #7209b7;
+        color: white;
+      }
+      button:disabled {
+        background: #444;
+        color: #888;
+        cursor: not-allowed;
+      }
+      button.danger {
+        background: #e63946;
+        color: white;
+      }
+      button.success {
+        background: #06d6a0;
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      .status.success {
+        background: #06d6a020;
+        color: #06d6a0;
+        border: 1px solid #06d6a0;
+      }
+      .status.error {
+        background: #e6394620;
+        color: #e63946;
+        border: 1px solid #e63946;
+      }
+      .status.info {
+        background: #4cc9f020;
+        color: #4cc9f0;
+        border: 1px solid #4cc9f0;
+      }
+      .status.warning {
+        background: #ffbe0b20;
+        color: #ffbe0b;
+        border: 1px solid #ffbe0b;
+      }
+      pre {
+        background: #0f3460;
+        padding: 15px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      input, select {
+        background: #0f3460;
+        border: 1px solid #4cc9f0;
+        color: #eee;
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin: 5px;
+        font-size: 14px;
+      }
+      input:focus, select:focus {
+        outline: none;
+        border-color: #7209b7;
+      }
+      label {
+        color: #4cc9f0;
+        font-weight: bold;
+        display: block;
+        margin-bottom: 5px;
+      }
+      .form-group {
+        margin: 10px 0;
+      }
+      .test-result {
+        margin-top: 15px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: bold;
+        margin-left: 10px;
+      }
+      .badge.pass { background: #06d6a0; color: #1a1a2e; }
+      .badge.fail { background: #e63946; color: white; }
+      .badge.pending { background: #4cc9f0; color: #1a1a2e; }
+      .instructions {
+        background: #0f3460;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+      .instructions h3 {
+        color: #ffbe0b;
+        margin-top: 0;
+      }
+      .instructions ol {
+        color: #aaa;
+      }
+      .instructions code {
+        background: #1a1a2e;
+        padding: 2px 6px;
+        border-radius: 3px;
+        color: #4cc9f0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Fishy E2E Gateway Test</h1>
+
+    <div class="instructions">
+      <h3>Setup Instructions</h3>
+      <ol>
+        <li>Start the test environment: <code>./scripts/e2e-test-setup.sh start</code></li>
+        <li>Load the fishy extension in Chrome (Developer mode, load unpacked from <code>packages/extension/dist</code>)</li>
+        <li>Reload this page and follow the tests below</li>
+      </ol>
+    </div>
+
+    <div class="test-section">
+      <h2>1. Extension Detection</h2>
+      <div id="detection-status" class="status info">Checking for Fishy extension...</div>
+      <div id="detection-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>2. Gateway Configuration</h2>
+      <div class="form-group">
+        <label for="gateway-url">Gateway URL:</label>
+        <input type="text" id="gateway-url" value="http://localhost:8090" style="width: 300px;" />
+      </div>
+      <button id="check-gateway-btn">Check Gateway</button>
+      <button id="configure-gateway-btn" disabled>Configure Extension</button>
+      <div id="gateway-status" class="status info">Not checked</div>
+    </div>
+
+    <div class="test-section">
+      <h2>3. Extension Connection</h2>
+      <button id="connect-btn" disabled>Connect to Extension</button>
+      <button id="disconnect-btn" disabled>Disconnect</button>
+      <div id="connection-status" class="status info">Not connected</div>
+      <div id="connection-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>4. Install hApp</h2>
+      <div class="form-group">
+        <label for="happ-url">hApp Bundle URL (fixture1.happ):</label>
+        <input type="text" id="happ-url" value="" placeholder="Select file or enter URL" style="width: 400px;" />
+        <input type="file" id="happ-file" accept=".happ" />
+      </div>
+      <button id="install-happ-btn" disabled>Install hApp</button>
+      <div id="install-status" class="status info">Not installed</div>
+      <div id="install-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>5. DHT Operations Test</h2>
+      <p>These tests call zome functions that interact with the DHT through the gateway.</p>
+
+      <h3>5.1 Create Entry</h3>
+      <button id="create-entry-btn" disabled>Create Entry (create_1)</button>
+      <div id="create-status" class="status info">Not tested</div>
+      <div id="create-result" class="test-result"></div>
+
+      <h3>5.2 Get Record</h3>
+      <div class="form-group">
+        <label for="get-hash">Action/Entry Hash:</label>
+        <input type="text" id="get-hash" placeholder="Hash from create (auto-filled)" style="width: 400px;" />
+      </div>
+      <button id="get-record-btn" disabled>Get Record</button>
+      <div id="get-status" class="status info">Not tested</div>
+      <div id="get-result" class="test-result"></div>
+
+      <h3>5.3 Get All Entries</h3>
+      <button id="get-all-btn" disabled>Get All (get_all_1)</button>
+      <div id="getall-status" class="status info">Not tested</div>
+      <div id="getall-result" class="test-result"></div>
+
+      <h3>5.4 Get Links (shows action hashes)</h3>
+      <button id="get-links-btn" disabled>Get Links (dht_get_links)</button>
+      <div id="getlinks-status" class="status info">Not tested</div>
+      <div id="getlinks-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Test Log</h2>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const log = document.getElementById("log");
+      let connectionResult = null;
+      let installedCellId = null;
+      let lastCreatedHash = null;
+
+      function addLog(message, type = 'info') {
+        const timestamp = new Date().toISOString().split("T")[1].split(".")[0];
+        const prefix = type === 'error' ? 'ERR' : type === 'success' ? 'OK' : 'LOG';
+        log.textContent += `[${timestamp}] [${prefix}] ${message}\n`;
+        log.scrollTop = log.scrollHeight;
+        console.log(`[${type}]`, message);
+      }
+
+      function showStatus(elementId, className, message) {
+        const el = document.getElementById(elementId);
+        el.className = `status ${className}`;
+        el.textContent = message;
+      }
+
+      function showResult(elementId, data) {
+        const el = document.getElementById(elementId);
+        el.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      }
+
+      // Helper to convert object-with-numeric-keys back to array
+      // Chrome message passing converts Uint8Array to {0: x, 1: y, ...}
+      function toArray(data) {
+        if (Array.isArray(data)) return data;
+        if (data instanceof Uint8Array) return Array.from(data);
+        if (typeof data === 'object' && data !== null) {
+          const keys = Object.keys(data);
+          if (keys.length > 0 && keys.every((k, i) => k === String(i))) {
+            return Object.values(data);
+          }
+        }
+        return data;
+      }
+
+      // Decode a HoloHash from base64 string to bytes
+      // HoloHash format: 'u' + URL-safe base64 (- instead of +, _ instead of /)
+      function decodeHashFromB64(hashStr) {
+        if (!hashStr || typeof hashStr !== 'string') {
+          throw new Error('Invalid hash string');
+        }
+        // Remove 'u' prefix if present (HoloHash encoding)
+        let b64 = hashStr;
+        if (b64.startsWith('u')) {
+          b64 = b64.substring(1);
+        }
+        // Convert URL-safe base64 to standard base64
+        b64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding if needed
+        while (b64.length % 4 !== 0) {
+          b64 += '=';
+        }
+        // Decode
+        const binaryString = atob(b64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return Array.from(bytes);
+      }
+
+      // Encode bytes to HoloHash base64 format
+      // Returns 'u' + URL-safe base64
+      function encodeHashToB64(bytes) {
+        if (!bytes) return null;
+        const arr = toArray(bytes);
+        if (!arr || arr.length === 0) return null;
+        // Convert to standard base64
+        const binaryString = String.fromCharCode(...arr);
+        let b64 = btoa(binaryString);
+        // Convert to URL-safe base64
+        b64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        return 'u' + b64;
+      }
+
+      // Check if something looks like a hash (array of 39 bytes or object with numeric keys)
+      function looksLikeHash(data) {
+        const arr = toArray(data);
+        return Array.isArray(arr) && (arr.length === 39 || arr.length === 36 || arr.length === 32);
+      }
+
+      // Recursively format data for display, converting hashes to base64
+      function formatForDisplay(data, depth = 0) {
+        if (depth > 10) return data; // Prevent infinite recursion
+
+        if (data === null || data === undefined) return data;
+
+        // Check if it's a hash-like byte array
+        if (looksLikeHash(data)) {
+          const b64 = encodeHashToB64(data);
+          if (b64) return b64;
+        }
+
+        // Handle arrays
+        if (Array.isArray(data)) {
+          // If it's a small array of numbers, might be bytes but not a hash
+          if (data.length > 0 && data.length < 100 && typeof data[0] === 'number') {
+            // Check if all numbers are bytes
+            if (data.every(n => typeof n === 'number' && n >= 0 && n <= 255)) {
+              // Small byte array - show as hex
+              if (data.length <= 8) {
+                return `[${data.map(b => b.toString(16).padStart(2, '0')).join(' ')}]`;
+              }
+              // Larger byte array that's not a hash - truncate
+              return `[${data.length} bytes: ${data.slice(0,8).map(b => b.toString(16).padStart(2, '0')).join(' ')}...]`;
+            }
+          }
+          return data.map(item => formatForDisplay(item, depth + 1));
+        }
+
+        // Handle objects
+        if (typeof data === 'object') {
+          // Check if it's a serialized Uint8Array (object with numeric keys)
+          const keys = Object.keys(data);
+          if (keys.length > 0 && keys.every((k, i) => k === String(i))) {
+            // It's array-like, convert and check if hash
+            const arr = Object.values(data);
+            if (looksLikeHash(arr)) {
+              const b64 = encodeHashToB64(arr);
+              if (b64) return b64;
+            }
+          }
+
+          // Regular object - recurse into properties
+          const formatted = {};
+          for (const [key, value] of Object.entries(data)) {
+            formatted[key] = formatForDisplay(value, depth + 1);
+          }
+          return formatted;
+        }
+
+        return data;
+      }
+
+      // Check for extension
+      function checkExtension() {
+        if (window.holochain) {
+          addLog("Fishy extension detected", 'success');
+          showStatus("detection-status", "success", "Extension detected");
+          showResult("detection-result", {
+            version: window.holochain.version,
+            isFishy: window.holochain.isFishy,
+          });
+          document.getElementById("connect-btn").disabled = false;
+          document.getElementById("configure-gateway-btn").disabled = false;
+        } else {
+          addLog("Extension not found", 'error');
+          showStatus("detection-status", "error", "Extension not detected. Install and reload.");
+        }
+      }
+
+      // Listen for extension ready
+      window.addEventListener("fishy:ready", () => {
+        addLog("Received fishy:ready event");
+        checkExtension();
+      });
+      setTimeout(checkExtension, 500);
+
+      // Check gateway connectivity
+      document.getElementById("check-gateway-btn").addEventListener("click", async () => {
+        const url = document.getElementById("gateway-url").value;
+        addLog(`Checking gateway at ${url}...`);
+
+        try {
+          // Try to access gateway (CORS might block this, which is actually fine)
+          const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+          addLog("Gateway appears reachable", 'success');
+          showStatus("gateway-status", "success", "Gateway reachable (CORS may hide details)");
+        } catch (error) {
+          addLog(`Gateway check failed: ${error.message}`, 'error');
+          showStatus("gateway-status", "warning", "Could not verify gateway (may still work)");
+        }
+      });
+
+      // Configure gateway in extension
+      document.getElementById("configure-gateway-btn").addEventListener("click", async () => {
+        const url = document.getElementById("gateway-url").value;
+        addLog(`Configuring extension to use gateway: ${url}`);
+
+        try {
+          // The extension should handle this via a message
+          if (window.holochain && window.holochain.configureNetwork) {
+            await window.holochain.configureNetwork({ gatewayUrl: url });
+            addLog("Gateway configured", 'success');
+            showStatus("gateway-status", "success", `Using gateway: ${url}`);
+          } else {
+            // Fallback: store in session for later use
+            sessionStorage.setItem('fishy_gateway_url', url);
+            addLog("Gateway URL saved (extension config TBD)", 'success');
+            showStatus("gateway-status", "warning", "URL saved locally. Extension may use default.");
+          }
+        } catch (error) {
+          addLog(`Configure failed: ${error.message}`, 'error');
+          showStatus("gateway-status", "error", error.message);
+        }
+      });
+
+      // Connect to extension
+      document.getElementById("connect-btn").addEventListener("click", async () => {
+        addLog("Connecting to extension...");
+        const startTime = performance.now();
+        try {
+          const result = await window.holochain.connect();
+          const elapsed = (performance.now() - startTime).toFixed(1);
+          connectionResult = result;
+          addLog(`Connected to extension (${elapsed}ms)`, 'success');
+          showStatus("connection-status", "success", `Connected in ${elapsed}ms`);
+          showResult("connection-result", result);
+
+          document.getElementById("disconnect-btn").disabled = false;
+          document.getElementById("connect-btn").disabled = true;
+          document.getElementById("install-happ-btn").disabled = false;
+
+          // Check if hApp is already installed
+          await checkExistingHapp();
+        } catch (error) {
+          addLog(`Connection failed: ${error.message}`, 'error');
+          showStatus("connection-status", "error", error.message);
+        }
+      });
+
+      // Check for existing hApp installation
+      async function checkExistingHapp() {
+        try {
+          addLog("Checking for existing hApp...");
+          const appInfo = await window.holochain.appInfo();
+
+          if (appInfo && appInfo.cells && appInfo.cells.length > 0) {
+            installedCellId = appInfo.cells[0];
+            const dnaHash = toArray(installedCellId[0]);
+            const agentPubKey = toArray(installedCellId[1]);
+
+            addLog(`Found existing hApp: ${appInfo.appName || appInfo.contextId}`, 'success');
+            addLog(`  DNA: ${dnaHash.slice(0,4).join(',')}...`);
+            addLog(`  Agent: ${agentPubKey.slice(0,4).join(',')}...`);
+
+            showStatus("install-status", "success", `hApp already installed: ${appInfo.appName || 'unknown'}`);
+            showResult("install-result", {
+              contextId: appInfo.contextId,
+              appName: appInfo.appName,
+              agentPubKey: agentPubKey.slice(0, 8),
+              cellCount: appInfo.cells.length,
+            });
+
+            // Enable DHT test buttons
+            document.getElementById("create-entry-btn").disabled = false;
+            document.getElementById("get-record-btn").disabled = false;
+            document.getElementById("get-all-btn").disabled = false;
+            document.getElementById("get-links-btn").disabled = false;
+          } else {
+            addLog("No hApp installed yet. Use the Install section to install one.");
+          }
+        } catch (error) {
+          addLog(`No existing hApp found: ${error.message}`);
+          // This is not an error - just means no hApp installed yet
+        }
+      }
+
+      // Disconnect
+      document.getElementById("disconnect-btn").addEventListener("click", async () => {
+        addLog("Disconnecting...");
+        try {
+          await window.holochain.disconnect();
+          addLog("Disconnected", 'success');
+          showStatus("connection-status", "info", "Disconnected");
+          document.getElementById("disconnect-btn").disabled = true;
+          document.getElementById("connect-btn").disabled = false;
+          document.getElementById("install-happ-btn").disabled = true;
+        } catch (error) {
+          addLog(`Disconnect failed: ${error.message}`, 'error');
+        }
+      });
+
+      // Handle hApp file selection
+      document.getElementById("happ-file").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          document.getElementById("happ-url").value = file.name;
+          addLog(`Selected file: ${file.name} (${file.size} bytes)`);
+        }
+      });
+
+      // Install hApp
+      document.getElementById("install-happ-btn").addEventListener("click", async () => {
+        const fileInput = document.getElementById("happ-file");
+        const file = fileInput.files[0];
+
+        if (!file) {
+          addLog("Please select a .happ file first", 'error');
+          showStatus("install-status", "error", "No file selected");
+          return;
+        }
+
+        addLog(`Installing hApp: ${file.name}...`);
+        showStatus("install-status", "info", "Installing...");
+        const startTime = performance.now();
+
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const happBytes = new Uint8Array(arrayBuffer);
+          const readTime = (performance.now() - startTime).toFixed(1);
+
+          addLog(`Read ${happBytes.length} bytes from file (${readTime}ms)`);
+
+          // Install via extension
+          const installStart = performance.now();
+          const result = await window.holochain.installApp({
+            bundle: Array.from(happBytes),
+            installedAppId: 'fixture1',
+          });
+          const installTime = (performance.now() - installStart).toFixed(1);
+          const totalTime = (performance.now() - startTime).toFixed(1);
+
+          addLog(`hApp installed (install: ${installTime}ms, total: ${totalTime}ms)`, 'success');
+          showStatus("install-status", "success", `hApp installed in ${installTime}ms`);
+          showResult("install-result", result);
+
+          // Get cell ID from app info
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (appInfo && appInfo.cells && appInfo.cells.length > 0) {
+            installedCellId = appInfo.cells[0];
+            addLog(`Got cell ID for installed app`, 'success');
+          }
+
+          // Enable DHT test buttons
+          document.getElementById("create-entry-btn").disabled = false;
+          document.getElementById("get-record-btn").disabled = false;
+          document.getElementById("get-all-btn").disabled = false;
+          document.getElementById("get-links-btn").disabled = false;
+
+        } catch (error) {
+          addLog(`Install failed: ${error.message}`, 'error');
+          showStatus("install-status", "error", error.message);
+          showResult("install-result", { error: error.message });
+        }
+      });
+
+      // Create entry
+      document.getElementById("create-entry-btn").addEventListener("click", async () => {
+        addLog("Creating entry via create_1...");
+        showStatus("create-status", "info", "Creating...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed. Install hApp first.");
+          }
+
+          const cellId = appInfo.cells[0];
+          // Convert to arrays in case Chrome message passing converted them to objects
+          const dnaHash = toArray(cellId[0]);
+          const agentPubKey = toArray(cellId[1]);
+          addLog(`Using cell: DNA ${dnaHash.slice(0,4).join(',')}..., Agent ${agentPubKey.slice(0,4).join(',')}...`);
+
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "coordinator1",
+            fn_name: "create_1",
+            payload: null,
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+          const totalTime = (performance.now() - startTime).toFixed(1);
+
+          addLog(`Entry created (zome call: ${callTime}ms, total: ${totalTime}ms)`, 'success');
+          showStatus("create-status", "success", `Entry created in ${callTime}ms`);
+          showResult("create-result", formatForDisplay(result));
+
+          // Extract hash for get_record test
+          if (result && result.created) {
+            // result.created might be a base64 string or bytes
+            lastCreatedHash = typeof result.created === 'string'
+              ? result.created
+              : encodeHashToB64(result.created);
+            document.getElementById("get-hash").value = lastCreatedHash;
+            addLog(`Action hash: ${lastCreatedHash}`);
+          }
+
+        } catch (error) {
+          addLog(`Create failed: ${error.message}`, 'error');
+          showStatus("create-status", "error", error.message);
+          showResult("create-result", { error: error.message });
+        }
+      });
+
+      // Get record
+      document.getElementById("get-record-btn").addEventListener("click", async () => {
+        const hash = document.getElementById("get-hash").value;
+        if (!hash) {
+          addLog("Enter a hash first", 'error');
+          return;
+        }
+
+        addLog(`Getting record for hash: ${hash.substring(0, 20)}...`);
+        showStatus("get-status", "info", "Fetching...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed");
+          }
+
+          const cellId = appInfo.cells[0];
+
+          // Decode the hash from base64 string to bytes
+          const hashBytes = decodeHashFromB64(hash);
+          addLog(`Decoded hash: ${hashBytes.length} bytes, first 4: [${hashBytes.slice(0,4).join(',')}]`);
+
+          // Call dht_util/dht_get_record with decoded hash bytes
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "dht_util",
+            fn_name: "dht_get_record",
+            payload: { hash: hashBytes },
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+          const totalTime = (performance.now() - startTime).toFixed(1);
+
+          addLog(`Record fetched (zome call: ${callTime}ms, total: ${totalTime}ms)`, 'success');
+          showStatus("get-status", "success", `Record found in ${callTime}ms`);
+          showResult("get-result", formatForDisplay(result));
+
+        } catch (error) {
+          addLog(`Get failed: ${error.message}`, 'error');
+          showStatus("get-status", "error", error.message);
+          showResult("get-result", { error: error.message });
+        }
+      });
+
+      // Get all entries
+      document.getElementById("get-all-btn").addEventListener("click", async () => {
+        addLog("Getting all entries via get_all_1...");
+        showStatus("getall-status", "info", "Fetching...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed");
+          }
+
+          const cellId = appInfo.cells[0];
+
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "coordinator1",
+            fn_name: "get_all_1",
+            payload: null,
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+          const totalTime = (performance.now() - startTime).toFixed(1);
+
+          const count = Array.isArray(result) ? result.length : '?';
+          addLog(`Got ${count} entries (zome call: ${callTime}ms, total: ${totalTime}ms)`, 'success');
+          showStatus("getall-status", "success", `Found ${count} entries in ${callTime}ms`);
+
+          // Format results with hashes for easy copy-paste
+          let formattedResult = result;
+          if (Array.isArray(result)) {
+            formattedResult = result.map((item, idx) => {
+              // Try to extract action hash from the record structure
+              let actionHash = null;
+              if (item && item.signed_action && item.signed_action.hashed && item.signed_action.hashed.hash) {
+                actionHash = encodeHashToB64(item.signed_action.hashed.hash);
+              }
+              // Format the item for display
+              const formatted = formatForDisplay(item);
+              // If we found a hash, add it at the top level for easy access
+              if (actionHash) {
+                return {
+                  _actionHash: actionHash,
+                  _copyForGetRecord: actionHash,
+                  ...formatted
+                };
+              }
+              return formatted;
+            });
+          }
+          showResult("getall-result", formattedResult);
+
+        } catch (error) {
+          addLog(`Get all failed: ${error.message}`, 'error');
+          showStatus("getall-status", "error", error.message);
+          showResult("getall-result", { error: error.message });
+        }
+      });
+
+      // Get links (shows action hashes that can be used with Get Record)
+      document.getElementById("get-links-btn").addEventListener("click", async () => {
+        addLog("Getting links via dht_get_links...");
+        showStatus("getlinks-status", "info", "Fetching...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed");
+          }
+
+          const cellId = appInfo.cells[0];
+
+          // The coordinator uses EntryHash::from_raw_36(vec![1; 36]) as base
+          // EntryHash prefix is 0x84, 0x21, 0x24 (132, 33, 36)
+          const baseHash = [132, 33, 36, ...Array(36).fill(1)];
+          addLog(`Using base hash: ${baseHash.length} bytes`);
+
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "dht_util",
+            fn_name: "dht_get_links",
+            payload: { base: baseHash },
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+          const totalTime = (performance.now() - startTime).toFixed(1);
+
+          const count = Array.isArray(result) ? result.length : '?';
+          addLog(`Got ${count} links (zome call: ${callTime}ms, total: ${totalTime}ms)`, 'success');
+          showStatus("getlinks-status", "success", `Found ${count} links in ${callTime}ms`);
+
+          // Format links with target hashes for easy copy-paste
+          let formattedResult = result;
+          if (Array.isArray(result)) {
+            formattedResult = result.map((link, idx) => {
+              const targetHash = encodeHashToB64(link.target);
+              return {
+                _targetHash_copyForGetRecord: targetHash,
+                target: targetHash,
+                author: encodeHashToB64(link.author),
+                timestamp: link.timestamp,
+                tag: formatForDisplay(link.tag),
+                link_type: link.link_type,
+                zome_index: link.zome_index,
+              };
+            });
+          }
+          showResult("getlinks-result", formattedResult);
+
+        } catch (error) {
+          addLog(`Get links failed: ${error.message}`, 'error');
+          showStatus("getlinks-status", "error", error.message);
+          showResult("getlinks-result", { error: error.message });
+        }
+      });
+
+      addLog("E2E Gateway Test Page loaded");
+    </script>
+  </body>
+</html>
