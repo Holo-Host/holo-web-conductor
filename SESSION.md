@@ -1,12 +1,43 @@
 # Fishy Development Session
 
 **Last Updated**: 2025-12-31
-**Current Step**: Step 7.2 - Gateway Network Integration
-**Status**: Phase 4 (Integration Testing) in progress - DHT endpoint tests passing
+**Current Step**: Step 9.5 - Gateway Real-Time Connection for Remote Signals
+**Status**: Phase 3 (Signal Forwarding) complete, Phase 4 (Browser Integration) pending
 
 ## Current Step Progress
 
-### Step 7.2: Gateway Network Integration
+### Step 9.5: Gateway Real-Time Connection for Remote Signals
+
+**Goal**: Enable hc-http-gw to proxy signals from Holochain to browser extensions via WebSocket.
+
+**Repository**: `../hc-http-gw-fork` on branch `fishy-step-9-5`
+
+**Completed**:
+- ✅ Phase 1: WebSocket Infrastructure (Gateway)
+  - Commit `a257706`: WebSocket route handler, message protocol, connection state machine
+  - ClientMessage/ServerMessage types (auth, register, unregister, ping/pong, signal)
+  - 20 unit tests for WebSocket handling
+- ✅ Phase 2: Agent Proxy Registration (Gateway)
+  - Commit `b6f193c`: AgentProxyManager for tracking browser agents
+  - Register/unregister agents by (dna_hash, agent_pubkey)
+  - Signal routing to WebSocket connections
+  - 7 unit tests + 6 integration tests
+- ✅ Phase 3: Signal Forwarding (Gateway)
+  - Commit `90de3f4`: Signal forwarding from Holochain to browser
+  - AppConnPool.with_signal_forwarding() constructor
+  - Subscribe to app signals, forward to registered browser agents
+  - HcHttpGatewayService.with_auth() constructor
+  - Binary wired up with signal forwarding enabled
+  - 3 unit tests for signal forwarding
+
+**Remaining**:
+- [ ] Phase 4: Browser Integration (Extension) - WebSocketNetworkService class
+
+**Plan File**: See `../hc-http-gw-fork/.claude/plans/cryptic-stirring-dolphin.md`
+
+---
+
+### Step 7.2: Gateway Network Integration (COMPLETED)
 
 **Goal**: Connect fishy extension to hc-http-gw-fork for real network requests, implementing authentication and DHT query endpoints.
 
@@ -226,4 +257,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is complete up through Phase 4 - the hc-http-gw-fork fishy branch has DHT endpoints with proper hash encoding and 4 passing integration tests. The remaining task is end-to-end testing with the fishy extension connecting to a real gateway.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Gateway Real-Time Connection for Remote Signals) is in progress - Phases 1-3 are complete in hc-http-gw-fork on branch `fishy-step-9-5`. The gateway has WebSocket infrastructure, agent proxy registration, and signal forwarding. Phase 4 (Browser Integration) is pending - implementing WebSocketNetworkService in the fishy extension.
