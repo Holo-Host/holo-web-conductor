@@ -145,11 +145,11 @@ export class Cascade {
 
     // 3. Try network (if enabled)
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      console.log(`[Cascade] Fetching from network`);
+      console.log(`🌐 [Cascade] Fetching from NETWORK (local lookup failed)`);
       try {
         const networkRecord = this.network.getRecordSync(dnaHash, hash);
         if (networkRecord !== null) {
-          console.log(`[Cascade] Found in network`);
+          console.log(`🌐 [Cascade] Found in NETWORK - this is why it's slow!`);
           if (opts.cacheNetworkResults) {
             this.cache.cacheRecordSync(hash, networkRecord);
           }
@@ -171,9 +171,11 @@ export class Cascade {
   private buildRecordFromLocal(hash: AnyDhtHash): NetworkRecord | null {
     // Try to get action synchronously from session cache
     const actionResult = this.storage.getAction(hash);
+
     if (actionResult === null || actionResult instanceof Promise) {
       return null;
     }
+
 
     const action = actionResult as any;
 

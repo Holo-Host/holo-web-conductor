@@ -683,6 +683,7 @@ export class SourceChainStorage {
   getAction(actionHash: Uint8Array): Action | null | Promise<Action | null> {
     // Check session cache first (synchronous)
     const cacheKey = this.hashToKey(actionHash);
+
     if (this.sessionCache.actions.has(cacheKey)) {
       return this.sessionCache.actions.get(cacheKey)!;
     }
@@ -1187,6 +1188,7 @@ export class SourceChainStorage {
     for (const action of actions) {
       const key = this.hashToKey(action.actionHash);
       this.sessionCache.actions.set(key, action);
+      console.log(`[SourceChainStorage] Cached action: ${key.substring(0, 50)}... type=${action.actionType}`);
     }
 
     // Load all entries for this cell

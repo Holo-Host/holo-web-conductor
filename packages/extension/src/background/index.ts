@@ -667,7 +667,6 @@ async function handleCallZome(
     // The offscreen document fetches WASM/manifest from IndexedDB
     const { result: transportSafeResult, signals } = await executeZomeCallViaOffscreen(context.id, zomeCallRequest);
     console.log(`[CallZome] Result from offscreen:`, transportSafeResult);
-    console.log(`[CallZome] Transport-safe result:`, transportSafeResult);
 
     // Deliver signals to the content script which will forward to the page
     if (signals && signals.length > 0) {
