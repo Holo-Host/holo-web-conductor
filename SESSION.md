@@ -1,6 +1,6 @@
 # Fishy Development Session
 
-**Last Updated**: 2025-12-30
+**Last Updated**: 2025-12-31
 **Current Step**: Step 7.2 - Gateway Network Integration
 **Status**: Phase 4 (Integration Testing) in progress - DHT endpoint tests passing
 
@@ -8,13 +8,13 @@
 
 ### Step 7.2: Gateway Network Integration
 
-**Goal**: Connect fishy extension to hc-http-gw for real network requests, implementing authentication and DHT query endpoints.
+**Goal**: Connect fishy extension to hc-http-gw-fork for real network requests, implementing authentication and DHT query endpoints.
 
 **Completed**:
-- ✅ Phase 1: Created dht_util zome (in hc-http-gw/fixture/dht_util/)
+- ✅ Phase 1: Created dht_util zome (in hc-http-gw-fork/fixture/dht_util/)
   - get_record, get_details, get_links_by_base, count_links functions
   - Compiles to WASM with getrandom custom backend
-- ✅ Phase 2: Gateway Extensions (hc-http-gw fishy branch)
+- ✅ Phase 2: Gateway Extensions (hc-http-gw-fork fishy branch)
   - AgentAuthenticator trait and ConfigListAuthenticator implementation
   - /auth/challenge and /auth/verify endpoints
   - /dht/{dna}/record/{hash}, /dht/{dna}/details/{hash}, /dht/{dna}/links, /dht/{dna}/links/count endpoints
@@ -27,7 +27,7 @@
   - getDetailsSync() and countLinksSync() methods added
   - requestChallenge() and verifyChallenge() for auth flow
   - 79 tests passing
-- ✅ Phase 4: Integration Testing (hc-http-gw)
+- ✅ Phase 4: Integration Testing (hc-http-gw-fork)
   - Added dht_util zome to fixture DNA (fixture/package/dna1/dna.yaml)
   - Created tests/dht.rs with 4 integration tests:
     - `dht_get_record_found` - creates entry and fetches it
@@ -61,8 +61,8 @@ Completion notes for each step are in separate files:
 
 ## Related Repositories
 
-### hc-http-gw (fishy branch)
-Located at `../hc-http-gw`, contains:
+### hc-http-gw-fork (fishy branch)
+Located at `../hc-http-gw-fork`, contains:
 - `fixture/dht_util/` - Utility zome for DHT operations
 - `src/auth/` - Authentication module (trait, ConfigListAuthenticator, SessionManager)
 - `src/routes/auth.rs` - /auth/challenge and /auth/verify endpoints
@@ -70,14 +70,21 @@ Located at `../hc-http-gw`, contains:
 - `tests/dht.rs` - Integration tests for DHT endpoints
 
 **Recent Commits on fishy branch**:
-- `c25d70f` fix: properly encode hashes for DHT zome calls
-- `7ad959e` feat: add DHT endpoints and agent authentication for browser extensions
-- `d3d02f9` chore: add gitignore for fixture build artifacts
+- `64a7fb5` fix: properly encode hashes for DHT zome calls
+- `9cdd81f` chore: add gitignore for fixture build artifacts
+- `911a8f3` feat: add DHT endpoints and agent authentication for browser extensions
 
 **Running DHT tests** (must be serial due to init() callback conflicts):
 ```bash
-cd ../hc-http-gw
+cd ../hc-http-gw-fork
 cargo test --test dht -- --test-threads=1
+```
+
+**Building fixture WASMs** (required before running tests):
+```bash
+cd ../hc-http-gw-fork/fixture
+RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown
+./package.sh
 ```
 
 ---
@@ -129,7 +136,7 @@ Any serialization changes MUST:
    ```bash
    cd /path/to/holochain/fishy
    git pull
-   cd ../hc-http-gw
+   cd ../hc-http-gw-fork
    git checkout fishy
    git pull
    ```
@@ -145,10 +152,17 @@ Any serialization changes MUST:
    cat STEP7.2_PLAN.md
    ```
 
-4. **Run tests to verify state**:
+4. **Build fixture WASMs** (if not already built):
+   ```bash
+   cd ../hc-http-gw-fork/fixture
+   RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown
+   ./package.sh
+   ```
+
+5. **Run tests to verify state**:
    ```bash
    npm test  # fishy tests (79 passing)
-   cd ../hc-http-gw && cargo test --test dht -- --test-threads=1  # DHT tests (4 passing)
+   cd ../hc-http-gw-fork && cargo test --test dht -- --test-threads=1  # DHT tests (4 passing)
    ```
 
 ---
@@ -165,10 +179,10 @@ Any serialization changes MUST:
 - `STEP7.2_PLAN.md` - Gateway integration plan and checklist
 - `packages/core/src/network/sync-xhr-service.ts` - Network service with auth
 - `packages/core/src/network/types.ts` - NetworkService interface
-- `../hc-http-gw/src/auth/` - Gateway auth module
-- `../hc-http-gw/src/routes/dht.rs` - Gateway DHT endpoints (with hash parsing helpers)
-- `../hc-http-gw/fixture/dht_util/` - Utility zome
-- `../hc-http-gw/tests/dht.rs` - Integration tests
+- `../hc-http-gw-fork/src/auth/` - Gateway auth module
+- `../hc-http-gw-fork/src/routes/dht.rs` - Gateway DHT endpoints (with hash parsing helpers)
+- `../hc-http-gw-fork/fixture/dht_util/` - Utility zome
+- `../hc-http-gw-fork/tests/dht.rs` - Integration tests
 
 ### Extension Package
 - `packages/extension/src/lib/messaging.ts` - Core message protocol
@@ -212,4 +226,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is complete up through Phase 4 - the hc-http-gw fishy branch has DHT endpoints with proper hash encoding and 4 passing integration tests. The remaining task is end-to-end testing with the fishy extension connecting to a real gateway.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is complete up through Phase 4 - the hc-http-gw-fork fishy branch has DHT endpoints with proper hash encoding and 4 passing integration tests. The remaining task is end-to-end testing with the fishy extension connecting to a real gateway.
