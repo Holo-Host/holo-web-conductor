@@ -857,6 +857,26 @@ export class SourceChainStorage {
     });
   }
 
+  /**
+   * Find an action that created/updated an entry with the given entry hash.
+   * Returns the first matching action (Create or Update) from session cache.
+   *
+   * This is used for fetching records by entry hash, similar to Holochain's
+   * dht_get_entry which finds the oldest live record for an entry.
+   */
+  getActionByEntryHash(entryHash: Uint8Array): Action | null {
+    // Search session cache for actions that reference this entry hash
+    for (const action of this.sessionCache.actions.values()) {
+      if ('entryHash' in action) {
+        const actionEntryHash = (action as CreateAction | UpdateAction).entryHash;
+        if (this.hashesEqual(actionEntryHash, entryHash)) {
+          return action;
+        }
+      }
+    }
+    return null;
+  }
+
   // ============================================================================
   // Record Operations (Action + Entry)
   // ============================================================================

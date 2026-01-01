@@ -331,3 +331,48 @@ export type Details =
  * Each element is: [CreateLink action, [DeleteLink actions]]
  */
 export type LinkDetails = Array<[SignedActionHashed, SignedActionHashed[]]>;
+
+// ============================================================================
+// Hash Type Detection Utilities
+// ============================================================================
+
+/**
+ * Hash prefixes from Holochain
+ * Source: holochain/crates/holo_hash/src/hash_type/primitive.rs
+ */
+const ENTRY_PREFIX = [0x84, 0x21, 0x24]; // uhCEk [132, 33, 36]
+const ACTION_PREFIX = [0x84, 0x29, 0x24]; // uhCkk [132, 41, 36]
+const AGENT_PREFIX = [0x84, 0x20, 0x24]; // uhCAk [132, 32, 36] - treated as entry
+
+/**
+ * Check if a hash is an entry hash (or agent hash, which is treated as entry)
+ */
+export function isEntryHash(hash: Uint8Array): boolean {
+  if (hash.length < 3) return false;
+  return (
+    (hash[0] === ENTRY_PREFIX[0] && hash[1] === ENTRY_PREFIX[1] && hash[2] === ENTRY_PREFIX[2]) ||
+    (hash[0] === AGENT_PREFIX[0] && hash[1] === AGENT_PREFIX[1] && hash[2] === AGENT_PREFIX[2])
+  );
+}
+
+/**
+ * Check if a hash is an action hash
+ */
+export function isActionHash(hash: Uint8Array): boolean {
+  if (hash.length < 3) return false;
+  return hash[0] === ACTION_PREFIX[0] && hash[1] === ACTION_PREFIX[1] && hash[2] === ACTION_PREFIX[2];
+}
+
+/**
+ * Hash type enum for dispatch
+ */
+export type HashType = 'Entry' | 'Action' | 'Unknown';
+
+/**
+ * Determine the type of a hash from its prefix
+ */
+export function getHashType(hash: Uint8Array): HashType {
+  if (isActionHash(hash)) return 'Action';
+  if (isEntryHash(hash)) return 'Entry';
+  return 'Unknown';
+}
