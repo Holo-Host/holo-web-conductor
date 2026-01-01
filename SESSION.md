@@ -1,10 +1,20 @@
 # Fishy Development Session
 
-**Last Updated**: 2025-12-31
-**Current Step**: Step 7.2 - Gateway Network Integration
-**Status**: COMPLETE - All phases done, E2E test infrastructure ready
+**Last Updated**: 2026-01-01
+**Current Step**: Step 7 - Network Host Functions
+**Status**: COMPLETE - E2E network fetch working with cascade caching
 
 ## Current Step Progress
+
+### Step 7: Network Host Functions - COMPLETE
+
+**Goal**: Implement host functions that make real network requests via hc-http-gw.
+
+**Final Fixes (2026-01-01)**:
+- ✅ Fixed parseEntry double-wrapping in sync-xhr-service.ts
+- ✅ Added normalizeByteArrays to convert gateway JSON arrays to Uint8Array
+- ✅ Added DNA hash override for testing (gateway uses different hash than extension)
+- ✅ E2E test verified: first fetch→network, second fetch→cache
 
 ### Step 7.2: Gateway Network Integration
 
@@ -226,4 +236,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7.2 (Gateway Network Integration) is complete up through Phase 4 - the hc-http-gw-fork fishy branch has DHT endpoints with proper hash encoding and 4 passing integration tests. The remaining task is end-to-end testing with the fishy extension connecting to a real gateway.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 7 (Network Host Functions) is COMPLETE - E2E network fetch is working with cascade caching. The next step is Step 8 (hc-http-gw Extensions) for implementing publish operations, or Step 9 for additional Holochain features.

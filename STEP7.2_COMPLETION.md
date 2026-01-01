@@ -1,7 +1,7 @@
 # Step 7.2 Completion: Gateway Network Integration
 
-**Completed**: 2025-12-31
-**Status**: COMPLETE
+**Completed**: 2026-01-01
+**Status**: COMPLETE (E2E verified)
 
 ## Summary
 
@@ -59,6 +59,28 @@ Created `tests/dht.rs` with 4 passing tests:
 ### Phase 5: E2E Test Infrastructure
 Created tools for manual end-to-end testing:
 
+### Phase 6: E2E Network Fetch Fixes (2026-01-01)
+Final fixes to make E2E network fetch actually work:
+
+**parseEntry Double-Wrapping Fix** (`sync-xhr-service.ts`):
+- Gateway already returns `{ Present: Entry }` format
+- `parseEntry` was wrapping again causing double nesting
+- Fixed to check for existing `Present` before wrapping
+
+**normalizeByteArrays Helper** (`sync-xhr-service.ts`):
+- Gateway transcodes msgpack bytes to JSON arrays
+- Added recursive converter to restore `Uint8Array` types
+- Essential for proper msgpack encoding when sending to WASM
+
+**DNA Hash Override** (all layers):
+- Extension computes DNA hash as SHA-256 of WASM
+- Gateway's conductor uses full DNA definition hash
+- Added `dnaHashOverride` config to use gateway's hash for testing
+
+**Verified Cascade Pattern**:
+- First fetch: Local → Cache (miss) → Network ✅
+- Second fetch: Local → Cache (hit) ✅
+
 **`scripts/e2e-test-setup.sh`**:
 - Starts Holochain conductor with fixture hApp
 - Starts gateway with proper configuration
@@ -92,10 +114,16 @@ Documented in SESSION.md. Requires:
 ## Files Changed
 
 ### fishy
-- `packages/extension/src/inject/index.ts` - Added configureNetwork, installApp APIs
-- `packages/extension/test/e2e-gateway-test.html` - New E2E test page
-- `scripts/e2e-test-setup.sh` - New setup script
-- `SESSION.md` - Updated with completion status and E2E instructions
+- `packages/core/src/network/sync-xhr-service.ts` - Fixed parseEntry, added normalizeByteArrays, DNA hash override
+- `packages/core/src/network/cascade.ts` - Added logging for network availability
+- `packages/core/src/ribosome/host-fn/get.ts` - Added normalizeEntryBytes helper
+- `packages/extension/src/background/index.ts` - DNA hash override passthrough
+- `packages/extension/src/inject/index.ts` - Added configureNetwork, installApp APIs, dnaHashOverride
+- `packages/extension/src/offscreen/index.ts` - DNA hash override handling
+- `packages/extension/src/lib/happ-context-manager.ts` - DNA hash computation
+- `packages/extension/test/e2e-gateway-test.html` - E2E test page with network fetch
+- `scripts/e2e-test-setup.sh` - Setup script for conductor + gateway
+- `SESSION.md` - Updated with completion status
 
 ### hc-http-gw-fork (fishy branch)
 - `src/auth/mod.rs` - Auth module exports
@@ -136,7 +164,7 @@ The gateway receives hash strings from URLs (e.g., "uhCAk..."). These cannot be 
 1. **Session tokens are in-memory** - Lost on gateway restart
 2. **No persistent session storage in extension** - Must re-authenticate after page reload
 3. **Auth not fully wired** - Extension doesn't automatically authenticate with gateway yet
-4. **E2E tests are manual** - No automated browser testing yet
+4. **DNA hash mismatch** - Extension and gateway compute different DNA hashes; requires manual override for testing
 
 ## Next Steps
 
