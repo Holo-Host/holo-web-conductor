@@ -17,6 +17,7 @@ import type {
 } from './types';
 import type { NetworkCache } from './cache';
 import type { SourceChainStorage } from '../storage';
+import type { StoredRecord, Link as StoredLink } from '../storage/types';
 import {
   isEntryHash,
   isActionHash,
@@ -75,9 +76,8 @@ export class Cascade {
 
   /**
    * Convert a stored record to network record format
-   * Note: Uses 'any' for flexible type handling between local and network formats
    */
-  private storedToNetworkRecord(stored: any): NetworkRecord {
+  private storedToNetworkRecord(stored: StoredRecord): NetworkRecord {
     // StoredRecord has: action (our internal Action type), entry (StoredEntry)
     // Build a minimal SignedActionHashed structure
     const signedAction: SignedActionHashed = {
@@ -422,16 +422,16 @@ export class Cascade {
   /**
    * Convert a stored link to network link format
    */
-  private storedLinkToNetworkLink(stored: any): NetworkLink {
+  private storedLinkToNetworkLink(stored: StoredLink): NetworkLink {
     return {
-      create_link_hash: stored.createLinkHash || stored.create_link_hash,
-      base: stored.base || stored.baseAddress,
-      target: stored.target || stored.targetAddress,
-      zome_index: stored.zome_index || stored.zomeIndex || 0,
-      link_type: stored.link_type || stored.linkType || 0,
-      tag: stored.tag || new Uint8Array(0),
-      timestamp: stored.timestamp || Date.now() * 1000,
-      author: stored.author || new Uint8Array(39),
+      create_link_hash: stored.createLinkHash,
+      base: stored.baseAddress,
+      target: stored.targetAddress,
+      zome_index: stored.zomeIndex,
+      link_type: stored.linkType,
+      tag: stored.tag,
+      timestamp: typeof stored.timestamp === 'bigint' ? Number(stored.timestamp) : stored.timestamp as number,
+      author: stored.author,
     };
   }
 

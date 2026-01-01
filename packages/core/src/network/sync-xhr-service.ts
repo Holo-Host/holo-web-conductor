@@ -12,25 +12,11 @@ import type {
   NetworkService,
   NetworkRecord,
   NetworkLink,
+  NetworkEntry,
   NetworkFetchOptions,
 } from './types';
-import type { DnaHash, AnyDhtHash } from '../types/holochain-types';
-
-/**
- * Convert Uint8Array to base64 for URL encoding
- */
-function toBase64Url(bytes: Uint8Array): string {
-  const base64 = btoa(String.fromCharCode(...bytes));
-  // Convert to URL-safe base64
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/**
- * Convert Uint8Array to standard base64
- */
-function toBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
-}
+import type { DnaHash, AnyDhtHash, SignedActionHashed } from '../types/holochain-types';
+import { encodeHashToBase64, decodeHashFromBase64 } from '../types/holochain-types';
 
 /**
  * Default timeout for network requests (30 seconds)
@@ -116,8 +102,8 @@ export class SyncXHRNetworkService implements NetworkService {
       }
       return hash;
     }
-    // For non-override case, convert to Holochain base64 format with 'u' prefix
-    return 'u' + toBase64Url(dnaHash);
+    // Use @holochain/client utility which adds 'u' prefix
+    return encodeHashToBase64(dnaHash);
   }
 
   /**
@@ -136,9 +122,10 @@ export class SyncXHRNetworkService implements NetworkService {
 
   /**
    * Convert hash to Holochain base64 format with 'u' prefix
+   * Uses @holochain/client utility for consistent encoding
    */
   private toHolochainBase64(bytes: Uint8Array): string {
-    return 'u' + toBase64Url(bytes);
+    return encodeHashToBase64(bytes);
   }
 
   /**
@@ -209,15 +196,18 @@ export class SyncXHRNetworkService implements NetworkService {
    */
   private parseRecordResponse(responseText: string): NetworkRecord | null {
     try {
-      const data = JSON.parse(responseText);
+      const data = JSON.parse(responseText) as Record<string, unknown>;
       if (!data || !data.signed_action) {
         return null;
       }
 
-      // Convert base64 fields back to Uint8Array
-      // This depends on the gateway response format
+      const signedAction = this.parseSignedAction(data.signed_action);
+      if (!signedAction) {
+        return null;
+      }
+
       return {
-        signed_action: this.parseSignedAction(data.signed_action),
+        signed_action: signedAction,
         entry: this.parseEntry(data.entry),
       };
     } catch (error) {
@@ -236,11 +226,11 @@ export class SyncXHRNetworkService implements NetworkService {
    *
    * We need to convert arrays to Uint8Array for proper msgpack encoding later.
    */
-  private parseSignedAction(data: any): any {
-    if (!data) return data;
+  private parseSignedAction(data: unknown): SignedActionHashed | null {
+    if (!data) return null;
 
     // Deep normalize: convert all byte arrays from JSON array format to Uint8Array
-    return this.normalizeByteArrays(data);
+    return this.normalizeByteArrays(data) as SignedActionHashed;
   }
 
   /**
@@ -282,7 +272,7 @@ export class SyncXHRNetworkService implements NetworkService {
    *
    * Entry bytes come as JSON arrays and need to be converted to Uint8Array.
    */
-  private parseEntry(data: any): any {
+  private parseEntry(data: unknown): NetworkEntry {
     if (!data) {
       return 'NotApplicable';
     }
@@ -290,9 +280,10 @@ export class SyncXHRNetworkService implements NetworkService {
       return data;
     }
     // Gateway already returns { Present: Entry } format - don't double-wrap
-    if (data.Present !== undefined) {
+    const record = data as Record<string, unknown>;
+    if (record.Present !== undefined) {
       // Normalize byte arrays in the entry
-      return { Present: this.normalizeByteArrays(data.Present) };
+      return { Present: this.normalizeByteArrays(record.Present) };
     }
     // If somehow we get just an Entry, wrap it and normalize
     return { Present: this.normalizeByteArrays(data) };
@@ -300,6 +291,7 @@ export class SyncXHRNetworkService implements NetworkService {
 
   /**
    * Parse links response from gateway
+   * Uses @holochain/client's decodeHashFromBase64 for proper hash decoding
    */
   private parseLinksResponse(responseText: string): NetworkLink[] {
     try {
@@ -308,15 +300,15 @@ export class SyncXHRNetworkService implements NetworkService {
         return [];
       }
 
-      return data.map((link: any) => ({
-        create_link_hash: this.base64ToUint8Array(link.create_link_hash),
-        base: this.base64ToUint8Array(link.base),
-        target: this.base64ToUint8Array(link.target),
+      return data.map((link: any): NetworkLink => ({
+        create_link_hash: decodeHashFromBase64(link.create_link_hash),
+        base: decodeHashFromBase64(link.base),
+        target: decodeHashFromBase64(link.target),
         zome_index: link.zome_index,
         link_type: link.link_type,
         tag: link.tag ? this.base64ToUint8Array(link.tag) : new Uint8Array(0),
         timestamp: link.timestamp,
-        author: this.base64ToUint8Array(link.author),
+        author: decodeHashFromBase64(link.author),
       }));
     } catch (error) {
       console.error('[SyncXHR] Failed to parse links response:', error);
