@@ -35,3 +35,6 @@ npm-debug.log*
 *.xpi
 *.zip
 web-ext-artifacts/
+
+# Holochain sandbox
+.hc-sandbox/
