@@ -366,14 +366,58 @@ interface CallZomeRequest {
 
 **Sub-tasks**:
 1. **9.1** Implement `get_agent_activity`
-2. **9.2** Implement `send_remote_signal` via gateway
-3. **9.3** Implement `call` for cross-cell calls
+1. **9.1** Implement `must_get**`
+1. **9.1** Implement validation callbacks
 
 
 **Tests**:
-- Remote signals delivered
-- Call works
 - get agent activity works
+- validation success and failure cases
+
+### Step 9.5: Gateway Real-Time Connection for Remote Signals ✅ COMPLETE
+
+**Goal**: Enable hc-http-gw to proxy signals from Holochain to browser extensions via WebSocket.
+
+**Status**: COMPLETE (2025-12-31)
+
+**Dependencies**: Step 7.2
+
+**Sub-tasks** (all complete):
+1. **Phase 1**: WebSocket Infrastructure (Gateway) - WebSocket route handler, message protocol, connection state machine
+2. **Phase 2**: Agent Proxy Registration (Gateway) - AgentProxyManager for tracking browser agents
+3. **Phase 3**: Signal Forwarding (Gateway) - Subscribe to app signals, forward to registered browser agents
+4. **Phase 4**: Browser Integration (Extension) - WebSocketNetworkService, offscreen document wiring, background signal dispatch
+
+**Key Files**:
+- `../hc-http-gw-fork/src/routes/websocket.rs` - WebSocket upgrade handler
+- `../hc-http-gw-fork/src/agent_proxy.rs` - AgentProxyManager
+- `packages/core/src/network/websocket-service.ts` - WebSocket client
+- `packages/extension/src/offscreen/index.ts` - Signal forwarding to background
+
+**Tests**:
+- 20 WebSocket handler tests (gateway)
+- 13 agent proxy tests (gateway)
+- 3 signal forwarding tests (gateway)
+- 20 WebSocketNetworkService tests (extension)
+- 8 offscreen integration tests (extension)
+
+**Details**: See [STEP9.5_COMPLETION.md](./STEP9.5_COMPLETION.md)
+
+---
+
+### Step 9.6: Additional Holochain Features
+
+**Goal**: Add additional Holochain features for robustness.
+
+**Sub-tasks**:
+1. **9.6.1** Implement `send_remote_signal` (outbound signals from browser)
+2. **9.6.2** Implement `call_remote` for cross-cell calls
+3. **9.6.3** Implement validation callbacks
+
+**Tests**:
+- Remote signals delivered bidirectionally
+- Cross-cell calls work
+
 
 ---
 
