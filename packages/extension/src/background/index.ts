@@ -18,8 +18,20 @@ import {
   createErrorResponse,
   isRequestMessage,
   deserializeMessage,
-  serializeMessage,
-  type ZomeCallPayload,
+  getPayload,
+  type PassphrasePayload,
+  type NewSeedPayload,
+  type TagPayload,
+  type SignPayload,
+  type VerifyPayload,
+  type DeriveSeedPayload,
+  type ExportSeedPayload,
+  type ImportSeedPayload,
+  type PermissionDecisionPayload,
+  type OriginPayload,
+  type RequestIdPayload,
+  type GatewayConfigurePayload,
+  type ContextIdPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
@@ -836,7 +848,7 @@ async function handleUninstallHapp(
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
   try {
-    const { contextId } = message.payload as { contextId: string };
+    const { contextId } = getPayload<MessageType.UNINSTALL_HAPP>(message);
     if (!contextId) {
       return createErrorResponse(message.id, "contextId is required");
     }
@@ -892,7 +904,7 @@ async function handleEnableHapp(
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
   try {
-    const { contextId } = message.payload as { contextId: string };
+    const { contextId } = getPayload<MessageType.ENABLE_HAPP>(message);
     if (!contextId) {
       return createErrorResponse(message.id, "contextId is required");
     }
@@ -917,7 +929,7 @@ async function handleDisableHapp(
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
   try {
-    const { contextId } = message.payload as { contextId: string };
+    const { contextId } = getPayload<MessageType.DISABLE_HAPP>(message);
     if (!contextId) {
       return createErrorResponse(message.id, "contextId is required");
     }
@@ -962,7 +974,7 @@ async function handleLairSetPassphrase(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { passphrase } = message.payload as { passphrase: string };
+    const { passphrase } = getPayload<MessageType.LAIR_SET_PASSPHRASE>(message);
     if (!passphrase) {
       return createErrorResponse(message.id, "Passphrase is required");
     }
@@ -983,7 +995,7 @@ async function handleLairUnlock(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { passphrase } = message.payload as { passphrase: string };
+    const { passphrase } = getPayload<MessageType.LAIR_UNLOCK>(message);
     if (!passphrase) {
       return createErrorResponse(message.id, "Passphrase is required");
     }
@@ -1038,10 +1050,7 @@ async function handleLairNewSeed(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const { tag, exportable } = message.payload as {
-      tag: string;
-      exportable: boolean;
-    };
+    const { tag, exportable } = getPayload<MessageType.LAIR_NEW_SEED>(message);
     if (!tag) {
       return createErrorResponse(message.id, "Tag is required");
     }
@@ -1083,7 +1092,7 @@ async function handleLairGetEntry(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const { tag } = message.payload as { tag: string };
+    const { tag } = getPayload<MessageType.LAIR_GET_ENTRY>(message);
     if (!tag) {
       return createErrorResponse(message.id, "Tag is required");
     }
@@ -1109,7 +1118,7 @@ async function handleLairDeleteEntry(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const { tag } = message.payload as { tag: string };
+    const { tag } = getPayload<MessageType.LAIR_DELETE_ENTRY>(message);
     if (!tag) {
       return createErrorResponse(message.id, "Tag is required");
     }
@@ -1136,20 +1145,17 @@ async function handleLairSign(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const payload = message.payload as {
-      pub_key: any;
-      data: any;
-    };
-    if (!payload.pub_key || !payload.data) {
-      return createErrorResponse(message.id, "pub_key and data are required");
+    const payload = getPayload<MessageType.LAIR_SIGN>(message);
+    if (!payload.pubKey || !payload.data) {
+      return createErrorResponse(message.id, "pubKey and data are required");
     }
 
     // Convert serialized Uint8Arrays back to actual Uint8Arrays
-    const pub_key = toUint8Array(payload.pub_key);
+    const pubKey = toUint8Array(payload.pubKey);
     const data = toUint8Array(payload.data);
 
     const client = await getLairClient();
-    const signature = await client.signByPubKey(pub_key, data);
+    const signature = await client.signByPubKey(pubKey, data);
     return createSuccessResponse(message.id, { signature });
   } catch (error) {
     return createErrorResponse(
@@ -1167,20 +1173,16 @@ async function handleLairVerify(
 ): Promise<ResponseMessage> {
   try {
     // Note: Verification doesn't require unlocking since it's public operation
-    const payload = message.payload as {
-      pub_key: any;
-      data: any;
-      signature: any;
-    };
-    if (!payload.pub_key || !payload.data || !payload.signature) {
+    const payload = getPayload<MessageType.LAIR_VERIFY>(message);
+    if (!payload.pubKey || !payload.data || !payload.signature) {
       return createErrorResponse(
         message.id,
-        "pub_key, data, and signature are required"
+        "pubKey, data, and signature are required"
       );
     }
 
     // Convert serialized Uint8Arrays back to actual Uint8Arrays
-    const pub_key = toUint8Array(payload.pub_key);
+    const pubKey = toUint8Array(payload.pubKey);
     const data = toUint8Array(payload.data);
     const signature = toUint8Array(payload.signature);
 
@@ -1188,7 +1190,7 @@ async function handleLairVerify(
     await sodium.ready;
 
     // Use libsodium for verification (public operation)
-    const valid = sodium.crypto_sign_verify_detached(signature, data, pub_key);
+    const valid = sodium.crypto_sign_verify_detached(signature, data, pubKey);
 
     return createSuccessResponse(message.id, { valid });
   } catch (error) {
@@ -1207,24 +1209,18 @@ async function handleLairDeriveSeed(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const { source_tag, derivation_path, dest_tag, exportable } =
-      message.payload as {
-        source_tag: string;
-        derivation_path: string | number[];
-        dest_tag: string;
-        exportable: boolean;
-      };
-    if (!source_tag || !derivation_path || !dest_tag) {
+    const { srcTag, srcIndex, dstTag, exportable } = getPayload<MessageType.LAIR_DERIVE_SEED>(message);
+    if (!srcTag || srcIndex === undefined || !dstTag) {
       return createErrorResponse(
         message.id,
-        "source_tag, derivation_path, and dest_tag are required"
+        "srcTag, srcIndex, and dstTag are required"
       );
     }
     const client = await getLairClient();
     const result = await client.deriveSeed(
-      source_tag,
-      derivation_path,
-      dest_tag,
+      srcTag,
+      srcIndex,
+      dstTag,
       exportable ?? false
     );
     return createSuccessResponse(message.id, result);
@@ -1248,10 +1244,7 @@ async function handleLairExportSeed(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const { tag, passphrase } = message.payload as {
-      tag: string;
-      passphrase: string;
-    };
+    const { tag, passphrase } = getPayload<MessageType.LAIR_EXPORT_SEED>(message);
     if (!tag || !passphrase) {
       return createErrorResponse(message.id, "tag and passphrase are required");
     }
@@ -1274,37 +1267,32 @@ async function handleLairImportSeed(
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
-    const payload = message.payload as {
-      encrypted: any;
-      passphrase: string;
-      new_tag: string;
-      exportable: boolean;
-    };
-    if (!payload.encrypted || !payload.passphrase || !payload.new_tag) {
+    const payload = getPayload<MessageType.LAIR_IMPORT_SEED>(message);
+    if (!payload.encrypted || !payload.passphrase || !payload.tag) {
       return createErrorResponse(
         message.id,
-        "encrypted, passphrase, and new_tag are required"
+        "encrypted, passphrase, and tag are required"
       );
     }
 
     // Convert serialized Uint8Arrays in EncryptedExport back to actual Uint8Arrays
     const encrypted: EncryptedExport = {
-      version: payload.encrypted.version,
-      tag: payload.encrypted.tag,
-      ed25519_pub_key: toUint8Array(payload.encrypted.ed25519_pub_key),
-      x25519_pub_key: toUint8Array(payload.encrypted.x25519_pub_key),
+      version: (payload.encrypted as any).version,
+      tag: (payload.encrypted as any).tag,
+      ed25519_pub_key: toUint8Array((payload.encrypted as any).ed25519_pub_key),
+      x25519_pub_key: toUint8Array((payload.encrypted as any).x25519_pub_key),
       salt: toUint8Array(payload.encrypted.salt),
       nonce: toUint8Array(payload.encrypted.nonce),
       cipher: toUint8Array(payload.encrypted.cipher),
-      exportable: payload.encrypted.exportable,
-      created_at: payload.encrypted.created_at,
+      exportable: (payload.encrypted as any).exportable,
+      created_at: (payload.encrypted as any).created_at,
     };
 
     const client = await getLairClient();
     const result = await client.importSeed(
       encrypted,
       payload.passphrase,
-      payload.new_tag,
+      payload.tag,
       payload.exportable ?? false
     );
     return createSuccessResponse(message.id, result);
@@ -1323,7 +1311,7 @@ async function handlePermissionGrant(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { requestId, origin } = message.payload as { requestId: string; origin: string };
+    const { requestId, origin } = getPayload<MessageType.PERMISSION_GRANT>(message);
 
     if (!requestId || !origin) {
       return createErrorResponse(message.id, "requestId and origin are required");
@@ -1359,7 +1347,7 @@ async function handlePermissionDeny(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { requestId, origin } = message.payload as { requestId: string; origin: string };
+    const { requestId, origin } = getPayload<MessageType.PERMISSION_DENY>(message);
 
     if (!requestId || !origin) {
       return createErrorResponse(message.id, "requestId and origin are required");
@@ -1412,7 +1400,7 @@ async function handlePermissionRevoke(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { origin } = message.payload as { origin: string };
+    const { origin } = getPayload<MessageType.PERMISSION_REVOKE>(message);
 
     if (!origin) {
       return createErrorResponse(message.id, "origin is required");
@@ -1437,7 +1425,7 @@ async function handleAuthRequestInfo(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { requestId } = message.payload as { requestId: string };
+    const { requestId } = getPayload<MessageType.AUTH_REQUEST_INFO>(message);
 
     if (!requestId) {
       return createErrorResponse(message.id, "requestId is required");
@@ -1473,7 +1461,7 @@ async function handleGatewayConfigure(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { gatewayUrl, dnaHashOverride } = message.payload as { gatewayUrl: string; dnaHashOverride?: string };
+    const { gatewayUrl, dnaHashOverride } = getPayload<MessageType.GATEWAY_CONFIGURE>(message);
 
     if (!gatewayUrl) {
       return createErrorResponse(message.id, "gatewayUrl is required");

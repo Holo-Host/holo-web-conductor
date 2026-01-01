@@ -8,6 +8,12 @@
  * 4. Content Script → Page (via window.postMessage)
  */
 
+import type {
+  AgentPubKey,
+  CellId,
+  Signature,
+} from '@holochain/client';
+
 /**
  * Message types supported by the Holochain API
  */
@@ -147,16 +153,20 @@ export interface MessageEnvelope {
   };
 }
 
+// ============================================================================
+// Request Payload Types
+// ============================================================================
+
 /**
  * Zome call request payload
  */
 export interface ZomeCallPayload {
-  cell_id: [Uint8Array, Uint8Array]; // [dna_hash, agent_pub_key]
+  cell_id: CellId;
   zome_name: string;
   fn_name: string;
   payload: unknown;
-  provenance: Uint8Array; // agent_pub_key
-  cap_secret?: Uint8Array | null;
+  provenance: AgentPubKey;
+  cap_secret?: Uint8Array | null; // CapSecret not exported by @holochain/client
 }
 
 /**
@@ -164,6 +174,270 @@ export interface ZomeCallPayload {
  */
 export interface AppInfoPayload {
   installed_app_id: string;
+}
+
+/**
+ * Install hApp request payload
+ */
+export interface InstallHappPayload {
+  happBundle: Uint8Array;
+}
+
+/**
+ * Context ID payload (used by uninstall, enable, disable)
+ */
+export interface ContextIdPayload {
+  contextId: string;
+}
+
+/**
+ * Passphrase payload (used by set_passphrase, unlock)
+ */
+export interface PassphrasePayload {
+  passphrase: string;
+}
+
+/**
+ * New seed request payload
+ */
+export interface NewSeedPayload {
+  tag: string;
+  exportable?: boolean;
+}
+
+/**
+ * Tag-only payload (used by get_entry, delete_entry)
+ */
+export interface TagPayload {
+  tag: string;
+}
+
+/**
+ * Sign request payload
+ */
+export interface SignPayload {
+  pubKey: AgentPubKey;
+  data: Uint8Array;
+}
+
+/**
+ * Verify signature payload
+ */
+export interface VerifyPayload {
+  pubKey: AgentPubKey;
+  signature: Signature;
+  data: Uint8Array;
+}
+
+/**
+ * Derive seed payload
+ */
+export interface DeriveSeedPayload {
+  srcTag: string;
+  srcIndex: number;
+  dstTag: string;
+  exportable?: boolean;
+}
+
+/**
+ * Export seed payload
+ */
+export interface ExportSeedPayload {
+  tag: string;
+  passphrase: string;
+}
+
+/**
+ * Import seed payload
+ */
+export interface ImportSeedPayload {
+  tag: string;
+  exportable: boolean;
+  passphrase: string;
+  encrypted: {
+    salt: Uint8Array;
+    nonce: Uint8Array;
+    cipher: Uint8Array;
+  };
+}
+
+/**
+ * Permission grant/deny payload
+ */
+export interface PermissionDecisionPayload {
+  requestId: string;
+  origin: string;
+}
+
+/**
+ * Origin-only payload
+ */
+export interface OriginPayload {
+  origin: string;
+}
+
+/**
+ * Request ID only payload
+ */
+export interface RequestIdPayload {
+  requestId: string;
+}
+
+/**
+ * Gateway configure payload
+ */
+export interface GatewayConfigurePayload {
+  gatewayUrl: string;
+  dnaHashOverride?: string;
+}
+
+// ============================================================================
+// Response Payload Types
+// ============================================================================
+
+/**
+ * Lock state response payload
+ */
+export interface LockStatePayload {
+  isLocked: boolean;
+  hasPassphrase: boolean;
+}
+
+/**
+ * Entry info for lair entries
+ */
+export interface EntryInfo {
+  tag: string;
+  seedType: 'Ed25519' | 'X25519';
+  exportable: boolean;
+  pubKey: AgentPubKey;
+}
+
+/**
+ * List entries response payload
+ */
+export interface ListEntriesPayload {
+  entries: EntryInfo[];
+}
+
+/**
+ * Signature response payload
+ */
+export interface SignaturePayload {
+  signature: Signature;
+}
+
+/**
+ * Verify response payload
+ */
+export interface VerifyResultPayload {
+  valid: boolean;
+}
+
+/**
+ * Encrypted export response payload
+ */
+export interface EncryptedExportPayload {
+  encrypted: {
+    salt: Uint8Array;
+    nonce: Uint8Array;
+    cipher: Uint8Array;
+  };
+}
+
+/**
+ * Auth request info response payload
+ */
+export interface AuthRequestInfoPayload {
+  origin: string;
+  timestamp: number;
+}
+
+/**
+ * Permissions list response payload
+ */
+export interface PermissionsListPayload {
+  permissions: Array<{
+    origin: string;
+    permissions: string[];
+    timestamp: number;
+  }>;
+}
+
+// ============================================================================
+// Discriminated Union Types for Type-Safe Message Handling
+// ============================================================================
+
+/**
+ * Map of message types to their payload types (request)
+ */
+export interface RequestPayloadMap {
+  [MessageType.CONNECT]: undefined;
+  [MessageType.DISCONNECT]: undefined;
+  [MessageType.CALL_ZOME]: ZomeCallPayload;
+  [MessageType.APP_INFO]: AppInfoPayload;
+  [MessageType.LAIR_GET_LOCK_STATE]: undefined;
+  [MessageType.LAIR_SET_PASSPHRASE]: PassphrasePayload;
+  [MessageType.LAIR_UNLOCK]: PassphrasePayload;
+  [MessageType.LAIR_LOCK]: undefined;
+  [MessageType.LAIR_NEW_SEED]: NewSeedPayload;
+  [MessageType.LAIR_LIST_ENTRIES]: undefined;
+  [MessageType.LAIR_GET_ENTRY]: TagPayload;
+  [MessageType.LAIR_DELETE_ENTRY]: TagPayload;
+  [MessageType.LAIR_SIGN]: SignPayload;
+  [MessageType.LAIR_VERIFY]: VerifyPayload;
+  [MessageType.LAIR_DERIVE_SEED]: DeriveSeedPayload;
+  [MessageType.LAIR_EXPORT_SEED]: ExportSeedPayload;
+  [MessageType.LAIR_IMPORT_SEED]: ImportSeedPayload;
+  [MessageType.PERMISSION_GRANT]: PermissionDecisionPayload;
+  [MessageType.PERMISSION_DENY]: PermissionDecisionPayload;
+  [MessageType.PERMISSION_LIST]: undefined;
+  [MessageType.PERMISSION_REVOKE]: OriginPayload;
+  [MessageType.AUTH_REQUEST_INFO]: RequestIdPayload;
+  [MessageType.INSTALL_HAPP]: InstallHappPayload;
+  [MessageType.UNINSTALL_HAPP]: ContextIdPayload;
+  [MessageType.LIST_HAPPS]: undefined;
+  [MessageType.ENABLE_HAPP]: ContextIdPayload;
+  [MessageType.DISABLE_HAPP]: ContextIdPayload;
+  [MessageType.GATEWAY_CONFIGURE]: GatewayConfigurePayload;
+  [MessageType.GATEWAY_GET_STATUS]: undefined;
+}
+
+/**
+ * Helper type to get payload type for a specific message type
+ */
+export type PayloadFor<T extends keyof RequestPayloadMap> = RequestPayloadMap[T];
+
+/**
+ * Create a typed request message
+ */
+export function createTypedRequest<T extends keyof RequestPayloadMap>(
+  type: T,
+  payload: RequestPayloadMap[T]
+): RequestMessage & { payload: RequestPayloadMap[T] } {
+  return {
+    type,
+    id: generateMessageId(),
+    timestamp: Date.now(),
+    payload,
+  } as RequestMessage & { payload: RequestPayloadMap[T] };
+}
+
+/**
+ * Extract typed payload from a request message.
+ * Use this in message handlers for type-safe payload access.
+ *
+ * @example
+ * case MessageType.INSTALL_HAPP: {
+ *   const payload = getPayload<MessageType.INSTALL_HAPP>(message);
+ *   // payload is typed as InstallHappPayload
+ *   const { happBundle } = payload;
+ * }
+ */
+export function getPayload<T extends keyof RequestPayloadMap>(
+  message: RequestMessage
+): RequestPayloadMap[T] {
+  return message.payload as RequestPayloadMap[T];
 }
 
 /**
