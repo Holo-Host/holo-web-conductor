@@ -22,6 +22,9 @@ export * from './storage';
 // Re-export network module
 export * from './network';
 
+// Re-export utilities
+export * from './utils';
+
 // Placeholder - conductor interface to be implemented
 export interface Conductor {
   // Install a hApp from a web context

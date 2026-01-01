@@ -13,6 +13,11 @@ import { decodeResult } from "../utils/result-decoder";
 import { encode, decode } from "@msgpack/msgpack";
 import { getHappContextStorage } from "../lib/happ-context-storage";
 import { SyncXHRNetworkService, setNetworkService } from "@fishy/core/network";
+import {
+  toUint8Array,
+  normalizeUint8Arrays,
+  serializeForTransport,
+} from "@fishy/core";
 
 console.log("[Offscreen] Document loaded");
 
@@ -55,88 +60,6 @@ interface OffscreenResponse {
     signal: Uint8Array;
   }>;
   error?: string;
-}
-
-/**
- * Convert serialized Uint8Array back to actual Uint8Array
- * Chrome message passing serializes Uint8Arrays to plain objects
- */
-function toUint8Array(data: any): Uint8Array {
-  if (data instanceof Uint8Array) {
-    return data;
-  }
-  if (Array.isArray(data)) {
-    return new Uint8Array(data);
-  }
-  if (typeof data === "object" && data !== null) {
-    // Serialized Uint8Array comes as object with numeric keys
-    return new Uint8Array(Object.values(data) as number[]);
-  }
-  throw new Error("Cannot convert to Uint8Array");
-}
-
-/**
- * Recursively normalize Uint8Arrays in nested data structures
- */
-function normalizeUint8Arrays(data: any): any {
-  if (data === null || data === undefined) {
-    return data;
-  }
-
-  if (
-    typeof data === "object" &&
-    !Array.isArray(data) &&
-    !(data instanceof Uint8Array)
-  ) {
-    const keys = Object.keys(data);
-    const isUint8ArrayLike =
-      keys.length > 0 &&
-      keys.every((k, i) => k === String(i)) &&
-      keys.every((k) => typeof data[k] === "number");
-
-    if (isUint8ArrayLike) {
-      return new Uint8Array(Object.values(data) as number[]);
-    }
-
-    const normalized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      normalized[key] = normalizeUint8Arrays(value);
-    }
-    return normalized;
-  }
-
-  if (Array.isArray(data)) {
-    return data.map(normalizeUint8Arrays);
-  }
-
-  return data;
-}
-
-/**
- * Convert Uint8Arrays to regular Arrays for Chrome message passing
- */
-function serializeForTransport(data: any): any {
-  if (data === null || data === undefined) {
-    return data;
-  }
-
-  if (data instanceof Uint8Array) {
-    return Array.from(data);
-  }
-
-  if (Array.isArray(data)) {
-    return data.map(serializeForTransport);
-  }
-
-  if (typeof data === "object") {
-    const serialized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      serialized[key] = serializeForTransport(value);
-    }
-    return serialized;
-  }
-
-  return data;
 }
 
 /**

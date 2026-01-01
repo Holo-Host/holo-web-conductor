@@ -14,20 +14,7 @@ import type { Record as HolochainRecord } from "../holochain-types";
 import { isStoredDeleteAction, type StoredAction } from "../../storage/types";
 import type { WireAction, RecordEntry } from "../../types/holochain-types";
 import { validateWasmGetInputArray } from "../wasm-io-types";
-
-/**
- * Convert an array-like object or array to Uint8Array
- */
-function toUint8Array(data: any): Uint8Array {
-  if (data instanceof Uint8Array) return data;
-  if (Array.isArray(data)) return new Uint8Array(data);
-  if (typeof data === 'object' && data !== null) {
-    // Chrome message passing may convert arrays to objects with numeric keys
-    const values = Object.values(data) as number[];
-    return new Uint8Array(values);
-  }
-  return data;
-}
+import { toUint8Array } from "../../utils/bytes";
 
 /**
  * Normalize entry bytes from gateway JSON format to Uint8Array

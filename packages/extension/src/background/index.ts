@@ -39,6 +39,11 @@ import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
 import type { InstallHappRequest } from "@fishy/core";
+import {
+  toUint8Array,
+  normalizeUint8Arrays,
+  serializeForTransport,
+} from "@fishy/core";
 import type { ZomeCallRequest } from "@fishy/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
@@ -236,101 +241,6 @@ async function getLairClient() {
     lairClient = await createLairClient();
   }
   return lairClient;
-}
-
-/**
- * Convert serialized Uint8Array back to actual Uint8Array
- * Chrome message passing serializes Uint8Arrays to plain objects
- */
-function toUint8Array(data: any): Uint8Array {
-  if (data instanceof Uint8Array) {
-    return data;
-  }
-  if (Array.isArray(data)) {
-    return new Uint8Array(data);
-  }
-  if (typeof data === 'object' && data !== null) {
-    // Serialized Uint8Array comes as object with numeric keys
-    return new Uint8Array(Object.values(data) as number[]);
-  }
-  throw new Error('Cannot convert to Uint8Array');
-}
-
-/**
- * Recursively normalize Uint8Arrays in nested data structures
- * Chrome's message passing converts Uint8Arrays to objects with numeric keys
- */
-function normalizeUint8Arrays(data: any): any {
-  if (data === null || data === undefined) {
-    return data;
-  }
-
-  // Check if this looks like a serialized Uint8Array
-  // (object with consecutive numeric keys starting from 0)
-  if (typeof data === 'object' && !Array.isArray(data) && !(data instanceof Uint8Array)) {
-    const keys = Object.keys(data);
-    const isUint8ArrayLike = keys.length > 0 &&
-      keys.every((k, i) => k === String(i)) &&
-      keys.every(k => typeof data[k] === 'number');
-
-    if (isUint8ArrayLike) {
-      return new Uint8Array(Object.values(data) as number[]);
-    }
-
-    // Otherwise recurse into object properties
-    const normalized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      normalized[key] = normalizeUint8Arrays(value);
-    }
-    return normalized;
-  }
-
-  // Recurse into arrays
-  if (Array.isArray(data)) {
-    return data.map(normalizeUint8Arrays);
-  }
-
-  // Primitives and Uint8Array instances pass through
-  return data;
-}
-
-/**
- * Convert Uint8Arrays to regular Arrays for Chrome message passing
- *
- * Chrome's structured cloning algorithm converts Uint8Arrays to plain objects
- * with numeric keys (e.g., {0: 1, 1: 2, ...}). By explicitly converting to
- * Arrays, we preserve the data in a cleaner format that the UI can easily
- * work with.
- *
- * The UI layer will convert Arrays back to Uint8Arrays before formatting
- * for display (e.g., base64 encoding for hashes).
- */
-function serializeForTransport(data: any): any {
-  if (data === null || data === undefined) {
-    return data;
-  }
-
-  // Convert Uint8Array to regular Array
-  if (data instanceof Uint8Array) {
-    return Array.from(data);
-  }
-
-  // Recurse into arrays
-  if (Array.isArray(data)) {
-    return data.map(serializeForTransport);
-  }
-
-  // Recurse into objects
-  if (typeof data === 'object') {
-    const serialized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      serialized[key] = serializeForTransport(value);
-    }
-    return serialized;
-  }
-
-  // Primitives pass through
-  return data;
 }
 
 /**
