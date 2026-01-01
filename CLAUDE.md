@@ -316,22 +316,24 @@ interface CallZomeRequest {
 
 ---
 
-### Step 7: Network Host Functions
+### Step 7: Network Host Functions ✅ COMPLETE
 
 **Goal**: Implement host functions that make real network requests via hc-http-gw.
 
 **Dependencies**: Step 6.X
 
+**Status**: COMPLETE (2026-01-01) - E2E network fetch working with cascade caching
+
 **Sub-tasks**:
-1. **7.1** Implement a query cascade for get that tries local chain first, network cache, and then makes network requests (the latter being mocked to start with)
-2. **7.2** Replace mock network with network fetch from local test instance of hc-http-gw
+1. **7.1** ✅ Implement a query cascade for get that tries local chain first, network cache, and then makes network requests
+2. **7.2** ✅ Replace mock network with network fetch from local test instance of hc-http-gw
 
 **Key Files**:
-- `packages/core/src/conductor/network.ts`
-- `packages/core/src/ribosome/host_fn/get.ts` (updated)
+- `packages/core/src/network/cascade.ts` - Cascade pattern implementation
+- `packages/core/src/network/sync-xhr-service.ts` - Gateway network service
+- `packages/core/src/ribosome/host-fn/get.ts` - Uses cascade for lookups
 
-**Tests**:
-- Get retrieves data from appropriate place in the cascade network
+**Completion**: See [STEP7.2_COMPLETION.md](./STEP7.2_COMPLETION.md)
 
 ---
 

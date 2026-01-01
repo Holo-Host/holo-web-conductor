@@ -71,12 +71,33 @@ export class HappContextManager {
   }
 
   /**
-   * Compute DNA hash from WASM bytes
+   * Compute DNA hash from WASM bytes in proper Holochain format (39 bytes)
+   *
+   * Holochain hash format:
+   * - 3 bytes: Core prefix [0x84, 0x20, 0x24] for DNA hash
+   * - 32 bytes: SHA-256 hash content
+   * - 4 bytes: DHT location (first 4 bytes of hash)
+   *
    * TODO: Proper hashing with network seed and properties (Step 6)
    */
   private async computeDnaHash(wasm: Uint8Array): Promise<Uint8Array> {
     const hashBuffer = await crypto.subtle.digest("SHA-256", wasm);
-    return new Uint8Array(hashBuffer);
+    const hashBytes = new Uint8Array(hashBuffer);
+
+    // Build proper 39-byte Holochain DNA hash
+    // Core prefix for DNA hash: 0x84 (composite), 0x20 (dna type), 0x24 (36 bytes follow)
+    const DNA_HASH_PREFIX = new Uint8Array([0x84, 0x20, 0x24]);
+
+    // DHT location is first 4 bytes of the hash
+    const dhtLocation = hashBytes.slice(0, 4);
+
+    // Combine: prefix (3) + hash (32) + location (4) = 39 bytes
+    const fullHash = new Uint8Array(39);
+    fullHash.set(DNA_HASH_PREFIX, 0);
+    fullHash.set(hashBytes, 3);
+    fullHash.set(dhtLocation, 35);
+
+    return fullHash;
   }
 
   /**

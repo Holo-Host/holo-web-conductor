@@ -1,6 +1,6 @@
 # Fishy Development Session
 
-**Last Updated**: 2025-12-31
+**Last Updated**: 2026-01-01
 **Current Step**: Step 9.5 - Gateway Real-Time Connection for Remote Signals
 **Status**: Phase 4 (Browser Integration) complete - core signal forwarding implemented
 
@@ -29,7 +29,6 @@
   - HcHttpGatewayService.with_auth() constructor
   - Binary wired up with signal forwarding enabled
   - 3 unit tests for signal forwarding
-
 - ✅ Phase 4: Browser Integration (Extension)
   - Commit `5fe366f`: WebSocketNetworkService class created
     - 20 unit tests passing
@@ -46,11 +45,53 @@
 
 ---
 
+### Step 7.3: Type Safety Improvements - COMPLETE
+
+**Goal**: Systematically improve type safety across the codebase, eliminating `any` types and adding proper TypeScript definitions at critical API boundaries.
+
+**Phase 1: Foundation - COMPLETE**:
+- ✅ Audited @holochain/client exports (hash types, action types, utilities)
+- ✅ Added `encodeHashToBase64`/`decodeHashFromBase64` utility re-exports
+- ✅ Added action type guards (isCreateAction, isUpdateAction, isDeleteAction, etc.)
+- ✅ Added utility type guards (isUint8Array, isHoloHash, isCellId)
+- ✅ Created `WireAction`/`WireSignedActionHashed` type aliases for wire format
+- ✅ Created `StoredAction` alias in storage/types.ts
+- ✅ Created types/index.ts for central type exports
+
+**Phase 2: Host Function Types - COMPLETE**:
+- ✅ Created `packages/core/src/ribosome/wasm-io-types.ts` - Centralized type definitions and validators
+- ✅ Added `deserializeTypedFromWasm<T>()` with configurable validation flag
+- ✅ create.ts - Uses WasmCreateInput from centralized types
+- ✅ get.ts - Uses WasmGetInput from centralized types
+- ✅ update.ts - Uses WasmUpdateInput from centralized types
+- ✅ delete.ts - Uses WasmDeleteInput from centralized types
+- ✅ query.ts - Uses WasmQueryInput from centralized types
+- ✅ get_links.ts - Uses WasmGetLinksInput from centralized types
+- ✅ All 79 tests pass
+
+**Architecture**: Runtime validation controlled by `WASM_INPUT_VALIDATION_ENABLED` flag (default: true for development, can be disabled in production).
+
+**Details**: See [STEP7.3_PLAN.md](./STEP7.3_PLAN.md)
+
+---
+
+### Step 7: Network Host Functions - COMPLETE
+
+**Goal**: Implement host functions that make real network requests via hc-http-gw.
+
+**Final Fixes (2026-01-01)**:
+- ✅ Fixed parseEntry double-wrapping in sync-xhr-service.ts
+- ✅ Added normalizeByteArrays to convert gateway JSON arrays to Uint8Array
+- ✅ Added DNA hash override for testing (gateway uses different hash than extension)
+- ✅ E2E test verified: first fetch→network, second fetch→cache
+
+---
+
 ### Step 7.2: Gateway Network Integration (COMPLETED)
 
 **Goal**: Connect fishy extension to hc-http-gw-fork for real network requests, implementing authentication and DHT query endpoints.
 
-**Completed**:
+**All Phases Complete**:
 - ✅ Phase 1: Created dht_util zome (in hc-http-gw-fork/fixture/dht_util/)
   - get_record, get_details, get_links_by_base, count_links functions
   - Compiles to WASM with getrandom custom backend
@@ -69,17 +110,17 @@
   - 79 tests passing
 - ✅ Phase 4: Integration Testing (hc-http-gw-fork)
   - Added dht_util zome to fixture DNA (fixture/package/dna1/dna.yaml)
-  - Created tests/dht.rs with 4 integration tests:
-    - `dht_get_record_found` - creates entry and fetches it
-    - `dht_get_record_not_found` - verifies null for non-existent hash
-    - `dht_get_links_empty` - verifies empty array response
-    - `dht_count_links_zero` - verifies zero count
+  - Created tests/dht.rs with 4 integration tests
   - **All 4 tests passing** (must run with `--test-threads=1`)
-
-**Remaining**:
-- [ ] End-to-end test with fishy extension -> gateway -> Holochain
+- ✅ Phase 5: E2E Test Infrastructure
+  - Created `scripts/e2e-test-setup.sh` to start conductor + gateway
+  - Created `packages/extension/test/e2e-gateway-test.html` test page
+  - Added `window.holochain.configureNetwork()` API
+  - Added `window.holochain.installApp()` for bundle-based installation
 
 **Details**: See [STEP7.2_PLAN.md](./STEP7.2_PLAN.md)
+
+**E2E Testing**: See [TESTING.md](./TESTING.md) for full instructions on running end-to-end tests with the gateway.
 
 ## Completed Steps
 
@@ -266,4 +307,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Gateway Real-Time Connection for Remote Signals) is complete - all 4 phases are done. The gateway (hc-http-gw-fork on branch `fishy-step-9-5`) has WebSocket infrastructure, agent proxy registration, and signal forwarding. The extension has WebSocketNetworkService wired to the offscreen document with signal dispatch to background. Next steps would be end-to-end testing or moving to Step 9 additional features.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Gateway Real-Time Connection for Remote Signals) is complete - all 4 phases are done. The gateway (hc-http-gw-fork on branch `fishy-step-9-5`) has WebSocket infrastructure, agent proxy registration, and signal forwarding. The extension has WebSocketNetworkService wired to the offscreen document with signal dispatch to background. Step 7.3 (Type Safety Improvements) from main is also integrated. Next steps would be end-to-end testing or Step 8 (publish operations).

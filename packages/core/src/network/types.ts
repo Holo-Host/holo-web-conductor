@@ -11,10 +11,13 @@ import type {
   EntryHash,
   DnaHash,
   AnyDhtHash,
+  AgentPubKey,
   Record,
   Link,
   SignedActionHashed,
   Entry,
+  Timestamp,
+  LinkTag,
 } from '../types/holochain-types';
 
 /**
@@ -49,11 +52,11 @@ export interface NetworkLink {
   zome_index: number;
   link_type: number;
   /** Optional tag data */
-  tag: Uint8Array;
-  /** Timestamp of creation */
-  timestamp: number;
+  tag: LinkTag;
+  /** Timestamp of creation (microseconds since epoch) */
+  timestamp: Timestamp;
   /** Author of the link */
-  author: Uint8Array;
+  author: AgentPubKey;
 }
 
 /**

@@ -13,7 +13,7 @@ interface HolochainAPI {
   connect(): Promise<any>;
   disconnect(): Promise<any>;
   callZome(params: any): Promise<any>;
-  appInfo(): Promise<any>;
+  appInfo(installedAppId?: string): Promise<any>;
   installHapp(request: {
     appName?: string;
     appVersion?: string;
@@ -24,7 +24,13 @@ interface HolochainAPI {
       properties?: Record<string, unknown>;
     }>;
   }): Promise<any>;
+  installApp(request: {
+    bundle: Uint8Array | number[];
+    installedAppId?: string;
+  }): Promise<any>;
   on(event: "signal", callback: (signal: any) => void): () => void;
+  configureNetwork(config: { gatewayUrl: string; dnaHashOverride?: string }): Promise<any>;
+  getNetworkStatus(): Promise<any>;
 }
 
 // Signal subscription handlers
@@ -166,8 +172,8 @@ const holochainAPI: HolochainAPI = {
     return sendToContentScript("call_zome", params);
   },
 
-  async appInfo(): Promise<any> {
-    return sendToContentScript("app_info", null);
+  async appInfo(installedAppId?: string): Promise<any> {
+    return sendToContentScript("app_info", installedAppId ? { installed_app_id: installedAppId } : null);
   },
 
   async installHapp(request: {
@@ -181,6 +187,29 @@ const holochainAPI: HolochainAPI = {
     }>;
   }): Promise<any> {
     return sendToContentScript("install_happ", request);
+  },
+
+  async installApp(request: {
+    bundle: Uint8Array | number[];
+    installedAppId?: string;
+  }): Promise<any> {
+    // Convert bundle to happBundle format expected by background
+    const happBundle = Array.isArray(request.bundle)
+      ? new Uint8Array(request.bundle)
+      : request.bundle;
+
+    return sendToContentScript("install_happ", {
+      happBundle: Array.from(happBundle),
+      appName: request.installedAppId,
+    });
+  },
+
+  async configureNetwork(config: { gatewayUrl: string; dnaHashOverride?: string }): Promise<any> {
+    return sendToContentScript("gateway_configure", config);
+  },
+
+  async getNetworkStatus(): Promise<any> {
+    return sendToContentScript("gateway_get_status", null);
   },
 
   on(event: "signal", callback: (signal: any) => void): () => void {

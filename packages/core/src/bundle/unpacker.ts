@@ -17,55 +17,7 @@ import {
   BundleError,
   BundleErrorCode,
 } from '../types/bundle-types';
-
-/**
- * Convert msgpack-decoded data to Uint8Array
- * Handles cases where msgpack returns plain objects/arrays instead of typed arrays
- */
-function toUint8Array(data: unknown): Uint8Array {
-  // Already a Uint8Array
-  if (data instanceof Uint8Array) {
-    return data;
-  }
-
-  // ArrayBuffer
-  if (data instanceof ArrayBuffer) {
-    return new Uint8Array(data);
-  }
-
-  // Other TypedArray views
-  if (ArrayBuffer.isView(data)) {
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  }
-
-  // Plain array of numbers
-  if (Array.isArray(data)) {
-    return new Uint8Array(data);
-  }
-
-  // Object with numeric keys (e.g., {0: 1, 1: 2, ...})
-  if (typeof data === 'object' && data !== null) {
-    const keys = Object.keys(data);
-    // Check if all keys are numeric indices
-    const isNumericKeys = keys.every((k) => /^\d+$/.test(k));
-    if (isNumericKeys) {
-      const values = Object.values(data as Record<string, number>);
-      if (values.every((v) => typeof v === 'number')) {
-        return new Uint8Array(values);
-      }
-    }
-  }
-
-  console.error('[toUint8Array] Unhandled data type:', {
-    type: typeof data,
-    constructor: data?.constructor?.name,
-    isArray: Array.isArray(data),
-    keys: typeof data === 'object' && data !== null ? Object.keys(data).slice(0, 5) : undefined,
-    sample: typeof data === 'object' && data !== null ? JSON.stringify(data).slice(0, 100) : String(data),
-  });
-
-  throw new Error(`Cannot convert to Uint8Array: ${typeof data} (${data?.constructor?.name || 'unknown'})`);
-}
+import { toUint8Array } from '../utils/bytes';
 
 /**
  * Unpack a .happ bundle

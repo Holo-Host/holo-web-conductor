@@ -10,6 +10,7 @@ import {
   deserializationError,
   memoryAllocationError,
 } from "./error";
+import { WASM_INPUT_VALIDATION_ENABLED, type TypeValidator } from "./wasm-io-types";
 
 /**
  * Read bytes from WASM memory
@@ -187,6 +188,40 @@ export function deserializeFromWasm(
     }
     throw deserializationError("Failed to deserialize data from WASM", error);
   }
+}
+
+/**
+ * Deserialize typed data from WASM memory with optional runtime validation
+ *
+ * When WASM_INPUT_VALIDATION_ENABLED is true (development mode), the validator
+ * function is called to verify the deserialized data matches the expected type.
+ * This helps catch format mismatches early with clear error messages.
+ *
+ * @param instance - WebAssembly instance
+ * @param ptr - Pointer to data
+ * @param len - Length of data
+ * @param validator - Type guard function that validates the expected structure
+ * @param typeName - Name of expected type (for error messages)
+ * @returns Deserialized and typed data
+ * @throws {RibosomeError} If deserialization or validation fails
+ */
+export function deserializeTypedFromWasm<T>(
+  instance: WebAssembly.Instance,
+  ptr: number,
+  len: number,
+  validator: TypeValidator<T>,
+  typeName: string
+): T {
+  const decoded = deserializeFromWasm(instance, ptr, len);
+
+  if (WASM_INPUT_VALIDATION_ENABLED) {
+    if (!validator(decoded)) {
+      console.error(`[deserializeTypedFromWasm] Validation failed for ${typeName}:`, decoded);
+      throw deserializationError(`Invalid WASM input structure - expected ${typeName}`);
+    }
+  }
+
+  return decoded as T;
 }
 
 /**

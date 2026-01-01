@@ -59,6 +59,11 @@ export class HappContextStorage {
   private db: IDBDatabase | null = null;
   private ready: Promise<void>;
 
+  // In-memory cache to avoid repeated IndexedDB reads
+  private contextCache: Map<string, HappContext> = new Map();
+  private domainToIdCache: Map<string, string> = new Map();
+  private cacheInitialized = false;
+
   constructor() {
     this.ready = this.initialize();
   }
@@ -114,6 +119,38 @@ export class HappContextStorage {
     if (!this.db) {
       throw new Error("Database not initialized");
     }
+  }
+
+  /**
+   * Initialize the in-memory cache from IndexedDB (lazy loading)
+   */
+  private async initializeCache(): Promise<void> {
+    if (this.cacheInitialized) return;
+
+    await this.ensureReady();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([CONTEXTS_STORE], "readonly");
+      const store = transaction.objectStore(CONTEXTS_STORE);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const stored = request.result as StorableContext[];
+        for (const s of stored) {
+          const context = this.fromStorable(s);
+          this.contextCache.set(context.id, context);
+          this.domainToIdCache.set(context.domain, context.id);
+        }
+        this.cacheInitialized = true;
+        console.log(`[HappContextStorage] Cache initialized with ${stored.length} contexts`);
+        resolve();
+      };
+
+      request.onerror = () => {
+        console.error(`[HappContextStorage] Failed to initialize cache:`, request.error);
+        reject(request.error);
+      };
+    });
   }
 
   /**
@@ -238,6 +275,9 @@ export class HappContextStorage {
       const request = store.put(storable);
 
       request.onsuccess = () => {
+        // Update cache
+        this.contextCache.set(context.id, context);
+        this.domainToIdCache.set(context.domain, context.id);
         console.log(`[HappContextStorage] Stored context ${context.id} for ${context.domain}`);
         resolve();
       };
@@ -253,6 +293,14 @@ export class HappContextStorage {
    * Get context by ID
    */
   async getContext(id: string): Promise<HappContext | null> {
+    // Try cache first
+    await this.initializeCache();
+    const cached = this.contextCache.get(id);
+    if (cached) {
+      return cached;
+    }
+
+    // Fall back to IndexedDB (shouldn't happen if cache is properly initialized)
     await this.ensureReady();
 
     return new Promise((resolve, reject) => {
@@ -262,7 +310,15 @@ export class HappContextStorage {
 
       request.onsuccess = () => {
         const stored = request.result as StorableContext | undefined;
-        resolve(stored ? this.fromStorable(stored) : null);
+        if (stored) {
+          const context = this.fromStorable(stored);
+          // Update cache
+          this.contextCache.set(context.id, context);
+          this.domainToIdCache.set(context.domain, context.id);
+          resolve(context);
+        } else {
+          resolve(null);
+        }
       };
 
       request.onerror = () => {
@@ -276,6 +332,14 @@ export class HappContextStorage {
    * Get context by domain (using domain index)
    */
   async getContextByDomain(domain: string): Promise<HappContext | null> {
+    // Try cache first
+    await this.initializeCache();
+    const cachedId = this.domainToIdCache.get(domain);
+    if (cachedId) {
+      return this.contextCache.get(cachedId) || null;
+    }
+
+    // Fall back to IndexedDB
     await this.ensureReady();
 
     return new Promise((resolve, reject) => {
@@ -286,7 +350,15 @@ export class HappContextStorage {
 
       request.onsuccess = () => {
         const stored = request.result as StorableContext | undefined;
-        resolve(stored ? this.fromStorable(stored) : null);
+        if (stored) {
+          const context = this.fromStorable(stored);
+          // Update cache
+          this.contextCache.set(context.id, context);
+          this.domainToIdCache.set(context.domain, context.id);
+          resolve(context);
+        } else {
+          resolve(null);
+        }
       };
 
       request.onerror = () => {
@@ -300,23 +372,9 @@ export class HappContextStorage {
    * List all contexts
    */
   async listContexts(): Promise<HappContext[]> {
-    await this.ensureReady();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([CONTEXTS_STORE], "readonly");
-      const store = transaction.objectStore(CONTEXTS_STORE);
-      const request = store.getAll();
-
-      request.onsuccess = () => {
-        const stored = request.result as StorableContext[];
-        resolve(stored.map((s) => this.fromStorable(s)));
-      };
-
-      request.onerror = () => {
-        console.error(`[HappContextStorage] Failed to list contexts:`, request.error);
-        reject(request.error);
-      };
-    });
+    // Use cache
+    await this.initializeCache();
+    return Array.from(this.contextCache.values());
   }
 
   /**
@@ -325,12 +383,21 @@ export class HappContextStorage {
   async deleteContext(id: string): Promise<void> {
     await this.ensureReady();
 
+    // Get domain before deleting (for cache cleanup)
+    const context = this.contextCache.get(id);
+    const domain = context?.domain;
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([CONTEXTS_STORE], "readwrite");
       const store = transaction.objectStore(CONTEXTS_STORE);
       const request = store.delete(id);
 
       request.onsuccess = () => {
+        // Remove from cache
+        this.contextCache.delete(id);
+        if (domain) {
+          this.domainToIdCache.delete(domain);
+        }
         console.log(`[HappContextStorage] Deleted context ${id}`);
         resolve();
       };
@@ -456,6 +523,10 @@ export class HappContextStorage {
       const clearDnaWasm = dnaWasmStore.clear();
 
       transaction.oncomplete = () => {
+        // Clear cache
+        this.contextCache.clear();
+        this.domainToIdCache.clear();
+        this.cacheInitialized = false;
         console.log("[HappContextStorage] Cleared all data");
         resolve();
       };

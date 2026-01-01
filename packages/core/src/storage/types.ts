@@ -45,6 +45,38 @@ export interface CreateAction extends EntryAction {
   actionType: 'Create';
 }
 
+/**
+ * Type guard for entry-creating actions (Create or Update)
+ */
+export function isEntryAction(action: unknown): action is EntryAction {
+  if (!action || typeof action !== 'object') return false;
+  const a = action as Record<string, unknown>;
+  return a.actionType === 'Create' || a.actionType === 'Update';
+}
+
+/**
+ * Type guard for StoredAction Delete actions
+ * Note: This is for StoredAction format (actionType: 'Delete').
+ * For @holochain/client Action format, use isDeleteAction from holochain-types.ts
+ */
+export function isStoredDeleteAction(action: StoredAction): action is DeleteAction {
+  return action.actionType === 'Delete';
+}
+
+/**
+ * Type guard for StoredAction CreateLink actions
+ */
+export function isStoredCreateLinkAction(action: StoredAction): action is CreateLinkAction {
+  return action.actionType === 'CreateLink';
+}
+
+/**
+ * Type guard for StoredAction DeleteLink actions
+ */
+export function isStoredDeleteLinkAction(action: StoredAction): action is DeleteLinkAction {
+  return action.actionType === 'DeleteLink';
+}
+
 export interface UpdateAction extends EntryAction {
   actionType: 'Update';
   originalActionHash: Uint8Array;   // Action being updated
@@ -96,9 +128,13 @@ export interface InitZomesCompleteAction extends ActionBase {
 }
 
 /**
- * Union type for all actions
+ * Union type for all stored actions
+ *
+ * Note: This is the storage format with string literal discriminants (actionType: 'Create').
+ * The wire format from @holochain/client uses enum discriminants (type: ActionType.Create).
+ * See holochain-types.ts for wire format types and conversion utilities.
  */
-export type Action =
+export type StoredAction =
   | DnaAction
   | AgentValidationPkgAction
   | InitZomesCompleteAction
@@ -107,6 +143,11 @@ export type Action =
   | DeleteAction
   | CreateLinkAction
   | DeleteLinkAction;
+
+/**
+ * @deprecated Use StoredAction for clarity. Action is an alias for backwards compatibility.
+ */
+export type Action = StoredAction;
 
 // ============================================================================
 // Entry Types

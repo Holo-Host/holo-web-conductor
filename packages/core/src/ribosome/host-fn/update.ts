@@ -5,37 +5,10 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
-import type { UpdateAction, StoredEntry } from "../../storage/types";
-
-/**
- * Update input structure (matches Holochain HDK UpdateInput)
- */
-interface UpdateInput {
-  /** Original action address to update */
-  original_action_address: Uint8Array;
-
-  /** Entry location (zome and entry def index) */
-  entry_location: {
-    App: {
-      zome_index: number;
-      entry_def_index: number;
-    };
-  };
-
-  /** Entry wrapper with type and content */
-  entry: {
-    entry_type: 'App' | 'Agent' | 'CapClaim' | 'CapGrant';
-    entry: Uint8Array;  // MessagePack-serialized entry content
-  };
-
-  /** Entry visibility */
-  entry_visibility: 'Public' | 'Private';
-
-  /** Chain top ordering */
-  chain_top_ordering: 'Strict' | 'Relaxed';
-}
+import { isEntryAction, type UpdateAction, type StoredEntry, type ChainHead } from "../../storage/types";
+import { validateWasmUpdateInput } from "../wasm-io-types";
 
 /**
  * update host function implementation
@@ -46,33 +19,28 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
   const storage = SourceChainStorage.getInstance();
 
-  // Deserialize input
-  const input = deserializeFromWasm(instance, inputPtr, inputLen) as any;
+  // Deserialize and validate input
+  const input = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmUpdateInput, 'WasmUpdateInput'
+  );
 
-  console.log("[update] Raw input keys:", Object.keys(input));
   console.log("[update] Input:", {
     hasOriginalActionAddress: !!input.original_action_address,
     hasEntry: !!input.entry,
-    entryKeys: input.entry ? Object.keys(input.entry) : [],
+    entryType: input.entry.entry_type,
+    chainTopOrdering: input.chain_top_ordering,
   });
 
-  // Extract entry from input
-  // HDK sends: { entry: { entry_type: ..., entry: Uint8Array }, ... }
-  const entryWrapper = input.entry;
-  if (!entryWrapper) {
-    throw new Error('[update] Missing entry field');
-  }
+  // Extract entry content from validated input
+  const entryContent = input.entry.entry;
 
-  const entryContent = entryWrapper.entry as Uint8Array;
-  if (!entryContent || !(entryContent instanceof Uint8Array)) {
-    throw new Error('[update] Invalid entry structure - entry.entry must be Uint8Array');
-  }
-
-  // Get entry location from manifest (zomeIndex and entryDefIndex)
+  // Get entry type from original action to maintain consistency
+  // Or from manifest as fallback
   const manifest = callContext.dnaManifest;
   const currentZome = manifest?.integrity_zomes?.find(z => z.name === callContext.zome);
   const zomeIndex = currentZome?.index ?? 0;
-  const entryDefIndex = 0; // For now, assume first entry def
+  const entryDefIndex = 0; // Will be overridden from original action if available
 
   console.log("[update] Updating entry", {
     originalActionHash: Array.from(input.original_action_address.slice(0, 8)),
@@ -103,21 +71,20 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   }
 
   const originalAction = originalActionResult;
-  if (!originalAction || (originalAction.actionType !== "Create" && originalAction.actionType !== "Update")) {
+  if (!originalAction || !isEntryAction(originalAction)) {
     throw new Error("Original action not found or not an entry-creating action");
   }
 
-  const originalEntryHash = (originalAction as any).entryHash;
+  const originalEntryHash = originalAction.entryHash;
 
   const [dnaHash, agentPubKey] = callContext.cellId;
   const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
 
-  let chainHead: any;
   if (chainHeadResult instanceof Promise) {
     console.error("[update] Chain head not in session cache");
     throw new Error("Chain head not in session cache");
   }
-  chainHead = chainHeadResult;
+  const chainHead: ChainHead | null = chainHeadResult;
 
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;

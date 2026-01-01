@@ -18,6 +18,11 @@ import {
   WebSocketNetworkService,
   type ConnectionState,
 } from "@fishy/core/network";
+import {
+  toUint8Array,
+  normalizeUint8Arrays,
+  serializeForTransport,
+} from "@fishy/core";
 
 console.log("[Offscreen] Document loaded");
 
@@ -61,88 +66,6 @@ interface OffscreenResponse {
     signal: Uint8Array;
   }>;
   error?: string;
-}
-
-/**
- * Convert serialized Uint8Array back to actual Uint8Array
- * Chrome message passing serializes Uint8Arrays to plain objects
- */
-function toUint8Array(data: any): Uint8Array {
-  if (data instanceof Uint8Array) {
-    return data;
-  }
-  if (Array.isArray(data)) {
-    return new Uint8Array(data);
-  }
-  if (typeof data === "object" && data !== null) {
-    // Serialized Uint8Array comes as object with numeric keys
-    return new Uint8Array(Object.values(data) as number[]);
-  }
-  throw new Error("Cannot convert to Uint8Array");
-}
-
-/**
- * Recursively normalize Uint8Arrays in nested data structures
- */
-function normalizeUint8Arrays(data: any): any {
-  if (data === null || data === undefined) {
-    return data;
-  }
-
-  if (
-    typeof data === "object" &&
-    !Array.isArray(data) &&
-    !(data instanceof Uint8Array)
-  ) {
-    const keys = Object.keys(data);
-    const isUint8ArrayLike =
-      keys.length > 0 &&
-      keys.every((k, i) => k === String(i)) &&
-      keys.every((k) => typeof data[k] === "number");
-
-    if (isUint8ArrayLike) {
-      return new Uint8Array(Object.values(data) as number[]);
-    }
-
-    const normalized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      normalized[key] = normalizeUint8Arrays(value);
-    }
-    return normalized;
-  }
-
-  if (Array.isArray(data)) {
-    return data.map(normalizeUint8Arrays);
-  }
-
-  return data;
-}
-
-/**
- * Convert Uint8Arrays to regular Arrays for Chrome message passing
- */
-function serializeForTransport(data: any): any {
-  if (data === null || data === undefined) {
-    return data;
-  }
-
-  if (data instanceof Uint8Array) {
-    return Array.from(data);
-  }
-
-  if (Array.isArray(data)) {
-    return data.map(serializeForTransport);
-  }
-
-  if (typeof data === "object") {
-    const serialized: any = {};
-    for (const [key, value] of Object.entries(data)) {
-      serialized[key] = serializeForTransport(value);
-    }
-    return serialized;
-  }
-
-  return data;
 }
 
 /**
@@ -249,8 +172,8 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message.type === "CONFIGURE_NETWORK") {
-      const { gatewayUrl, sessionToken } = message;
-      initializeNetworkService({ gatewayUrl, sessionToken });
+      const { gatewayUrl, sessionToken, dnaHashOverride } = message;
+      initializeNetworkService({ gatewayUrl, sessionToken, dnaHashOverride });
       sendResponse({ success: true, requestId: message.requestId || "config" });
       return true;
     }
@@ -289,6 +212,12 @@ chrome.runtime.onMessage.addListener(
         isConnected: wsService?.isConnected() || false,
         registrations: wsService?.getRegistrations() || [],
       });
+      return true;
+    }
+
+    if (message.type === "SET_DNA_HASH_OVERRIDE") {
+      updateDnaHashOverride(message.dnaHashOverride);
+      sendResponse({ success: true, requestId: message.requestId || "dna-override" });
       return true;
     }
 
@@ -331,13 +260,21 @@ chrome.runtime.onMessage.addListener(
 /**
  * Initialize network service with gateway configuration
  */
-function initializeNetworkService(config: { gatewayUrl: string; sessionToken?: string }): void {
+function initializeNetworkService(config: {
+  gatewayUrl: string;
+  sessionToken?: string;
+  dnaHashOverride?: string;
+}): void {
   console.log(`[Offscreen] Initializing network service with gateway: ${config.gatewayUrl}`);
+  if (config.dnaHashOverride) {
+    console.log(`[Offscreen] Using DNA hash override: ${config.dnaHashOverride.substring(0, 20)}...`);
+  }
 
   // Initialize sync XHR service for DHT operations
   networkService = new SyncXHRNetworkService({
     gatewayUrl: config.gatewayUrl,
     sessionToken: config.sessionToken,
+    dnaHashOverride: config.dnaHashOverride,
   });
 
   // Make it available to cascade lookups
@@ -402,6 +339,15 @@ function updateSessionToken(token: string | null): void {
   }
   if (wsService) {
     wsService.setSessionToken(token || "");
+  }
+}
+
+/**
+ * Update DNA hash override (for testing when extension's DNA hash differs from gateway's)
+ */
+function updateDnaHashOverride(hash: string | null): void {
+  if (networkService) {
+    networkService.setDnaHashOverride(hash);
   }
 }
 

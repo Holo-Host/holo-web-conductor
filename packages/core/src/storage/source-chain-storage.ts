@@ -683,6 +683,7 @@ export class SourceChainStorage {
   getAction(actionHash: Uint8Array): Action | null | Promise<Action | null> {
     // Check session cache first (synchronous)
     const cacheKey = this.hashToKey(actionHash);
+
     if (this.sessionCache.actions.has(cacheKey)) {
       return this.sessionCache.actions.get(cacheKey)!;
     }
@@ -854,6 +855,26 @@ export class SourceChainStorage {
 
       request.onerror = () => reject(request.error);
     });
+  }
+
+  /**
+   * Find an action that created/updated an entry with the given entry hash.
+   * Returns the first matching action (Create or Update) from session cache.
+   *
+   * This is used for fetching records by entry hash, similar to Holochain's
+   * dht_get_entry which finds the oldest live record for an entry.
+   */
+  getActionByEntryHash(entryHash: Uint8Array): Action | null {
+    // Search session cache for actions that reference this entry hash
+    for (const action of this.sessionCache.actions.values()) {
+      if ('entryHash' in action) {
+        const actionEntryHash = (action as CreateAction | UpdateAction).entryHash;
+        if (this.hashesEqual(actionEntryHash, entryHash)) {
+          return action;
+        }
+      }
+    }
+    return null;
   }
 
   // ============================================================================
@@ -1187,6 +1208,7 @@ export class SourceChainStorage {
     for (const action of actions) {
       const key = this.hashToKey(action.actionHash);
       this.sessionCache.actions.set(key, action);
+      console.log(`[SourceChainStorage] Cached action: ${key.substring(0, 50)}... type=${action.actionType}`);
     }
 
     // Load all entries for this cell

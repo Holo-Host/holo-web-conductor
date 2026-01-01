@@ -17,11 +17,14 @@ import type {
 } from './types';
 import type { NetworkCache } from './cache';
 import type { SourceChainStorage } from '../storage';
-import type {
-  DnaHash,
-  AnyDhtHash,
-  SignedActionHashed,
-  Entry,
+import type { StoredRecord, Link as StoredLink } from '../storage/types';
+import {
+  isEntryHash,
+  isActionHash,
+  type DnaHash,
+  type AnyDhtHash,
+  type SignedActionHashed,
+  type Entry,
 } from '../types/holochain-types';
 
 /**
@@ -73,9 +76,8 @@ export class Cascade {
 
   /**
    * Convert a stored record to network record format
-   * Note: Uses 'any' for flexible type handling between local and network formats
    */
-  private storedToNetworkRecord(stored: any): NetworkRecord {
+  private storedToNetworkRecord(stored: StoredRecord): NetworkRecord {
     // StoredRecord has: action (our internal Action type), entry (StoredEntry)
     // Build a minimal SignedActionHashed structure
     const signedAction: SignedActionHashed = {
@@ -115,6 +117,10 @@ export class Cascade {
    * 2. Network cache
    * 3. Network (if enabled and available)
    *
+   * Handles both action hashes and entry hashes:
+   * - Action hash: fetches the specific action and its entry
+   * - Entry hash: finds an action that created this entry
+   *
    * @param dnaHash - DNA hash for network requests
    * @param hash - Action or entry hash to fetch
    * @param options - Cascade options
@@ -127,17 +133,37 @@ export class Cascade {
   ): NetworkRecord | null {
     const opts = { ...this.options, ...options };
 
-    console.log(`[Cascade] Fetching record: ${this.hashToShortString(hash)}`);
+    // Determine hash type and dispatch to appropriate method
+    if (isEntryHash(hash)) {
+      console.log(`[Cascade] Fetching record by ENTRY hash: ${this.hashToShortString(hash)}`);
+      return this.fetchRecordByEntryHash(dnaHash, hash, opts);
+    } else if (isActionHash(hash)) {
+      console.log(`[Cascade] Fetching record by ACTION hash: ${this.hashToShortString(hash)}`);
+      return this.fetchRecordByActionHash(dnaHash, hash, opts);
+    } else {
+      // Unknown hash type - try action hash lookup as fallback
+      console.log(`[Cascade] Unknown hash type, trying action hash: ${this.hashToShortString(hash)}`);
+      return this.fetchRecordByActionHash(dnaHash, hash, opts);
+    }
+  }
 
+  /**
+   * Fetch record by action hash (the original behavior)
+   */
+  private fetchRecordByActionHash(
+    dnaHash: DnaHash,
+    actionHash: AnyDhtHash,
+    opts: Required<CascadeOptions>
+  ): NetworkRecord | null {
     // 1. Try local storage (session cache is synchronous)
-    const record = this.buildRecordFromLocal(hash);
+    const record = this.buildRecordFromActionHash(actionHash);
     if (record !== null) {
-      console.log(`[Cascade] Found in local storage`);
+      console.log(`[Cascade] Found by action hash in local storage`);
       return record;
     }
 
     // 2. Try network cache
-    const cached = this.cache.getRecordSync(hash);
+    const cached = this.cache.getRecordSync(actionHash);
     if (cached !== null) {
       console.log(`[Cascade] Found in network cache`);
       return cached;
@@ -145,32 +171,89 @@ export class Cascade {
 
     // 3. Try network (if enabled)
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      console.log(`[Cascade] Fetching from network`);
+      console.log(`🌐 [Cascade] Fetching from NETWORK (local lookup failed)`);
       try {
-        const networkRecord = this.network.getRecordSync(dnaHash, hash);
+        const networkRecord = this.network.getRecordSync(dnaHash, actionHash);
         if (networkRecord !== null) {
-          console.log(`[Cascade] Found in network`);
+          console.log(`🌐 [Cascade] Found in NETWORK`);
           if (opts.cacheNetworkResults) {
-            this.cache.cacheRecordSync(hash, networkRecord);
+            this.cache.cacheRecordSync(actionHash, networkRecord);
           }
           return networkRecord;
         }
       } catch (error) {
         console.warn(`[Cascade] Network fetch failed:`, error);
-        // Continue - network failure shouldn't break the cascade
+      }
+    } else if (opts.useNetwork) {
+      // Log why network wasn't tried
+      if (!this.network) {
+        console.log(`[Cascade] Network not configured - call configureNetwork() first`);
+      } else if (!this.network.isAvailable()) {
+        console.log(`[Cascade] Network service not available (gateway: ${this.network.getGatewayUrl()})`);
       }
     }
 
-    console.log(`[Cascade] Record not found`);
+    console.log(`[Cascade] Record not found by action hash`);
     return null;
   }
 
   /**
-   * Build a record from local storage (synchronous from session cache)
+   * Fetch record by entry hash - finds an action that created this entry
    */
-  private buildRecordFromLocal(hash: AnyDhtHash): NetworkRecord | null {
+  private fetchRecordByEntryHash(
+    dnaHash: DnaHash,
+    entryHash: AnyDhtHash,
+    opts: Required<CascadeOptions>
+  ): NetworkRecord | null {
+    // 1. Try local storage - find action by entry hash
+    const record = this.buildRecordFromEntryHash(entryHash);
+    if (record !== null) {
+      console.log(`[Cascade] Found by entry hash in local storage`);
+      return record;
+    }
+
+    // 2. Try network cache (keyed by entry hash)
+    const cached = this.cache.getRecordSync(entryHash);
+    if (cached !== null) {
+      console.log(`[Cascade] Found in network cache by entry hash`);
+      return cached;
+    }
+
+    // 3. Try network (if enabled) - network service needs to handle entry hash lookups
+    if (opts.useNetwork && this.network && this.network.isAvailable()) {
+      console.log(`🌐 [Cascade] Fetching by entry hash from NETWORK`);
+      try {
+        const networkRecord = this.network.getRecordSync(dnaHash, entryHash);
+        if (networkRecord !== null) {
+          console.log(`🌐 [Cascade] Found in NETWORK by entry hash`);
+          if (opts.cacheNetworkResults) {
+            this.cache.cacheRecordSync(entryHash, networkRecord);
+          }
+          return networkRecord;
+        }
+      } catch (error) {
+        console.warn(`[Cascade] Network fetch by entry hash failed:`, error);
+      }
+    } else if (opts.useNetwork) {
+      // Log why network wasn't tried
+      if (!this.network) {
+        console.log(`[Cascade] Network not configured - call configureNetwork() first`);
+      } else if (!this.network.isAvailable()) {
+        console.log(`[Cascade] Network service not available (gateway: ${this.network.getGatewayUrl()})`);
+      }
+    }
+
+    console.log(`[Cascade] Record not found by entry hash`);
+    return null;
+  }
+
+  /**
+   * Build a record from local storage by action hash (synchronous from session cache)
+   */
+  private buildRecordFromActionHash(actionHash: AnyDhtHash): NetworkRecord | null {
     // Try to get action synchronously from session cache
-    const actionResult = this.storage.getAction(hash);
+    const actionResult = this.storage.getAction(actionHash);
+
     if (actionResult === null || actionResult instanceof Promise) {
       return null;
     }
@@ -200,9 +283,53 @@ export class Cascade {
     const signedAction: SignedActionHashed = {
       hashed: {
         content: action as any,
-        hash: hash,
+        hash: actionHash,
       },
       signature: action.signature || new Uint8Array(64),
+    };
+
+    return {
+      signed_action: signedAction,
+      entry,
+    };
+  }
+
+  /**
+   * Build a record from local storage by entry hash (synchronous from session cache)
+   * Finds an action that created/updated this entry and builds a record from it.
+   */
+  private buildRecordFromEntryHash(entryHash: AnyDhtHash): NetworkRecord | null {
+    // Find action that references this entry hash
+    const action = this.storage.getActionByEntryHash(entryHash);
+
+    if (action === null) {
+      return null;
+    }
+
+    // Get the entry
+    const entryResult = this.storage.getEntry(entryHash);
+    if (!entryResult || entryResult instanceof Promise) {
+      return null;
+    }
+
+    // Convert StoredEntry to Entry format
+    const storedEntry = entryResult;
+    const entryType = storedEntry.entryType;
+    let entryValue: Entry;
+    if (entryType === 'Agent') {
+      entryValue = { entry_type: 'Agent', entry: storedEntry.entryContent };
+    } else {
+      entryValue = { entry_type: 'App', entry: storedEntry.entryContent };
+    }
+    const entry: NetworkEntry = { Present: entryValue };
+
+    // Build a minimal signed action structure
+    const signedAction: SignedActionHashed = {
+      hashed: {
+        content: action as any,
+        hash: action.actionHash,
+      },
+      signature: (action as any).signature || new Uint8Array(64),
     };
 
     return {
@@ -295,16 +422,16 @@ export class Cascade {
   /**
    * Convert a stored link to network link format
    */
-  private storedLinkToNetworkLink(stored: any): NetworkLink {
+  private storedLinkToNetworkLink(stored: StoredLink): NetworkLink {
     return {
-      create_link_hash: stored.createLinkHash || stored.create_link_hash,
-      base: stored.base || stored.baseAddress,
-      target: stored.target || stored.targetAddress,
-      zome_index: stored.zome_index || stored.zomeIndex || 0,
-      link_type: stored.link_type || stored.linkType || 0,
-      tag: stored.tag || new Uint8Array(0),
-      timestamp: stored.timestamp || Date.now() * 1000,
-      author: stored.author || new Uint8Array(39),
+      create_link_hash: stored.createLinkHash,
+      base: stored.baseAddress,
+      target: stored.targetAddress,
+      zome_index: stored.zomeIndex,
+      link_type: stored.linkType,
+      tag: stored.tag,
+      timestamp: typeof stored.timestamp === 'bigint' ? Number(stored.timestamp) : stored.timestamp as number,
+      author: stored.author,
     };
   }
 

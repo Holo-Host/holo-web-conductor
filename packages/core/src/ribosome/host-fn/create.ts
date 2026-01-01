@@ -5,45 +5,10 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import type { CreateAction, StoredEntry, AppEntryType } from "../../storage/types";
-
-/**
- * Create input structure (matches Holochain HDK's CreateInput)
- *
- * Structure sent by HDK:
- * {
- *   entry_location: { App: { zome_index, entry_def_index } },
- *   entry_visibility: "Public" | "Private",
- *   entry: {
- *     entry_type: "App" | "Agent" | "CapClaim" | "CapGrant",
- *     entry: Uint8Array  // MessagePack-serialized entry content
- *   },
- *   chain_top_ordering: "Strict" | "Relaxed"
- * }
- */
-interface CreateInput {
-  /** Entry location (type definition) */
-  entry_location: {
-    App: {
-      zome_index: number;
-      entry_def_index: number;
-    };
-  };
-
-  /** Entry visibility */
-  entry_visibility: 'Public' | 'Private';
-
-  /** Entry wrapper with type and content */
-  entry: {
-    entry_type: 'App' | 'Agent' | 'CapClaim' | 'CapGrant';
-    entry: Uint8Array;  // MessagePack-serialized entry content
-  };
-
-  /** Chain top ordering */
-  chain_top_ordering: 'Strict' | 'Relaxed';
-}
+import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types";
 
 /**
  * create host function implementation
@@ -55,16 +20,14 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance, callContext } = context;
   const storage = SourceChainStorage.getInstance();
 
-  // Deserialize create input
-  const input = deserializeFromWasm(instance, inputPtr, inputLen) as any;
+  // Deserialize and validate create input
+  const input = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmCreateInput, 'WasmCreateInput'
+  );
 
-  // Extract entry content from the nested structure
-  // HDK sends: { entry_location, entry_visibility, entry: { entry_type, entry }, chain_top_ordering }
-  const entryContent = input.entry?.entry as Uint8Array;
-
-  if (!entryContent || !(entryContent instanceof Uint8Array)) {
-    throw new Error('[create] Invalid entry structure - entry.entry must be Uint8Array');
-  }
+  // Extract entry content from the validated structure
+  const entryContent = input.entry.entry;
 
   console.log('[create] Creating entry', {
     entryType: input.entry.entry_type,

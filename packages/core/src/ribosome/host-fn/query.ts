@@ -5,36 +5,12 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
 import { buildEntry } from "./entry-utils";
 import type { Record, RecordEntry } from "../holochain-types";
-
-/**
- * Query input structure (matches Holochain's ChainQueryFilter)
- */
-interface QueryInput {
-  /** Sequence range to query */
-  sequence_range?: {
-    Unbounded?: null;
-    ActionSeqRange?: [number, number];
-  };
-
-  /** Entry type filter */
-  entry_type?: {
-    App?: {
-      zome_index: number;
-      entry_index: number;
-    };
-  };
-
-  /** Action type filter */
-  action_type?: string;
-
-  /** Include entries in results */
-  include_entries?: boolean;
-}
+import { validateWasmQueryInput, type WasmQueryInput } from "../wasm-io-types";
 
 /**
  * query host function implementation
@@ -45,12 +21,18 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
   const storage = SourceChainStorage.getInstance();
 
-  // Deserialize input
-  const input = deserializeFromWasm(instance, inputPtr, inputLen) as QueryInput;
+  // Deserialize and validate input
+  const input = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmQueryInput, 'WasmQueryInput'
+  );
+
+  // WasmQueryInput.action_type is string[] but storage expects single string
+  const actionTypeFilter = input.action_type?.[0];
 
   console.log("[query] Querying source chain", {
     sequenceRange: input.sequence_range,
-    actionType: input.action_type,
+    actionType: actionTypeFilter,
     includeEntries: input.include_entries,
   });
 
@@ -58,7 +40,7 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   // Query actions from session cache (synchronous)
   const actions = storage.queryActionsFromCache(dnaHash, agentPubKey, {
-    actionType: input.action_type,
+    actionType: actionTypeFilter,
   });
 
   // Check if actions are in cache
