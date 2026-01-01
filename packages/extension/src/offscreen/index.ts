@@ -12,12 +12,18 @@ import { callZome, type ZomeCallRequest } from "@fishy/core/ribosome";
 import { decodeResult } from "../utils/result-decoder";
 import { encode, decode } from "@msgpack/msgpack";
 import { getHappContextStorage } from "../lib/happ-context-storage";
-import { SyncXHRNetworkService, setNetworkService } from "@fishy/core/network";
+import {
+  SyncXHRNetworkService,
+  setNetworkService,
+  WebSocketNetworkService,
+  type ConnectionState,
+} from "@fishy/core/network";
 
 console.log("[Offscreen] Document loaded");
 
-// Network service will be initialized when we receive configuration
+// Network services will be initialized when we receive configuration
 let networkService: SyncXHRNetworkService | null = null;
+let wsService: WebSocketNetworkService | null = null;
 
 // Initialize storage access (shared IndexedDB with background)
 const storage = getHappContextStorage();
@@ -255,6 +261,37 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (message.type === "REGISTER_AGENT") {
+      if (wsService) {
+        wsService.registerAgent(message.dna_hash, message.agent_pubkey);
+        sendResponse({ success: true, requestId: message.requestId || "register" });
+      } else {
+        sendResponse({ success: false, error: "WebSocket service not initialized", requestId: message.requestId || "register" });
+      }
+      return true;
+    }
+
+    if (message.type === "UNREGISTER_AGENT") {
+      if (wsService) {
+        wsService.unregisterAgent(message.dna_hash, message.agent_pubkey);
+        sendResponse({ success: true, requestId: message.requestId || "unregister" });
+      } else {
+        sendResponse({ success: false, error: "WebSocket service not initialized", requestId: message.requestId || "unregister" });
+      }
+      return true;
+    }
+
+    if (message.type === "GET_WS_STATE") {
+      sendResponse({
+        success: true,
+        requestId: message.requestId || "state",
+        state: wsService?.getState() || "disconnected",
+        isConnected: wsService?.isConnected() || false,
+        registrations: wsService?.getRegistrations() || [],
+      });
+      return true;
+    }
+
     if (message.type === "EXECUTE_ZOME_CALL") {
       const { requestId, zomeCallRequest } = message;
 
@@ -297,6 +334,7 @@ chrome.runtime.onMessage.addListener(
 function initializeNetworkService(config: { gatewayUrl: string; sessionToken?: string }): void {
   console.log(`[Offscreen] Initializing network service with gateway: ${config.gatewayUrl}`);
 
+  // Initialize sync XHR service for DHT operations
   networkService = new SyncXHRNetworkService({
     gatewayUrl: config.gatewayUrl,
     sessionToken: config.sessionToken,
@@ -305,7 +343,53 @@ function initializeNetworkService(config: { gatewayUrl: string; sessionToken?: s
   // Make it available to cascade lookups
   setNetworkService(networkService);
 
-  console.log("[Offscreen] Network service initialized");
+  // Initialize WebSocket service for remote signals
+  // Convert HTTP URL to WebSocket URL
+  const wsUrl = config.gatewayUrl
+    .replace(/^http:/, 'ws:')
+    .replace(/^https:/, 'wss:')
+    .replace(/\/$/, '') + '/ws';
+
+  wsService = new WebSocketNetworkService({
+    gatewayWsUrl: wsUrl,
+    sessionToken: config.sessionToken,
+  });
+
+  // Set up signal callback to forward signals to background
+  wsService.onSignal((signal) => {
+    console.log(`[Offscreen] Received remote signal from ${signal.from_agent}`);
+
+    // Forward to background script which will dispatch to the right tab
+    chrome.runtime.sendMessage({
+      target: "background",
+      type: "REMOTE_SIGNAL",
+      dna_hash: signal.dna_hash,
+      from_agent: signal.from_agent,
+      zome_name: signal.zome_name,
+      signal: Array.from(signal.signal), // Convert Uint8Array for transport
+    }).catch((err) => {
+      console.warn("[Offscreen] Failed to forward signal:", err);
+    });
+  });
+
+  // Set up state change callback for logging
+  wsService.onStateChange((state: ConnectionState) => {
+    console.log(`[Offscreen] WebSocket state: ${state}`);
+
+    // Notify background of connection state changes
+    chrome.runtime.sendMessage({
+      target: "background",
+      type: "WS_STATE_CHANGE",
+      state,
+    }).catch(() => {
+      // Ignore errors if background is not listening
+    });
+  });
+
+  // Connect to gateway
+  wsService.connect();
+
+  console.log("[Offscreen] Network services initialized");
 }
 
 /**
@@ -315,6 +399,9 @@ function updateSessionToken(token: string | null): void {
   if (networkService) {
     networkService.setSessionToken(token);
     console.log(`[Offscreen] Session token ${token ? 'set' : 'cleared'}`);
+  }
+  if (wsService) {
+    wsService.setSessionToken(token || "");
   }
 }
 

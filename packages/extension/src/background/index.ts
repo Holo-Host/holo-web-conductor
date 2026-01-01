@@ -1504,6 +1504,51 @@ async function handleGatewayGetStatus(
 }
 
 /**
+ * Handle remote signal from offscreen document
+ * Dispatches the signal to all tabs that have the hApp context
+ */
+async function handleRemoteSignal(signalData: {
+  dna_hash: string;
+  from_agent: string;
+  zome_name: string;
+  signal: number[]; // Uint8Array converted to array for transport
+}): Promise<void> {
+  console.log(`[Background] Remote signal from ${signalData.from_agent} (${signalData.zome_name})`);
+
+  try {
+    // Decode the signal payload
+    const signalBytes = new Uint8Array(signalData.signal);
+    const decodedPayload = decode(signalBytes);
+
+    // Format as Holochain AppSignal structure
+    const appSignal = {
+      type: "remote_signal",
+      value: {
+        dna_hash: signalData.dna_hash,
+        from_agent: signalData.from_agent,
+        zome_name: signalData.zome_name,
+        payload: serializeForTransport(decodedPayload),
+      },
+    };
+
+    // Send to all tabs (they will filter by their registered DNAs)
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: "signal",
+          payload: appSignal,
+        }).catch(() => {
+          // Ignore errors for tabs without content script
+        });
+      }
+    }
+  } catch (error) {
+    console.error("[Background] Error handling remote signal:", error);
+  }
+}
+
+/**
  * Listen for messages from content scripts
  */
 chrome.runtime.onMessage.addListener(
@@ -1513,6 +1558,32 @@ chrome.runtime.onMessage.addListener(
     sendResponse: (response: any) => void
   ) => {
     console.log("Received raw message:", rawMessage, "from:", sender);
+
+    // Handle internal messages from offscreen document
+    if (rawMessage.target === "background") {
+      if (rawMessage.type === "OFFSCREEN_READY") {
+        console.log("[Background] Offscreen document ready");
+        return false;
+      }
+
+      if (rawMessage.type === "REMOTE_SIGNAL") {
+        handleRemoteSignal(rawMessage).then(() => {
+          sendResponse({ success: true });
+        }).catch((error) => {
+          console.error("[Background] Error handling remote signal:", error);
+          sendResponse({ success: false, error: String(error) });
+        });
+        return true; // Async response
+      }
+
+      if (rawMessage.type === "WS_STATE_CHANGE") {
+        console.log(`[Background] WebSocket state changed: ${rawMessage.state}`);
+        return false;
+      }
+
+      // Unknown internal message
+      return false;
+    }
 
     // Parse and validate message
     try {
