@@ -6,24 +6,10 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
-
-/**
- * Get links input structure (matches Holochain HDK GetLinksInput)
- * Note: The input is Vec<GetLinksInput>, so we receive an array
- */
-interface GetLinksInput {
-  /** Base address to get links from */
-  base_address: Uint8Array;
-
-  /** Link type filter */
-  link_type?: number | { App: { id: number; zome_id: number } };
-
-  /** Tag filter prefix */
-  tag_prefix?: Uint8Array;
-}
+import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
 
 /**
  * Link structure (matches Holochain's Link type)
@@ -63,8 +49,11 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
   const storage = SourceChainStorage.getInstance();
 
-  // Deserialize input - it's an array of GetLinksInput objects
-  const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as GetLinksInput[];
+  // Deserialize and validate input - it's an array of GetLinksInput objects
+  const inputs = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmGetLinksInputArray, 'WasmGetLinksInput[]'
+  );
   const input = inputs[0]; // Get first element
 
   console.log("[get_links] Getting links", {
@@ -75,9 +64,14 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Parse link type filter
-  const linkTypeFilter = input.link_type !== undefined
-    ? (typeof input.link_type === 'number' ? input.link_type : input.link_type.App?.id)
-    : undefined;
+  // link_type can be: number, { types: number[] }, or 'Dependencies'
+  let linkTypeFilter: number | undefined;
+  if (typeof input.link_type === 'number') {
+    linkTypeFilter = input.link_type;
+  } else if (typeof input.link_type === 'object' && 'types' in input.link_type) {
+    linkTypeFilter = input.link_type.types[0]; // Use first type
+  }
+  // 'Dependencies' means all types, so leave undefined
 
   // Create cascade for this lookup
   // Uses global network service if configured (MockNetworkService for testing, SyncXHRNetworkService for production)

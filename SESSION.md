@@ -1,10 +1,38 @@
 # Fishy Development Session
 
 **Last Updated**: 2026-01-01
-**Current Step**: Step 7 - Network Host Functions
-**Status**: COMPLETE - E2E network fetch working with cascade caching
+**Current Step**: Step 7.3 - Type Safety Improvements
+**Status**: IN PROGRESS - Phases 1-2 complete, Phases 3-6 pending
 
 ## Current Step Progress
+
+### Step 7.3: Type Safety Improvements - IN PROGRESS
+
+**Goal**: Systematically improve type safety across the codebase, eliminating `any` types and adding proper TypeScript definitions at critical API boundaries.
+
+**Phase 1: Foundation - COMPLETE**:
+- ✅ Audited @holochain/client exports (hash types, action types, utilities)
+- ✅ Added `encodeHashToBase64`/`decodeHashFromBase64` utility re-exports
+- ✅ Added action type guards (isCreateAction, isUpdateAction, isDeleteAction, etc.)
+- ✅ Added utility type guards (isUint8Array, isHoloHash, isCellId)
+- ✅ Created `WireAction`/`WireSignedActionHashed` type aliases for wire format
+- ✅ Created `StoredAction` alias in storage/types.ts
+- ✅ Created types/index.ts for central type exports
+
+**Phase 2: Host Function Types - COMPLETE**:
+- ✅ Created `packages/core/src/ribosome/wasm-io-types.ts` - Centralized type definitions and validators
+- ✅ Added `deserializeTypedFromWasm<T>()` with configurable validation flag
+- ✅ create.ts - Uses WasmCreateInput from centralized types
+- ✅ get.ts - Uses WasmGetInput from centralized types
+- ✅ update.ts - Uses WasmUpdateInput from centralized types
+- ✅ delete.ts - Uses WasmDeleteInput from centralized types
+- ✅ query.ts - Uses WasmQueryInput from centralized types
+- ✅ get_links.ts - Uses WasmGetLinksInput from centralized types
+- ✅ All 79 tests pass
+
+**Architecture**: Runtime validation controlled by `WASM_INPUT_VALIDATION_ENABLED` flag (default: true for development, can be disabled in production).
+
+**Details**: See [STEP7.3_PLAN.md](./STEP7.3_PLAN.md)
 
 ### Step 7: Network Host Functions - COMPLETE
 

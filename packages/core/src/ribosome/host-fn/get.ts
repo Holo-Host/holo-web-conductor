@@ -6,28 +6,14 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
 import { toHolochainAction } from "./action-serialization";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import type { Record as HolochainRecord } from "../holochain-types";
-
-/**
- * Get input structure
- *
- * Note: The input is actually an array of GetInput objects for batch operations
- */
-interface GetInput {
-  /** Hash of the action or entry to get */
-  any_dht_hash: Uint8Array;
-
-  /** Get options */
-  get_options?: {
-    strategy?: string;
-  };
-}
-
-// Using HolochainRecord type from holochain-types.ts
+import { isStoredDeleteAction, type StoredAction } from "../../storage/types";
+import type { WireAction, RecordEntry } from "../../types/holochain-types";
+import { validateWasmGetInputArray } from "../wasm-io-types";
 
 /**
  * Convert an array-like object or array to Uint8Array
@@ -70,6 +56,7 @@ function normalizeEntryBytes(entry: any): any {
   };
 }
 
+
 /**
  * get host function implementation
  *
@@ -79,9 +66,12 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
   const storage = SourceChainStorage.getInstance();
 
-  // Deserialize input - it's an array of GetInput objects
-  const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as GetInput[];
-  const input = inputs[0]; // Get first element
+  // Deserialize and validate input - it's an array of GetInput objects
+  const inputs = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmGetInputArray, 'WasmGetInput[]'
+  );
+  const input = inputs[0];
   const { any_dht_hash } = input;
 
   console.log(`[get] Getting record for hash:`, Array.from(any_dht_hash.slice(0, 8)));
@@ -105,9 +95,9 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   if (deleteActions && deleteActions.length > 0) {
     const actionHash = networkRecord.signed_action.hashed.hash;
-    const isDeleted = deleteActions.some((deleteAction: any) => {
-      if (deleteAction.actionType === 'Delete') {
-        const deletesHash = deleteAction.deletesActionHash;
+    const isDeleted = deleteActions.some((storedAction: StoredAction) => {
+      if (isStoredDeleteAction(storedAction)) {
+        const deletesHash = storedAction.deletesActionHash;
         if (deletesHash && deletesHash.length === actionHash.length) {
           return deletesHash.every((byte: number, i: number) => byte === actionHash[i]);
         }
@@ -127,27 +117,28 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   // Check if this came from local storage (has our internal action format)
   // or from network (has Holochain wire format)
-  const action = networkRecord.signed_action.hashed.content as any;
+  // StoredAction uses actionType string, WireAction uses type enum
+  const action = networkRecord.signed_action.hashed.content;
 
   // If from local storage, convert to Holochain format
   // Local actions have actionType as string, network actions have type as object
-  let actionContent: any;
-  const localActionType = action.actionType;
+  let actionContent: WireAction;
+  const localActionType = (action as StoredAction).actionType;
   if (typeof localActionType === 'string') {
-    // Local format - convert
-    actionContent = toHolochainAction(action);
+    // Local format - convert to wire format
+    actionContent = toHolochainAction(action as StoredAction);
   } else {
-    // Already in network/Holochain format
-    actionContent = action;
+    // Already in network/Holochain wire format
+    actionContent = action as WireAction;
   }
 
   // Build entry from network record
   // Cascade produces entries in Holochain format: { Present: { entry_type: "App", entry: content } }
   // Gateway returns entry bytes as JSON array - convert to Uint8Array for msgpack encoding
-  let entry: any = "NA";
-  const recordEntry = networkRecord.entry as any;
-  if (recordEntry !== "NotApplicable" && recordEntry !== "NA" && recordEntry !== 'NotStored' && recordEntry !== 'Hidden') {
-    const presentEntry = recordEntry?.Present;
+  let entry: RecordEntry = { NotApplicable: undefined as unknown as void };
+  const recordEntry = networkRecord.entry;
+  if (recordEntry && typeof recordEntry === 'object' && 'Present' in recordEntry) {
+    const presentEntry = recordEntry.Present;
     if (presentEntry) {
       // Normalize entry bytes: convert JSON arrays to Uint8Array
       const normalizedEntry = normalizeEntryBytes(presentEntry);
@@ -168,7 +159,7 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log('[get] Found record via cascade', {
     actionType: actionContent.type || localActionType,
-    hasEntry: entry !== "NA",
+    hasEntry: !('NotApplicable' in entry),
   });
 
   // Return Vec<Option<Record>> - HDK host function signature

@@ -5,17 +5,10 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { SourceChainStorage } from "../../storage/source-chain-storage";
-import type { DeleteAction } from "../../storage/types";
-
-/**
- * Delete input structure
- */
-interface DeleteInput {
-  /** Hash of the action to delete (not entry hash) */
-  deletes_action_hash: Uint8Array;
-}
+import { isEntryAction, type DeleteAction, type ChainHead } from "../../storage/types";
+import { validateWasmDeleteInput } from "../wasm-io-types";
 
 /**
  * delete host function implementation
@@ -26,8 +19,11 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
   const storage = SourceChainStorage.getInstance();
 
-  // Deserialize input
-  const input = deserializeFromWasm(instance, inputPtr, inputLen) as DeleteInput;
+  // Deserialize and validate input
+  const input = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmDeleteInput, 'WasmDeleteInput'
+  );
 
   console.log("[delete] Deleting entry", {
     deletesActionHash: Array.from(input.deletes_action_hash.slice(0, 8)),
@@ -41,21 +37,20 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   }
 
   const deletesAction = deletesActionResult;
-  if (!deletesAction || (deletesAction.actionType !== "Create" && deletesAction.actionType !== "Update")) {
+  if (!deletesAction || !isEntryAction(deletesAction)) {
     throw new Error("Action to delete not found or not an entry-creating action");
   }
 
-  const deletesEntryHash = (deletesAction as any).entryHash;
+  const deletesEntryHash = deletesAction.entryHash;
 
   const [dnaHash, agentPubKey] = callContext.cellId;
   const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
 
-  let chainHead: any;
   if (chainHeadResult instanceof Promise) {
     console.error("[delete] Chain head not in session cache");
     throw new Error("Chain head not in session cache");
   }
-  chainHead = chainHeadResult;
+  const chainHead: ChainHead | null = chainHeadResult;
 
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;
