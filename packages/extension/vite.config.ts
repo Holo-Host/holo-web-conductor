@@ -168,6 +168,39 @@ export default defineConfig({
           },
         });
 
+        // Build SQLite worker as IIFE (runs in dedicated worker from offscreen document)
+        const sqliteWorkerPath = resolve(__dirname, "src/offscreen/sqlite-worker.ts");
+        if (existsSync(sqliteWorkerPath)) {
+          await viteBuild({
+            configFile: false,
+            build: {
+              outDir: distDir,
+              emptyOutDir: false,
+              lib: {
+                entry: sqliteWorkerPath,
+                formats: ["iife"],
+                name: "FishySqliteWorker",
+                fileName: () => "offscreen/sqlite-worker.js",
+              },
+              sourcemap: true,
+              target: "es2020",
+              minify: false,
+              rollupOptions: {
+                output: {
+                  extend: true,
+                },
+              },
+            },
+            resolve: {
+              alias: {
+                "@fishy/shared": resolve(__dirname, "../shared/src"),
+                "@fishy/core": resolve(__dirname, "../core/src"),
+                "@fishy/lair": resolve(__dirname, "../lair/src"),
+              },
+            },
+          });
+        }
+
         // Copy manifest.json to dist folder
         copyFileSync(
           resolve(__dirname, "manifest.json"),

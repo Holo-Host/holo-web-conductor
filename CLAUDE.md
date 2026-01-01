@@ -392,6 +392,30 @@ interface CallZomeRequest {
 
 ---
 
+### Step 11: Synchronous SQLite Storage Layer ⏳ IN PROGRESS
+
+**Goal**: Replace IndexedDB + session cache with SQLite WASM using OPFS for synchronous durable storage, eliminating the expensive full-chain reload required before every transaction.
+
+**Dependencies**: None (out-of-sequence optimization)
+
+**Status**: IN PROGRESS - Planning complete, implementation starting
+
+**Branch**: `step-11`
+
+**Problem Being Solved**:
+- Before each zome call: `preloadChainForCell()` loads ENTIRE chain into memory
+- O(n) startup cost per zome call where n = chain size
+- Critical requirement: Data must be durably persisted when COMMIT returns
+
+**Solution**:
+- SQLite WASM with opfs-sahpool VFS for synchronous durable writes
+- Dedicated worker in offscreen document for OPFS access
+- SharedArrayBuffer + Atomics.wait() for sync worker communication
+
+**Details**: See [STEP11_PLAN.md](./STEP11_PLAN.md)
+
+---
+
 ## Technical Risks & Mitigations
 
 | Risk | Impact | Mitigation |
