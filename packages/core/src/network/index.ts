@@ -25,6 +25,17 @@ export { NetworkCache, getNetworkCache, resetNetworkCache } from './cache';
 // Services
 export { MockNetworkService } from './mock-service';
 export { SyncXHRNetworkService } from './sync-xhr-service';
+export {
+  WebSocketNetworkService,
+  getWebSocketService,
+  initWebSocketService,
+  type ClientMessage,
+  type ServerMessage,
+  type ConnectionState,
+  type SignalCallback,
+  type StateCallback,
+  type WebSocketServiceOptions,
+} from './websocket-service';
 
 // Cascade
 export { Cascade } from './cascade';
