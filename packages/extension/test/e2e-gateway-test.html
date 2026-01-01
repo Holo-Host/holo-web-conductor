@@ -175,6 +175,13 @@
         <label for="gateway-url">Gateway URL:</label>
         <input type="text" id="gateway-url" value="http://localhost:8090" style="width: 300px;" />
       </div>
+      <div class="form-group">
+        <label for="dna-hash-override">DNA Hash Override (from gateway's conductor):</label>
+        <input type="text" id="dna-hash-override" value="uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii" placeholder="e.g. uhC0k..." style="width: 500px;" />
+        <small style="color: #888; display: block; margin-top: 5px;">
+          Required for network tests. Get this from <code>.hc-sandbox/dna_hash.txt</code> after running e2e-test-setup.sh
+        </small>
+      </div>
       <button id="check-gateway-btn">Check Gateway</button>
       <button id="configure-gateway-btn" disabled>Configure Extension</button>
       <div id="gateway-status" class="status info">Not checked</div>
@@ -227,6 +234,29 @@
       <button id="get-links-btn" disabled>Get Links (dht_get_links)</button>
       <div id="getlinks-status" class="status info">Not tested</div>
       <div id="getlinks-result" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>6. Network Round-Trip Test</h2>
+      <p>This test fetches an entry that was created by the gateway's agent (not the browser extension's agent).
+         The first fetch should hit the network, subsequent fetches should hit the cascade cache.</p>
+
+      <h3>6.1 Fetch Known Entry</h3>
+      <div class="form-group">
+        <label for="known-entry-hash">Entry Hash (from gateway initialization):</label>
+        <input type="text" id="known-entry-hash" placeholder="Paste entry hash from known_entry.json" style="width: 500px;" />
+      </div>
+      <button id="fetch-network-btn" disabled>Fetch from Network</button>
+      <button id="fetch-cache-btn" disabled>Fetch Again (should hit cache)</button>
+      <div id="network-status" class="status info">Not tested</div>
+      <div id="network-result" class="test-result"></div>
+
+      <h3>6.2 Round-Trip Timing</h3>
+      <div id="timing-results">
+        <p id="first-fetch-time">First fetch: -</p>
+        <p id="second-fetch-time">Second fetch: -</p>
+        <p id="speedup">Speedup: -</p>
+      </div>
     </div>
 
     <div class="test-section">
@@ -415,14 +445,18 @@
       // Configure gateway in extension
       document.getElementById("configure-gateway-btn").addEventListener("click", async () => {
         const url = document.getElementById("gateway-url").value;
+        const dnaHashOverride = document.getElementById("dna-hash-override").value.trim() || undefined;
         addLog(`Configuring extension to use gateway: ${url}`);
+        if (dnaHashOverride) {
+          addLog(`Using DNA hash override: ${dnaHashOverride.substring(0, 20)}...`);
+        }
 
         try {
           // The extension should handle this via a message
           if (window.holochain && window.holochain.configureNetwork) {
-            await window.holochain.configureNetwork({ gatewayUrl: url });
+            await window.holochain.configureNetwork({ gatewayUrl: url, dnaHashOverride });
             addLog("Gateway configured", 'success');
-            showStatus("gateway-status", "success", `Using gateway: ${url}`);
+            showStatus("gateway-status", "success", `Using gateway: ${url}${dnaHashOverride ? ' (with DNA override)' : ''}`);
           } else {
             // Fallback: store in session for later use
             sessionStorage.setItem('fishy_gateway_url', url);
@@ -790,6 +824,138 @@
           showResult("getlinks-result", { error: error.message });
         }
       });
+
+      // Network round-trip test
+      let firstFetchTime = null;
+      let secondFetchTime = null;
+
+      // Enable network test buttons when hApp is installed
+      async function enableNetworkTests() {
+        document.getElementById("fetch-network-btn").disabled = false;
+      }
+
+      // Fetch from network (first fetch)
+      document.getElementById("fetch-network-btn").addEventListener("click", async () => {
+        const hash = document.getElementById("known-entry-hash").value;
+        if (!hash) {
+          addLog("Enter an entry hash from known_entry.json first", 'error');
+          showStatus("network-status", "error", "No hash entered");
+          return;
+        }
+
+        addLog(`Fetching known entry from network: ${hash.substring(0, 20)}...`);
+        showStatus("network-status", "info", "Fetching from network...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed");
+          }
+
+          const cellId = appInfo.cells[0];
+
+          // Decode the hash from base64 string to bytes
+          const hashBytes = decodeHashFromB64(hash);
+          addLog(`Decoded entry hash: ${hashBytes.length} bytes, prefix: [${hashBytes.slice(0,3).join(',')}]`);
+
+          // Call dht_util/dht_get_record with decoded hash bytes
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "dht_util",
+            fn_name: "dht_get_record",
+            payload: { hash: hashBytes },
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+          firstFetchTime = parseFloat(callTime);
+
+          addLog(`First fetch completed: ${callTime}ms (should be slower - network)`, 'success');
+          showStatus("network-status", "success", `Network fetch: ${callTime}ms`);
+          showResult("network-result", formatForDisplay(result));
+
+          // Update timing display
+          document.getElementById("first-fetch-time").textContent = `First fetch (network): ${callTime}ms`;
+
+          // Enable second fetch button
+          document.getElementById("fetch-cache-btn").disabled = false;
+
+          // Verify the entry content
+          if (result && result.entry && result.entry.Present) {
+            const entry = result.entry.Present;
+            addLog(`Entry content: ${JSON.stringify(entry)}`);
+          }
+
+        } catch (error) {
+          addLog(`Network fetch failed: ${error.message}`, 'error');
+          showStatus("network-status", "error", error.message);
+          showResult("network-result", { error: error.message });
+        }
+      });
+
+      // Fetch from cache (second fetch)
+      document.getElementById("fetch-cache-btn").addEventListener("click", async () => {
+        const hash = document.getElementById("known-entry-hash").value;
+        if (!hash) {
+          addLog("Enter an entry hash first", 'error');
+          return;
+        }
+
+        addLog(`Fetching entry again (should hit cache): ${hash.substring(0, 20)}...`);
+        showStatus("network-status", "info", "Fetching from cache...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          const cellId = appInfo.cells[0];
+          const hashBytes = decodeHashFromB64(hash);
+
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "dht_util",
+            fn_name: "dht_get_record",
+            payload: { hash: hashBytes },
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+          secondFetchTime = parseFloat(callTime);
+
+          addLog(`Second fetch completed: ${callTime}ms (should be faster - cache)`, 'success');
+          showStatus("network-status", "success", `Cache fetch: ${callTime}ms`);
+
+          // Update timing display
+          document.getElementById("second-fetch-time").textContent = `Second fetch (cache): ${callTime}ms`;
+
+          // Calculate speedup
+          if (firstFetchTime && secondFetchTime) {
+            const speedup = (firstFetchTime / secondFetchTime).toFixed(1);
+            const savings = (firstFetchTime - secondFetchTime).toFixed(1);
+            document.getElementById("speedup").textContent = `Speedup: ${speedup}x (${savings}ms saved)`;
+
+            if (secondFetchTime < firstFetchTime * 0.5) {
+              addLog(`Cache is working: ${speedup}x speedup`, 'success');
+            } else {
+              addLog(`Cache may not be working as expected. Check console logs.`, 'warning');
+            }
+          }
+
+        } catch (error) {
+          addLog(`Cache fetch failed: ${error.message}`, 'error');
+          showStatus("network-status", "error", error.message);
+        }
+      });
+
+      // Also enable network tests when DHT tests are enabled
+      const originalCheckExistingHapp = checkExistingHapp;
+      checkExistingHapp = async function() {
+        await originalCheckExistingHapp();
+        // Enable network tests too
+        if (installedCellId) {
+          enableNetworkTests();
+        }
+      };
 
       addLog("E2E Gateway Test Page loaded");
     </script>

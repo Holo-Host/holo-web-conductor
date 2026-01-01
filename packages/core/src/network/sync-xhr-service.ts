@@ -47,6 +47,12 @@ export interface SyncXHRConfig {
   timeout?: number;
   /** Session token for authenticated requests */
   sessionToken?: string;
+  /**
+   * Override DNA hash for network requests.
+   * Use this when the extension's computed DNA hash differs from the gateway's.
+   * Format: base64 string (e.g., "uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii")
+   */
+  dnaHashOverride?: string;
 }
 
 /**
@@ -64,6 +70,7 @@ export class SyncXHRNetworkService implements NetworkService {
   private gatewayUrl: string;
   private defaultTimeout: number;
   private sessionToken: string | null;
+  private dnaHashOverride: string | null;
 
   constructor(config: SyncXHRConfig | string, defaultTimeout: number = DEFAULT_TIMEOUT) {
     if (typeof config === 'string') {
@@ -71,11 +78,46 @@ export class SyncXHRNetworkService implements NetworkService {
       this.gatewayUrl = config.replace(/\/$/, '');
       this.defaultTimeout = defaultTimeout;
       this.sessionToken = null;
+      this.dnaHashOverride = null;
     } else {
       this.gatewayUrl = config.gatewayUrl.replace(/\/$/, '');
       this.defaultTimeout = config.timeout ?? DEFAULT_TIMEOUT;
       this.sessionToken = config.sessionToken ?? null;
+      this.dnaHashOverride = config.dnaHashOverride ?? null;
     }
+  }
+
+  /**
+   * Set the DNA hash override for network requests
+   */
+  setDnaHashOverride(hash: string | null): void {
+    this.dnaHashOverride = hash;
+    console.log(`[SyncXHR] DNA hash override ${hash ? 'set: ' + hash.substring(0, 20) + '...' : 'cleared'}`);
+  }
+
+  /**
+   * Get the current DNA hash override
+   */
+  getDnaHashOverride(): string | null {
+    return this.dnaHashOverride;
+  }
+
+  /**
+   * Get the effective DNA hash for URL building
+   * If override is set, use it; otherwise encode the provided hash
+   * Note: Gateway expects Holochain base64 format "u{base64}" (with 'u' prefix)
+   */
+  private getEffectiveDnaHash(dnaHash: DnaHash): string {
+    if (this.dnaHashOverride) {
+      // Ensure the hash has the 'u' prefix for Holochain base64 format
+      let hash = this.dnaHashOverride;
+      if (!hash.startsWith('u')) {
+        hash = 'u' + hash;
+      }
+      return hash;
+    }
+    // For non-override case, convert to Holochain base64 format with 'u' prefix
+    return 'u' + toBase64Url(dnaHash);
   }
 
   /**
@@ -93,11 +135,18 @@ export class SyncXHRNetworkService implements NetworkService {
   }
 
   /**
+   * Convert hash to Holochain base64 format with 'u' prefix
+   */
+  private toHolochainBase64(bytes: Uint8Array): string {
+    return 'u' + toBase64Url(bytes);
+  }
+
+  /**
    * Build URL for fetching a record
    */
   private buildRecordUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
-    const dnaHashB64 = toBase64Url(dnaHash);
-    const hashB64 = toBase64Url(hash);
+    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const hashB64 = this.toHolochainBase64(hash);
     return `${this.gatewayUrl}/dht/${dnaHashB64}/record/${hashB64}`;
   }
 
@@ -105,8 +154,8 @@ export class SyncXHRNetworkService implements NetworkService {
    * Build URL for fetching details
    */
   private buildDetailsUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
-    const dnaHashB64 = toBase64Url(dnaHash);
-    const hashB64 = toBase64Url(hash);
+    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const hashB64 = this.toHolochainBase64(hash);
     return `${this.gatewayUrl}/dht/${dnaHashB64}/details/${hashB64}`;
   }
 
@@ -118,8 +167,8 @@ export class SyncXHRNetworkService implements NetworkService {
     baseAddress: AnyDhtHash,
     linkType?: number
   ): string {
-    const dnaHashB64 = toBase64Url(dnaHash);
-    const baseB64 = toBase64(baseAddress);
+    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);
     if (linkType !== undefined) {
@@ -136,8 +185,8 @@ export class SyncXHRNetworkService implements NetworkService {
     baseAddress: AnyDhtHash,
     linkType?: number
   ): string {
-    const dnaHashB64 = toBase64Url(dnaHash);
-    const baseB64 = toBase64(baseAddress);
+    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);
     if (linkType !== undefined) {
@@ -179,15 +228,59 @@ export class SyncXHRNetworkService implements NetworkService {
 
   /**
    * Parse signed action from gateway response
+   *
+   * Gateway returns signed_action with:
+   * - hashed.content: the action content
+   * - hashed.hash: the action hash (as JSON array)
+   * - signature: 64-byte signature (as JSON array)
+   *
+   * We need to convert arrays to Uint8Array for proper msgpack encoding later.
    */
   private parseSignedAction(data: any): any {
-    // Gateway should return msgpack-encoded data or JSON
-    // Actual parsing depends on gateway format - placeholder for now
+    if (!data) return data;
+
+    // Deep normalize: convert all byte arrays from JSON array format to Uint8Array
+    return this.normalizeByteArrays(data);
+  }
+
+  /**
+   * Recursively normalize byte arrays from JSON format to Uint8Array
+   */
+  private normalizeByteArrays(data: any): any {
+    if (data === null || data === undefined) return data;
+    if (data instanceof Uint8Array) return data;
+
+    // Check if this looks like a byte array (array of numbers 0-255)
+    if (Array.isArray(data)) {
+      // Check if it's a flat array of numbers (likely bytes)
+      if (data.length > 0 && data.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+        return new Uint8Array(data);
+      }
+      // Otherwise recurse into array elements
+      return data.map(item => this.normalizeByteArrays(item));
+    }
+
+    // Recurse into objects
+    if (typeof data === 'object') {
+      const result: any = {};
+      for (const [key, value] of Object.entries(data)) {
+        result[key] = this.normalizeByteArrays(value);
+      }
+      return result;
+    }
+
     return data;
   }
 
   /**
    * Parse entry from gateway response
+   *
+   * Gateway returns RecordEntry which is one of:
+   * - null → 'NotApplicable'
+   * - 'Hidden' | 'NotStored' | 'NotApplicable'
+   * - { Present: Entry } where Entry is { entry_type: "App"|"Agent"|etc, entry: bytes }
+   *
+   * Entry bytes come as JSON arrays and need to be converted to Uint8Array.
    */
   private parseEntry(data: any): any {
     if (!data) {
@@ -196,7 +289,13 @@ export class SyncXHRNetworkService implements NetworkService {
     if (data === 'Hidden' || data === 'NotStored' || data === 'NotApplicable') {
       return data;
     }
-    return { Present: data };
+    // Gateway already returns { Present: Entry } format - don't double-wrap
+    if (data.Present !== undefined) {
+      // Normalize byte arrays in the entry
+      return { Present: this.normalizeByteArrays(data.Present) };
+    }
+    // If somehow we get just an Entry, wrap it and normalize
+    return { Present: this.normalizeByteArrays(data) };
   }
 
   /**
@@ -255,7 +354,8 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      xhr.timeout = timeout;
+      // Note: timeout cannot be set for synchronous requests from a document
+      // The request will block until complete or browser timeout
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -294,7 +394,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      xhr.timeout = timeout;
+      // Note: timeout cannot be set for synchronous requests from a document
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -332,7 +432,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      xhr.timeout = timeout;
+      // Note: timeout cannot be set for synchronous requests from a document
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -371,7 +471,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      xhr.timeout = timeout;
+      // Note: timeout cannot be set for synchronous requests from a document
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -416,7 +516,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
-      xhr.timeout = this.defaultTimeout;
+      // Note: timeout cannot be set for synchronous requests from a document
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send();
 
@@ -456,7 +556,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
-      xhr.timeout = this.defaultTimeout;
+      // Note: timeout cannot be set for synchronous requests from a document
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify({
         agent_pub_key: agentPubKey,

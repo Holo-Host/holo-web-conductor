@@ -30,6 +30,47 @@ interface GetInput {
 // Using HolochainRecord type from holochain-types.ts
 
 /**
+ * Convert an array-like object or array to Uint8Array
+ */
+function toUint8Array(data: any): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (Array.isArray(data)) return new Uint8Array(data);
+  if (typeof data === 'object' && data !== null) {
+    // Chrome message passing may convert arrays to objects with numeric keys
+    const values = Object.values(data) as number[];
+    return new Uint8Array(values);
+  }
+  return data;
+}
+
+/**
+ * Normalize entry bytes from gateway JSON format to Uint8Array
+ *
+ * Gateway returns Entry as JSON where bytes are represented as arrays of numbers.
+ * For msgpack encoding to work correctly, we need to convert these to Uint8Array.
+ *
+ * Entry format: { entry_type: "App"|"Agent"|etc, entry: bytes }
+ */
+function normalizeEntryBytes(entry: any): any {
+  if (!entry || typeof entry !== 'object') return entry;
+
+  const entryType = entry.entry_type;
+  const entryData = entry.entry;
+
+  if (!entryType) return entry;
+
+  // Convert entry bytes to Uint8Array if it's an array
+  const normalizedData = (Array.isArray(entryData) || (typeof entryData === 'object' && entryData !== null && !(entryData instanceof Uint8Array)))
+    ? toUint8Array(entryData)
+    : entryData;
+
+  return {
+    entry_type: entryType,
+    entry: normalizedData,
+  };
+}
+
+/**
  * get host function implementation
  *
  * Uses Cascade pattern: local storage → network cache → network
@@ -101,13 +142,16 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   }
 
   // Build entry from network record
-  // Cascade now produces entries in correct Holochain format: { entry_type: "App", entry: content }
+  // Cascade produces entries in Holochain format: { Present: { entry_type: "App", entry: content } }
+  // Gateway returns entry bytes as JSON array - convert to Uint8Array for msgpack encoding
   let entry: any = "NA";
   const recordEntry = networkRecord.entry as any;
   if (recordEntry !== "NotApplicable" && recordEntry !== "NA" && recordEntry !== 'NotStored' && recordEntry !== 'Hidden') {
     const presentEntry = recordEntry?.Present;
     if (presentEntry) {
-      entry = { Present: presentEntry };
+      // Normalize entry bytes: convert JSON arrays to Uint8Array
+      const normalizedEntry = normalizeEntryBytes(presentEntry);
+      entry = { Present: normalizedEntry };
     }
   }
 

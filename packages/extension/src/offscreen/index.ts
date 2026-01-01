@@ -243,8 +243,8 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message.type === "CONFIGURE_NETWORK") {
-      const { gatewayUrl, sessionToken } = message;
-      initializeNetworkService({ gatewayUrl, sessionToken });
+      const { gatewayUrl, sessionToken, dnaHashOverride } = message;
+      initializeNetworkService({ gatewayUrl, sessionToken, dnaHashOverride });
       sendResponse({ success: true, requestId: message.requestId || "config" });
       return true;
     }
@@ -252,6 +252,12 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "UPDATE_SESSION_TOKEN") {
       updateSessionToken(message.sessionToken);
       sendResponse({ success: true, requestId: message.requestId || "token" });
+      return true;
+    }
+
+    if (message.type === "SET_DNA_HASH_OVERRIDE") {
+      updateDnaHashOverride(message.dnaHashOverride);
+      sendResponse({ success: true, requestId: message.requestId || "dna-override" });
       return true;
     }
 
@@ -294,12 +300,20 @@ chrome.runtime.onMessage.addListener(
 /**
  * Initialize network service with gateway configuration
  */
-function initializeNetworkService(config: { gatewayUrl: string; sessionToken?: string }): void {
+function initializeNetworkService(config: {
+  gatewayUrl: string;
+  sessionToken?: string;
+  dnaHashOverride?: string;
+}): void {
   console.log(`[Offscreen] Initializing network service with gateway: ${config.gatewayUrl}`);
+  if (config.dnaHashOverride) {
+    console.log(`[Offscreen] Using DNA hash override: ${config.dnaHashOverride.substring(0, 20)}...`);
+  }
 
   networkService = new SyncXHRNetworkService({
     gatewayUrl: config.gatewayUrl,
     sessionToken: config.sessionToken,
+    dnaHashOverride: config.dnaHashOverride,
   });
 
   // Make it available to cascade lookups
@@ -315,6 +329,15 @@ function updateSessionToken(token: string | null): void {
   if (networkService) {
     networkService.setSessionToken(token);
     console.log(`[Offscreen] Session token ${token ? 'set' : 'cleared'}`);
+  }
+}
+
+/**
+ * Update DNA hash override (for testing when extension's DNA hash differs from gateway's)
+ */
+function updateDnaHashOverride(hash: string | null): void {
+  if (networkService) {
+    networkService.setDnaHashOverride(hash);
   }
 }
 

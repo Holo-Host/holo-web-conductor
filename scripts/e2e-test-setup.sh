@@ -77,40 +77,83 @@ start_conductor() {
     mkdir -p "$SANDBOX_DIR"
     cd "$SANDBOX_DIR"
 
-    # Check if conductor is already running
-    if pgrep -f "holochain.*$ADMIN_PORT" > /dev/null 2>&1; then
-        log_warn "Conductor already running on port $ADMIN_PORT"
-        return 0
+    # Check if conductor is already running by looking for hc sandbox process
+    if pgrep -f "hc sandbox" > /dev/null 2>&1; then
+        # Verify it's actually responding
+        if [ -f sandbox-generate.log ] && grep -q "running conductor" sandbox-generate.log 2>/dev/null; then
+            log_warn "Conductor already running"
+            return 0
+        fi
     fi
 
-    # Clean up old sandbox
-    rm -rf .hc conductor-* *.yaml 2>/dev/null || true
+    # Clean up old sandbox and any stale processes
+    pkill -f "hc sandbox" 2>/dev/null || true
+    sleep 1
+    rm -rf .hc conductor-* *.yaml sandbox-generate.log 2>/dev/null || true
 
     # Generate a new sandbox with the hApp
     log_info "Generating sandbox with fixture hApp..."
-    hc sandbox generate \
+
+    # Use a directory in the sandbox dir to avoid /tmp issues
+    export HC_SANDBOX_DATADIR="$SANDBOX_DIR/data"
+    mkdir -p "$HC_SANDBOX_DATADIR"
+
+    # Always use in-process lair to avoid passphrase issues
+    log_info "Using in-process lair (no external lair-keystore needed)"
+
+    # Generate and run sandbox in one step using --run
+    # --piped is a GLOBAL option that must come BEFORE the subcommand
+    log_info "Running: hc sandbox --piped generate --in-process-lair --run 0 --app-id fixture1 ..."
+
+    # Run in background, piping passphrase via stdin
+    # The passphrase "test-passphrase" is used for local development only
+    (echo "test-passphrase" | hc sandbox --piped generate \
         --in-process-lair \
         --run 0 \
         --app-id fixture1 \
-        "$HAPP_PATH" \
-        2>&1 | tee sandbox-generate.log &
+        --root "$HC_SANDBOX_DATADIR" \
+        "$HAPP_PATH") \
+        > sandbox-generate.log 2>&1 &
+
+    CONDUCTOR_PID=$!
+    echo "$CONDUCTOR_PID" > conductor.pid
 
     # Wait for conductor to start
-    log_info "Waiting for conductor to start..."
-    for i in {1..30}; do
-        if curl -s "http://localhost:$ADMIN_PORT" > /dev/null 2>&1 || \
-           grep -q "Conductor ready" sandbox-generate.log 2>/dev/null; then
+    log_info "Waiting for conductor to start (PID: $CONDUCTOR_PID)..."
+    for i in {1..60}; do
+        # Check if conductor is ready - look for the JSON launch info
+        if grep -q '"admin_port":' sandbox-generate.log 2>/dev/null; then
             log_info "Conductor started"
 
-            # Get the admin port from the log
-            ACTUAL_ADMIN=$(grep -oP "Admin Interfaces:\s*\K\d+" sandbox-generate.log 2>/dev/null || echo "$ADMIN_PORT")
+            # Get the admin port from the JSON output
+            # Format: Conductor launched #!0 {"admin_port":41061,"app_ports":[38485]}
+            ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' sandbox-generate.log 2>/dev/null | head -1)
+            if [ -z "$ACTUAL_ADMIN" ]; then
+                ACTUAL_ADMIN="$ADMIN_PORT"
+            fi
             log_info "Admin interface on port: $ACTUAL_ADMIN"
+
+            # Save the admin port for later use
+            echo "$ACTUAL_ADMIN" > admin_port.txt
             return 0
+        fi
+        # Check for errors in log
+        if grep -q "^Error:" sandbox-generate.log 2>/dev/null; then
+            log_error "Conductor failed with error:"
+            cat sandbox-generate.log
+            exit 1
+        fi
+        # Check if process is still running
+        if ! kill -0 "$CONDUCTOR_PID" 2>/dev/null; then
+            log_error "Conductor process died"
+            cat sandbox-generate.log
+            exit 1
         fi
         sleep 1
     done
 
     log_error "Conductor failed to start. Check sandbox-generate.log"
+    cat sandbox-generate.log
     exit 1
 }
 
@@ -118,15 +161,22 @@ start_conductor() {
 start_gateway() {
     log_info "Starting hc-http-gw..."
 
-    # Check if gateway is already running
-    if pgrep -f "hc-http-gw" > /dev/null 2>&1; then
+    # Check if gateway is already running (match the binary path, not just any command containing the string)
+    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
         log_warn "Gateway already running"
         return 0
     fi
 
-    # Get the actual admin port from the sandbox
+    # Get the actual admin port from saved file or parse from log
     cd "$SANDBOX_DIR"
-    ACTUAL_ADMIN=$(grep -oP "Admin Interfaces:\s*\K\d+" sandbox-generate.log 2>/dev/null || echo "$ADMIN_PORT")
+    if [ -f admin_port.txt ]; then
+        ACTUAL_ADMIN=$(cat admin_port.txt)
+    else
+        ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' sandbox-generate.log 2>/dev/null | head -1)
+        if [ -z "$ACTUAL_ADMIN" ]; then
+            ACTUAL_ADMIN="$ADMIN_PORT"
+        fi
+    fi
 
     # Build gateway if needed
     if [ ! -f "$GATEWAY_DIR/target/release/hc-http-gw" ]; then
@@ -184,6 +234,14 @@ stop_services() {
     fi
 
     # Stop conductor
+    if [ -f conductor.pid ]; then
+        CONDUCTOR_PID=$(cat conductor.pid)
+        if kill -0 "$CONDUCTOR_PID" 2>/dev/null; then
+            log_info "Stopping conductor (PID $CONDUCTOR_PID)..."
+            kill "$CONDUCTOR_PID"
+        fi
+        rm -f conductor.pid
+    fi
     pkill -f "holochain.*sandbox" 2>/dev/null || true
     pkill -f "hc sandbox" 2>/dev/null || true
 
@@ -205,8 +263,8 @@ show_status() {
         echo -e "Conductor: ${RED}STOPPED${NC}"
     fi
 
-    # Check gateway
-    if pgrep -f "hc-http-gw" > /dev/null 2>&1; then
+    # Check gateway (match the binary path, not just any command containing the string)
+    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
         echo -e "Gateway:   ${GREEN}RUNNING${NC} on port $GATEWAY_PORT"
     else
         echo -e "Gateway:   ${RED}STOPPED${NC}"
@@ -224,7 +282,87 @@ clean_sandbox() {
     log_info "Cleaning up sandbox..."
     stop_services
     rm -rf "$SANDBOX_DIR"
+    # Also clean any .hc file in project dir
+    rm -f "$PROJECT_DIR/.hc" 2>/dev/null || true
     log_info "Cleanup complete"
+}
+
+# Initialize test entry on the gateway
+# Creates an entry with known content "fishy" that can be fetched by the browser extension
+initialize_test_entry() {
+    log_info "Initializing test entry on gateway..."
+
+    # Wait for gateway to be ready
+    sleep 2
+
+    cd "$SANDBOX_DIR"
+
+    # Get the DNA hash from the sandbox using the saved admin port
+    log_info "Getting DNA hash from sandbox..."
+
+    # Get the admin port
+    local ACTUAL_ADMIN
+    if [ -f admin_port.txt ]; then
+        ACTUAL_ADMIN=$(cat admin_port.txt)
+    else
+        log_warn "Admin port not saved, trying to parse from log"
+        ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' sandbox-generate.log 2>/dev/null | head -1)
+    fi
+
+    if [ -z "$ACTUAL_ADMIN" ]; then
+        log_warn "Could not determine admin port"
+        return 1
+    fi
+
+    log_info "Using admin port: $ACTUAL_ADMIN"
+
+    local DNA_HASH
+    # The output is a JSON array like: ["uhC0k..."]
+    # Extract the first hash from the array
+    DNA_HASH=$(hc sandbox call --running="$ACTUAL_ADMIN" list-dnas 2>&1 | grep -oP '"uhC0k[^"]+' | head -1 | tr -d '"')
+
+    if [ -z "$DNA_HASH" ]; then
+        log_warn "Could not get DNA hash from sandbox"
+        log_info "You can manually call: hc sandbox call list-dnas"
+        return 1
+    fi
+
+    log_info "DNA hash: $DNA_HASH"
+
+    # Create an entry with known content "fishy"
+    # The entry hash will be deterministic based on the content
+    local PAYLOAD='{"value":"fishy"}'
+    local ENCODED_PAYLOAD
+    ENCODED_PAYLOAD=$(echo -n "$PAYLOAD" | base64 -w0)
+
+    # Call the gateway to create the entry
+    # Format: GET /{dna-hash}/{app-id}/{zome-name}/{fn-name}?payload={base64}
+    # Note: The coordinator_identifier must be the app_id, not a numeric index
+    log_info "Creating known entry with value 'fishy'..."
+
+    local RESPONSE
+    RESPONSE=$(curl -s "http://localhost:$GATEWAY_PORT/${DNA_HASH}/fixture1/coordinator1/create_known_entry?payload=$ENCODED_PAYLOAD" 2>&1)
+
+    if echo "$RESPONSE" | grep -q "entry_hash"; then
+        log_info "Test entry created successfully"
+
+        # Extract and display the hashes
+        local ACTION_HASH
+        local ENTRY_HASH
+        ACTION_HASH=$(echo "$RESPONSE" | grep -oP '"action_hash"\s*:\s*"\K[^"]+' || echo "unknown")
+        ENTRY_HASH=$(echo "$RESPONSE" | grep -oP '"entry_hash"\s*:\s*"\K[^"]+' || echo "unknown")
+
+        log_info "Action hash: $ACTION_HASH"
+        log_info "Entry hash: $ENTRY_HASH"
+
+        # Save for reference
+        echo "$RESPONSE" > "$SANDBOX_DIR/known_entry.json"
+        echo "$DNA_HASH" > "$SANDBOX_DIR/dna_hash.txt"
+        log_info "Entry hashes saved to $SANDBOX_DIR/known_entry.json"
+    else
+        log_warn "Could not create test entry. Response: $RESPONSE"
+        log_info "Gateway URL was: http://localhost:$GATEWAY_PORT/${DNA_HASH}/fixture1/coordinator1/create_known_entry"
+    fi
 }
 
 # Main command handling
@@ -236,6 +374,10 @@ case "${1:-start}" in
         sleep 2
         start_gateway
         show_status
+        echo ""
+        # Initialize test entry
+        initialize_test_entry
+
         echo ""
         echo "To test, open in browser:"
         echo "  file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"

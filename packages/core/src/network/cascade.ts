@@ -184,6 +184,13 @@ export class Cascade {
       } catch (error) {
         console.warn(`[Cascade] Network fetch failed:`, error);
       }
+    } else if (opts.useNetwork) {
+      // Log why network wasn't tried
+      if (!this.network) {
+        console.log(`[Cascade] Network not configured - call configureNetwork() first`);
+      } else if (!this.network.isAvailable()) {
+        console.log(`[Cascade] Network service not available (gateway: ${this.network.getGatewayUrl()})`);
+      }
     }
 
     console.log(`[Cascade] Record not found by action hash`);
@@ -226,6 +233,13 @@ export class Cascade {
         }
       } catch (error) {
         console.warn(`[Cascade] Network fetch by entry hash failed:`, error);
+      }
+    } else if (opts.useNetwork) {
+      // Log why network wasn't tried
+      if (!this.network) {
+        console.log(`[Cascade] Network not configured - call configureNetwork() first`);
+      } else if (!this.network.isAvailable()) {
+        console.log(`[Cascade] Network service not available (gateway: ${this.network.getGatewayUrl()})`);
       }
     }
 

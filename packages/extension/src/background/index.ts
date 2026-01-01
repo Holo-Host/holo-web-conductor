@@ -43,7 +43,7 @@ let networkConfigured = false;
 
 // Gateway configuration - can be set via popup settings or environment
 // Default to null (no network) until configured
-let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
+let gatewayConfig: { gatewayUrl: string; sessionToken?: string; dnaHashOverride?: string } | null = null;
 
 /**
  * Check if the offscreen document exists
@@ -90,8 +90,11 @@ async function ensureOffscreenDocument(): Promise<void> {
 /**
  * Configure the network service in the offscreen document
  */
-async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void> {
+async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string; dnaHashOverride?: string }): Promise<void> {
   console.log(`[Background] Configuring offscreen network with gateway: ${config.gatewayUrl}`);
+  if (config.dnaHashOverride) {
+    console.log(`[Background] DNA hash override: ${config.dnaHashOverride.substring(0, 20)}...`);
+  }
 
   try {
     await chrome.runtime.sendMessage({
@@ -99,6 +102,7 @@ async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionTo
       type: "CONFIGURE_NETWORK",
       gatewayUrl: config.gatewayUrl,
       sessionToken: config.sessionToken,
+      dnaHashOverride: config.dnaHashOverride,
     });
     networkConfigured = true;
     console.log("[Background] Offscreen network configured");
@@ -111,11 +115,14 @@ async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionTo
  * Set the gateway configuration
  * Call this to enable network requests via hc-http-gw
  */
-function setGatewayConfig(url: string, sessionToken?: string): void {
-  gatewayConfig = { gatewayUrl: url, sessionToken };
+function setGatewayConfig(url: string, sessionToken?: string, dnaHashOverride?: string): void {
+  gatewayConfig = { gatewayUrl: url, sessionToken, dnaHashOverride };
   networkConfigured = false; // Will be configured on next offscreen use
 
   console.log(`[Background] Gateway config set: ${url}`);
+  if (dnaHashOverride) {
+    console.log(`[Background] DNA hash override set: ${dnaHashOverride.substring(0, 20)}...`);
+  }
 }
 
 /**
@@ -1466,20 +1473,20 @@ async function handleGatewayConfigure(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { gatewayUrl } = message.payload as { gatewayUrl: string };
+    const { gatewayUrl, dnaHashOverride } = message.payload as { gatewayUrl: string; dnaHashOverride?: string };
 
     if (!gatewayUrl) {
       return createErrorResponse(message.id, "gatewayUrl is required");
     }
 
-    setGatewayConfig(gatewayUrl);
+    setGatewayConfig(gatewayUrl, undefined, dnaHashOverride);
 
     // If offscreen document is already running, configure it now
     if (await hasOffscreenDocument()) {
-      await configureOffscreenNetwork({ gatewayUrl });
+      await configureOffscreenNetwork({ gatewayUrl, dnaHashOverride });
     }
 
-    return createSuccessResponse(message.id, { configured: true });
+    return createSuccessResponse(message.id, { configured: true, dnaHashOverride: !!dnaHashOverride });
   } catch (error) {
     return createErrorResponse(
       message.id,
