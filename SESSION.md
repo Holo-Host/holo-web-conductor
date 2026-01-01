@@ -2,7 +2,7 @@
 
 **Last Updated**: 2025-12-31
 **Current Step**: Step 9.5 - Gateway Real-Time Connection for Remote Signals
-**Status**: Phase 3 (Signal Forwarding) complete, Phase 4 (Browser Integration) pending
+**Status**: Phase 4 (Browser Integration) complete - core signal forwarding implemented
 
 ## Current Step Progress
 
@@ -30,8 +30,17 @@
   - Binary wired up with signal forwarding enabled
   - 3 unit tests for signal forwarding
 
-**Remaining**:
-- [ ] Phase 4: Browser Integration (Extension) - WebSocketNetworkService class
+- ✅ Phase 4: Browser Integration (Extension)
+  - Commit `5fe366f`: WebSocketNetworkService class created
+    - 20 unit tests passing
+    - Connection lifecycle, authentication, agent registration, signal dispatch
+    - Heartbeat and exponential backoff reconnection
+  - Commit `2f5f315`: Wire WebSocket to offscreen document
+    - Initialize WebSocketNetworkService alongside SyncXHR
+    - Forward signals from WebSocket to background script
+    - Handle REMOTE_SIGNAL, WS_STATE_CHANGE, OFFSCREEN_READY messages
+    - Add REGISTER_AGENT, UNREGISTER_AGENT, GET_WS_STATE message handlers
+    - 8 unit tests for URL conversion and signal byte preservation
 
 **Plan File**: See `../hc-http-gw-fork/.claude/plans/cryptic-stirring-dolphin.md`
 
@@ -257,4 +266,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Gateway Real-Time Connection for Remote Signals) is in progress - Phases 1-3 are complete in hc-http-gw-fork on branch `fishy-step-9-5`. The gateway has WebSocket infrastructure, agent proxy registration, and signal forwarding. Phase 4 (Browser Integration) is pending - implementing WebSocketNetworkService in the fishy extension.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Gateway Real-Time Connection for Remote Signals) is complete - all 4 phases are done. The gateway (hc-http-gw-fork on branch `fishy-step-9-5`) has WebSocket infrastructure, agent proxy registration, and signal forwarding. The extension has WebSocketNetworkService wired to the offscreen document with signal dispatch to background. Next steps would be end-to-end testing or moving to Step 9 additional features.
