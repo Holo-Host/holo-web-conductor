@@ -1,10 +1,50 @@
 # Fishy Development Session
 
 **Last Updated**: 2026-01-01
-**Current Step**: Step 11 Complete - Next: Step 8 or 9
-**Status**: Step 11 (SQLite Storage) COMPLETE
+**Current Step**: Step 9.6 - Remote Signal Forwarding with Kitsune2
+**Status**: Planning Complete - Ready for Implementation
 
 ## Current Step Progress
+
+### Step 9.5: Signal Delivery (Local) - COMPLETE
+
+**Goal**: Wire up signal delivery from gateway to browser extension via WebSocket.
+
+**Completed (2026-01-01)**:
+- ✅ Agent registration with gateway after hApp installation
+- ✅ Proper AgentPubKey wrapping (32-byte Ed25519 → 39-byte HoloHash)
+- ✅ Always send auth on WebSocket connect (gateway requires it)
+- ✅ Test page signal encoding (msgpack format)
+- ✅ 212 tests passing (113 core + 74 extension + 25 lair)
+
+**Commit**: `ca8df45 feat: complete signal delivery from gateway to extension`
+
+---
+
+### Step 9.6: Remote Signal Forwarding with Kitsune2 - IN PROGRESS
+
+**Goal**: Wire up kitsune2 in gateway so real conductor agents can send signals to browser agents.
+
+**Discovery**: Infrastructure is 90% built in hc-http-gw-fork:
+- `src/kitsune_proxy.rs` - KitsuneProxy, ProxySpaceHandler (complete)
+- `src/proxy_agent.rs` - ProxyAgent for browser agents (complete)
+- `GatewayKitsune` manager (complete)
+- **Missing**: Initialization in `bin/hc-http-gw.rs`
+
+**Plan**: See [STEPS/9.6_PLAN.md](./STEPS/9.6_PLAN.md)
+
+**Implementation Steps**:
+1. Add `gateway_kitsune` param to `service.rs:with_auth()`
+2. Parse `HC_GW_KITSUNE2_*` env vars in binary
+3. Build `GatewayKitsune` when enabled
+4. Create E2E test with SweetConductor
+
+**Files to Modify**:
+- `hc-http-gw-fork/src/service.rs` - Add gateway_kitsune param
+- `hc-http-gw-fork/src/bin/hc-http-gw.rs` - Initialize GatewayKitsune
+- `hc-http-gw-fork/tests/remote_signal_e2e.rs` - NEW E2E test
+
+---
 
 ### Step 11: Synchronous SQLite Storage Layer - COMPLETE
 
@@ -19,7 +59,7 @@
 - ✅ Data persists across browser reloads (verified with seq=9 chain)
 - ✅ All 79 core tests passing
 
-**Details**: See [STEP11_COMPLETION.md](./STEP11_COMPLETION.md)
+**Details**: See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
 
 ---
 
@@ -49,7 +89,7 @@
 
 **Architecture**: Runtime validation controlled by `WASM_INPUT_VALIDATION_ENABLED` flag (default: true for development, can be disabled in production).
 
-**Details**: See [STEP7.3_PLAN.md](./STEP7.3_PLAN.md)
+**Details**: See [STEPS/7.3_PLAN.md](./STEPS/7.3_PLAN.md)
 
 ### Step 7: Network Host Functions - COMPLETE
 
@@ -92,7 +132,7 @@
   - Added `window.holochain.configureNetwork()` API
   - Added `window.holochain.installApp()` for bundle-based installation
 
-**Details**: See [STEP7.2_PLAN.md](./STEP7.2_PLAN.md)
+**Details**: See [STEPS/7.2_PLAN.md](./STEPS/7.2_PLAN.md)
 
 **E2E Testing**: See [TESTING.md](./TESTING.md) for full instructions on running end-to-end tests with the gateway.
 
@@ -100,18 +140,18 @@
 
 Completion notes for each step are in separate files:
 
-- **Step 1**: Browser Extension Base - See [STEP1_COMPLETION.md](./STEP1_COMPLETION.md)
-- **Step 2**: Lair Keystore Implementation - See [STEP2_COMPLETION.md](./STEP2_COMPLETION.md)
-- **Step 2.5**: Lair UI Integration - See [STEP2.5_COMPLETION.md](./STEP2.5_COMPLETION.md)
-- **Step 3**: Authorization Mechanism - See [STEP3_COMPLETION.md](./STEP3_COMPLETION.md)
-- **Step 4**: hApp Context Creation - See [STEP4_COMPLETION.md](./STEP4_COMPLETION.md)
-- **Step 5**: WASM Execution with Mocked Host Functions - See [STEP5_COMPLETION.md](./STEP5_COMPLETION.md)
-- **Step 5.6**: Complete Host Functions and Data Types - See [STEP5.6_COMPLETION.md](./STEP5.6_COMPLETION.md)
-- **Step 5.7**: .happ Bundle Support with DNA Manifest Integration - See [STEP5.7_COMPLETION.md](./STEP5.7_COMPLETION.md)
-- **Step 6.6**: Automated Integration Testing - See [STEP6.6_COMPLETION.md](./STEP6.6_COMPLETION.md)
-- **Step 6.7**: Test with profiles - See [STEP6.7_COMPLETION.md](./STEP6.7_COMPLETION.md)
-- **Step 7.0**: Network Research - See [STEP7_RESEARCH.md](./STEP7_RESEARCH.md)
-- **Step 11**: Synchronous SQLite Storage Layer - See [STEP11_COMPLETION.md](./STEP11_COMPLETION.md)
+- **Step 1**: Browser Extension Base - See [STEPS/1_COMPLETION.md](./STEPS/1_COMPLETION.md)
+- **Step 2**: Lair Keystore Implementation - See [STEPS/2_COMPLETION.md](./STEPS/2_COMPLETION.md)
+- **Step 2.5**: Lair UI Integration - See [STEPS/2.5_COMPLETION.md](./STEPS/2.5_COMPLETION.md)
+- **Step 3**: Authorization Mechanism - See [STEPS/3_COMPLETION.md](./STEPS/3_COMPLETION.md)
+- **Step 4**: hApp Context Creation - See [STEPS/4_COMPLETION.md](./STEPS/4_COMPLETION.md)
+- **Step 5**: WASM Execution with Mocked Host Functions - See [STEPS/5_COMPLETION.md](./STEPS/5_COMPLETION.md)
+- **Step 5.6**: Complete Host Functions and Data Types - See [STEPS/5.6_COMPLETION.md](./STEPS/5.6_COMPLETION.md)
+- **Step 5.7**: .happ Bundle Support with DNA Manifest Integration - See [STEPS/5.7_COMPLETION.md](./STEPS/5.7_COMPLETION.md)
+- **Step 6.6**: Automated Integration Testing - See [STEPS/6.6_COMPLETION.md](./STEPS/6.6_COMPLETION.md)
+- **Step 6.7**: Test with profiles - See [STEPS/6.7_COMPLETION.md](./STEPS/6.7_COMPLETION.md)
+- **Step 7.0**: Network Research - See [STEPS/7_RESEARCH.md](./STEPS/7_RESEARCH.md)
+- **Step 11**: Synchronous SQLite Storage Layer - See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
 
 ---
 
@@ -205,7 +245,7 @@ Any serialization changes MUST:
 
 3. **Read the current step plan**:
    ```bash
-   cat STEP7.2_PLAN.md
+   cat STEPS/7.2_PLAN.md
    ```
 
 4. **Build fixture WASMs** (if not already built):
@@ -232,7 +272,7 @@ Any serialization changes MUST:
 - `STEPX_COMPLETION.md` - Completion notes for finished steps
 
 ### Step 7.2 Specific
-- `STEP7.2_PLAN.md` - Gateway integration plan and checklist
+- `STEPS/7.2_PLAN.md` - Gateway integration plan and checklist
 - `packages/core/src/network/sync-xhr-service.ts` - Network service with auth
 - `packages/core/src/network/types.ts` - NetworkService interface
 - `../hc-http-gw-fork/src/auth/` - Gateway auth module
@@ -282,4 +322,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 11 (SQLite Storage) is COMPLETE - WASM + SQLite run together in ribosome-worker with OPFS persistence. The next step is Step 8 (hc-http-gw Extensions) for implementing publish operations, or Step 9 for additional Holochain features.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Local Signal Delivery) is COMPLETE. Step 9.6 (Kitsune2 Remote Signals) is IN PROGRESS with planning complete. The plan is at `STEPS/9.6_PLAN.md`. The kitsune2 infrastructure in hc-http-gw-fork is 90% built - we just need to initialize GatewayKitsune in the binary and create an E2E test.

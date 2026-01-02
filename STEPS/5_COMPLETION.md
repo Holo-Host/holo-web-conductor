@@ -39,7 +39,7 @@ All tests passing (34 passed), build successful, ribosome infrastructure complet
 - `packages/core/src/ribosome/serialization.test.ts` (289 lines) - 21 serialization tests
 - `packages/core/vitest.config.ts` (13 lines) - Test configuration
 - `packages/extension/test/wasm-test.html` - Manual test page
-- `STEP5_PLAN.md` (674 lines) - Implementation plan
+- `5_PLAN.md` (674 lines) - Implementation plan
 
 ## Files Modified
 

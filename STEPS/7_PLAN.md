@@ -11,7 +11,7 @@ Step 7 adds network data retrieval to fishy, implementing a "cascade" pattern si
 
 ## Research Outcome (7.0 Complete)
 
-**See**: [STEP7_RESEARCH.md](./STEP7_RESEARCH.md) for full analysis.
+**See**: [7_RESEARCH.md](./7_RESEARCH.md) for full analysis.
 
 ### Chosen Approach: Offscreen Document
 
@@ -43,7 +43,7 @@ Offscreen Document                    ← WASM executes here
 - ✅ 7.0.1 Offscreen Document spike: `spikes/offscreen-test/`
 - ✅ 7.0.2 JSPI spike: `spikes/jspi-test/`
 - ✅ 7.0.3 SharedArrayBuffer evaluation: `spikes/shared-array-buffer-notes.md`
-- ✅ 7.0.4 Research findings: `STEP7_RESEARCH.md`
+- ✅ 7.0.4 Research findings: `7_RESEARCH.md`
 - ✅ 7.0.5 Update this plan
 
 ### 7.1 Extension Architecture Update
@@ -289,6 +289,6 @@ Step 8 will:
 3. Test each step before moving on
 
 **Completing Step 7**:
-1. Create STEP7_COMPLETION.md
+1. Create 7_COMPLETION.md
 2. Update CLAUDE.md to mark Step 7 complete
 3. Update SESSION.md for Step 8

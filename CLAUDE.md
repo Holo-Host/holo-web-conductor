@@ -202,7 +202,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE
 
-**Details**: See [STEP2.5_PLAN.md](./STEP2.5_PLAN.md)
+**Details**: See [STEPS/2.5_PLAN.md](./STEPS/2.5_PLAN.md)
 
 ---
 
@@ -214,7 +214,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE - 18 tests passing (9 PermissionManager + 9 AuthManager)
 
-**Details**: See [STEP3_PLAN.md](./STEP3_PLAN.md)
+**Details**: See [STEPS/3_PLAN.md](./STEPS/3_PLAN.md)
 
 ---
 
@@ -226,7 +226,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE - 25 tests passing (12 storage + 13 manager)
 
-**Details**: See [STEP4_PLAN.md](./STEP4_PLAN.md)
+**Details**: See [STEPS/4_PLAN.md](./STEPS/4_PLAN.md)
 
 ---
 
@@ -238,7 +238,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE - 34 tests passing (13 runtime + 21 serialization), 20 host functions implemented
 
-**Details**: See [STEP5_PLAN.md](./STEP5_PLAN.md)
+**Details**: See [STEPS/5_PLAN.md](./STEPS/5_PLAN.md)
 
 ---
 
@@ -250,7 +250,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE (2025-12-27) - 40/40 tests passing, emit_signal implemented, 22 TypeScript type definitions added
 
-**Details**: See [STEP5.6_PLAN.md](./STEP5.6_PLAN.md)
+**Details**: See [STEPS/5.6_PLAN.md](./STEPS/5.6_PLAN.md)
 
 ---
 
@@ -262,7 +262,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE (2025-12-28) - 22/22 tests passing, bundle unpacking working, manifest data flowing to host functions
 
-**Details**: See [STEP5.7_PLAN.md](./STEP5.7_PLAN.md)
+**Details**: See [STEPS/5.7_PLAN.md](./STEPS/5.7_PLAN.md)
 
 ---
 
@@ -274,7 +274,7 @@ interface CallZomeRequest {
 
 **Status**: Mostly complete - Storage layer complete, host function integration complete except get_details
 
-**Details**: See [STEP6_PLAN.md](./STEP6_PLAN.md)
+**Details**: See [STEPS/6_PLAN.md](./STEPS/6_PLAN.md)
 
 ---
 
@@ -286,7 +286,7 @@ interface CallZomeRequest {
 
 **Status**: Mostly complete - Entry/link operations working, get_details deferred
 
-**Details**: See [STEP6_PLAN.md](./STEP6_PLAN.md) (combined with Step 6)
+**Details**: See [STEPS/6_PLAN.md](./STEPS/6_PLAN.md) (combined with Step 6)
 
 ---
 
@@ -296,8 +296,8 @@ interface CallZomeRequest {
 
 **Status**: ✅ COMPLETE (2025-12-29)
 
-**Details**: See [STEP6.6_PLAN.md](./STEP6.6_PLAN.md)
-**Completion**: See [STEP6.6_COMPLETION.md](./STEP6.6_COMPLETION.md)
+**Details**: See [STEPS/6.6_PLAN.md](./STEPS/6.6_PLAN.md)
+**Completion**: See [STEPS/6.6_COMPLETION.md](./STEPS/6.6_COMPLETION.md)
 
 ---
 
@@ -312,7 +312,7 @@ interface CallZomeRequest {
 
 **Status**: COMPLETE (2025-12-29) - Signal infrastructure added, profiles test page working, get_details fixed for UPDATE actions
 
-**Completion**: See [STEP6.7_COMPLETION.md](./STEP6.7_COMPLETION.md)
+**Completion**: See [STEPS/6.7_COMPLETION.md](./STEPS/6.7_COMPLETION.md)
 
 ---
 
@@ -333,7 +333,7 @@ interface CallZomeRequest {
 - `packages/core/src/network/sync-xhr-service.ts` - Gateway network service
 - `packages/core/src/ribosome/host-fn/get.ts` - Uses cascade for lookups
 
-**Completion**: See [STEP7.2_COMPLETION.md](./STEP7.2_COMPLETION.md)
+**Completion**: See [STEPS/7.2_COMPLETION.md](./STEPS/7.2_COMPLETION.md)
 
 ---
 
@@ -403,22 +403,35 @@ interface CallZomeRequest {
 - 20 WebSocketNetworkService tests (extension)
 - 8 offscreen integration tests (extension)
 
-**Details**: See [STEP9.5_COMPLETION.md](./STEP9.5_COMPLETION.md)
+**Details**: See [STEPS/9.5_COMPLETION.md](./STEPS/9.5_COMPLETION.md)
 
 ---
 
-### Step 9.6: Additional Holochain Features
+### Step 9.6: Kitsune2 Remote Signal Forwarding ⏳ IN PROGRESS
 
-**Goal**: Add additional Holochain features for robustness.
+**Goal**: Wire up kitsune2 in gateway so conductor agents can send `send_remote_signal` to browser agents.
 
-**Sub-tasks**:
-1. **9.6.1** Implement `send_remote_signal` (outbound signals from browser)
-2. **9.6.2** Implement `call_remote` for cross-cell calls
-3. **9.6.3** Implement validation callbacks
+**Status**: Planning Complete - Ready for Implementation
+
+**Discovery**: Infrastructure is 90% built in hc-http-gw-fork:
+- `src/kitsune_proxy.rs` - KitsuneProxy, ProxySpaceHandler (complete)
+- `src/proxy_agent.rs` - ProxyAgent for browser agents (complete)
+- `GatewayKitsune` manager (complete)
+- **Missing**: Initialization in `bin/hc-http-gw.rs`
+
+**Implementation Steps**:
+1. Add `gateway_kitsune` param to `service.rs:with_auth()`
+2. Parse `HC_GW_KITSUNE2_*` env vars in binary
+3. Build `GatewayKitsune` when enabled
+4. Create E2E test with SweetConductor
+
+**Files to Modify**:
+- `../hc-http-gw-fork/src/service.rs` - Add gateway_kitsune param
+- `../hc-http-gw-fork/src/bin/hc-http-gw.rs` - Initialize GatewayKitsune
+- `../hc-http-gw-fork/tests/remote_signal_e2e.rs` - NEW E2E test
 
 **Tests**:
-- Remote signals delivered bidirectionally
-- Cross-cell calls work
+- E2E test: conductor agent sends signal, browser receives via WebSocket
 
 
 ---
@@ -459,7 +472,7 @@ interface CallZomeRequest {
 - `packages/extension/src/offscreen/ribosome-worker.ts` - Main worker with SQLite + WASM
 - `packages/extension/src/offscreen/index.ts` - Offscreen document, spawns worker
 
-**Details**: See [STEP11_COMPLETION.md](./STEP11_COMPLETION.md)
+**Details**: See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
 
 ---
 

@@ -682,9 +682,9 @@ This produces detailed logs for comparing with Rust output.
 ### Pattern 3: Protocol/Contract Misunderstanding
 
 **Evidence**:
-- STEP6_PLAN.md: "Action serialization requires internally tagged enum format with snake_case" - discovered after multiple failures
+- STEPS/6_PLAN.md: "Action serialization requires internally tagged enum format with snake_case" - discovered after multiple failures
 - LESSONS_LEARNED.md: "HDK explicitly requires Result<T, WasmError> from host functions" - tried removing 3+ times
-- STEP5.7_PLAN.md: "AgentPubKey requires 39-byte format (32-byte key + 7-byte prefix)" - wrong format caused failures
+- STEPS/5.7_PLAN.md: "AgentPubKey requires 39-byte format (32-byte key + 7-byte prefix)" - wrong format caused failures
 
 **Summary**: Assumptions about data formats without verifying against the actual protocol. Many hours spent before realizing Holochain has specific contracts that must be followed exactly.
 
@@ -705,7 +705,7 @@ This produces detailed logs for comparing with Rust output.
 ### Pattern 4: Measuring After Coding
 
 **Evidence**:
-- STEP5.5.5_PLAN.md entire approach: "Empirical measurement before code changes... NOT assuming codec incompatibility without proof"
+- STEPS/5.5.5_PLAN.md entire approach: "Empirical measurement before code changes... NOT assuming codec incompatibility without proof"
 - Multiple codec changes were made without byte-level comparison to see what was actually different
 - msgpack-bridge was built based on assumption of codec incompatibility, not measured proof
 
@@ -724,7 +724,7 @@ This produces detailed logs for comparing with Rust output.
 
 **Evidence**:
 - LESSONS_LEARNED.md: "Chrome message passing required special handling (Uint8Array → Array)"
-- STEP5_PLAN.md: Message passing serialization requirements
+- STEPS/5_PLAN.md: Message passing serialization requirements
 - Actual bug: Chrome's `runtime.sendMessage` converts Uint8Array to `{0: 1, 1: 2, ...}` object
 
 **Summary**: Chrome's message passing API doesn't preserve Uint8Array types - it converts them to plain objects with numeric keys. This caused data corruption that wasn't obvious because the object still "looked like" an array.
@@ -740,7 +740,7 @@ This produces detailed logs for comparing with Rust output.
 ### Pattern 6: Reference Source Priority
 
 **Evidence**:
-- STEP6.6_PLAN.md: "Use ../holochain/ as canonical source... Web searches can lead to outdated documentation"
+- STEPS/6.6_PLAN.md: "Use ../holochain/ as canonical source... Web searches can lead to outdated documentation"
 - Multiple instances of using web docs that didn't match actual 0.6 implementation
 - Time wasted on approaches based on outdated information
 
@@ -758,8 +758,8 @@ Reference sources in priority order:
 ### Pattern 7: Testing Strategy Gaps
 
 **Evidence**:
-- STEP5.5.5_PLAN.md: "Create automated tests FIRST for fast iteration... Manual browser testing is time-consuming"
-- STEP6.6_PLAN.md: Three-tier testing strategy recommendation
+- STEPS/5.5.5_PLAN.md: "Create automated tests FIRST for fast iteration... Manual browser testing is time-consuming"
+- STEPS/6.6_PLAN.md: Three-tier testing strategy recommendation
 - Multiple debugging sessions slowed by reliance on manual testing (reload extension, click buttons, read console)
 
 **Summary**: Over-reliance on manual browser testing slowed iteration. Each change took minutes to verify instead of seconds. Automated tests would have caught many issues immediately.

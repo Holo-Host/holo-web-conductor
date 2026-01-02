@@ -168,7 +168,7 @@ When JSPI is standardized and enabled by default:
 
 ## Next Steps
 
-1. Update STEP7_PLAN.md with offscreen document architecture
+1. Update 7_PLAN.md with offscreen document architecture
 2. Modify extension to use offscreen document for WASM execution
 3. Implement NetworkService with sync XHR
 4. Test with profiles WASM
