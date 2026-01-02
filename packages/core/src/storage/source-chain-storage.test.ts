@@ -357,7 +357,7 @@ describe('SourceChainStorage', () => {
         agentPubKey
       );
 
-      const details = await storage.getDetails(entryHash, dnaHash, agentPubKey);
+      const details = await storage.getDetailsFromDb(entryHash, dnaHash, agentPubKey);
       expect(details).not.toBeNull();
       expect(details!.record.action.actionType).toBe('Create');
       expect(details!.updates).toHaveLength(1);

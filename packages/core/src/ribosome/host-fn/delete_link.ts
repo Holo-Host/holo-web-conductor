@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import type { DeleteLinkAction } from "../../storage/types";
 
 /**
@@ -24,7 +24,7 @@ interface DeleteLinkInput {
  */
 export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance, callContext } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as DeleteLinkInput;
@@ -34,27 +34,15 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   });
 
   // Get the CreateLink action
-  const createLinkActionResult = storage.getAction(input.address);
-  if (createLinkActionResult instanceof Promise) {
-    throw new Error("[delete_link] CreateLink action not in session cache - should have been pre-loaded");
-  }
-
-  const createLinkAction = createLinkActionResult;
+  const createLinkAction = storage.getAction(input.address);
   if (!createLinkAction || createLinkAction.actionType !== "CreateLink") {
     throw new Error("Link to delete not found or not a CreateLink action");
   }
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // Get current chain head from pre-loaded session cache
-  const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
-
-  // Since we pre-loaded the chain, this should be synchronous (not a Promise)
-  if (chainHeadResult instanceof Promise) {
-    throw new Error('[delete_link] Chain head not in session cache - should have been pre-loaded');
-  }
-
-  const chainHead = chainHeadResult;
+  // Get current chain head
+  const chainHead = storage.getChainHead(dnaHash, agentPubKey);
 
   // Increment sequence from chain head
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;

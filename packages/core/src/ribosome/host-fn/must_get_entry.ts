@@ -38,9 +38,10 @@ export const mustGetEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
     0
   ) as MustGetEntryInput;
 
-  console.log(
-    `[HostFn] must_get_entry: entry_hash=${Buffer.from(input.entry_hash).toString("hex").slice(0, 16)}...`
-  );
+  const hashHex = Array.from(input.entry_hash.slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  console.log(`[HostFn] must_get_entry: entry_hash=${hashHex}...`);
 
   // STUB: Return null (entry not found)
   // Real implementation will perform DHT get operation

@@ -16,7 +16,7 @@ import type {
   NetworkEntry,
 } from './types';
 import type { NetworkCache } from './cache';
-import type { SourceChainStorage } from '../storage';
+import type { StorageProvider } from '../storage/storage-provider';
 import type { StoredRecord, Link as StoredLink } from '../storage/types';
 import {
   isEntryHash,
@@ -57,13 +57,13 @@ const DEFAULT_OPTIONS: Required<CascadeOptions> = {
  * ```
  */
 export class Cascade {
-  private storage: SourceChainStorage;
+  private storage: StorageProvider;
   private cache: NetworkCache;
   private network: NetworkService | null;
   private options: Required<CascadeOptions>;
 
   constructor(
-    storage: SourceChainStorage,
+    storage: StorageProvider,
     cache: NetworkCache,
     network: NetworkService | null,
     options?: CascadeOptions
@@ -248,25 +248,22 @@ export class Cascade {
   }
 
   /**
-   * Build a record from local storage by action hash (synchronous from session cache)
+   * Build a record from local storage by action hash (always synchronous)
    */
   private buildRecordFromActionHash(actionHash: AnyDhtHash): NetworkRecord | null {
-    // Try to get action synchronously from session cache
-    const actionResult = this.storage.getAction(actionHash);
+    // Get action synchronously from storage
+    const action = this.storage.getAction(actionHash);
 
-    if (actionResult === null || actionResult instanceof Promise) {
+    if (action === null) {
       return null;
     }
-
-    const action = actionResult as any;
 
     // Get entry if applicable
     let entry: NetworkEntry = 'NotApplicable';
     if ('entryHash' in action && action.entryHash) {
-      const entryResult = this.storage.getEntry(action.entryHash);
-      if (entryResult && !(entryResult instanceof Promise)) {
+      const storedEntry = this.storage.getEntry(action.entryHash);
+      if (storedEntry) {
         // Convert StoredEntry to Entry format that WASM expects: { entry_type: "App", entry: content }
-        const storedEntry = entryResult;
         const entryType = storedEntry.entryType;
         let entryValue: Entry;
         if (entryType === 'Agent') {
@@ -295,7 +292,7 @@ export class Cascade {
   }
 
   /**
-   * Build a record from local storage by entry hash (synchronous from session cache)
+   * Build a record from local storage by entry hash (always synchronous)
    * Finds an action that created/updated this entry and builds a record from it.
    */
   private buildRecordFromEntryHash(entryHash: AnyDhtHash): NetworkRecord | null {
@@ -307,13 +304,12 @@ export class Cascade {
     }
 
     // Get the entry
-    const entryResult = this.storage.getEntry(entryHash);
-    if (!entryResult || entryResult instanceof Promise) {
+    const storedEntry = this.storage.getEntry(entryHash);
+    if (!storedEntry) {
       return null;
     }
 
     // Convert StoredEntry to Entry format
-    const storedEntry = entryResult;
     const entryType = storedEntry.entryType;
     let entryValue: Entry;
     if (entryType === 'Agent') {
@@ -369,17 +365,13 @@ export class Cascade {
     // Collect links from all sources
     const allLinks: NetworkLink[] = [];
 
-    // 1. Try local storage (synchronous from session cache)
-    const localResult = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, linkType);
+    // 1. Try local storage (always synchronous)
+    const localLinks = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, linkType);
 
-    // Check if result is synchronous (from session cache)
-    if (!(localResult instanceof Promise)) {
-      const localLinks = localResult;
-      if (localLinks.length > 0) {
-        console.log(`[Cascade] Found ${localLinks.length} links in local storage`);
-        // Convert to NetworkLink format
-        allLinks.push(...localLinks.map(l => this.storedLinkToNetworkLink(l)));
-      }
+    if (localLinks.length > 0) {
+      console.log(`[Cascade] Found ${localLinks.length} links in local storage`);
+      // Convert to NetworkLink format
+      allLinks.push(...localLinks.map(l => this.storedLinkToNetworkLink(l)));
     }
 
     // 2. Try network cache

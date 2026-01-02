@@ -190,7 +190,10 @@ async function executeZomeCallViaOffscreen(
   contextId: string,
   zomeCallRequest: ZomeCallRequest
 ): Promise<{ result: unknown; signals: any[] }> {
+  const perfStart = performance.now();
+
   await ensureOffscreenDocument();
+  const afterOffscreen = performance.now();
 
   const requestId = crypto.randomUUID();
   const dnaHashBase64 = btoa(String.fromCharCode(...zomeCallRequest.cellId[0]));
@@ -209,6 +212,7 @@ async function executeZomeCallViaOffscreen(
     provenance: Array.from(zomeCallRequest.provenance),
   };
 
+  const afterBuild = performance.now();
   console.log(`[Background] Sending zome call to offscreen: ${zomeCallRequest.zome}::${zomeCallRequest.fn} (context: ${contextId})`);
 
   const response = await chrome.runtime.sendMessage({
@@ -217,6 +221,12 @@ async function executeZomeCallViaOffscreen(
     requestId,
     zomeCallRequest: minimalRequest,
   });
+  const afterMessage = performance.now();
+
+  console.log(`[PERF Background] executeZomeCallViaOffscreen breakdown:
+   ├─ ensureOffscreen: ${(afterOffscreen - perfStart).toFixed(1)}ms
+   ├─ buildRequest:    ${(afterBuild - afterOffscreen).toFixed(1)}ms
+   └─ sendMessage:     ${(afterMessage - afterBuild).toFixed(1)}ms (TOTAL: ${(afterMessage - perfStart).toFixed(1)}ms)`);
 
   if (!response.success) {
     throw new Error(response.error || "Offscreen zome call failed");
@@ -505,6 +515,7 @@ async function handleCallZome(
   message: RequestMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const handleStart = performance.now();
   try {
     const url = sender.tab?.url;
     if (!url) {
@@ -514,9 +525,11 @@ async function handleCallZome(
     const origin = new URL(url).origin;
     const requestPayload = message.payload as any;
     console.log("Zome call request:", requestPayload);
+    const afterValidation = performance.now();
 
     // Check permission first
     const permission = await permissionManager.checkPermission(origin);
+    const afterPermission = performance.now();
     if (!permission?.granted) {
       return createErrorResponse(message.id, "Permission denied");
     }
@@ -528,6 +541,7 @@ async function handleCallZome(
     } else {
       context = await happContextManager.getContextForDomain(origin);
     }
+    const afterContext = performance.now();
 
     if (!context) {
       return createErrorResponse(message.id, `No hApp installed for ${origin}`);
@@ -577,6 +591,7 @@ async function handleCallZome(
     // Serialize payload to MessagePack
     const payloadBytes = new Uint8Array(encode(normalizedPayload));
     console.log(`[CallZome] Payload serialized: ${payloadBytes.length} bytes`);
+    const afterPrepare = performance.now();
 
     // Build minimal zome call request
     // WASM and manifest are NOT sent - offscreen fetches from shared IndexedDB
@@ -591,10 +606,12 @@ async function handleCallZome(
     };
 
     console.log(`[CallZome] Executing ${zome_name}::${fn_name} via offscreen (context: ${context.id})`);
+    const beforeOffscreen = performance.now();
 
     // Execute via offscreen document (which can make sync XHR calls)
     // The offscreen document fetches WASM/manifest from IndexedDB
     const { result: transportSafeResult, signals } = await executeZomeCallViaOffscreen(context.id, zomeCallRequest);
+    const afterOffscreen = performance.now();
     console.log(`[CallZome] Result from offscreen:`, transportSafeResult);
 
     // Deliver signals to the content script which will forward to the page
@@ -639,6 +656,16 @@ async function handleCallZome(
 
     // Update last used timestamp
     await happContextManager.touchContext(context.id);
+    const afterSignals = performance.now();
+
+    console.log(`[PERF Background] handleCallZome breakdown:
+   ├─ validation:    ${(afterValidation - handleStart).toFixed(1)}ms
+   ├─ permission:    ${(afterPermission - afterValidation).toFixed(1)}ms
+   ├─ getContext:    ${(afterContext - afterPermission).toFixed(1)}ms
+   ├─ prepare:       ${(afterPrepare - afterContext).toFixed(1)}ms
+   ├─ offscreen:     ${(afterOffscreen - beforeOffscreen).toFixed(1)}ms
+   ├─ signals:       ${(afterSignals - afterOffscreen).toFixed(1)}ms
+   └─ TOTAL:         ${(afterSignals - handleStart).toFixed(1)}ms`);
 
     return createSuccessResponse(message.id, transportSafeResult);
   } catch (error) {

@@ -143,10 +143,11 @@ describe("HappContextStorage", () => {
       };
 
       await storage.putContext(context);
-      const originalLastUsed = context.lastUsed;
+      const stored = await storage.getContext("update-test");
+      const originalLastUsed = stored!.lastUsed;
 
       // Wait a bit to ensure timestamp changes
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       await storage.updateLastUsed("update-test");
       const updated = await storage.getContext("update-test");

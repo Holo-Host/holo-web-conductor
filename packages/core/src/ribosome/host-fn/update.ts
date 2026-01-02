@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type UpdateAction, type StoredEntry, type ChainHead } from "../../storage/types";
 import { validateWasmUpdateInput } from "../wasm-io-types";
 
@@ -17,7 +17,7 @@ import { validateWasmUpdateInput } from "../wasm-io-types";
  */
 export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize and validate input
   const input = deserializeTypedFromWasm(
@@ -64,13 +64,7 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   entryHash[2] = 0x24;
 
   // Get original action to retrieve original entry hash
-  const originalActionResult = storage.getAction(input.original_action_address);
-  if (originalActionResult instanceof Promise) {
-    console.error("[update] Original action not in session cache");
-    throw new Error("Original action not found - must be in session cache");
-  }
-
-  const originalAction = originalActionResult;
+  const originalAction = storage.getAction(input.original_action_address);
   if (!originalAction || !isEntryAction(originalAction)) {
     throw new Error("Original action not found or not an entry-creating action");
   }
@@ -78,13 +72,7 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const originalEntryHash = originalAction.entryHash;
 
   const [dnaHash, agentPubKey] = callContext.cellId;
-  const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
-
-  if (chainHeadResult instanceof Promise) {
-    console.error("[update] Chain head not in session cache");
-    throw new Error("Chain head not in session cache");
-  }
-  const chainHead: ChainHead | null = chainHeadResult;
+  const chainHead = storage.getChainHead(dnaHash, agentPubKey);
 
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;

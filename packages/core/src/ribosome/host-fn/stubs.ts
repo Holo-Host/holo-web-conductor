@@ -10,7 +10,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { toHolochainAction } from "./action-serialization";
 import { buildEntry } from "./entry-utils";
 
@@ -50,7 +50,7 @@ export const mustGetAgentActivity = createNullStub("must_get_agent_activity");
 // get_details returns Vec<Option<Details>>
 export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Input is Vec<GetInput> with GetInput = { any_dht_hash, get_options }
   const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as Array<{
@@ -67,14 +67,8 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // Try to get as action hash first
-  const actionResult = storage.getAction(input.any_dht_hash);
-  if (actionResult instanceof Promise) {
-    console.warn("[get_details] Action not in session cache - returning [null]");
-    return serializeResult(instance, [null]);
-  }
-
-  const action = actionResult;
+  // Try to get as action hash first (always synchronous)
+  const action = storage.getAction(input.any_dht_hash);
 
   console.log("[get_details] Action lookup result", {
     found: !!action,
@@ -87,8 +81,8 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const entryHashToQuery = action && "entryHash" in action ? action.entryHash : null;
 
   if (entryHashToQuery) {
-    // Get full details for this entry from cache
-    const details = storage.getDetailsFromCache(entryHashToQuery, dnaHash, agentPubKey);
+    // Get full details for this entry (always synchronous with StorageProvider)
+    const details = storage.getDetails(entryHashToQuery, dnaHash, agentPubKey);
     if (details) {
       // Build RecordDetails structure
       const recordDetails = {

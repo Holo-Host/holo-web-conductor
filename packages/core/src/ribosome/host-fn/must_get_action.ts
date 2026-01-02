@@ -38,9 +38,10 @@ export const mustGetAction: HostFunctionImpl = (context, inputPtr, inputLen) => 
     0
   ) as MustGetActionInput;
 
-  console.log(
-    `[HostFn] must_get_action: action_hash=${Buffer.from(input.action_hash).toString("hex").slice(0, 16)}...`
-  );
+  const hashHex = Array.from(input.action_hash.slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  console.log(`[HostFn] must_get_action: action_hash=${hashHex}...`);
 
   // STUB: Return null (action not found)
   // Real implementation will perform DHT get operation

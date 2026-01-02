@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type DeleteAction, type ChainHead } from "../../storage/types";
 import { validateWasmDeleteInput } from "../wasm-io-types";
 
@@ -17,7 +17,7 @@ import { validateWasmDeleteInput } from "../wasm-io-types";
  */
 export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize and validate input
   const input = deserializeTypedFromWasm(
@@ -30,13 +30,7 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   });
 
   // Get action being deleted
-  const deletesActionResult = storage.getAction(input.deletes_action_hash);
-  if (deletesActionResult instanceof Promise) {
-    console.error("[delete] Action to delete not in session cache");
-    throw new Error("Action to delete not found - must be in session cache");
-  }
-
-  const deletesAction = deletesActionResult;
+  const deletesAction = storage.getAction(input.deletes_action_hash);
   if (!deletesAction || !isEntryAction(deletesAction)) {
     throw new Error("Action to delete not found or not an entry-creating action");
   }
@@ -44,13 +38,7 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const deletesEntryHash = deletesAction.entryHash;
 
   const [dnaHash, agentPubKey] = callContext.cellId;
-  const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
-
-  if (chainHeadResult instanceof Promise) {
-    console.error("[delete] Chain head not in session cache");
-    throw new Error("Chain head not in session cache");
-  }
-  const chainHead: ChainHead | null = chainHeadResult;
+  const chainHead = storage.getChainHead(dnaHash, agentPubKey);
 
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;

@@ -1,47 +1,25 @@
 # Fishy Development Session
 
 **Last Updated**: 2026-01-01
-**Current Step**: Step 9.5 - Gateway Real-Time Connection for Remote Signals
-**Status**: Phase 4 (Browser Integration) complete - core signal forwarding implemented
+**Current Step**: Step 11 Complete - Next: Step 8 or 9
+**Status**: Step 11 (SQLite Storage) COMPLETE
 
 ## Current Step Progress
 
-### Step 9.5: Gateway Real-Time Connection for Remote Signals
+### Step 11: Synchronous SQLite Storage Layer - COMPLETE
 
-**Goal**: Enable hc-http-gw to proxy signals from Holochain to browser extensions via WebSocket.
-
-**Repository**: `../hc-http-gw-fork` on branch `fishy-step-9-5`
+**Goal**: Replace IndexedDB + in-memory session cache with SQLite WASM using OPFS for synchronous durable storage.
 
 **Completed**:
-- ✅ Phase 1: WebSocket Infrastructure (Gateway)
-  - Commit `a257706`: WebSocket route handler, message protocol, connection state machine
-  - ClientMessage/ServerMessage types (auth, register, unregister, ping/pong, signal)
-  - 20 unit tests for WebSocket handling
-- ✅ Phase 2: Agent Proxy Registration (Gateway)
-  - Commit `b6f193c`: AgentProxyManager for tracking browser agents
-  - Register/unregister agents by (dna_hash, agent_pubkey)
-  - Signal routing to WebSocket connections
-  - 7 unit tests + 6 integration tests
-- ✅ Phase 3: Signal Forwarding (Gateway)
-  - Commit `90de3f4`: Signal forwarding from Holochain to browser
-  - AppConnPool.with_signal_forwarding() constructor
-  - Subscribe to app signals, forward to registered browser agents
-  - HcHttpGatewayService.with_auth() constructor
-  - Binary wired up with signal forwarding enabled
-  - 3 unit tests for signal forwarding
-- ✅ Phase 4: Browser Integration (Extension)
-  - Commit `5fe366f`: WebSocketNetworkService class created
-    - 20 unit tests passing
-    - Connection lifecycle, authentication, agent registration, signal dispatch
-    - Heartbeat and exponential backoff reconnection
-  - Commit `2f5f315`: Wire WebSocket to offscreen document
-    - Initialize WebSocketNetworkService alongside SyncXHR
-    - Forward signals from WebSocket to background script
-    - Handle REMOTE_SIGNAL, WS_STATE_CHANGE, OFFSCREEN_READY messages
-    - Add REGISTER_AGENT, UNREGISTER_AGENT, GET_WS_STATE message handlers
-    - 8 unit tests for URL conversion and signal byte preservation
+- ✅ SQLite WASM running in dedicated Ribosome Worker
+- ✅ opfs-sahpool VFS for synchronous durable writes
+- ✅ DirectSQLiteStorage implementing StorageProvider interface
+- ✅ ProxyNetworkService implementing NetworkService interface
+- ✅ Result unwrapping for holochain-client API compatibility
+- ✅ Data persists across browser reloads (verified with seq=9 chain)
+- ✅ All 79 core tests passing
 
-**Plan File**: See `../hc-http-gw-fork/.claude/plans/cryptic-stirring-dolphin.md`
+**Details**: See [STEP11_COMPLETION.md](./STEP11_COMPLETION.md)
 
 ---
 
@@ -73,8 +51,6 @@
 
 **Details**: See [STEP7.3_PLAN.md](./STEP7.3_PLAN.md)
 
----
-
 ### Step 7: Network Host Functions - COMPLETE
 
 **Goal**: Implement host functions that make real network requests via hc-http-gw.
@@ -85,9 +61,7 @@
 - ✅ Added DNA hash override for testing (gateway uses different hash than extension)
 - ✅ E2E test verified: first fetch→network, second fetch→cache
 
----
-
-### Step 7.2: Gateway Network Integration (COMPLETED)
+### Step 7.2: Gateway Network Integration
 
 **Goal**: Connect fishy extension to hc-http-gw-fork for real network requests, implementing authentication and DHT query endpoints.
 
@@ -137,6 +111,7 @@ Completion notes for each step are in separate files:
 - **Step 6.6**: Automated Integration Testing - See [STEP6.6_COMPLETION.md](./STEP6.6_COMPLETION.md)
 - **Step 6.7**: Test with profiles - See [STEP6.7_COMPLETION.md](./STEP6.7_COMPLETION.md)
 - **Step 7.0**: Network Research - See [STEP7_RESEARCH.md](./STEP7_RESEARCH.md)
+- **Step 11**: Synchronous SQLite Storage Layer - See [STEP11_COMPLETION.md](./STEP11_COMPLETION.md)
 
 ---
 
@@ -307,4 +282,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Gateway Real-Time Connection for Remote Signals) is complete - all 4 phases are done. The gateway (hc-http-gw-fork on branch `fishy-step-9-5`) has WebSocket infrastructure, agent proxy registration, and signal forwarding. The extension has WebSocketNetworkService wired to the offscreen document with signal dispatch to background. Step 7.3 (Type Safety Improvements) from main is also integrated. Next steps would be end-to-end testing or Step 8 (publish operations).
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 11 (SQLite Storage) is COMPLETE - WASM + SQLite run together in ribosome-worker with OPFS persistence. The next step is Step 8 (hc-http-gw Extensions) for implementing publish operations, or Step 9 for additional Holochain features.
