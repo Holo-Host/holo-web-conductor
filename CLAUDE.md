@@ -392,27 +392,30 @@ interface CallZomeRequest {
 
 ---
 
-### Step 11: Synchronous SQLite Storage Layer ⏳ IN PROGRESS
+### Step 11: Synchronous SQLite Storage Layer ✓
 
 **Goal**: Replace IndexedDB + session cache with SQLite WASM using OPFS for synchronous durable storage, eliminating the expensive full-chain reload required before every transaction.
 
 **Dependencies**: None (out-of-sequence optimization)
 
-**Status**: IN PROGRESS - Planning complete, implementation starting
+**Status**: COMPLETE (2026-01-01)
 
-**Branch**: `step-11`
-
-**Problem Being Solved**:
-- Before each zome call: `preloadChainForCell()` loads ENTIRE chain into memory
+**Problem Solved**:
+- Before each zome call: `preloadChainForCell()` loaded ENTIRE chain into memory
 - O(n) startup cost per zome call where n = chain size
-- Critical requirement: Data must be durably persisted when COMMIT returns
+- Data now durably persisted when COMMIT returns
 
-**Solution**:
+**Solution Implemented**:
 - SQLite WASM with opfs-sahpool VFS for synchronous durable writes
-- Dedicated worker in offscreen document for OPFS access
-- SharedArrayBuffer + Atomics.wait() for sync worker communication
+- Ribosome Worker runs WASM + SQLite together (single worker, no cross-worker overhead)
+- Network calls proxy through offscreen for sync XHR
+- Result unwrapping for holochain-client API compatibility
 
-**Details**: See [STEP11_PLAN.md](./STEP11_PLAN.md)
+**Key Files**:
+- `packages/extension/src/offscreen/ribosome-worker.ts` - Main worker with SQLite + WASM
+- `packages/extension/src/offscreen/index.ts` - Offscreen document, spawns worker
+
+**Details**: See [STEP11_COMPLETION.md](./STEP11_COMPLETION.md)
 
 ---
 

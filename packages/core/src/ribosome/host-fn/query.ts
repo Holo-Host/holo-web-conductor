@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { toHolochainAction } from "./action-serialization";
 import { buildEntry } from "./entry-utils";
 import type { Record, RecordEntry } from "../holochain-types";
@@ -19,7 +19,7 @@ import { validateWasmQueryInput, type WasmQueryInput } from "../wasm-io-types";
  */
 export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize and validate input
   const input = deserializeTypedFromWasm(
@@ -38,16 +38,10 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // Query actions from session cache (synchronous)
-  const actions = storage.queryActionsFromCache(dnaHash, agentPubKey, {
+  // Query actions from storage (always synchronous with StorageProvider)
+  const actions = storage.queryActions(dnaHash, agentPubKey, {
     actionType: actionTypeFilter,
   });
-
-  // Check if actions are in cache
-  if (actions === null) {
-    console.warn("[query] Actions not in session cache - returning empty array (Step 7+ will support async queries)");
-    return serializeResult(instance, []);
-  }
   const records = [];
   for (const action of actions) {
     let entry = undefined;
@@ -59,21 +53,12 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
         entryHash: Array.from(action.entryHash.slice(0, 8)),
       });
 
-      const entryResult = storage.getEntry(action.entryHash);
+      entry = storage.getEntry(action.entryHash);
 
       console.log("[query] Entry result:", {
-        isPromise: entryResult instanceof Promise,
-        isNull: entryResult === null,
-        hasValue: !!entryResult && !(entryResult instanceof Promise),
+        isNull: entry === null,
+        hasValue: !!entry,
       });
-
-      if (entryResult instanceof Promise) {
-        // Entry not in cache, skip it for now
-        console.warn("[query] Entry not in session cache, skipping");
-        continue;
-      }
-
-      entry = entryResult;
     }
 
     // Build record structure with Holochain-formatted action

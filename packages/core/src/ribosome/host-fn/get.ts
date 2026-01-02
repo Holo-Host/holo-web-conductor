@@ -7,7 +7,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { toHolochainAction } from "./action-serialization";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import type { Record as HolochainRecord } from "../holochain-types";
@@ -51,7 +51,7 @@ function normalizeEntryBytes(entry: any): any {
  */
 export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize and validate input - it's an array of GetInput objects
   const inputs = deserializeTypedFromWasm(
@@ -78,7 +78,7 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   }
 
   // Check if this action has been deleted
-  const deleteActions = storage.queryActionsFromCache(dnaHash, agentPubKey, { actionType: 'Delete' });
+  const deleteActions = storage.queryActions(dnaHash, agentPubKey, { actionType: 'Delete' });
 
   if (deleteActions && deleteActions.length > 0) {
     const actionHash = networkRecord.signed_action.hashed.hash;
@@ -110,13 +110,13 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // If from local storage, convert to Holochain format
   // Local actions have actionType as string, network actions have type as object
   let actionContent: WireAction;
-  const localActionType = (action as StoredAction).actionType;
+  const localActionType = (action as unknown as StoredAction).actionType;
   if (typeof localActionType === 'string') {
     // Local format - convert to wire format
-    actionContent = toHolochainAction(action as StoredAction);
+    actionContent = toHolochainAction(action as unknown as StoredAction);
   } else {
     // Already in network/Holochain wire format
-    actionContent = action as WireAction;
+    actionContent = action as unknown as WireAction;
   }
 
   // Build entry from network record
@@ -136,12 +136,12 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const record: HolochainRecord = {
     signed_action: {
       hashed: {
-        content: actionContent,
+        content: actionContent as unknown as HolochainRecord['signed_action']['hashed']['content'],
         hash: networkRecord.signed_action.hashed.hash,
       },
       signature: networkRecord.signed_action.signature,
     },
-    entry,
+    entry: entry as unknown as HolochainRecord['entry'],
   };
 
   console.log('[get] Found record via cascade', {

@@ -7,7 +7,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
 
@@ -47,7 +47,7 @@ interface Link {
  */
 export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize and validate input - it's an array of GetLinksInput objects
   const inputs = deserializeTypedFromWasm(

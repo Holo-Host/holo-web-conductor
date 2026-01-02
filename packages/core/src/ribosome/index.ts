@@ -21,7 +21,13 @@ import {
   zomeFunctionNotFoundError,
   wasmInstantiationError,
 } from "./error";
-import { SourceChainStorage } from "../storage";
+import {
+  getStorageProvider,
+  hasStorageProvider,
+  setStorageProvider,
+  SourceChainStorage,
+  type StorageProvider,
+} from "../storage";
 import type { EntryDef } from "../types/holochain-types";
 
 /**
@@ -60,18 +66,26 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     `[Ribosome] Calling zome function: ${zome}::${fn}`
   );
 
-  // Get storage instance for transaction management
-  const storage = SourceChainStorage.getInstance();
-  await storage.init();
+  // Get or create storage provider
+  // Default to SourceChainStorage for backwards compatibility (tests)
+  if (!hasStorageProvider()) {
+    const sourceChainStorage = SourceChainStorage.getInstance();
+    await sourceChainStorage.init();
+    setStorageProvider(sourceChainStorage as unknown as StorageProvider);
+  }
+  const storage = getStorageProvider();
 
   // Initialize genesis actions if this is a new cell
   const [dnaHash, agentPubKey] = cellId;
   const { initializeGenesis } = await import('../storage/genesis');
-  await initializeGenesis(storage, dnaHash, agentPubKey);
+  await initializeGenesis(storage as any, dnaHash, agentPubKey);
 
-  // Pre-load entire chain into session cache for synchronous reads during WASM execution
-  await storage.preloadChainForCell(dnaHash, agentPubKey);
-  console.log('[Ribosome] Chain pre-loaded into session cache');
+  // Pre-load chain into session cache if storage requires it (IndexedDB pattern)
+  // SQLiteStorage doesn't need this - it queries on demand
+  if (storage.preloadChainForCell) {
+    await storage.preloadChainForCell(dnaHash, agentPubKey);
+    console.log('[Ribosome] Chain pre-loaded into session cache');
+  }
 
   // Begin transaction for atomic chain updates
   storage.beginTransaction();
@@ -246,7 +260,11 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     const signals = context.emittedSignals || [];
 
     // Commit transaction - all chain updates succeed atomically
-    await storage.commitTransaction();
+    // May be sync (SQLiteStorage) or async (SourceChainStorage)
+    const commitResult = storage.commitTransaction();
+    if (commitResult instanceof Promise) {
+      await commitResult;
+    }
     console.log('[Ribosome] Transaction committed successfully');
 
     return {

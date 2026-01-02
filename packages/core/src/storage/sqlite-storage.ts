@@ -395,7 +395,7 @@ export class SQLiteStorage {
   ): Action[] {
     const cellId = this.getCellId(dnaHash, agentPubKey);
 
-    let sql = STATEMENTS.GET_ACTIONS_BY_CELL;
+    let sql: string = STATEMENTS.GET_ACTIONS_BY_CELL;
     let params: any[] = [cellId];
 
     if (filter?.actionType) {
@@ -697,7 +697,7 @@ export class SQLiteStorage {
   ): Link[] {
     const cellId = this.getCellId(dnaHash, agentPubKey);
 
-    let sql = STATEMENTS.GET_LINKS_BY_BASE;
+    let sql: string = STATEMENTS.GET_LINKS_BY_BASE;
     let params: any[] = [cellId, this.hashToBlob(baseAddress)];
 
     if (linkType !== undefined) {

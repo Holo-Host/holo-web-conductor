@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateAction, StoredEntry, AppEntryType } from "../../storage/types";
 import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types";
 
@@ -18,7 +18,7 @@ import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types"
  */
 export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance, callContext } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize and validate create input
   const input = deserializeTypedFromWasm(
@@ -48,16 +48,9 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   entryHash.set(entryHashData, 3);
   entryHash.set([0, 0, 0, 0], 35); // location (all zeros)
 
-  // Get current chain head from pre-loaded session cache
+  // Get current chain head (synchronous with StorageProvider interface)
   const [dnaHash, agentPubKey] = callContext.cellId;
-  const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
-
-  // Since we pre-loaded the chain, this should be synchronous (not a Promise)
-  if (chainHeadResult instanceof Promise) {
-    throw new Error('[create] Chain head not in session cache - should have been pre-loaded');
-  }
-
-  const chainHead = chainHeadResult;
+  const chainHead = storage.getChainHead(dnaHash, agentPubKey);
 
   // Increment sequence from chain head, or start at 3 for new chain
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;

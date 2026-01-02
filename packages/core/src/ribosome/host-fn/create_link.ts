@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateLinkAction, Link } from "../../storage/types";
 
 /**
@@ -34,7 +34,7 @@ interface CreateLinkInput {
  */
 export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
@@ -55,15 +55,8 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     ? 0 // Default zome index if not specified
     : input.link_type.App.zome_id;
 
-  // Get current chain head from pre-loaded session cache
-  const chainHeadResult = storage.getChainHead(dnaHash, agentPubKey);
-
-  // Since we pre-loaded the chain, this should be synchronous (not a Promise)
-  if (chainHeadResult instanceof Promise) {
-    throw new Error('[create_link] Chain head not in session cache - should have been pre-loaded');
-  }
-
-  const chainHead = chainHeadResult;
+  // Get current chain head
+  const chainHead = storage.getChainHead(dnaHash, agentPubKey);
 
   // Increment sequence from chain head, or start at 3 for new chain
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;

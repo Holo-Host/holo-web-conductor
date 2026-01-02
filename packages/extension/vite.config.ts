@@ -199,6 +199,51 @@ export default defineConfig({
               },
             },
           });
+
+          // Copy SQLite WASM file to offscreen directory
+          // The sqlite-wasm package is in the root node_modules (monorepo hoisting)
+          const sqliteWasmSrc = resolve(__dirname, "../../node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3.wasm");
+          const sqliteWasmDest = resolve(distDir, "offscreen/sqlite3.wasm");
+          if (existsSync(sqliteWasmSrc)) {
+            copyFileSync(sqliteWasmSrc, sqliteWasmDest);
+            console.log("Copied sqlite3.wasm to offscreen/");
+          } else {
+            console.warn("sqlite3.wasm not found at:", sqliteWasmSrc);
+          }
+        }
+
+        // Build Ribosome worker as IIFE (runs WASM + SQLite together in dedicated worker)
+        const ribosomeWorkerPath = resolve(__dirname, "src/offscreen/ribosome-worker.ts");
+        if (existsSync(ribosomeWorkerPath)) {
+          await viteBuild({
+            configFile: false,
+            build: {
+              outDir: distDir,
+              emptyOutDir: false,
+              lib: {
+                entry: ribosomeWorkerPath,
+                formats: ["iife"],
+                name: "FishyRibosomeWorker",
+                fileName: () => "offscreen/ribosome-worker.js",
+              },
+              sourcemap: true,
+              target: "es2020",
+              minify: false,
+              rollupOptions: {
+                output: {
+                  extend: true,
+                },
+              },
+            },
+            resolve: {
+              alias: {
+                "@fishy/shared": resolve(__dirname, "../shared/src"),
+                "@fishy/core": resolve(__dirname, "../core/src"),
+                "@fishy/lair": resolve(__dirname, "../lair/src"),
+              },
+            },
+          });
+          console.log("Built ribosome-worker.js");
         }
 
         // Copy manifest.json to dist folder

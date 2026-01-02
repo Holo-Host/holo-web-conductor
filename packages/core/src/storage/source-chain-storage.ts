@@ -284,14 +284,9 @@ export class SourceChainStorage {
           chainHeadUpdated: !!tx.chainHeadUpdate,
         });
 
-        // Clear session cache after successful commit
-        // Next zome call will pre-load fresh data from DB
-        this.sessionCache.actions.clear();
-        this.sessionCache.entries.clear();
-        this.sessionCache.links.clear();
-        this.sessionCache.chainHeads.clear();
-
-        console.log('[SourceChainStorage] Session cache cleared after commit');
+        // Note: Session cache is NOT cleared after commit.
+        // Data stays in cache for synchronous reads via StorageProvider interface.
+        // The cache will be cleared explicitly by clear() or when preloadChainForCell is called.
 
         resolve();
       };
@@ -678,18 +673,22 @@ export class SourceChainStorage {
   }
 
   /**
-   * Get action by hash (synchronous if in cache)
+   * Get action by hash (synchronous - returns null if not in cache)
+   *
+   * For synchronous storage access during zome calls, only the session cache
+   * is checked. If you need async DB access, use getActionFromDB directly.
    */
-  getAction(actionHash: Uint8Array): Action | null | Promise<Action | null> {
-    // Check session cache first (synchronous)
+  getAction(actionHash: Uint8Array): Action | null {
+    // Check session cache (synchronous)
     const cacheKey = this.hashToKey(actionHash);
 
     if (this.sessionCache.actions.has(cacheKey)) {
       return this.sessionCache.actions.get(cacheKey)!;
     }
 
-    // Fall back to async IndexedDB read
-    return this.getActionFromDB(actionHash);
+    // Return null if not in cache - cannot do async DB access synchronously
+    // The preloadChainForCell method should have loaded all relevant data
+    return null;
   }
 
   private async getActionFromDB(actionHash: Uint8Array): Promise<Action | null> {
@@ -711,19 +710,16 @@ export class SourceChainStorage {
 
   /**
    * Query actions from session cache (synchronous)
-   * Returns actions if in cache, null if not cached
+   * Required by StorageProvider interface
+   * Returns actions from session cache (empty array if not cached)
    */
-  queryActionsFromCache(
+  queryActions(
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array,
     filter?: { actionType?: string }
-  ): Action[] | null {
+  ): Action[] {
     // Get all actions from session cache
     let actions: Action[] = Array.from(this.sessionCache.actions.values());
-
-    if (actions.length === 0) {
-      return null; // Not in cache
-    }
 
     // Apply filter if provided
     if (filter?.actionType) {
@@ -742,8 +738,9 @@ export class SourceChainStorage {
 
   /**
    * Query actions by cell ID (async, from database)
+   * Used internally when session cache might not be loaded
    */
-  async queryActions(
+  async queryActionsFromDb(
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array,
     filter?: { actionType?: string }
@@ -818,17 +815,17 @@ export class SourceChainStorage {
   }
 
   /**
-   * Get entry by hash (synchronous if in cache)
+   * Get entry by hash (synchronous - returns null if not in cache)
    */
-  getEntry(entryHash: Uint8Array): StoredEntry | null | Promise<StoredEntry | null> {
-    // Check session cache first (synchronous)
+  getEntry(entryHash: Uint8Array): StoredEntry | null {
+    // Check session cache (synchronous)
     const cacheKey = this.hashToKey(entryHash);
     if (this.sessionCache.entries.has(cacheKey)) {
       return this.sessionCache.entries.get(cacheKey)!;
     }
 
-    // Fall back to async IndexedDB read
-    return this.getEntryFromDB(entryHash);
+    // Return null if not in cache - cannot do async DB access synchronously
+    return null;
   }
 
   private async getEntryFromDB(entryHash: Uint8Array): Promise<StoredEntry | null> {
@@ -905,8 +902,9 @@ export class SourceChainStorage {
   /**
    * Get details for an entry (all CRUD history) from session cache
    * Returns null if not in cache
+   * Required by StorageProvider interface
    */
-  getDetailsFromCache(
+  getDetails(
     entryHash: Uint8Array,
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array
@@ -968,15 +966,15 @@ export class SourceChainStorage {
   }
 
   /**
-   * Get details for an entry (all CRUD history)
+   * Get details for an entry (all CRUD history) - async version for database
    */
-  async getDetails(
+  async getDetailsFromDb(
     entryHash: Uint8Array,
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array
   ): Promise<RecordDetails | null> {
     // Find the Create action for this entry
-    const allActions = await this.queryActions(dnaHash, agentPubKey);
+    const allActions = await this.queryActionsFromDb(dnaHash, agentPubKey);
     const createAction = allActions.find(
       a => a.actionType === 'Create' &&
            'entryHash' in a &&
@@ -1060,21 +1058,38 @@ export class SourceChainStorage {
       const tx = this.db!.transaction(STORES.LINKS, 'readwrite');
       const request = tx.objectStore(STORES.LINKS).put(storable);
 
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        // Also update session cache so subsequent reads are synchronous
+        const baseKey = this.hashToKey(link.baseAddress);
+        const existing = this.sessionCache.links.get(baseKey) || [];
+        // Update or add the link
+        const existingIndex = existing.findIndex(l =>
+          l.createLinkHash.length === link.createLinkHash.length &&
+          l.createLinkHash.every((b, i) => b === link.createLinkHash[i])
+        );
+        if (existingIndex >= 0) {
+          existing[existingIndex] = link;
+        } else {
+          existing.push(link);
+        }
+        this.sessionCache.links.set(baseKey, existing);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   }
 
   /**
-   * Get links by base address (synchronous if in cache)
+   * Get links by base address (synchronous from session cache)
+   * Required by StorageProvider interface - always returns Link[]
    */
   getLinks(
     baseAddress: Uint8Array,
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array,
     linkType?: number
-  ): Link[] | Promise<Link[]> {
-    // Check session cache first (synchronous)
+  ): Link[] {
+    // Get from session cache (synchronous)
     const baseKey = this.hashToKey(baseAddress);
     if (this.sessionCache.links.has(baseKey)) {
       let links = this.sessionCache.links.get(baseKey)!;
@@ -1087,8 +1102,9 @@ export class SourceChainStorage {
       return links;
     }
 
-    // Fall back to async IndexedDB read
-    return this.getLinksFromDB(baseAddress, dnaHash, agentPubKey, linkType);
+    // Not in cache - return empty array
+    // (Data should be in cache if preloadChainForCell was called)
+    return [];
   }
 
   private async getLinksFromDB(
@@ -1145,11 +1161,34 @@ export class SourceChainStorage {
     if (this.pendingTransaction) {
       // Add to transaction (synchronous - just buffers in memory)
       this.pendingTransaction.linkDeletes.push({ createLinkHash, deleteHash });
+
+      // Update session cache immediately for synchronous reads
+      this.updateLinkDeletedInCache(createLinkHash, deleteHash);
       return;
     }
 
     // Direct write (no transaction) - async
     return this.deleteLinkDirect(createLinkHash, deleteHash);
+  }
+
+  /**
+   * Helper to update a link as deleted in the session cache
+   */
+  private updateLinkDeletedInCache(createLinkHash: Uint8Array, deleteHash: Uint8Array): void {
+    for (const [baseKey, links] of this.sessionCache.links.entries()) {
+      const linkIndex = links.findIndex(l =>
+        l.createLinkHash.length === createLinkHash.length &&
+        l.createLinkHash.every((b, i) => b === createLinkHash[i])
+      );
+      if (linkIndex >= 0) {
+        links[linkIndex] = {
+          ...links[linkIndex],
+          deleted: true,
+          deleteHash: deleteHash,
+        };
+        return;
+      }
+    }
   }
 
   private async deleteLinkDirect(
@@ -1175,7 +1214,11 @@ export class SourceChainStorage {
         link.deleteHash = Array.from(deleteHash);
 
         const putRequest = store.put(link);
-        putRequest.onsuccess = () => resolve();
+        putRequest.onsuccess = () => {
+          // Also update session cache
+          this.updateLinkDeletedInCache(createLinkHash, deleteHash);
+          resolve();
+        };
         putRequest.onerror = () => reject(putRequest.error);
       };
 
@@ -1202,7 +1245,7 @@ export class SourceChainStorage {
     console.log('[SourceChainStorage] Pre-loading chain for cell', { cellId });
 
     // Load all actions for this cell
-    const actions = await this.queryActions(dnaHash, agentPubKey);
+    const actions = await this.queryActionsFromDb(dnaHash, agentPubKey);
     console.log(`[SourceChainStorage] Loaded ${actions.length} actions into cache`);
 
     for (const action of actions) {
@@ -1330,6 +1373,12 @@ export class SourceChainStorage {
    */
   async clear(): Promise<void> {
     await this.init();
+
+    // Clear session cache
+    this.sessionCache.actions.clear();
+    this.sessionCache.entries.clear();
+    this.sessionCache.links.clear();
+    this.sessionCache.chainHeads.clear();
 
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(

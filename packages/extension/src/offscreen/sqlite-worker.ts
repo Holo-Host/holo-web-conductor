@@ -15,8 +15,40 @@
  * - SharedArrayBuffer + Atomics.notify() enables sync communication back to main thread
  */
 
-import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+// Polyfill document for sqlite-wasm which tries to access it during module init in workers
+// This must be before importing sqlite-wasm
+if (typeof document === 'undefined') {
+  // Use the worker's URL as the script src so sqlite-wasm can derive the base URL
+  const workerUrl = (self as any).location?.href || 'chrome-extension://placeholder/offscreen/sqlite-worker.js';
+  // baseURI must be the extension ROOT (not worker URL) because sqlite-wasm's fallback code
+  // does: new URL("offscreen/sqlite-worker.js", document.baseURI) - so baseURI should NOT
+  // include "offscreen/" or we get double-nested paths
+  const extensionRoot = workerUrl.replace(/\/offscreen\/sqlite-worker\.js.*$/, '/');
+  (self as any).document = {
+    // currentScript needs tagName="SCRIPT" for sqlite-wasm's check
+    currentScript: { src: workerUrl, tagName: 'SCRIPT' },
+    // baseURI is extension root - the module appends "offscreen/sqlite-worker.js" to this
+    baseURI: extensionRoot,
+    querySelector: () => null,
+    createElement: (tag: string) => ({
+      style: {},
+      setAttribute: () => {},
+      appendChild: () => {},
+    }),
+    head: {
+      appendChild: () => {},
+    },
+    body: {
+      appendChild: () => {},
+    },
+  };
+}
+
+// Import schema types (these don't need document)
 import { SCHEMA_SQL, type WorkerRequest, type WorkerResponse } from '@fishy/core/storage/sqlite-schema';
+
+// sqlite3InitModule will be dynamically imported after polyfill is set up
+let sqlite3InitModule: any = null;
 
 // Database instance
 let db: any = null;
@@ -38,6 +70,13 @@ async function initDatabase(): Promise<void> {
   console.log('[SQLite Worker] Initializing SQLite WASM...');
 
   try {
+    // Dynamically import sqlite-wasm after polyfill is in place
+    if (!sqlite3InitModule) {
+      const module = await import('@sqlite.org/sqlite-wasm');
+      sqlite3InitModule = module.default;
+    }
+
+    // Initialize sqlite - the module will fetch WASM using the corrected baseURI
     sqlite3 = await sqlite3InitModule({
       print: (...args: any[]) => console.log('[SQLite]', ...args),
       printErr: (...args: any[]) => console.error('[SQLite Error]', ...args),
@@ -174,10 +213,10 @@ function executeStatement(sql: string, params?: unknown[]): { changes: number; l
 /**
  * Setup SharedArrayBuffer for synchronous communication
  */
-function setupSharedBuffers(signalBuffer: SharedArrayBuffer, dataBuffer: SharedArrayBuffer): void {
+function setupSharedBuffers(signalBuffer: SharedArrayBuffer, resultBuf: SharedArrayBuffer): void {
   sharedBuffer = signalBuffer;
   int32View = new Int32Array(sharedBuffer);
-  resultBuffer = dataBuffer;
+  resultBuffer = resultBuf;
   resultView = new Uint8Array(resultBuffer);
   console.log('[SQLite Worker] SharedArrayBuffers configured');
 }
@@ -227,12 +266,18 @@ function storeResult(requestId: number, result: any): void {
  * Handle incoming messages
  */
 self.onmessage = async (event: MessageEvent) => {
-  const request = event.data as WorkerRequest | { type: 'SETUP_BUFFERS'; signalBuffer: SharedArrayBuffer; dataBuffer: SharedArrayBuffer };
+  const request = event.data as WorkerRequest | {
+    type: 'SETUP_BUFFERS';
+    id?: number;
+    signalBuffer: SharedArrayBuffer;
+    resultBuffer: SharedArrayBuffer;
+  };
 
   // Handle buffer setup separately
   if (request.type === 'SETUP_BUFFERS' && 'signalBuffer' in request) {
-    setupSharedBuffers(request.signalBuffer, request.dataBuffer);
-    self.postMessage({ id: -1, success: true });
+    setupSharedBuffers(request.signalBuffer, request.resultBuffer);
+    // Use the request id so the promise resolves correctly
+    self.postMessage({ id: request.id ?? -1, success: true });
     return;
   }
 

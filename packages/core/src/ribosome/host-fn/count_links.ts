@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 
 /**
  * Count links input structure
@@ -29,7 +29,7 @@ interface CountLinksInput {
  */
 export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as CountLinksInput;
@@ -41,17 +41,8 @@ export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
     ? (typeof input.link_type === 'number' ? input.link_type : input.link_type.App?.id)
     : undefined;
 
-  // Get links from storage (synchronous if in cache)
-  const linksResult = storage.getLinks(input.base, dnaHash, agentPubKey, linkTypeFilter);
-
-  // If it's a Promise, we can't handle it synchronously yet (Step 7+)
-  // For now, return 0 if not in cache
-  if (linksResult instanceof Promise) {
-    console.warn('[count_links] Links not in session cache - returning 0 (Step 7+ will support async reads)');
-    return serializeResult(instance, 0);
-  }
-
-  let storedLinks = linksResult;
+  // Get links from storage (always synchronous with StorageProvider)
+  let storedLinks = storage.getLinks(input.base, dnaHash, agentPubKey, linkTypeFilter);
 
   // Filter by tag prefix if specified
   if (input.tag_prefix && input.tag_prefix.length > 0) {

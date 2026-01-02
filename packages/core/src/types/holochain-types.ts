@@ -27,10 +27,10 @@ import type {
   HoloHashed,
 } from '@holochain/client';
 
-// Action types
+// Action types - ActionType is imported as value (used in type guards)
+import { ActionType } from '@holochain/client';
 import type {
   Action,
-  ActionType,
   SignedAction,
   SignedActionHashed,
   ActionHashed,

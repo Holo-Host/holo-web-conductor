@@ -6,7 +6,7 @@
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
-import { SourceChainStorage } from "../../storage/source-chain-storage";
+import { getStorageProvider } from "../../storage/storage-provider";
 
 /**
  * Agent info response structure
@@ -33,7 +33,7 @@ export interface AgentInfo {
  */
 export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const storage = SourceChainStorage.getInstance();
+  const storage = getStorageProvider();
 
   // Get raw agent pub key from cell ID (32 bytes)
   const [dnaHash, rawAgentPubKey] = callContext.cellId;
@@ -44,36 +44,25 @@ export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   agentPubKey.set(rawAgentPubKey, 3); // 32-byte public key
   agentPubKey.set([0, 0, 0, 0], 35); // location (all zeros)
 
-  // Get real chain head from storage
-  const chainHeadResult = storage.getChainHead(dnaHash, rawAgentPubKey);
+  // Get real chain head from storage (always synchronous)
+  const storedChainHead = storage.getChainHead(dnaHash, rawAgentPubKey);
 
   let actionHash: Uint8Array;
   let actionSeq: number;
   let timestamp: number;
 
-  if (chainHeadResult instanceof Promise) {
-    console.warn("[agent_info] Chain head not in session cache - returning genesis");
-    // Return genesis chain head
+  if (storedChainHead) {
+    // Return real chain head
+    actionHash = storedChainHead.actionHash;
+    actionSeq = storedChainHead.actionSeq;
+    timestamp = Number(storedChainHead.timestamp);
+  } else {
+    // No chain head yet (genesis state)
     actionHash = new Uint8Array(39);
     actionHash.set([132, 41, 36], 0); // ACTION_PREFIX
     actionHash.set([0, 0, 0, 0], 35); // location (all zeros)
     actionSeq = 0;
     timestamp = Date.now() * 1000;
-  } else {
-    const chainHead = chainHeadResult;
-    if (chainHead) {
-      // Return real chain head
-      actionHash = chainHead.actionHash;
-      actionSeq = chainHead.actionSeq;
-      timestamp = Number(chainHead.timestamp);
-    } else {
-      // No chain head yet (genesis state)
-      actionHash = new Uint8Array(39);
-      actionHash.set([132, 41, 36], 0); // ACTION_PREFIX
-      actionHash.set([0, 0, 0, 0], 35); // location (all zeros)
-      actionSeq = 0;
-      timestamp = Date.now() * 1000;
-    }
   }
 
   // Chain head data as tuple: (ActionHash, u32, Timestamp)
@@ -86,7 +75,7 @@ export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log("[agent_info] Returning agent info", {
     chainSeq: actionSeq,
-    hasChainHead: !!chainHeadResult,
+    hasChainHead: !!storedChainHead,
   });
 
   // AgentInfo is a struct: { agent_initial_pubkey, chain_head }
