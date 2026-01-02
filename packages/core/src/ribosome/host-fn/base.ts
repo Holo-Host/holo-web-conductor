@@ -6,6 +6,7 @@
 
 import { CallContext } from "../call-context";
 import { hostFunctionError } from "../error";
+import { recordHostFunction } from "../perf";
 
 /**
  * Context available to host functions during execution
@@ -55,6 +56,7 @@ export function wrapHostFunction(
 ) => (ptr: number, len: number) => bigint {
   return (instanceRef: { current: WebAssembly.Instance | null }, context: CallContext) => {
     return (inputPtr: number, inputLen: number): bigint => {
+      const start = performance.now();
       try {
         // Extract actual instance from reference
         if (!instanceRef.current) {
@@ -84,6 +86,8 @@ export function wrapHostFunction(
         }
         // Wrap other errors
         throw hostFunctionError(name, error);
+      } finally {
+        recordHostFunction(name, performance.now() - start);
       }
     };
   };

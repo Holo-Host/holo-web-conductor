@@ -411,17 +411,57 @@ export class HappContextStorage {
 
   /**
    * Update last used timestamp for a context
+   *
+   * OPTIMIZED: Skip IndexedDB writes if updated recently.
+   * The full context (with 1MB+ WASM) was taking 400-450ms to re-store just to update a timestamp.
+   * Since lastUsed is just for "recently used" sorting, we only need to persist it occasionally.
    */
   async updateLastUsed(id: string): Promise<void> {
-    await this.ensureReady();
+    const now = Date.now();
+    const recentThreshold = 60000; // 60 seconds
 
-    const context = await this.getContext(id);
-    if (!context) {
-      throw new Error(`Context ${id} not found`);
+    // Check if we updated recently (before modifying cache)
+    const cached = this.contextCache.get(id);
+    const previousLastUsed = cached?.lastUsed || 0;
+
+    // Always update in-memory cache (fast)
+    if (cached) {
+      cached.lastUsed = now;
     }
 
-    context.lastUsed = Date.now();
-    await this.putContext(context);
+    // Skip IndexedDB write if we updated recently
+    // lastUsed is just for "recently used" sorting, not precise timing
+    if (now - previousLastUsed < recentThreshold) {
+      return;
+    }
+
+    // First update after threshold - persist to IndexedDB
+    // This happens at most once per minute per context
+    await this.ensureReady();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([CONTEXTS_STORE], "readwrite");
+      const store = transaction.objectStore(CONTEXTS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const stored = getRequest.result as StorableContext | undefined;
+        if (!stored) {
+          // Context not found in DB but was in cache - just skip
+          resolve();
+          return;
+        }
+
+        // Only update the timestamp field
+        stored.lastUsed = now;
+        const putRequest = store.put(stored);
+
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+
+      getRequest.onerror = () => reject(getRequest.error);
+    });
   }
 
   /**

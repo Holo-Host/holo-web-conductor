@@ -38,6 +38,15 @@ let gatewayUrl: string = '';
 let sessionToken: string | null = null;
 let dnaHashOverride: string | null = null;
 
+// Track which DNA WASMs have been sent to the worker
+// This avoids sending 1.3MB on every call - only send once per DNA
+const sentWasmHashes = new Set<string>();
+
+function getDnaHashKey(dnaHash: Uint8Array | number[]): string {
+  const bytes = Array.isArray(dnaHash) ? dnaHash : Array.from(dnaHash);
+  return btoa(String.fromCharCode(...bytes));
+}
+
 // Initialize storage access (shared IndexedDB with background) - for hApp context only
 const storage = getHappContextStorage();
 
@@ -222,14 +231,17 @@ interface MinimalZomeCallRequest {
  * Execute a zome call via the ribosome worker
  */
 async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ result: unknown; signals: any[] }> {
+  const perfStart = performance.now();
   console.log(`[Offscreen] Executing zome call: ${request.zome}::${request.fn}`);
 
   // Ensure worker is initialized
   await initRibosomeWorker();
+  const afterWorkerInit = performance.now();
 
   // Fetch the full hApp context from storage
   console.log(`[Offscreen] Fetching context: ${request.contextId}`);
   const context = await storage.getContext(request.contextId);
+  const afterContextFetch = performance.now();
   if (!context) {
     throw new Error(`Context not found: ${request.contextId}`);
   }
@@ -247,10 +259,24 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
   }
 
   console.log(`[Offscreen] Found DNA: ${dna.name}, WASM size: ${dna.wasm.length} bytes`);
+  const afterDnaLookup = performance.now();
+
+  // Check if we've already sent this WASM to the worker
+  const dnaHashKey = getDnaHashKey(request.cellId[0]);
+  const wasmAlreadySent = sentWasmHashes.has(dnaHashKey);
+
+  // Only send WASM on first call for this DNA - worker caches it
+  const dnaWasmToSend = wasmAlreadySent ? [] : Array.from(toUint8Array(dna.wasm));
+  if (!wasmAlreadySent) {
+    sentWasmHashes.add(dnaHashKey);
+    console.log(`[Offscreen] Sending WASM to worker (first time for this DNA)`);
+  } else {
+    console.log(`[Offscreen] Skipping WASM send (already cached in worker)`);
+  }
 
   // Send to worker
   const result = await sendToWorker('CALL_ZOME', {
-    dnaWasm: Array.from(toUint8Array(dna.wasm)),
+    dnaWasm: dnaWasmToSend,
     cellId: [
       Array.from(toUint8Array(request.cellId[0])),
       Array.from(toUint8Array(request.cellId[1])),
@@ -261,6 +287,14 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
     provenance: Array.from(toUint8Array(request.provenance)),
     dnaManifest: dna.manifest ? normalizeUint8Arrays(dna.manifest) : undefined,
   });
+  const afterWorker = performance.now();
+
+  console.log(`[PERF Offscreen] executeZomeCall breakdown:
+   ├─ workerInit:    ${(afterWorkerInit - perfStart).toFixed(1)}ms
+   ├─ contextFetch:  ${(afterContextFetch - afterWorkerInit).toFixed(1)}ms
+   ├─ dnaLookup:     ${(afterDnaLookup - afterContextFetch).toFixed(1)}ms
+   ├─ workerCall:    ${(afterWorker - afterDnaLookup).toFixed(1)}ms
+   └─ TOTAL:         ${(afterWorker - perfStart).toFixed(1)}ms`);
 
   return {
     result: result.result,

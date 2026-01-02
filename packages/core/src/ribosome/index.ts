@@ -29,6 +29,13 @@ import {
   type StorageProvider,
 } from "../storage";
 import type { EntryDef } from "../types/holochain-types";
+import {
+  startZomeCallMetrics,
+  endZomeCallMetrics,
+  recordPhase,
+  timeSync,
+  timeAsync,
+} from "./perf";
 
 /**
  * Result of a zome call execution
@@ -60,11 +67,15 @@ export interface ZomeCallResult {
  * @throws {RibosomeError} If compilation, instantiation, or execution fails
  */
 export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult> {
+  const callStart = performance.now();
   const { dnaWasm, cellId, zome, fn, payload, provenance, dnaManifest } = request;
 
   console.log(
     `[Ribosome] Calling zome function: ${zome}::${fn}`
   );
+
+  // Start performance tracking
+  startZomeCallMetrics(zome, fn);
 
   // Get or create storage provider
   // Default to SourceChainStorage for backwards compatibility (tests)
@@ -77,8 +88,10 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
   // Initialize genesis actions if this is a new cell
   const [dnaHash, agentPubKey] = cellId;
-  const { initializeGenesis } = await import('../storage/genesis');
-  await initializeGenesis(storage as any, dnaHash, agentPubKey);
+  await timeAsync('genesisCheck', async () => {
+    const { initializeGenesis } = await import('../storage/genesis');
+    await initializeGenesis(storage as any, dnaHash, agentPubKey);
+  });
 
   // Pre-load chain into session cache if storage requires it (IndexedDB pattern)
   // SQLiteStorage doesn't need this - it queries on demand
@@ -93,7 +106,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
   try {
     // Ensure libsodium is ready (required for signing host functions)
-    await sodium.ready;
+    await timeAsync('sodiumReady', () => sodium.ready);
 
     // Find the correct WASM for the target zome
     // Each zome (integrity or coordinator) has its own WASM module
@@ -129,7 +142,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Use zome-specific WASM hash for caching (so different zomes get different modules)
     const runtime = getRibosomeRuntime();
     const zomeWasmHash = new Uint8Array([...dnaHash, ...new TextEncoder().encode(zome)]);
-    const module = await runtime.getOrCompileModule(zomeWasmHash, zomeWasm);
+    const module = await timeAsync('wasmCompile', () => runtime.getOrCompileModule(zomeWasmHash, zomeWasm!));
 
     // Create call context
     const context: CallContext = {
@@ -157,7 +170,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Instantiate with host function imports
     let instance: WebAssembly.Instance;
     try {
-      instance = await runtime.instantiateModule(module, imports);
+      instance = await timeAsync('wasmInstantiate', () => runtime.instantiateModule(module, imports));
     } catch (error) {
       throw wasmInstantiationError(error);
     }
@@ -169,6 +182,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Each integrity zome has its own WASM that exports entry_defs and link_types
     // We need to instantiate each integrity WASM separately to get these
     // Check runtime cache first to avoid repeated WASM calls
+    const metadataStart = performance.now();
     if (dnaManifest) {
       for (const integrityZome of dnaManifest.integrity_zomes) {
         // Check runtime cache first
@@ -222,9 +236,10 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
         }
       }
     }
+    recordPhase('metadataInit', performance.now() - metadataStart);
 
     // Serialize input payload to WASM memory
-    const { ptr: dataPtr, len: dataLen } = serializeToWasm(instance, payload);
+    const { ptr: dataPtr, len: dataLen } = timeSync('serialize', () => serializeToWasm(instance, payload));
 
     console.log(
       `[Ribosome] Calling ${zome}::${fn}(ptr=${dataPtr}, len=${dataLen})`
@@ -243,7 +258,9 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     }
 
     // Call zome function with TWO parameters: pointer and length
+    const zomeExecStart = performance.now();
     const resultI64 = zomeFn(dataPtr, dataLen);
+    recordPhase('zomeExecute', performance.now() - zomeExecStart);
 
     // Extract result: HIGH 32 bits = ptr, LOW 32 bits = len (from merge_usize)
     const resultPtr = Number(resultI64 >> 32n); // ptr in high 32 bits
@@ -254,18 +271,23 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     );
 
     // Deserialize result from WASM memory
-    const result = deserializeFromWasm(instance, resultPtr, resultLen);
+    const result = timeSync('deserialize', () => deserializeFromWasm(instance, resultPtr, resultLen));
 
     // Collect any emitted signals
     const signals = context.emittedSignals || [];
 
     // Commit transaction - all chain updates succeed atomically
     // May be sync (SQLiteStorage) or async (SourceChainStorage)
+    const commitStart = performance.now();
     const commitResult = storage.commitTransaction();
     if (commitResult instanceof Promise) {
       await commitResult;
     }
+    recordPhase('txCommit', performance.now() - commitStart);
     console.log('[Ribosome] Transaction committed successfully');
+
+    // End performance tracking
+    endZomeCallMetrics(performance.now() - callStart);
 
     return {
       result,

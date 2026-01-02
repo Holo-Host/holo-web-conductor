@@ -66,6 +66,15 @@ let dnaHashOverride: string | null = null;
 // Request ID counter
 let nextNetworkRequestId = 1;
 
+// WASM cache - avoid re-sending 1.3MB on every call
+// Key: base64-encoded DNA hash, Value: Uint8Array of WASM
+const wasmCache = new Map<string, Uint8Array>();
+
+function getWasmCacheKey(dnaHash: Uint8Array | number[]): string {
+  const bytes = Array.isArray(dnaHash) ? dnaHash : Array.from(dnaHash);
+  return btoa(String.fromCharCode(...bytes));
+}
+
 /**
  * Initialize SQLite with OPFS using opfs-sahpool VFS
  *
@@ -943,26 +952,57 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'CALL_ZOME':
+        const workerCallStart = performance.now();
         const { dnaWasm, cellId, zome, fn, payloadBytes, provenance, dnaManifest } = payload;
 
         // Set cell context for storage
-        storage.setCellContext(new Uint8Array(cellId[0]), new Uint8Array(cellId[1]));
+        const cellIdBytes: [Uint8Array, Uint8Array] = [
+          new Uint8Array(cellId[0]),
+          new Uint8Array(cellId[1]),
+        ];
+        storage.setCellContext(cellIdBytes[0], cellIdBytes[1]);
+        const afterSetContext = performance.now();
+
+        // Use cached WASM if available, otherwise cache the incoming WASM
+        const dnaHashKey = getWasmCacheKey(cellId[0]);
+        let cachedWasm = wasmCache.get(dnaHashKey);
+        if (!cachedWasm && dnaWasm && dnaWasm.length > 0) {
+          // First time seeing this DNA - cache the WASM
+          cachedWasm = new Uint8Array(dnaWasm);
+          wasmCache.set(dnaHashKey, cachedWasm);
+          console.log(`[Ribosome Worker] Cached WASM for ${dnaHashKey.substring(0, 16)}... (${cachedWasm.length} bytes)`);
+        } else if (cachedWasm) {
+          console.log(`[Ribosome Worker] Using cached WASM for ${dnaHashKey.substring(0, 16)}...`);
+        }
+
+        if (!cachedWasm) {
+          throw new Error('No WASM available for DNA');
+        }
 
         const request: ZomeCallRequest = {
-          dnaWasm: new Uint8Array(dnaWasm),
-          cellId: [new Uint8Array(cellId[0]), new Uint8Array(cellId[1])],
+          dnaWasm: cachedWasm,
+          cellId: cellIdBytes,
           zome,
           fn,
           payload: new Uint8Array(payloadBytes),
           provenance: new Uint8Array(provenance),
           dnaManifest,
         };
+        const afterBuildRequest = performance.now();
 
         const zomeResult = await callZome(request);
+        const afterZomeCall = performance.now();
+
         result = {
           result: zomeResult.result,
           signals: zomeResult.signals || [],
         };
+
+        console.log(`[PERF Worker] CALL_ZOME message handling:
+   ├─ setContext:     ${(afterSetContext - workerCallStart).toFixed(1)}ms
+   ├─ buildRequest:   ${(afterBuildRequest - afterSetContext).toFixed(1)}ms
+   ├─ callZome:       ${(afterZomeCall - afterBuildRequest).toFixed(1)}ms
+   └─ TOTAL:          ${(afterZomeCall - workerCallStart).toFixed(1)}ms`);
         break;
 
       case 'NETWORK_RESPONSE':
