@@ -38,12 +38,13 @@ import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
 import { createLairClient, type EncryptedExport } from "@fishy/lair";
-import type { InstallHappRequest } from "@fishy/core";
+import type { InstallHappRequest, HappContext } from "@fishy/core";
 import {
   toUint8Array,
   normalizeUint8Arrays,
   serializeForTransport,
 } from "@fishy/core";
+import { encodeHashToBase64 } from "@holochain/client";
 import type { ZomeCallRequest } from "@fishy/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
@@ -162,6 +163,55 @@ async function updateGatewaySessionToken(token: string | null): Promise<void> {
     } catch (error) {
       console.error("[Background] Failed to update session token:", error);
     }
+  }
+}
+
+/**
+ * Register an agent with the gateway for signal forwarding
+ * This tells the gateway's WebSocket service to forward signals for this dna/agent to us
+ */
+async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {
+  if (!networkConfigured) {
+    console.log("[Background] Skipping agent registration - network not configured");
+    return;
+  }
+
+  // Debug: log the raw bytes
+  console.log(`[Background] registerAgentWithGateway - dnaHash bytes (first 10):`, Array.from(dnaHash.slice(0, 10)));
+  console.log(`[Background] registerAgentWithGateway - agentPubKey bytes (first 10):`, Array.from(agentPubKey.slice(0, 10)));
+  console.log(`[Background] registerAgentWithGateway - dnaHash length: ${dnaHash.length}, agentPubKey length: ${agentPubKey.length}`);
+
+  const dnaHashB64 = encodeHashToBase64(dnaHash);
+  const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
+  console.log(`[Background] Registering agent with gateway: dna=${dnaHashB64}, agent=${agentPubKeyB64}`);
+
+  try {
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "REGISTER_AGENT",
+      dna_hash: dnaHashB64,
+      agent_pubkey: agentPubKeyB64,
+    });
+    console.log("[Background] Agent registered with gateway");
+  } catch (error) {
+    console.error("[Background] Failed to register agent with gateway:", error);
+  }
+}
+
+/**
+ * Register all agents from a hApp context with the gateway
+ */
+async function registerContextAgentsWithGateway(context: HappContext): Promise<void> {
+  console.log(`[Background] registerContextAgentsWithGateway - context.agentPubKey type:`, typeof context.agentPubKey, context.agentPubKey?.constructor?.name);
+  console.log(`[Background] registerContextAgentsWithGateway - context.agentPubKey:`, context.agentPubKey);
+
+  const agentPubKey = toUint8Array(context.agentPubKey);
+  console.log(`[Background] registerContextAgentsWithGateway - after toUint8Array:`, agentPubKey, `length: ${agentPubKey.length}`);
+
+  for (const dna of context.dnas) {
+    console.log(`[Background] registerContextAgentsWithGateway - dna.hash type:`, typeof dna.hash, dna.hash?.constructor?.name);
+    const dnaHash = toUint8Array(dna.hash);
+    await registerAgentWithGateway(dnaHash, agentPubKey);
   }
 }
 
@@ -762,6 +812,12 @@ async function handleInstallHapp(
     };
 
     const context = await happContextManager.installHapp(origin, normalizedRequest);
+
+    // Register agents with gateway for signal forwarding
+    // Do this asynchronously - don't block the install response
+    registerContextAgentsWithGateway(context).catch((err) => {
+      console.warn("[Background] Failed to register agents with gateway:", err);
+    });
 
     return createSuccessResponse(message.id, {
       contextId: context.id,
@@ -1406,9 +1462,21 @@ async function handleGatewayConfigure(
 
     setGatewayConfig(gatewayUrl, undefined, dnaHashOverride);
 
-    // If offscreen document is already running, configure it now
-    if (await hasOffscreenDocument()) {
+    // Create offscreen document if needed (so WebSocket service can connect)
+    // and configure network
+    await ensureOffscreenDocument();
+    if (!networkConfigured) {
       await configureOffscreenNetwork({ gatewayUrl, dnaHashOverride });
+    }
+
+    // Register agents for existing hApp contexts
+    const contexts = await happContextManager.listContexts();
+    for (const context of contexts) {
+      if (context.enabled) {
+        registerContextAgentsWithGateway(context).catch((err) => {
+          console.warn(`[Background] Failed to register agents for ${context.id}:`, err);
+        });
+      }
     }
 
     return createSuccessResponse(message.id, { configured: true, dnaHashOverride: !!dnaHashOverride });
@@ -1447,7 +1515,7 @@ async function handleRemoteSignal(signalData: {
   console.log(`[Background] Remote signal from ${signalData.from_agent} (${signalData.zome_name})`);
 
   try {
-    // Decode the signal payload
+    // Decode the signal payload (msgpack encoded)
     const signalBytes = new Uint8Array(signalData.signal);
     const decodedPayload = decode(signalBytes);
 

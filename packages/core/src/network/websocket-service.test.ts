@@ -173,7 +173,7 @@ describe("WebSocketNetworkService", () => {
       expect(service.getState()).toBe("connected"); // Still connected, just not authenticated
     });
 
-    it("should wait for token if not provided", () => {
+    it("should send empty auth if no token provided", () => {
       const service = new WebSocketNetworkService({
         ...options,
         sessionToken: undefined,
@@ -182,16 +182,9 @@ describe("WebSocketNetworkService", () => {
       service.connect();
       mockWs.simulateOpen();
 
-      // Should not send auth without token
-      expect(
-        mockWs.sentMessages.find((m) => m.includes("auth"))
-      ).toBeUndefined();
-
-      // Set token and it should authenticate
-      service.setSessionToken("new-token");
-
+      // Should send auth with empty token (gateway accepts this when no authenticator configured)
       expect(mockWs.sentMessages).toContainEqual(
-        JSON.stringify({ type: "auth", session_token: "new-token" })
+        JSON.stringify({ type: "auth", session_token: "" })
       );
     });
   });

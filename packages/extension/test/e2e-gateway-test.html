@@ -263,6 +263,22 @@
     </div>
 
     <div class="test-section">
+      <h2>6. Signal Testing</h2>
+      <p>Test remote signal forwarding via gateway. After connecting and installing, subscribe to signals then use curl to send a test signal.</p>
+      <button id="subscribe-signals-btn" disabled>Subscribe to Signals</button>
+      <button id="unsubscribe-signals-btn" disabled>Unsubscribe</button>
+      <div id="signal-status" class="status info">Not subscribed</div>
+      <div id="signal-info" style="margin-top: 10px; padding: 10px; background: #0f3460; border-radius: 4px; font-family: monospace; font-size: 12px;">
+        <p><strong>To send a test signal, use curl:</strong></p>
+        <pre id="curl-command" style="background: #1a1a2e; padding: 10px; border-radius: 4px; overflow-x: auto;">Connect and install first to see curl command</pre>
+      </div>
+      <div id="signals-result">
+        <h4>Received Signals:</h4>
+        <pre id="signals-log" style="max-height: 200px; overflow-y: auto;">No signals received yet</pre>
+      </div>
+    </div>
+
+    <div class="test-section">
       <h2>Test Log</h2>
       <pre id="log"></pre>
     </div>
@@ -957,8 +973,85 @@
         // Enable network tests too
         if (installedCellId) {
           enableNetworkTests();
+          enableSignalTests();
         }
       };
+
+      // Signal testing
+      let signalUnsubscribe = null;
+      let receivedSignals = [];
+
+      function enableSignalTests() {
+        document.getElementById("subscribe-signals-btn").disabled = false;
+        updateCurlCommand();
+      }
+
+      function updateCurlCommand() {
+        if (!installedCellId) {
+          document.getElementById("curl-command").textContent = "Connect and install first to see curl command";
+          return;
+        }
+
+        // Convert cellId to base64 strings for the curl command
+        const dnaHash = encodeHashToB64(installedCellId[0]);
+        const agentPubkey = encodeHashToB64(installedCellId[1]);
+
+        // Create a sample signal payload (base64 encoded msgpack of "Hello Signal!")
+        // Msgpack encoding: fixstr (0xad = 173 = 0xa0 + 13) + "Hello Signal!" bytes
+        // [173, 72, 101, 108, 108, 111, 32, 83, 105, 103, 110, 97, 108, 33]
+        const msgpackBytes = new Uint8Array([173, 72, 101, 108, 108, 111, 32, 83, 105, 103, 110, 97, 108, 33]);
+        const testPayload = btoa(String.fromCharCode(...msgpackBytes));
+
+        const curlCmd = `curl -X POST http://localhost:8090/test/signal \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "dna_hash": "${dnaHash}",
+    "agent_pubkey": "${agentPubkey}",
+    "zome_name": "test_signal",
+    "signal": "${testPayload}"
+  }'`;
+
+        document.getElementById("curl-command").textContent = curlCmd;
+      }
+
+      function updateSignalsLog() {
+        const log = document.getElementById("signals-log");
+        if (receivedSignals.length === 0) {
+          log.textContent = "No signals received yet";
+        } else {
+          log.textContent = receivedSignals.map((s, i) =>
+            `[${i + 1}] ${new Date().toISOString()}\n${JSON.stringify(s, null, 2)}`
+          ).join("\n\n");
+        }
+      }
+
+      document.getElementById("subscribe-signals-btn").addEventListener("click", () => {
+        if (signalUnsubscribe) {
+          addLog("Already subscribed to signals", 'warning');
+          return;
+        }
+
+        addLog("Subscribing to signals...");
+        signalUnsubscribe = window.holochain.on("signal", (signal) => {
+          addLog(`Signal received: ${JSON.stringify(signal).substring(0, 100)}...`, 'success');
+          receivedSignals.push(signal);
+          updateSignalsLog();
+        });
+
+        showStatus("signal-status", "success", "Subscribed to signals - waiting for signals...");
+        document.getElementById("unsubscribe-signals-btn").disabled = false;
+        addLog("Subscribed! Now send a test signal using the curl command below.", 'success');
+      });
+
+      document.getElementById("unsubscribe-signals-btn").addEventListener("click", () => {
+        if (signalUnsubscribe) {
+          signalUnsubscribe();
+          signalUnsubscribe = null;
+          showStatus("signal-status", "info", "Unsubscribed");
+          document.getElementById("unsubscribe-signals-btn").disabled = true;
+          addLog("Unsubscribed from signals");
+        }
+      });
 
       addLog("E2E Gateway Test Page loaded");
     </script>

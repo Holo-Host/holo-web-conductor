@@ -18,8 +18,19 @@ import {
   getFirstWasm,
   BundleError,
 } from "@fishy/core";
-import { encodeHashToBase64 } from "@holochain/client";
+import { encodeHashToBase64, HoloHashType, hashFrom32AndType } from "@holochain/client";
 import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@fishy/core";
+
+/**
+ * Convert a raw Ed25519 public key (32 bytes) to an AgentPubKey HoloHash (39 bytes)
+ * Uses @holochain/client's hashFrom32AndType for proper hash construction
+ */
+function wrapAsAgentPubKey(ed25519PubKey: Uint8Array): Uint8Array {
+  if (ed25519PubKey.length !== 32) {
+    throw new Error(`Expected 32-byte Ed25519 key, got ${ed25519PubKey.length} bytes`);
+  }
+  return hashFrom32AndType(ed25519PubKey, HoloHashType.Agent);
+}
 
 /**
  * hApp context manager
@@ -142,7 +153,8 @@ export class HappContextManager {
 
       const lair = await this.getLairClient();
       const keyResult = await lair.newSeed(agentKeyTag, false);
-      const agentPubKey = keyResult.entry_info.ed25519_pub_key;
+      // Wrap raw Ed25519 key (32 bytes) as AgentPubKey HoloHash (39 bytes)
+      const agentPubKey = wrapAsAgentPubKey(keyResult.entry_info.ed25519_pub_key);
 
       // 5. Process each DNA role
       const dnaContexts: DnaContext[] = [];

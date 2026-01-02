@@ -273,16 +273,9 @@ export class WebSocketNetworkService {
     this.setState("authenticating");
     this.startHeartbeat();
 
-    // Authenticate if we have a token
-    if (this.options.sessionToken) {
-      this.authenticate();
-    } else {
-      // No token - wait for it to be set
-      console.log(
-        "[WebSocketService] No session token, waiting for authentication"
-      );
-      this.setState("connected");
-    }
+    // Always authenticate - gateway requires auth before registrations
+    // If no token, send empty auth (gateway accepts when no authenticator configured)
+    this.authenticate();
   }
 
   private handleMessage(event: MessageEvent): void {
@@ -346,14 +339,11 @@ export class WebSocketNetworkService {
   }
 
   private authenticate(): void {
-    if (!this.options.sessionToken) {
-      console.log("[WebSocketService] No session token for authentication");
-      return;
-    }
-
+    // Always send auth - gateway requires authentication before accepting registrations
+    // When no authenticator is configured on gateway, any token (including empty) is accepted
     console.log("[WebSocketService] Authenticating...");
     this.setState("authenticating");
-    this.send({ type: "auth", session_token: this.options.sessionToken });
+    this.send({ type: "auth", session_token: this.options.sessionToken || "" });
   }
 
   private handleAuthOk(): void {
@@ -467,7 +457,11 @@ export class WebSocketNetworkService {
   }
 
   private processPendingRegistrations(): void {
+    if (this.pendingRegistrations.length > 0) {
+      console.log(`[WebSocketService] Processing ${this.pendingRegistrations.length} pending registrations`);
+    }
     for (const registration of this.pendingRegistrations) {
+      console.log(`[WebSocketService] Sending registration: ${registration.agent_pubkey.substring(0, 20)}... for ${registration.dna_hash.substring(0, 20)}...`);
       this.send({
         type: "register",
         dna_hash: registration.dna_hash,
