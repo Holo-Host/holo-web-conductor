@@ -28,6 +28,7 @@
             packages = (with inputs'.holonix.packages; [
               holochain
               hc
+              bootstrap-srv
             ]) ++ [
               pkgs.perl
               pkgs.go
