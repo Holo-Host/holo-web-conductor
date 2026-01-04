@@ -27,6 +27,7 @@ HAPP_PATH="$GATEWAY_DIR/fixture/package/happ1/fixture1.happ"
 ADMIN_PORT=8888
 APP_PORT=8889
 GATEWAY_PORT=8090
+BOOTSTRAP_PORT=0  # 0 = auto-assign
 
 # Colors
 RED='\033[0;31m'
@@ -44,6 +45,50 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Start local bootstrap/signal server
+start_bootstrap_server() {
+    log_info "Starting local bootstrap/signal server..."
+
+    mkdir -p "$SANDBOX_DIR"
+    cd "$SANDBOX_DIR"
+
+    # Check if already running
+    if [ -f bootstrap.pid ] && kill -0 "$(cat bootstrap.pid)" 2>/dev/null; then
+        log_warn "Bootstrap server already running"
+        return 0
+    fi
+
+    # Check if kitsune2-bootstrap-srv is available
+    if ! command -v kitsune2-bootstrap-srv &> /dev/null; then
+        log_error "kitsune2-bootstrap-srv not found. Make sure you're in nix develop shell."
+        exit 1
+    fi
+
+    # Start bootstrap server (testing mode uses 127.0.0.1:0 for random port)
+    kitsune2-bootstrap-srv --sbd-disable-rate-limiting > bootstrap.log 2>&1 &
+    BOOTSTRAP_PID=$!
+    echo "$BOOTSTRAP_PID" > bootstrap.pid
+
+    # Wait for it to start and get the port
+    log_info "Waiting for bootstrap server to start..."
+    for i in {1..10}; do
+        # Look for the machine-readable format: #kitsune2_bootstrap_srv#listening#127.0.0.1:PORT#
+        if grep -q "#kitsune2_bootstrap_srv#listening#" bootstrap.log 2>/dev/null; then
+            BOOTSTRAP_ADDR=$(grep "#kitsune2_bootstrap_srv#listening#" bootstrap.log | head -1 | sed 's/.*#kitsune2_bootstrap_srv#listening#\([^#]*\)#.*/\1/')
+            if [ -n "$BOOTSTRAP_ADDR" ]; then
+                log_info "Bootstrap server listening on: $BOOTSTRAP_ADDR"
+                echo "$BOOTSTRAP_ADDR" > bootstrap_addr.txt
+                return 0
+            fi
+        fi
+        sleep 0.5
+    done
+
+    log_error "Bootstrap server failed to start. Check bootstrap.log"
+    cat bootstrap.log
+    exit 1
 }
 
 # Check prerequisites
@@ -101,9 +146,28 @@ start_conductor() {
     # Always use in-process lair to avoid passphrase issues
     log_info "Using in-process lair (no external lair-keystore needed)"
 
+    # Get bootstrap address
+    local BOOTSTRAP_ADDR
+    if [ -f bootstrap_addr.txt ]; then
+        BOOTSTRAP_ADDR=$(cat bootstrap_addr.txt)
+    else
+        log_error "Bootstrap address not found. Start bootstrap server first."
+        exit 1
+    fi
+
+    local BOOTSTRAP_URL="http://${BOOTSTRAP_ADDR}"
+    local SIGNAL_URL="ws://${BOOTSTRAP_ADDR}"
+    local WEBRTC_CONFIG="$SCRIPT_DIR/webrtc-config.json"
+
+    log_info "Using local bootstrap: $BOOTSTRAP_URL"
+    log_info "Using local signal: $SIGNAL_URL"
+    log_info "Using WebRTC config: $WEBRTC_CONFIG"
+
     # Generate and run sandbox in one step using --run
     # --piped is a GLOBAL option that must come BEFORE the subcommand
-    log_info "Running: hc sandbox --piped generate --in-process-lair --run 0 --app-id fixture1 ..."
+    # Use network subcommand to set bootstrap and signal URLs
+    # IMPORTANT: hApp path must come BEFORE network subcommand
+    log_info "Running: hc sandbox --piped generate --in-process-lair --run 0 --app-id fixture1 $HAPP_PATH network -b $BOOTSTRAP_URL webrtc $SIGNAL_URL $WEBRTC_CONFIG ..."
 
     # Run in background, piping passphrase via stdin
     # The passphrase "test-passphrase" is used for local development only
@@ -112,7 +176,8 @@ start_conductor() {
         --run 0 \
         --app-id fixture1 \
         --root "$HC_SANDBOX_DATADIR" \
-        "$HAPP_PATH") \
+        "$HAPP_PATH" \
+        network -b "$BOOTSTRAP_URL" webrtc "$SIGNAL_URL" "$WEBRTC_CONFIG") \
         > sandbox-generate.log 2>&1 &
 
     CONDUCTOR_PID=$!
@@ -184,13 +249,32 @@ start_gateway() {
         (cd "$GATEWAY_DIR" && cargo build --release)
     fi
 
-    # Start gateway
+    # Start gateway with kitsune2 enabled for remote signal testing
     log_info "Starting gateway on port $GATEWAY_PORT (admin ws://localhost:$ACTUAL_ADMIN)..."
+
+    # Get bootstrap/signal URLs from saved bootstrap address (local server)
+    local BOOTSTRAP_URL
+    local SIGNAL_URL
+    if [ -f "$SANDBOX_DIR/bootstrap_addr.txt" ]; then
+        local BOOTSTRAP_ADDR
+        BOOTSTRAP_ADDR=$(cat "$SANDBOX_DIR/bootstrap_addr.txt")
+        BOOTSTRAP_URL="http://${BOOTSTRAP_ADDR}"
+        SIGNAL_URL="ws://${BOOTSTRAP_ADDR}"
+    else
+        # Fallback to public servers if local bootstrap not available
+        BOOTSTRAP_URL="https://dev-test-bootstrap2.holochain.org/"
+        SIGNAL_URL="wss://dev-test-bootstrap2.holochain.org/"
+    fi
+    log_info "Kitsune2 bootstrap: $BOOTSTRAP_URL"
+    log_info "Kitsune2 signal: $SIGNAL_URL"
 
     HC_GW_ADMIN_WS_URL="ws://localhost:$ACTUAL_ADMIN" \
     HC_GW_PORT="$GATEWAY_PORT" \
     HC_GW_ALLOWED_APP_IDS="fixture1" \
     HC_GW_ALLOWED_FNS_fixture1="*" \
+    HC_GW_KITSUNE2_ENABLED="true" \
+    HC_GW_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
+    HC_GW_SIGNAL_URL="$SIGNAL_URL" \
     RUST_LOG="info,holochain_http_gateway=debug" \
     "$GATEWAY_DIR/target/release/hc-http-gw" > gateway.log 2>&1 &
 
@@ -245,6 +329,17 @@ stop_services() {
     pkill -f "holochain.*sandbox" 2>/dev/null || true
     pkill -f "hc sandbox" 2>/dev/null || true
 
+    # Stop bootstrap server
+    if [ -f bootstrap.pid ]; then
+        BOOTSTRAP_PID=$(cat bootstrap.pid)
+        if kill -0 "$BOOTSTRAP_PID" 2>/dev/null; then
+            log_info "Stopping bootstrap server (PID $BOOTSTRAP_PID)..."
+            kill "$BOOTSTRAP_PID"
+        fi
+        rm -f bootstrap.pid bootstrap_addr.txt
+    fi
+    pkill -f "kitsune2-bootstrap-srv" 2>/dev/null || true
+
     log_info "Services stopped"
 }
 
@@ -253,6 +348,17 @@ show_status() {
     echo ""
     echo "=== E2E Test Environment Status ==="
     echo ""
+
+    # Check bootstrap server
+    if [ -f "$SANDBOX_DIR/bootstrap.pid" ] && kill -0 "$(cat "$SANDBOX_DIR/bootstrap.pid" 2>/dev/null)" 2>/dev/null; then
+        local BOOTSTRAP_ADDR=""
+        if [ -f "$SANDBOX_DIR/bootstrap_addr.txt" ]; then
+            BOOTSTRAP_ADDR=$(cat "$SANDBOX_DIR/bootstrap_addr.txt")
+        fi
+        echo -e "Bootstrap: ${GREEN}RUNNING${NC} on $BOOTSTRAP_ADDR"
+    else
+        echo -e "Bootstrap: ${RED}STOPPED${NC}"
+    fi
 
     # Check conductor - look for hc sandbox process or holochain with our sandbox dir
     if pgrep -f "hc sandbox" > /dev/null 2>&1 || pgrep -f "$SANDBOX_DIR" > /dev/null 2>&1; then
@@ -369,6 +475,8 @@ initialize_test_entry() {
 case "${1:-start}" in
     start)
         check_prereqs
+        # Start local bootstrap server first (required for kitsune2 networking)
+        start_bootstrap_server
         start_conductor
         # Give conductor time to fully initialize
         sleep 2
