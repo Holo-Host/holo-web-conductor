@@ -114,6 +114,11 @@ export class LairClient implements ILairClient {
   ): Promise<Ed25519Signature> {
     await this.ensureReady();
 
+    // Validate key length - must be raw 32-byte Ed25519 key
+    if (pub_key.length !== 32) {
+      throw new Error(`Invalid public key length: ${pub_key.length} (expected 32-byte Ed25519 key)`);
+    }
+
     // Find the entry with this public key
     const entries = await this.storage.listEntries();
     const entry_info = entries.find((info) =>

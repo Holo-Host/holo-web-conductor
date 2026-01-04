@@ -273,6 +273,26 @@ function initializeWebSocketService(config: {
     });
   });
 
+  // Set up sign callback - forward sign requests to background for Lair signing
+  wsService.onSign(async (request) => {
+    console.log(`[Offscreen] Sign request for agent ${btoa(String.fromCharCode(...Array.from(request.agent_pubkey))).substring(0, 20)}...`);
+
+    // Send to background script which has access to Lair
+    const response = await chrome.runtime.sendMessage({
+      target: "background",
+      type: "SIGN_REQUEST",
+      agent_pubkey: Array.from(request.agent_pubkey),
+      message: Array.from(request.message),
+    });
+
+    if (response && response.success && response.signature) {
+      // Convert signature array back to Uint8Array
+      return new Uint8Array(response.signature);
+    } else {
+      throw new Error(response?.error || "Signing failed");
+    }
+  });
+
   // Connect to gateway
   wsService.connect();
 }

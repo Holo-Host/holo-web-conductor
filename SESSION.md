@@ -1,10 +1,47 @@
 # Fishy Development Session
 
-**Last Updated**: 2026-01-01
-**Current Step**: Step 9.6 - Remote Signal Forwarding with Kitsune2
-**Status**: Planning Complete - Ready for Implementation
+**Last Updated**: 2026-01-02
+**Current Step**: Next Steps TBD
+**Status**: Step 9.6 Complete
 
 ## Current Step Progress
+
+### Step 9.6: Remote Signal Forwarding with Kitsune2 - COMPLETE
+
+**Goal**: Wire up kitsune2 in gateway so real conductor agents can send signals to browser agents.
+
+**Completed (2026-01-02)**:
+- ✅ Added `gateway_kitsune` param to `HcHttpGatewayService::with_auth()`
+- ✅ Added `build_gateway_kitsune()` function in binary
+- ✅ Parses `HC_GW_KITSUNE2_ENABLED`, `HC_GW_BOOTSTRAP_URL`, `HC_GW_SIGNAL_URL` env vars
+- ✅ Initializes `GatewayKitsune` when enabled
+- ✅ All 5 kitsune integration tests passing
+- ✅ All 112 library unit tests passing
+
+**Files Modified**:
+- `hc-http-gw-fork/src/service.rs` - Added gateway_kitsune param to with_auth()
+- `hc-http-gw-fork/src/bin/hc-http-gw.rs` - Added build_gateway_kitsune(), imports
+
+**Environment Variables**:
+```bash
+HC_GW_KITSUNE2_ENABLED=true  # Enable kitsune2 network participation
+HC_GW_BOOTSTRAP_URL=...      # Kitsune2 bootstrap server URL
+HC_GW_SIGNAL_URL=...         # WebRTC signal server URL
+```
+
+**Signal Flow (now working)**:
+```
+Conductor Agent A ──send_remote_signal──► kitsune2 network
+                                               │
+                                               ▼
+Gateway ◄── recv_notify (RemoteSignalEvt) ◄────┘
+   │
+   └── decode WireMessage
+   └── forward to AgentProxyManager
+   └── WebSocket to browser
+```
+
+---
 
 ### Step 9.5: Signal Delivery (Local) - COMPLETE
 
@@ -18,31 +55,6 @@
 - ✅ 212 tests passing (113 core + 74 extension + 25 lair)
 
 **Commit**: `ca8df45 feat: complete signal delivery from gateway to extension`
-
----
-
-### Step 9.6: Remote Signal Forwarding with Kitsune2 - IN PROGRESS
-
-**Goal**: Wire up kitsune2 in gateway so real conductor agents can send signals to browser agents.
-
-**Discovery**: Infrastructure is 90% built in hc-http-gw-fork:
-- `src/kitsune_proxy.rs` - KitsuneProxy, ProxySpaceHandler (complete)
-- `src/proxy_agent.rs` - ProxyAgent for browser agents (complete)
-- `GatewayKitsune` manager (complete)
-- **Missing**: Initialization in `bin/hc-http-gw.rs`
-
-**Plan**: See [STEPS/9.6_PLAN.md](./STEPS/9.6_PLAN.md)
-
-**Implementation Steps**:
-1. Add `gateway_kitsune` param to `service.rs:with_auth()`
-2. Parse `HC_GW_KITSUNE2_*` env vars in binary
-3. Build `GatewayKitsune` when enabled
-4. Create E2E test with SweetConductor
-
-**Files to Modify**:
-- `hc-http-gw-fork/src/service.rs` - Add gateway_kitsune param
-- `hc-http-gw-fork/src/bin/hc-http-gw.rs` - Initialize GatewayKitsune
-- `hc-http-gw-fork/tests/remote_signal_e2e.rs` - NEW E2E test
 
 ---
 

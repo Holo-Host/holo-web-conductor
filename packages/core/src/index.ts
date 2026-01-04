@@ -12,6 +12,17 @@
 // Re-export shared types
 export * from "@fishy/shared";
 
+// Re-export Holochain type guards and utilities
+export {
+  isAgentPubKey,
+  extractEd25519PubKey,
+  isEntryHash,
+  isActionHash,
+  isHoloHash,
+  isCellId,
+  getHashType,
+} from './types/holochain-types';
+
 // Re-export bundle types
 export * from './bundle';
 export type { DnaManifestRuntime } from './types/bundle-types';

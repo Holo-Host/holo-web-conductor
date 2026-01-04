@@ -43,6 +43,8 @@ import {
   toUint8Array,
   normalizeUint8Arrays,
   serializeForTransport,
+  isAgentPubKey,
+  extractEd25519PubKey,
 } from "@fishy/core";
 import { encodeHashToBase64 } from "@holochain/client";
 import type { ZomeCallRequest } from "@fishy/core/ribosome";
@@ -79,6 +81,7 @@ async function hasOffscreenDocument(): Promise<boolean> {
  */
 async function ensureOffscreenDocument(): Promise<void> {
   if (await hasOffscreenDocument()) {
+    console.log("[Background] Offscreen document already exists");
     return;
   }
 
@@ -200,6 +203,7 @@ async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8A
 
 /**
  * Register all agents from a hApp context with the gateway
+ * If a DNA hash override is configured, register with that instead of the context's DNA hash
  */
 async function registerContextAgentsWithGateway(context: HappContext): Promise<void> {
   console.log(`[Background] registerContextAgentsWithGateway - context.agentPubKey type:`, typeof context.agentPubKey, context.agentPubKey?.constructor?.name);
@@ -208,10 +212,43 @@ async function registerContextAgentsWithGateway(context: HappContext): Promise<v
   const agentPubKey = toUint8Array(context.agentPubKey);
   console.log(`[Background] registerContextAgentsWithGateway - after toUint8Array:`, agentPubKey, `length: ${agentPubKey.length}`);
 
-  for (const dna of context.dnas) {
-    console.log(`[Background] registerContextAgentsWithGateway - dna.hash type:`, typeof dna.hash, dna.hash?.constructor?.name);
-    const dnaHash = toUint8Array(dna.hash);
-    await registerAgentWithGateway(dnaHash, agentPubKey);
+  // If we have a DNA hash override, use that instead of the context's DNA hash
+  // This is needed because the extension computes DNA hash from WASM only,
+  // but the conductor uses the full DNA manifest (with network seed, properties, etc.)
+  if (gatewayConfig?.dnaHashOverride) {
+    console.log(`[Background] Using DNA hash override for registration: ${gatewayConfig.dnaHashOverride}`);
+    await registerAgentWithGatewayByB64(gatewayConfig.dnaHashOverride, agentPubKey);
+  } else {
+    for (const dna of context.dnas) {
+      console.log(`[Background] registerContextAgentsWithGateway - dna.hash type:`, typeof dna.hash, dna.hash?.constructor?.name);
+      const dnaHash = toUint8Array(dna.hash);
+      await registerAgentWithGateway(dnaHash, agentPubKey);
+    }
+  }
+}
+
+/**
+ * Register an agent with the gateway using a base64 DNA hash string
+ */
+async function registerAgentWithGatewayByB64(dnaHashB64: string, agentPubKey: Uint8Array): Promise<void> {
+  if (!networkConfigured) {
+    console.log("[Background] Skipping agent registration - network not configured");
+    return;
+  }
+
+  const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
+  console.log(`[Background] Registering agent with gateway (override): dna=${dnaHashB64}, agent=${agentPubKeyB64}`);
+
+  try {
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "REGISTER_AGENT",
+      dna_hash: dnaHashB64,
+      agent_pubkey: agentPubKeyB64,
+    });
+    console.log("[Background] Agent registered with gateway");
+  } catch (error) {
+    console.error("[Background] Failed to register agent with gateway:", error);
   }
 }
 
@@ -1465,8 +1502,11 @@ async function handleGatewayConfigure(
     // Create offscreen document if needed (so WebSocket service can connect)
     // and configure network
     await ensureOffscreenDocument();
+    console.log(`[Background] networkConfigured = ${networkConfigured}`);
     if (!networkConfigured) {
       await configureOffscreenNetwork({ gatewayUrl, dnaHashOverride });
+    } else {
+      console.log("[Background] Network already configured, skipping");
     }
 
     // Register agents for existing hApp contexts
@@ -1548,6 +1588,57 @@ async function handleRemoteSignal(signalData: {
 }
 
 /**
+ * Handle sign request from offscreen document (forwarded from gateway)
+ *
+ * This is part of the remote signing protocol for kitsune2 agent info.
+ * The gateway needs the browser to sign data because the private key
+ * is stored in the browser's Lair keystore.
+ */
+async function handleSignRequest(request: {
+  agent_pubkey: number[];
+  message: number[];
+}): Promise<{ success: boolean; signature?: number[]; error?: string }> {
+  console.log(`[Background] Sign request for agent (pubkey len: ${request.agent_pubkey.length})`);
+
+  try {
+    // Check if lair is locked
+    const lock = getLairLock();
+    if (await lock.isLocked()) {
+      throw new Error("Lair is locked - cannot sign");
+    }
+
+    // Get or create lair client
+    const client = await getLairClient();
+
+    // Convert to Uint8Array and validate it's an AgentPubKey
+    const agentPubkey = new Uint8Array(request.agent_pubkey);
+    if (!isAgentPubKey(agentPubkey)) {
+      throw new Error(`Invalid AgentPubKey: expected 39-byte Uint8Array with AGENT_PREFIX [132,32,36], got ${agentPubkey.length} bytes with prefix [${agentPubkey[0]},${agentPubkey[1]},${agentPubkey[2]}]`);
+    }
+
+    // Extract raw 32-byte Ed25519 key from 39-byte AgentPubKey
+    const ed25519PubKey = extractEd25519PubKey(agentPubkey);
+
+    // Sign the message using the agent's key
+    const messageBytes = new Uint8Array(request.message);
+    const signature = await client.signByPubKey(ed25519PubKey, messageBytes);
+
+    console.log(`[Background] Signed successfully, signature length: ${signature.length}`);
+
+    return {
+      success: true,
+      signature: Array.from(signature),
+    };
+  } catch (error) {
+    console.error("[Background] Sign request failed:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
  * Listen for messages from content scripts
  */
 chrome.runtime.onMessage.addListener(
@@ -1578,6 +1669,17 @@ chrome.runtime.onMessage.addListener(
       if (rawMessage.type === "WS_STATE_CHANGE") {
         console.log(`[Background] WebSocket state changed: ${rawMessage.state}`);
         return false;
+      }
+
+      if (rawMessage.type === "SIGN_REQUEST") {
+        // Forward sign request to Lair
+        handleSignRequest(rawMessage).then((result) => {
+          sendResponse(result);
+        }).catch((error) => {
+          console.error("[Background] Sign request error:", error);
+          sendResponse({ success: false, error: String(error) });
+        });
+        return true; // Async response
       }
 
       // Unknown internal message

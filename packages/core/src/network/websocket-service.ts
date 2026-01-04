@@ -10,6 +10,8 @@
  * - Gateway → Browser: auth_ok, auth_error, registered, unregistered, signal, pong, error
  */
 
+import { decodeHashFromBase64 } from "../types/holochain-types";
+
 /**
  * Messages from browser to gateway
  */
@@ -17,7 +19,13 @@ export type ClientMessage =
   | { type: "auth"; session_token: string }
   | { type: "register"; dna_hash: string; agent_pubkey: string }
   | { type: "unregister"; dna_hash: string; agent_pubkey: string }
-  | { type: "ping" };
+  | { type: "ping" }
+  | {
+      type: "sign_response";
+      request_id: string;
+      signature?: string; // base64-encoded signature
+      error?: string;
+    };
 
 /**
  * Messages from gateway to browser
@@ -35,7 +43,13 @@ export type ServerMessage =
       signal: string; // base64-encoded signal payload
     }
   | { type: "pong" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | {
+      type: "sign_request";
+      request_id: string;
+      agent_pubkey: string; // base64-encoded agent public key
+      message: string; // base64-encoded message to sign
+    };
 
 /**
  * Connection state
@@ -61,6 +75,15 @@ export type SignalCallback = (signal: {
  * Connection state callback
  */
 export type StateCallback = (state: ConnectionState) => void;
+
+/**
+ * Sign callback - called when the gateway requests a signature
+ * The callback should return a base64-encoded signature or throw an error
+ */
+export type SignCallback = (request: {
+  agent_pubkey: Uint8Array; // decoded from base64
+  message: Uint8Array; // decoded from base64
+}) => Promise<Uint8Array>;
 
 /**
  * Options for WebSocket network service
@@ -103,6 +126,7 @@ export class WebSocketNetworkService {
   private pendingRegistrations: AgentRegistration[] = [];
   private signalCallback: SignalCallback | null = null;
   private stateCallback: StateCallback | null = null;
+  private signCallback: SignCallback | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,6 +172,16 @@ export class WebSocketNetworkService {
    */
   onStateChange(callback: StateCallback): void {
     this.stateCallback = callback;
+  }
+
+  /**
+   * Set sign callback - called when the gateway requests a signature
+   *
+   * The callback receives the agent public key and message bytes,
+   * and should return the signature bytes.
+   */
+  onSign(callback: SignCallback): void {
+    this.signCallback = callback;
   }
 
   /**
@@ -207,25 +241,28 @@ export class WebSocketNetworkService {
   registerAgent(dna_hash: string, agent_pubkey: string): void {
     const registration = { dna_hash, agent_pubkey };
 
-    // Check if already registered
-    if (
-      this.registrations.some(
-        (r) => r.dna_hash === dna_hash && r.agent_pubkey === agent_pubkey
-      )
-    ) {
-      console.log(
-        `[WebSocketService] Agent already registered: ${agent_pubkey} for ${dna_hash}`
-      );
-      return;
-    }
+    // Check if already in our local tracking
+    const alreadyTracked = this.registrations.some(
+      (r) => r.dna_hash === dna_hash && r.agent_pubkey === agent_pubkey
+    ) || this.pendingRegistrations.some(
+      (r) => r.dna_hash === dna_hash && r.agent_pubkey === agent_pubkey
+    );
 
     if (this.isConnected()) {
-      // Send registration immediately
+      // Always send registration when connected - gateway may have lost it
+      // (e.g., gateway restarted while we stayed connected)
+      console.log(
+        `[WebSocketService] Sending registration: ${agent_pubkey.substring(0, 20)}... for ${dna_hash.substring(0, 20)}...`
+      );
       this.send({ type: "register", dna_hash, agent_pubkey });
-      this.registrations.push(registration);
+      if (!alreadyTracked) {
+        this.registrations.push(registration);
+      }
     } else {
-      // Queue for when connected
-      this.pendingRegistrations.push(registration);
+      // Queue for when connected (only if not already tracked)
+      if (!alreadyTracked) {
+        this.pendingRegistrations.push(registration);
+      }
     }
   }
 
@@ -315,6 +352,10 @@ export class WebSocketNetworkService {
         case "error":
           console.error("[WebSocketService] Server error:", message.message);
           break;
+
+        case "sign_request":
+          this.handleSignRequest(message);
+          break;
       }
     } catch (error) {
       console.error("[WebSocketService] Failed to parse message:", error);
@@ -330,6 +371,16 @@ export class WebSocketNetworkService {
       `[WebSocketService] Connection closed: code=${event.code}, reason=${event.reason}`
     );
     this.cleanup();
+
+    // Move registrations back to pending so they get re-sent on reconnect
+    // This is needed because the gateway forgets registrations when connection drops
+    if (this.registrations.length > 0) {
+      console.log(
+        `[WebSocketService] Moving ${this.registrations.length} registrations to pending for re-send`
+      );
+      this.pendingRegistrations.push(...this.registrations);
+      this.registrations = [];
+    }
 
     if (!this.intentionalClose) {
       this.scheduleReconnect();
@@ -392,6 +443,81 @@ export class WebSocketNetworkService {
       clearTimeout(this.heartbeatTimeoutTimer);
       this.heartbeatTimeoutTimer = null;
     }
+  }
+
+  private handleSignRequest(
+    message: Extract<ServerMessage, { type: "sign_request" }>
+  ): void {
+    console.log(
+      `[WebSocketService] Sign request ${message.request_id} for agent ${message.agent_pubkey.substring(0, 20)}...`
+    );
+
+    if (!this.signCallback) {
+      console.error("[WebSocketService] No sign callback registered");
+      this.send({
+        type: "sign_response",
+        request_id: message.request_id,
+        error: "No sign callback registered",
+      });
+      return;
+    }
+
+    // Decode fields
+    // agent_pubkey is a HoloHash string (e.g., "uhCAk...") - use decodeHashFromBase64
+    // message is URL-safe base64 encoded - convert to standard base64 for atob
+    let agentPubkey: Uint8Array;
+    let messageBytes: Uint8Array;
+
+    try {
+      // agent_pubkey is a HoloHash string (e.g., "uhCAk...")
+      agentPubkey = decodeHashFromBase64(message.agent_pubkey);
+
+      // Convert URL-safe base64 to standard base64 before decoding
+      const standardBase64 = message.message
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+      // Add padding if needed
+      const padded =
+        standardBase64 +
+        "=".repeat((4 - (standardBase64.length % 4)) % 4);
+      messageBytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    } catch (error) {
+      console.error("[WebSocketService] Failed to decode sign request:", error);
+      this.send({
+        type: "sign_response",
+        request_id: message.request_id,
+        error: `Failed to decode request: ${error}`,
+      });
+      return;
+    }
+
+    // Call the sign callback asynchronously
+    this.signCallback({
+      agent_pubkey: agentPubkey,
+      message: messageBytes,
+    })
+      .then((signature) => {
+        // Encode signature as base64
+        const signatureB64 = btoa(
+          String.fromCharCode.apply(null, Array.from(signature))
+        );
+        console.log(
+          `[WebSocketService] Sending sign response for ${message.request_id}`
+        );
+        this.send({
+          type: "sign_response",
+          request_id: message.request_id,
+          signature: signatureB64,
+        });
+      })
+      .catch((error) => {
+        console.error("[WebSocketService] Signing failed:", error);
+        this.send({
+          type: "sign_response",
+          request_id: message.request_id,
+          error: `Signing failed: ${error}`,
+        });
+      });
   }
 
   private startHeartbeat(): void {
