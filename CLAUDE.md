@@ -34,7 +34,7 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
 7. **Strong typing**: when possible allways use strong typeing in typescript, ESPECIALLY when serializing and deserializing accross WASM boundaries.  Look in Holochain code base for types and make typscript equivalents, paying atttention the the serde serialization method being used (which is generally internal, i.e. type: "name")
 8. **Holochain reference sources**: We are using Holochain 0.6.  The source for this is local and lives at the same level as this repo. DO NOT USE .cargo files or web searches to research holochain, just look locally.
 9. **Serialization Errors**: Make sure to look at TRACE output when trying to figure out serialization problems, the WASM will tell you what was wrong in that error message.
-
+10. **holochain dependencies via nix**: when running tests and holochain and so on, correct dependencies will be loaded if commands are run using `nix develop`
 ---
 
 ## Development Strategy
@@ -346,11 +346,12 @@ interface CallZomeRequest {
 **Reference**: `../hc-http-gw/src/`
 
 **Sub-tasks**:
-1. **8.1** Analyze current hc-http-gw endpoints
-2. **8.2** Design publish endpoint for zero-arc nodes
-3. **8.3** Implement `/publish` endpoint for committing to DHT
-4. **8.4** Implement authentication for publish requests
-5. **8.5** Handle publish responses in extension
+1. **8.0** **CRITICAL**: Fix hash computation - Entry and action hashes are currently generated from random bytes. Must implement proper Blake2b content hashing for DHT validation to work. Other Holochain nodes will reject data with incorrect hashes.
+2. **8.1** Analyze current hc-http-gw endpoints
+3. **8.2** Design publish endpoint for zero-arc nodes
+4. **8.3** Implement `/publish` endpoint for committing to DHT
+5. **8.4** Implement authentication for publish requests
+6. **8.5** Handle publish responses in extension
 
 **Key Files**:
 - `../hc-http-gw/src/routes/publish.rs` (new)
