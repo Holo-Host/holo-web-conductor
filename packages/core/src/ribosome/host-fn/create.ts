@@ -9,6 +9,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateAction, StoredEntry, AppEntryType } from "../../storage/types";
 import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * create host function implementation
@@ -42,11 +43,8 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const entryHashData = new Uint8Array(32);
   crypto.getRandomValues(entryHashData); // Temporary: use random hash instead of real hash
 
-  // Build entry hash (39 bytes): [prefix(3)][hash(32)][location(4)]
-  const entryHash = new Uint8Array(39);
-  entryHash.set([132, 33, 36], 0); // ENTRY_PREFIX
-  entryHash.set(entryHashData, 3);
-  entryHash.set([0, 0, 0, 0], 35); // location (all zeros)
+  // Build entry hash using @holochain/client utility
+  const entryHash = hashFrom32AndType(entryHashData, HoloHashType.Entry);
 
   // Get current chain head (synchronous with StorageProvider interface)
   const [dnaHash, agentPubKey] = callContext.cellId;
@@ -57,14 +55,12 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
 
-  // Create action hash (39 bytes): [prefix(3)][hash(32)][location(4)]
+  // Create action hash using @holochain/client utility
   // TODO Step 7+: Use proper action hash computation
-  const actionHash = new Uint8Array(39);
-  actionHash.set([132, 41, 36], 0); // ACTION_PREFIX
-  const randomHash = new Uint8Array(32);
-  crypto.getRandomValues(randomHash);
-  actionHash.set(randomHash, 3);
-  actionHash.set([0, 0, 0, 0], 35); // location (all zeros)
+  const actionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   // Create signature (64 bytes)
   // TODO Step 7+: Use Lair keystore for real signing

@@ -470,6 +470,25 @@ export function isActionHash(hash: Uint8Array): boolean {
 }
 
 /**
+ * Type guard for AgentPubKey (39-byte Uint8Array with AGENT_PREFIX)
+ */
+export function isAgentPubKey(value: unknown): value is AgentPubKey {
+  if (!isUint8Array(value) || value.length !== 39) return false;
+  return value[0] === AGENT_PREFIX[0] && value[1] === AGENT_PREFIX[1] && value[2] === AGENT_PREFIX[2];
+}
+
+/**
+ * Extract the raw 32-byte Ed25519 public key from a 39-byte AgentPubKey
+ *
+ * The AgentPubKey type guarantees this is a valid 39-byte prefixed key,
+ * so no runtime validation is needed.
+ */
+export function extractEd25519PubKey(agentPubKey: AgentPubKey): Uint8Array {
+  // HoloHash format: 3-byte prefix + 32-byte key + 4-byte DHT location
+  return agentPubKey.slice(3, 35);
+}
+
+/**
  * Hash type enum for dispatch
  */
 export type HashType = 'Entry' | 'Action' | 'Unknown';

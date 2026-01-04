@@ -7,6 +7,7 @@
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * Agent info response structure
@@ -35,17 +36,17 @@ export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
   const storage = getStorageProvider();
 
-  // Get raw agent pub key from cell ID (32 bytes)
-  const [dnaHash, rawAgentPubKey] = callContext.cellId;
+  // Get agent pub key from cell ID (may be 32 or 39 bytes)
+  const [dnaHash, cellAgentPubKey] = callContext.cellId;
 
-  // Construct AgentPubKey (39 bytes): [prefix(3)][hash(32)][location(4)]
-  const agentPubKey = new Uint8Array(39);
-  agentPubKey.set([132, 32, 36], 0); // AGENT_PREFIX
-  agentPubKey.set(rawAgentPubKey, 3); // 32-byte public key
-  agentPubKey.set([0, 0, 0, 0], 35); // location (all zeros)
+  // Construct proper AgentPubKey (39 bytes) using @holochain/client utility
+  // If already 39 bytes with prefix, use as-is; otherwise wrap the 32-byte key
+  const agentPubKey = cellAgentPubKey.length === 39
+    ? cellAgentPubKey
+    : hashFrom32AndType(cellAgentPubKey.slice(0, 32), HoloHashType.Agent);
 
   // Get real chain head from storage (always synchronous)
-  const storedChainHead = storage.getChainHead(dnaHash, rawAgentPubKey);
+  const storedChainHead = storage.getChainHead(dnaHash, cellAgentPubKey);
 
   let actionHash: Uint8Array;
   let actionSeq: number;
@@ -57,10 +58,8 @@ export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
     actionSeq = storedChainHead.actionSeq;
     timestamp = Number(storedChainHead.timestamp);
   } else {
-    // No chain head yet (genesis state)
-    actionHash = new Uint8Array(39);
-    actionHash.set([132, 41, 36], 0); // ACTION_PREFIX
-    actionHash.set([0, 0, 0, 0], 35); // location (all zeros)
+    // No chain head yet (genesis state) - create zero-filled action hash
+    actionHash = hashFrom32AndType(new Uint8Array(32), HoloHashType.Action);
     actionSeq = 0;
     timestamp = Date.now() * 1000;
   }

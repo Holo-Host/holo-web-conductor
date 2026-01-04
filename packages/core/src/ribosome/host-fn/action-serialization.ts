@@ -5,7 +5,7 @@
  * with internally tagged enums and snake_case field names.
  */
 
-import { ActionType, type Action as HolochainAction } from '@holochain/client';
+import { ActionType, type Action as HolochainAction, hashFrom32AndType, HoloHashType } from '@holochain/client';
 import type { Action as StorageAction } from '../../storage/types';
 
 // We use HolochainAction as the return type to satisfy external consumers,
@@ -27,15 +27,10 @@ export function toHolochainAction(act: StorageAction): HolochainAction {
   // Implementation builds objects matching Holochain's wire format.
   // TypeScript type assertions used because @holochain/client types don't perfectly
   // match serialization format (e.g., prev_action is optional in wire format but required in types).
-  // Convert 32-byte agentPubKey to 39-byte prefixed version
-  const authorPrefixed = new Uint8Array(39);
-  if (act.author.length === 32) {
-    authorPrefixed.set([0x84, 0x20, 0x24], 0); // AGENT_PREFIX
-    authorPrefixed.set(act.author, 3);
-    authorPrefixed.set([0, 0, 0, 0], 35);
-  } else {
-    authorPrefixed.set(act.author);
-  }
+  // Convert 32-byte agentPubKey to 39-byte prefixed version using @holochain/client utility
+  const authorPrefixed = act.author.length === 39
+    ? act.author
+    : hashFrom32AndType(act.author.slice(0, 32), HoloHashType.Agent);
 
   // Build common fields (NOTE: prev_action is optional, omit if null)
   const common = {
@@ -50,11 +45,10 @@ export function toHolochainAction(act: StorageAction): HolochainAction {
   // types don't exactly match our wire format (optional prev_action, etc.)
   switch (act.actionType) {
     case 'Dna': {
-      // Convert 32-byte raw DNA hash to 39-byte prefixed DnaHash
-      const dnaHashPrefixed = new Uint8Array(39);
-      dnaHashPrefixed.set([0x84, 0x2D, 0x24], 0); // DNA_PREFIX
-      dnaHashPrefixed.set(act.dnaHash, 3);
-      dnaHashPrefixed.set([0, 0, 0, 0], 35); // location (all zeros)
+      // Convert 32-byte raw DNA hash to 39-byte prefixed DnaHash using @holochain/client utility
+      const dnaHashPrefixed = act.dnaHash.length === 39
+        ? act.dnaHash
+        : hashFrom32AndType(act.dnaHash.slice(0, 32), HoloHashType.Dna);
 
       // Note: Dna action does NOT have action_seq or prev_action fields
       // (they are implicitly 0 and None respectively)

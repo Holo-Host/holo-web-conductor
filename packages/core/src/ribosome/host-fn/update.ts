@@ -9,6 +9,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type UpdateAction, type StoredEntry, type ChainHead } from "../../storage/types";
 import { validateWasmUpdateInput } from "../wasm-io-types";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * update host function implementation
@@ -50,18 +51,17 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   });
 
   // Hash the new entry content (simple deterministic hash)
-  const entryHash = new Uint8Array(39);
+  // TODO Step 7+: Use Blake2b for Holochain compatibility
+  const entryHashData = new Uint8Array(32);
   let hashValue = 0;
   for (let i = 0; i < entryContent.length; i++) {
     hashValue = ((hashValue << 5) - hashValue + entryContent[i]) | 0;
   }
-  const view = new DataView(entryHash.buffer);
+  const view = new DataView(entryHashData.buffer);
   for (let i = 0; i < 8; i++) {
-    view.setUint32(i * 4 + 3, hashValue ^ i, false);
+    view.setUint32(i * 4, hashValue ^ i, false);
   }
-  entryHash[0] = 0x84;
-  entryHash[1] = 0x21;
-  entryHash[2] = 0x24;
+  const entryHash = hashFrom32AndType(entryHashData, HoloHashType.Entry);
 
   // Get original action to retrieve original entry hash
   const originalAction = storage.getAction(input.original_action_address);
@@ -78,12 +78,12 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n;
 
-  // Generate action hash (simplified - should use proper hash in production)
-  const actionHash = new Uint8Array(39);
-  crypto.getRandomValues(actionHash);
-  actionHash[0] = 0x84;
-  actionHash[1] = 0x29;
-  actionHash[2] = 0x24;
+  // Generate action hash using @holochain/client utility
+  // TODO Step 7+: Use proper action hash computation
+  const actionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   // Generate signature (mock - should use Lair in production)
   const signature = new Uint8Array(64);

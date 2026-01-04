@@ -8,6 +8,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { DeleteLinkAction } from "../../storage/types";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * Delete link input structure
@@ -49,12 +50,11 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n;
 
-  // Generate action hash
-  const actionHash = new Uint8Array(39);
-  crypto.getRandomValues(actionHash);
-  actionHash[0] = 0x84;
-  actionHash[1] = 0x29;
-  actionHash[2] = 0x24;
+  // Generate action hash using @holochain/client utility
+  const actionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   // Generate signature (mock - should use Lair in production)
   const signature = new Uint8Array(64);

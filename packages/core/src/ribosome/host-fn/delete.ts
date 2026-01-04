@@ -9,6 +9,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type DeleteAction, type ChainHead } from "../../storage/types";
 import { validateWasmDeleteInput } from "../wasm-io-types";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * delete host function implementation
@@ -44,12 +45,12 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n;
 
-  // Generate action hash (simplified - should use proper hash in production)
-  const actionHash = new Uint8Array(39);
-  crypto.getRandomValues(actionHash);
-  actionHash[0] = 0x84;
-  actionHash[1] = 0x29;
-  actionHash[2] = 0x24;
+  // Generate action hash using @holochain/client utility
+  // TODO Step 7+: Use proper action hash computation
+  const actionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   // Generate signature (mock - should use Lair in production)
   const signature = new Uint8Array(64);

@@ -16,6 +16,7 @@ import type {
   InitZomesCompleteAction,
   StoredEntry,
 } from './types';
+import { hashFrom32AndType, HoloHashType } from '@holochain/client';
 
 /**
  * Initialize genesis actions for a new cell
@@ -54,11 +55,10 @@ export async function initializeGenesis(
   crypto.getRandomValues(mockSignature);
 
   // === 1. Dna Action (seq: 0) ===
-  const dnaActionHash = new Uint8Array(39);
-  crypto.getRandomValues(dnaActionHash);
-  dnaActionHash[0] = 0x84;
-  dnaActionHash[1] = 0x29;
-  dnaActionHash[2] = 0x24;
+  const dnaActionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   const dnaAction: DnaAction = {
     actionHash: dnaActionHash,
@@ -74,11 +74,10 @@ export async function initializeGenesis(
   await storage.putAction(dnaAction, dnaHash, agentPubKey);
 
   // === 2. AgentValidationPkg Action (seq: 1) ===
-  const agentValidationActionHash = new Uint8Array(39);
-  crypto.getRandomValues(agentValidationActionHash);
-  agentValidationActionHash[0] = 0x84;
-  agentValidationActionHash[1] = 0x29;
-  agentValidationActionHash[2] = 0x24;
+  const agentValidationActionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   const agentValidationAction: AgentValidationPkgAction = {
     actionHash: agentValidationActionHash,
@@ -94,18 +93,21 @@ export async function initializeGenesis(
   await storage.putAction(agentValidationAction, dnaHash, agentPubKey);
 
   // === 3. Create (Agent Entry) Action (seq: 2) ===
-  // EntryHash for agent entry uses ENTRY_PREFIX (0x84, 0x21, 0x24)
-  // NOT AGENT_PREFIX - the entry content is an AgentPubKey, but the hash is an EntryHash
-  const agentEntryHash = new Uint8Array(39);
-  agentEntryHash.set([0x84, 0x21, 0x24], 0); // ENTRY_PREFIX for EntryHash
-  agentEntryHash.set(agentPubKey.slice(0, 32), 3);
-  agentEntryHash.set([0, 0, 0, 0], 35);
+  // Extract core 32-byte Ed25519 key from agentPubKey (handles both 32 and 39 byte formats)
+  // If 39 bytes: skip 3-byte prefix, take 32 bytes (bytes 3-34)
+  // If 32 bytes: use directly
+  const agentCore = agentPubKey.length === 39
+    ? agentPubKey.slice(3, 35)
+    : agentPubKey.slice(0, 32);
 
-  const agentCreateActionHash = new Uint8Array(39);
-  crypto.getRandomValues(agentCreateActionHash);
-  agentCreateActionHash[0] = 0x84;
-  agentCreateActionHash[1] = 0x29;
-  agentCreateActionHash[2] = 0x24;
+  // Create EntryHash for the agent entry using @holochain/client utility
+  const agentEntryHash = hashFrom32AndType(agentCore, HoloHashType.Entry);
+
+  // Create ActionHash for the Create action
+  const agentCreateActionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   const agentCreateAction: CreateAction = {
     actionHash: agentCreateActionHash,
@@ -122,11 +124,11 @@ export async function initializeGenesis(
   await storage.putAction(agentCreateAction, dnaHash, agentPubKey);
 
   // Store the agent entry
-  // Agent entry content needs to be 39-byte prefixed AgentPubKey
-  const agentPubKeyPrefixed = new Uint8Array(39);
-  agentPubKeyPrefixed.set([0x84, 0x20, 0x24], 0); // AGENT_PREFIX
-  agentPubKeyPrefixed.set(agentPubKey, 3);
-  agentPubKeyPrefixed.set([0, 0, 0, 0], 35);
+  // Agent entry content is the 39-byte prefixed AgentPubKey
+  // If already prefixed, use as-is; otherwise wrap with @holochain/client utility
+  const agentPubKeyPrefixed = agentPubKey.length === 39
+    ? agentPubKey
+    : hashFrom32AndType(agentCore, HoloHashType.Agent);
 
   const agentEntry: StoredEntry = {
     entryHash: agentEntryHash,
@@ -137,11 +139,10 @@ export async function initializeGenesis(
   await storage.putEntry(agentEntry, dnaHash, agentPubKey);
 
   // === 4. InitZomesComplete Action (seq: 3) ===
-  const initZomesCompleteActionHash = new Uint8Array(39);
-  crypto.getRandomValues(initZomesCompleteActionHash);
-  initZomesCompleteActionHash[0] = 0x84;
-  initZomesCompleteActionHash[1] = 0x29;
-  initZomesCompleteActionHash[2] = 0x24;
+  const initZomesCompleteActionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   const initZomesCompleteAction: InitZomesCompleteAction = {
     actionHash: initZomesCompleteActionHash,

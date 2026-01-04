@@ -150,6 +150,7 @@
         color: #4cc9f0;
       }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@msgpack/msgpack@3.0.0-beta2/dist.es5+umd/msgpack.min.js"></script>
   </head>
   <body>
     <h1>Fishy E2E Gateway Test</h1>
@@ -170,33 +171,28 @@
     </div>
 
     <div class="test-section">
-      <h2>2. Gateway Configuration</h2>
+      <h2>2. Connect to Extension</h2>
       <div class="form-group">
-        <label for="gateway-url">Gateway URL:</label>
+        <label for="gateway-url">Gateway URL (optional - leave empty for offline mode):</label>
         <input type="text" id="gateway-url" value="http://localhost:8090" style="width: 300px;" />
       </div>
       <div class="form-group">
-        <label for="dna-hash-override">DNA Hash Override (from gateway's conductor):</label>
-        <input type="text" id="dna-hash-override" value="" placeholder="Paste from .hc-sandbox/dna_hash.txt" style="width: 500px;" />
+        <label for="dna-hash-override">DNA Hash Override:</label>
+        <input type="text" id="dna-hash-override" value="uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii" style="width: 500px;" />
         <small style="color: #888; display: block; margin-top: 5px;">
-          Required for network tests. Get this from <code>.hc-sandbox/dna_hash.txt</code> after running e2e-test-setup.sh
+          Default is the fixture1 DNA hash. Change if using a different DNA.
         </small>
       </div>
-      <button id="check-gateway-btn">Check Gateway</button>
-      <button id="configure-gateway-btn" disabled>Configure Extension</button>
-      <div id="gateway-status" class="status info">Not checked</div>
-    </div>
-
-    <div class="test-section">
-      <h2>3. Extension Connection</h2>
-      <button id="connect-btn" disabled>Connect to Extension</button>
+      <button id="check-gateway-btn">Check Gateway (optional)</button>
+      <button id="connect-btn">Connect</button>
       <button id="disconnect-btn" disabled>Disconnect</button>
+      <div id="gateway-status" class="status info">Gateway not checked</div>
       <div id="connection-status" class="status info">Not connected</div>
       <div id="connection-result" class="test-result"></div>
     </div>
 
     <div class="test-section">
-      <h2>4. Install hApp</h2>
+      <h2>3. Install hApp</h2>
       <div class="form-group">
         <label for="happ-url">hApp Bundle URL (fixture1.happ):</label>
         <input type="text" id="happ-url" value="" placeholder="Select file or enter URL" style="width: 400px;" />
@@ -208,15 +204,15 @@
     </div>
 
     <div class="test-section">
-      <h2>5. DHT Operations Test</h2>
+      <h2>4. DHT Operations Test</h2>
       <p>These tests call zome functions that interact with the DHT through the gateway.</p>
 
-      <h3>5.1 Create Entry</h3>
+      <h3>4.1 Create Entry</h3>
       <button id="create-entry-btn" disabled>Create Entry (create_1)</button>
       <div id="create-status" class="status info">Not tested</div>
       <div id="create-result" class="test-result"></div>
 
-      <h3>5.2 Get Record</h3>
+      <h3>4.2 Get Record</h3>
       <div class="form-group">
         <label for="get-hash">Action/Entry Hash:</label>
         <input type="text" id="get-hash" placeholder="Hash from create (auto-filled)" style="width: 400px;" />
@@ -225,23 +221,23 @@
       <div id="get-status" class="status info">Not tested</div>
       <div id="get-result" class="test-result"></div>
 
-      <h3>5.3 Get All Entries</h3>
+      <h3>4.3 Get All Entries</h3>
       <button id="get-all-btn" disabled>Get All (get_all_1)</button>
       <div id="getall-status" class="status info">Not tested</div>
       <div id="getall-result" class="test-result"></div>
 
-      <h3>5.4 Get Links (shows action hashes)</h3>
+      <h3>4.4 Get Links (shows action hashes)</h3>
       <button id="get-links-btn" disabled>Get Links (dht_get_links)</button>
       <div id="getlinks-status" class="status info">Not tested</div>
       <div id="getlinks-result" class="test-result"></div>
     </div>
 
     <div class="test-section">
-      <h2>6. Network Round-Trip Test</h2>
+      <h2>5. Network Round-Trip Test</h2>
       <p>This test fetches an entry that was created by the gateway's agent (not the browser extension's agent).
          The first fetch should hit the network, subsequent fetches should hit the cascade cache.</p>
 
-      <h3>6.1 Fetch Known Entry</h3>
+      <h3>5.1 Fetch Known Entry</h3>
       <div class="form-group">
         <label for="known-entry-hash">Entry Hash (created by e2e-test-setup.sh):</label>
         <input type="text" id="known-entry-hash" value="uhCEkQwsTsey94mZ2LHIM1JBUqggi8HFaXhhnMUI1C8I2E8Bd27rt" style="width: 500px;" />
@@ -254,7 +250,7 @@
       <div id="network-status" class="status info">Not tested</div>
       <div id="network-result" class="test-result"></div>
 
-      <h3>6.2 Round-Trip Timing</h3>
+      <h3>5.2 Round-Trip Timing</h3>
       <div id="timing-results">
         <p id="first-fetch-time">First fetch: -</p>
         <p id="second-fetch-time">Second fetch: -</p>
@@ -275,6 +271,32 @@
       <div id="signals-result">
         <h4>Received Signals:</h4>
         <pre id="signals-log" style="max-height: 200px; overflow-y: auto;">No signals received yet</pre>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>7. Remote Signal Test (via Gateway)</h2>
+      <p>Test signal flow from gateway to browser via WebSocket. This uses the gateway's <code>/test/signal</code>
+         endpoint to simulate what would happen when a conductor sends <code>send_remote_signal</code>.</p>
+      <div class="status warning" style="margin-bottom: 15px;">
+        <strong>Note:</strong> Full conductor → kitsune2 → gateway → browser flow requires:
+        <ol style="margin: 10px 0 0 20px; color: #ffbe0b;">
+          <li>Gateway started with <code>HC_GW_KITSUNE2_ENABLED=true</code></li>
+          <li>Conductor and gateway sharing the same kitsune2 network (bootstrap + signal servers)</li>
+          <li>The <code>ping</code> function in coordinator1 for ping-pong testing</li>
+        </ol>
+      </div>
+      <button id="send-test-signal-btn" disabled>Send Test Signal via Gateway</button>
+      <div id="ping-status" class="status info">Ready to send test signal</div>
+      <div id="ping-timing">
+        <p id="signal-send-time">Signal sent: -</p>
+        <p id="pong-receive-time">Signal received: -</p>
+        <p id="round-trip-time">Round-trip time: -</p>
+      </div>
+      <div id="ping-result" class="test-result"></div>
+      <div style="margin-top: 15px; padding: 10px; background: #0f3460; border-radius: 4px;">
+        <h4>Signals Received:</h4>
+        <pre id="pong-log" style="max-height: 200px; overflow-y: auto;">No signals received yet</pre>
       </div>
     </div>
 
@@ -322,6 +344,47 @@
         return data;
       }
 
+      // Convert Chrome message object back to Uint8Array
+      function toUint8Array(data) {
+        if (!data) return null;
+        if (data instanceof Uint8Array) return data;
+        if (Array.isArray(data)) return new Uint8Array(data);
+        if (typeof data === "object") {
+          return new Uint8Array(Object.values(data));
+        }
+        return null;
+      }
+
+      // Decode signal payload from msgpack bytes
+      // Remote signals have structure: signal.value.payload.payload (inner payload is msgpack)
+      function decodeSignalPayload(signal) {
+        if (!signal) return signal;
+
+        // Clone the signal to avoid mutating the original
+        const decoded = JSON.parse(JSON.stringify(signal));
+
+        // Remote signals: signal.value.payload.payload contains the msgpack bytes
+        const innerPayload = decoded?.value?.payload?.payload;
+        if (innerPayload) {
+          try {
+            const bytes = toUint8Array(innerPayload);
+            if (bytes && bytes.length > 0) {
+              // Decode msgpack - may need multiple rounds if double-encoded
+              let result = MessagePack.decode(bytes);
+              // If result is still a Uint8Array, decode again
+              while (result instanceof Uint8Array && result.length > 0) {
+                result = MessagePack.decode(result);
+              }
+              decoded.value.payload.payload = result;
+            }
+          } catch (e) {
+            console.error('Failed to decode signal payload:', e);
+          }
+        }
+
+        return decoded;
+      }
+
       // Decode a HoloHash from base64 string to bytes
       // HoloHash format: 'u' + URL-safe base64 (- instead of +, _ instead of /)
       function decodeHashFromB64(hashStr) {
@@ -361,6 +424,10 @@
         b64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         return 'u' + b64;
       }
+
+      // Note: The extension now properly stores 39-byte HoloHashes with correct type markers.
+      // If you see hashes without proper prefixes (uhCAk for agents, uhC0k for DNA),
+      // uninstall and reinstall the hApp to regenerate with proper encoding.
 
       // Check if something looks like a hash (array of 39 bytes or object with numeric keys)
       function looksLikeHash(data) {
@@ -430,8 +497,7 @@
             version: window.holochain.version,
             isFishy: window.holochain.isFishy,
           });
-          document.getElementById("connect-btn").disabled = false;
-          document.getElementById("configure-gateway-btn").disabled = false;
+          // Connect button is always enabled after extension is detected
         } else {
           addLog("Extension not found", 'error');
           showStatus("detection-status", "error", "Extension not detected. Install and reload.");
@@ -461,44 +527,43 @@
         }
       });
 
-      // Configure gateway in extension
-      document.getElementById("configure-gateway-btn").addEventListener("click", async () => {
-        const url = document.getElementById("gateway-url").value;
-        const dnaHashOverride = document.getElementById("dna-hash-override").value.trim() || undefined;
-        addLog(`Configuring extension to use gateway: ${url}`);
-        if (dnaHashOverride) {
-          addLog(`Using DNA hash override: ${dnaHashOverride.substring(0, 20)}...`);
-        }
-
-        try {
-          // The extension should handle this via a message
-          if (window.holochain && window.holochain.configureNetwork) {
-            await window.holochain.configureNetwork({ gatewayUrl: url, dnaHashOverride });
-            addLog("Gateway configured", 'success');
-            showStatus("gateway-status", "success", `Using gateway: ${url}${dnaHashOverride ? ' (with DNA override)' : ''}`);
-          } else {
-            // Fallback: store in session for later use
-            sessionStorage.setItem('fishy_gateway_url', url);
-            addLog("Gateway URL saved (extension config TBD)", 'success');
-            showStatus("gateway-status", "warning", "URL saved locally. Extension may use default.");
-          }
-        } catch (error) {
-          addLog(`Configure failed: ${error.message}`, 'error');
-          showStatus("gateway-status", "error", error.message);
-        }
-      });
-
-      // Connect to extension
+      // Connect to extension (with optional gateway configuration)
       document.getElementById("connect-btn").addEventListener("click", async () => {
+        const gatewayUrl = document.getElementById("gateway-url").value.trim();
+        const dnaHashOverride = document.getElementById("dna-hash-override").value.trim() || undefined;
+
         addLog("Connecting to extension...");
         const startTime = performance.now();
+
         try {
+          // Connect first
           const result = await window.holochain.connect();
-          const elapsed = (performance.now() - startTime).toFixed(1);
+          const connectTime = (performance.now() - startTime).toFixed(1);
           connectionResult = result;
-          addLog(`Connected to extension (${elapsed}ms)`, 'success');
-          showStatus("connection-status", "success", `Connected in ${elapsed}ms`);
+          addLog(`Connected to extension (${connectTime}ms)`, 'success');
+          showStatus("connection-status", "success", `Connected in ${connectTime}ms`);
           showResult("connection-result", result);
+
+          // Configure gateway if URL is provided
+          if (gatewayUrl) {
+            addLog(`Configuring gateway: ${gatewayUrl}`);
+            if (dnaHashOverride) {
+              addLog(`Using DNA hash override: ${dnaHashOverride.substring(0, 20)}...`);
+            }
+
+            if (window.holochain.configureNetwork) {
+              await window.holochain.configureNetwork({ gatewayUrl, dnaHashOverride });
+              addLog("Gateway configured", 'success');
+              showStatus("gateway-status", "success", `Using gateway: ${gatewayUrl}${dnaHashOverride ? ' (with DNA override)' : ''}`);
+            } else {
+              sessionStorage.setItem('fishy_gateway_url', gatewayUrl);
+              addLog("Gateway URL saved locally", 'success');
+              showStatus("gateway-status", "warning", "URL saved locally. Extension may use default.");
+            }
+          } else {
+            addLog("No gateway URL - running in offline mode");
+            showStatus("gateway-status", "info", "Offline mode (no gateway configured)");
+          }
 
           document.getElementById("disconnect-btn").disabled = false;
           document.getElementById("connect-btn").disabled = true;
@@ -1033,8 +1098,10 @@
 
         addLog("Subscribing to signals...");
         signalUnsubscribe = window.holochain.on("signal", (signal) => {
-          addLog(`Signal received: ${JSON.stringify(signal).substring(0, 100)}...`, 'success');
-          receivedSignals.push(signal);
+          // Decode the signal payload from msgpack
+          const decoded = decodeSignalPayload(signal);
+          addLog(`Signal received: ${JSON.stringify(decoded).substring(0, 100)}...`, 'success');
+          receivedSignals.push(decoded);
           updateSignalsLog();
         });
 
@@ -1052,6 +1119,125 @@
           addLog("Unsubscribed from signals");
         }
       });
+
+      // Remote signal test via gateway's /test/signal endpoint
+      let testSignals = [];
+      let signalSendTime = null;
+      let testSignalUnsubscribe = null;
+
+      function enableTestSignalButton() {
+        document.getElementById("send-test-signal-btn").disabled = false;
+      }
+
+      function updateTestSignalLog() {
+        const log = document.getElementById("pong-log");
+        if (testSignals.length === 0) {
+          log.textContent = "No signals received yet";
+        } else {
+          log.textContent = testSignals.map((s, i) =>
+            `[${i + 1}] ${s.receivedAt} (${s.elapsed})\n${JSON.stringify(s.signal, null, 2)}`
+          ).join("\n\n");
+        }
+      }
+
+      document.getElementById("send-test-signal-btn").addEventListener("click", async () => {
+        const gatewayUrl = document.getElementById("gateway-url").value;
+        const dnaHashOverride = document.getElementById("dna-hash-override").value.trim();
+
+        addLog(`Calling ping zome function via gateway (kitsune2 signal test)...`);
+        showStatus("ping-status", "info", "Calling ping via gateway...");
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed");
+          }
+
+          const cellId = appInfo.cells[0];
+          // Use DNA hash override if set, otherwise use cell's DNA hash
+          const dnaHash = dnaHashOverride || encodeHashToB64(cellId[0]);
+          // The extension now properly stores 39-byte HoloHashes with correct type markers
+          const agentPubkey = encodeHashToB64(cellId[1]);
+          const agentBytes = toArray(cellId[1]);
+
+          addLog(`Browser agent: ${agentPubkey} (${agentBytes.length} bytes)`);
+          addLog(`DNA: ${dnaHash}${dnaHashOverride ? ' (override)' : ' (from cell)'}`);
+
+          // Subscribe to signals if not already
+          if (!testSignalUnsubscribe) {
+            testSignalUnsubscribe = window.holochain.on("signal", (signal) => {
+              const receivedAt = new Date().toISOString();
+              const elapsed = signalSendTime ? (performance.now() - signalSendTime).toFixed(1) + 'ms' : '?';
+
+              // Decode the signal payload from msgpack
+              const decoded = decodeSignalPayload(signal);
+              addLog(`Signal received in ${elapsed}!`, 'success');
+
+              testSignals.push({
+                receivedAt,
+                elapsed,
+                signal: formatForDisplay(decoded),
+              });
+              updateTestSignalLog();
+
+              // Update timing display
+              document.getElementById("pong-receive-time").textContent = `Signal received: ${elapsed} after send`;
+              document.getElementById("round-trip-time").textContent = `Round-trip time: ${elapsed}`;
+
+              showStatus("ping-status", "success", `Signal received via kitsune2 in ${elapsed}!`);
+            });
+            addLog("Subscribed to signals");
+          }
+
+          // Build ping payload with browser agent pubkey as target
+          // The conductor will send a signal back to this agent via kitsune2
+          // AgentPubKey expects binary bytes in msgpack - the gateway transcodes JSON arrays to binary
+          const pingPayload = {
+            message: "ping from browser",
+            to_agent: agentBytes, // Send as byte array - gateway transcodes to msgpack binary
+          };
+
+          // Encode payload as base64 JSON for gateway
+          const payloadB64 = btoa(JSON.stringify(pingPayload));
+
+          // Record start time
+          signalSendTime = performance.now();
+
+          // Call ping zome function via gateway
+          // This will cause the conductor to call send_remote_signal() which goes through kitsune2
+          const response = await fetch(`${gatewayUrl}/${dnaHash}/fixture1/coordinator1/ping?payload=${encodeURIComponent(payloadB64)}`);
+
+          const sendTime = (performance.now() - signalSendTime).toFixed(1);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Gateway returned ${response.status}: ${errorText}`);
+          }
+
+          const result = await response.json();
+          addLog(`Ping call completed in ${sendTime}ms: ${JSON.stringify(result)}`, 'success');
+          document.getElementById("signal-send-time").textContent = `Ping sent: ${sendTime}ms`;
+          showStatus("ping-status", "info", `Ping sent in ${sendTime}ms, waiting for pong signal via kitsune2...`);
+          showResult("ping-result", {
+            pingResult: result,
+            sendTime: `${sendTime}ms`,
+            dnaHash,
+            browserAgent: agentPubkey,
+          });
+
+        } catch (error) {
+          addLog(`Ping failed: ${error.message}`, 'error');
+          showStatus("ping-status", "error", error.message);
+          showResult("ping-result", { error: error.message });
+        }
+      });
+
+      // Enable test signal button when hApp is installed
+      const originalEnableSignalTests = enableSignalTests;
+      enableSignalTests = function() {
+        originalEnableSignalTests();
+        enableTestSignalButton();
+      };
 
       addLog("E2E Gateway Test Page loaded");
     </script>

@@ -7,6 +7,7 @@
 import sodium from "libsodium-wrappers";
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * Sign ephemeral result structure
@@ -45,11 +46,8 @@ export const signEphemeral: HostFunctionImpl = (context, inputPtr, inputLen) => 
     sodium.crypto_sign_detached(data, keypair.privateKey)
   );
 
-  // Construct 39-byte AgentPubKey: [prefix(3)][hash(32)][location(4)]
-  const agentPubKey = new Uint8Array(39);
-  agentPubKey.set([132, 32, 36], 0); // AGENT_PREFIX
-  agentPubKey.set(keypair.publicKey, 3); // 32-byte public key
-  agentPubKey.set([0, 0, 0, 0], 35); // location (all zeros)
+  // Construct 39-byte AgentPubKey using @holochain/client utility
+  const agentPubKey = hashFrom32AndType(keypair.publicKey, HoloHashType.Agent);
 
   const result: EphemeralSignatures = {
     key: agentPubKey,

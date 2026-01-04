@@ -8,6 +8,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateLinkAction, Link } from "../../storage/types";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * Create link input structure (matches Holochain HDK CreateLinkInput)
@@ -63,14 +64,12 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
 
-  // Create action hash (39 bytes)
+  // Create action hash using @holochain/client utility
   // TODO Step 7+: Use proper action hash computation
-  const actionHash = new Uint8Array(39);
-  actionHash.set([132, 41, 36], 0); // ACTION_PREFIX
-  const randomHash = new Uint8Array(32);
-  crypto.getRandomValues(randomHash);
-  actionHash.set(randomHash, 3);
-  actionHash.set([0, 0, 0, 0], 35); // location (all zeros)
+  const actionHash = hashFrom32AndType(
+    crypto.getRandomValues(new Uint8Array(32)),
+    HoloHashType.Action
+  );
 
   // Create signature (64 bytes)
   // TODO Step 7+: Use Lair keystore for real signing

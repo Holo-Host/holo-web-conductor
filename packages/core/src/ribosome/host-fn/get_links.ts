@@ -10,6 +10,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
 /**
  * Link structure (matches Holochain's Link type)
@@ -94,16 +95,10 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   // Convert NetworkLink to Holochain Link format
   const links: Link[] = filteredLinks.map(link => {
-    // Convert 32-byte author to 39-byte prefixed version if needed
-    let authorPrefixed: Uint8Array;
-    if (link.author.length === 32) {
-      authorPrefixed = new Uint8Array(39);
-      authorPrefixed.set([0x84, 0x20, 0x24], 0); // AGENT_PREFIX
-      authorPrefixed.set(link.author, 3);
-      authorPrefixed.set([0, 0, 0, 0], 35);
-    } else {
-      authorPrefixed = link.author;
-    }
+    // Convert 32-byte author to 39-byte prefixed version using @holochain/client utility
+    const authorPrefixed = link.author.length === 39
+      ? link.author
+      : hashFrom32AndType(link.author.slice(0, 32), HoloHashType.Agent);
 
     return {
       target: link.target,
