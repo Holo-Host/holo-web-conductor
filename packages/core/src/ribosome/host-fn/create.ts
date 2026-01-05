@@ -9,7 +9,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateAction, StoredEntry, AppEntryType } from "../../storage/types";
 import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types";
-import { hashFrom32AndType, HoloHashType } from "@holochain/client";
+import { computeEntryHash, computeActionHash, type ActionForHashing, ActionType } from "../../hash";
 
 /**
  * create host function implementation
@@ -38,13 +38,8 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entryDefIndex: input.entry_location.App.entry_def_index,
   });
 
-  // Hash the entry content
-  // TODO Step 7+: Use Blake2b for Holochain compatibility
-  const entryHashData = new Uint8Array(32);
-  crypto.getRandomValues(entryHashData); // Temporary: use random hash instead of real hash
-
-  // Build entry hash using @holochain/client utility
-  const entryHash = hashFrom32AndType(entryHashData, HoloHashType.Entry);
+  // Hash the entry content using Blake2b
+  const entryHash = computeEntryHash(entryContent);
 
   // Get current chain head (synchronous with StorageProvider interface)
   const [dnaHash, agentPubKey] = callContext.cellId;
@@ -55,25 +50,39 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
 
-  // Create action hash using @holochain/client utility
-  // TODO Step 7+: Use proper action hash computation
-  const actionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
-
-  // Create signature (64 bytes)
-  // TODO Step 7+: Use Lair keystore for real signing
-  const signature = new Uint8Array(64);
-  crypto.getRandomValues(signature);
-
   // Extract entry type from entry_location
   const entryType: AppEntryType = {
     zome_id: input.entry_location.App.zome_index,
-    entry_index: input.entry_location.App.entry_def_index,  // Fixed: use entry_def_index
+    entry_index: input.entry_location.App.entry_def_index,
   };
 
-  // Build Create action
+  // Build action structure for hashing (before we know the hash)
+  const actionForHashing: ActionForHashing = {
+    type: ActionType.Create,
+    author: agentPubKey,
+    timestamp,
+    action_seq: actionSeq,
+    prev_action: prevActionHash,
+    entry_type: {
+      App: {
+        zome_index: entryType.zome_id,
+        entry_index: entryType.entry_index,
+        visibility: 'Public',
+      }
+    },
+    entry_hash: entryHash,
+    weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+  };
+
+  // Compute action hash using Blake2b
+  const actionHash = computeActionHash(actionForHashing);
+
+  // Create signature (64 bytes)
+  // TODO: Use Lair keystore for real signing
+  const signature = new Uint8Array(64);
+  crypto.getRandomValues(signature);
+
+  // Build Create action for storage
   const action: CreateAction = {
     actionHash,
     actionSeq,

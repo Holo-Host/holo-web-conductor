@@ -35,6 +35,12 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
 8. **Holochain reference sources**: We are using Holochain 0.6.  The source for this is local and lives at the same level as this repo. DO NOT USE .cargo files or web searches to research holochain, just look locally.
 9. **Serialization Errors**: Make sure to look at TRACE output when trying to figure out serialization problems, the WASM will tell you what was wrong in that error message.
 10. **holochain dependencies via nix**: when running tests and holochain and so on, correct dependencies will be loaded if commands are run using `nix develop`
+11. **Use @holochain/client types and utilities**: ALWAYS check `@holochain/client` for existing types, enums, and utility functions before defining new ones. This includes:
+    - Hash types: `EntryHash`, `ActionHash`, `AgentPubKey`, `DnaHash` (not generic `Uint8Array`)
+    - Enums: `ActionType`, `HoloHashType`
+    - Hash utilities: `HASH_TYPE_PREFIX`, `hashFrom32AndType`, `dhtLocationFrom32`
+    - Type guards and utilities in `@holochain/client/lib/utils/`
+    - Return typed hashes (e.g., `EntryHash`) not `Uint8Array` from functions that compute specific hash types
 ---
 
 ## Development Strategy

@@ -9,7 +9,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type DeleteAction, type ChainHead } from "../../storage/types";
 import { validateWasmDeleteInput } from "../wasm-io-types";
-import { hashFrom32AndType, HoloHashType } from "@holochain/client";
+import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
 
 /**
  * delete host function implementation
@@ -45,18 +45,25 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n;
 
-  // Generate action hash using @holochain/client utility
-  // TODO Step 7+: Use proper action hash computation
-  const actionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  // Build action structure for hashing (before we know the hash)
+  const actionForHashing: ActionForHashing = {
+    type: ActionType.Delete,
+    author: agentPubKey,
+    timestamp,
+    action_seq: actionSeq,
+    prev_action: prevActionHash,
+    deletes_address: input.deletes_action_hash,
+    deletes_entry_address: deletesEntryHash,
+  };
 
-  // Generate signature (mock - should use Lair in production)
+  // Compute action hash using Blake2b
+  const actionHash = computeActionHash(actionForHashing);
+
+  // Generate signature (TODO: use Lair in production)
   const signature = new Uint8Array(64);
   crypto.getRandomValues(signature);
 
-  // Build Delete action
+  // Build Delete action for storage
   const action: DeleteAction = {
     actionHash,
     actionSeq,

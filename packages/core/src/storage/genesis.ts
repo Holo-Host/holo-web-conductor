@@ -16,7 +16,7 @@ import type {
   InitZomesCompleteAction,
   StoredEntry,
 } from './types';
-import { hashFrom32AndType, HoloHashType } from '@holochain/client';
+import { computeActionHash, computeEntryHash, dhtLocationFrom32, type ActionForHashing, AGENT_PUBKEY_PREFIX, ActionType } from '../hash';
 
 /**
  * Initialize genesis actions for a new cell
@@ -50,15 +50,21 @@ export async function initializeGenesis(
 
   const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
 
-  // Mock signature (64 bytes) - in production, would use Lair
+  // Mock signature (64 bytes) - TODO: use Lair for real signing
   const mockSignature = new Uint8Array(64);
   crypto.getRandomValues(mockSignature);
 
   // === 1. Dna Action (seq: 0) ===
-  const dnaActionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  // Build action structure for hashing
+  const dnaActionForHashing: ActionForHashing = {
+    type: ActionType.Dna,
+    author: agentPubKey,
+    timestamp,
+    action_seq: 0,
+    prev_action: null,
+    hash: dnaHash,
+  };
+  const dnaActionHash = computeActionHash(dnaActionForHashing);
 
   const dnaAction: DnaAction = {
     actionHash: dnaActionHash,
@@ -74,10 +80,15 @@ export async function initializeGenesis(
   await storage.putAction(dnaAction, dnaHash, agentPubKey);
 
   // === 2. AgentValidationPkg Action (seq: 1) ===
-  const agentValidationActionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  const agentValidationForHashing: ActionForHashing = {
+    type: ActionType.AgentValidationPkg,
+    author: agentPubKey,
+    timestamp,
+    action_seq: 1,
+    prev_action: dnaActionHash,
+    // membrane_proof is optional
+  };
+  const agentValidationActionHash = computeActionHash(agentValidationForHashing);
 
   const agentValidationAction: AgentValidationPkgAction = {
     actionHash: agentValidationActionHash,
@@ -100,14 +111,35 @@ export async function initializeGenesis(
     ? agentPubKey.slice(3, 35)
     : agentPubKey.slice(0, 32);
 
-  // Create EntryHash for the agent entry using @holochain/client utility
-  const agentEntryHash = hashFrom32AndType(agentCore, HoloHashType.Entry);
+  // Create agent pubkey with proper prefix if needed
+  let agentPubKeyPrefixed: Uint8Array;
+  if (agentPubKey.length === 39) {
+    agentPubKeyPrefixed = agentPubKey;
+  } else {
+    // Manually construct prefixed pubkey
+    agentPubKeyPrefixed = new Uint8Array(39);
+    agentPubKeyPrefixed.set(AGENT_PUBKEY_PREFIX, 0);
+    agentPubKeyPrefixed.set(agentCore, 3);
+    // DHT location for last 4 bytes (computed from core hash)
+    agentPubKeyPrefixed.set(dhtLocationFrom32(agentCore), 35);
+  }
 
-  // Create ActionHash for the Create action
-  const agentCreateActionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  // Compute entry hash from agent pubkey content (the full 39-byte AgentPubKey)
+  const agentEntryHash = computeEntryHash(agentPubKeyPrefixed);
+
+  // Build Create action structure for hashing
+  const agentCreateForHashing: ActionForHashing = {
+    type: ActionType.Create,
+    author: agentPubKey,
+    timestamp,
+    action_seq: 2,
+    prev_action: agentValidationActionHash,
+    // Agent entry uses special entry_type
+    entry_type: 'Agent',
+    entry_hash: agentEntryHash,
+    weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+  };
+  const agentCreateActionHash = computeActionHash(agentCreateForHashing);
 
   const agentCreateAction: CreateAction = {
     actionHash: agentCreateActionHash,
@@ -118,18 +150,12 @@ export async function initializeGenesis(
     actionType: 'Create',
     signature: mockSignature,
     entryHash: agentEntryHash,
-    entryType: null, // Agent entry has null entryType
+    entryType: null, // Agent entry has null entryType in storage format
   };
 
   await storage.putAction(agentCreateAction, dnaHash, agentPubKey);
 
   // Store the agent entry
-  // Agent entry content is the 39-byte prefixed AgentPubKey
-  // If already prefixed, use as-is; otherwise wrap with @holochain/client utility
-  const agentPubKeyPrefixed = agentPubKey.length === 39
-    ? agentPubKey
-    : hashFrom32AndType(agentCore, HoloHashType.Agent);
-
   const agentEntry: StoredEntry = {
     entryHash: agentEntryHash,
     entryContent: agentPubKeyPrefixed, // Agent entry content is the 39-byte prefixed pubkey
@@ -139,10 +165,14 @@ export async function initializeGenesis(
   await storage.putEntry(agentEntry, dnaHash, agentPubKey);
 
   // === 4. InitZomesComplete Action (seq: 3) ===
-  const initZomesCompleteActionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  const initZomesCompleteForHashing: ActionForHashing = {
+    type: ActionType.InitZomesComplete,
+    author: agentPubKey,
+    timestamp,
+    action_seq: 3,
+    prev_action: agentCreateActionHash,
+  };
+  const initZomesCompleteActionHash = computeActionHash(initZomesCompleteForHashing);
 
   const initZomesCompleteAction: InitZomesCompleteAction = {
     actionHash: initZomesCompleteActionHash,

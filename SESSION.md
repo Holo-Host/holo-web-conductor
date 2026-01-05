@@ -6,21 +6,40 @@
 
 ## Current Step Progress
 
-### Step 8.0: Fix Hash Computation - IN PROGRESS
+### Step 8.0: Fix Hash Computation - COMPLETE
 
 **Goal**: Compute proper Blake2b content hashes for entries and actions so published data can be validated by other Holochain nodes.
 
-**Status**: Starting implementation with TDD approach
+**Status**: COMPLETE (2026-01-04)
 
 **Tasks**:
 - [x] Add blakejs dependency
-- [ ] Write BLAKE2b wrapper tests
-- [ ] Write HoloHash construction tests
-- [ ] Write entry hash tests
-- [ ] Write action hash tests
-- [ ] Implement hash module
-- [ ] Update host functions
-- [ ] Generate known test vectors
+- [x] Write BLAKE2b wrapper tests
+- [x] Write HoloHash construction tests
+- [x] Write entry hash tests
+- [x] Write action hash tests
+- [x] Implement hash module (`packages/core/src/hash/index.ts`)
+- [x] Update host functions (create, update, delete, create_link, delete_link)
+- [x] Update genesis.ts for genesis action hashes
+- [x] Generate known test vectors from Holochain
+
+**Files Modified**:
+- `packages/core/src/hash/index.ts` - New hash module with Blake2b
+- `packages/core/src/hash/hash.test.ts` - 34 tests including known test vectors
+- `packages/core/src/ribosome/host-fn/create.ts` - Uses computeEntryHash/computeActionHash
+- `packages/core/src/ribosome/host-fn/update.ts` - Uses computeEntryHash/computeActionHash
+- `packages/core/src/ribosome/host-fn/delete.ts` - Uses computeActionHash
+- `packages/core/src/ribosome/host-fn/create_link.ts` - Uses computeActionHash
+- `packages/core/src/ribosome/host-fn/delete_link.ts` - Uses computeActionHash
+- `packages/core/src/storage/genesis.ts` - Uses proper hashing for genesis actions
+
+**Test Results**: 34/34 hash tests passing
+
+**Technical Details**:
+- HoloHash structure: 39 bytes = 3-byte prefix + 32-byte Blake2b-256 hash + 4-byte DHT location
+- DHT location: XOR-fold of Blake2b-128 of core hash (16 → 4 bytes)
+- Entry hash: Blake2b-256 of raw entry content bytes
+- Action hash: Blake2b-256 of msgpack-serialized action structure
 
 **Details**: See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
 

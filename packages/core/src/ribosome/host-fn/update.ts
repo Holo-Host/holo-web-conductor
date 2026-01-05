@@ -9,7 +9,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type UpdateAction, type StoredEntry, type ChainHead } from "../../storage/types";
 import { validateWasmUpdateInput } from "../wasm-io-types";
-import { hashFrom32AndType, HoloHashType } from "@holochain/client";
+import { computeEntryHash, computeActionHash, type ActionForHashing, ActionType } from "../../hash";
 
 /**
  * update host function implementation
@@ -50,18 +50,8 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entryDefIndex,
   });
 
-  // Hash the new entry content (simple deterministic hash)
-  // TODO Step 7+: Use Blake2b for Holochain compatibility
-  const entryHashData = new Uint8Array(32);
-  let hashValue = 0;
-  for (let i = 0; i < entryContent.length; i++) {
-    hashValue = ((hashValue << 5) - hashValue + entryContent[i]) | 0;
-  }
-  const view = new DataView(entryHashData.buffer);
-  for (let i = 0; i < 8; i++) {
-    view.setUint32(i * 4, hashValue ^ i, false);
-  }
-  const entryHash = hashFrom32AndType(entryHashData, HoloHashType.Entry);
+  // Hash the new entry content using Blake2b
+  const entryHash = computeEntryHash(entryContent);
 
   // Get original action to retrieve original entry hash
   const originalAction = storage.getAction(input.original_action_address);
@@ -78,18 +68,34 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n;
 
-  // Generate action hash using @holochain/client utility
-  // TODO Step 7+: Use proper action hash computation
-  const actionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  // Build action structure for hashing (before we know the hash)
+  const actionForHashing: ActionForHashing = {
+    type: ActionType.Update,
+    author: agentPubKey,
+    timestamp,
+    action_seq: actionSeq,
+    prev_action: prevActionHash,
+    entry_type: {
+      App: {
+        zome_index: zomeIndex,
+        entry_index: entryDefIndex,
+        visibility: 'Public',
+      }
+    },
+    entry_hash: entryHash,
+    original_action_address: input.original_action_address,
+    original_entry_address: originalEntryHash,
+    weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+  };
 
-  // Generate signature (mock - should use Lair in production)
+  // Compute action hash using Blake2b
+  const actionHash = computeActionHash(actionForHashing);
+
+  // Generate signature (TODO: use Lair in production)
   const signature = new Uint8Array(64);
   crypto.getRandomValues(signature);
 
-  // Build Update action
+  // Build Update action for storage
   const action: UpdateAction = {
     actionHash,
     actionSeq,

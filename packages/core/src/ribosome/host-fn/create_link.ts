@@ -8,7 +8,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateLinkAction, Link } from "../../storage/types";
-import { hashFrom32AndType, HoloHashType } from "@holochain/client";
+import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
 
 /**
  * Create link input structure (matches Holochain HDK CreateLinkInput)
@@ -64,19 +64,31 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
 
-  // Create action hash using @holochain/client utility
-  // TODO Step 7+: Use proper action hash computation
-  const actionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  // Build action structure for hashing (before we know the hash)
+  const tag = input.tag || new Uint8Array(0);
+  const actionForHashing: ActionForHashing = {
+    type: ActionType.CreateLink,
+    author: agentPubKey,
+    timestamp,
+    action_seq: actionSeq,
+    prev_action: prevActionHash,
+    base_address: input.base_address,
+    target_address: input.target_address,
+    zome_index: zomeIndex,
+    link_type: linkType,
+    tag,
+    weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+  };
+
+  // Compute action hash using Blake2b
+  const actionHash = computeActionHash(actionForHashing);
 
   // Create signature (64 bytes)
-  // TODO Step 7+: Use Lair keystore for real signing
+  // TODO: Use Lair keystore for real signing
   const signature = new Uint8Array(64);
   crypto.getRandomValues(signature);
 
-  // Build CreateLink action
+  // Build CreateLink action for storage
   const action: CreateLinkAction = {
     actionHash,
     actionSeq,
@@ -89,7 +101,7 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     targetAddress: input.target_address,
     zomeIndex,
     linkType,
-    tag: input.tag || new Uint8Array(0),
+    tag,
   };
 
   // Build link record

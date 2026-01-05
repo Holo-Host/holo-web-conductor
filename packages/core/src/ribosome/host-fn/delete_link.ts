@@ -8,7 +8,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { DeleteLinkAction } from "../../storage/types";
-import { hashFrom32AndType, HoloHashType } from "@holochain/client";
+import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
 
 /**
  * Delete link input structure
@@ -50,17 +50,25 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const prevActionHash = chainHead ? chainHead.actionHash : null;
   const timestamp = BigInt(Date.now()) * 1000n;
 
-  // Generate action hash using @holochain/client utility
-  const actionHash = hashFrom32AndType(
-    crypto.getRandomValues(new Uint8Array(32)),
-    HoloHashType.Action
-  );
+  // Build action structure for hashing (before we know the hash)
+  const actionForHashing: ActionForHashing = {
+    type: ActionType.DeleteLink,
+    author: agentPubKey,
+    timestamp,
+    action_seq: actionSeq,
+    prev_action: prevActionHash,
+    link_add_address: input.address,
+    base_address: createLinkAction.baseAddress,
+  };
 
-  // Generate signature (mock - should use Lair in production)
+  // Compute action hash using Blake2b
+  const actionHash = computeActionHash(actionForHashing);
+
+  // Generate signature (TODO: use Lair in production)
   const signature = new Uint8Array(64);
   crypto.getRandomValues(signature);
 
-  // Build DeleteLink action
+  // Build DeleteLink action for storage
   const action: DeleteLinkAction = {
     actionHash,
     actionSeq,
