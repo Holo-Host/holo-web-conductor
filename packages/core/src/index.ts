@@ -9,8 +9,25 @@
  * - Source chain operations
  */
 
+// Import proper Holochain hash types for use in interfaces
+import type {
+  DnaHash,
+  AgentPubKey,
+  CellId,
+} from "@holochain/client";
+
 // Re-export shared types
 export * from "@fishy/shared";
+
+// Re-export proper Holochain hash types from @holochain/client
+export type {
+  AgentPubKey,
+  ActionHash,
+  EntryHash,
+  DnaHash,
+  AnyDhtHash,
+  CellId,
+} from "@holochain/client";
 
 // Re-export Holochain type guards and utilities
 export {
@@ -33,6 +50,9 @@ export * from './storage';
 // Re-export network module
 export * from './network';
 
+// Re-export DHT module
+export * from './dht';
+
 // Re-export utilities
 export * from './utils';
 
@@ -53,25 +73,21 @@ export interface HappInstallConfig {
 }
 
 export interface DnaConfig {
-  hash: Uint8Array;
+  /** DNA hash (39-byte HoloHash) */
+  hash: DnaHash;
+  /** WASM bytes */
   wasm: Uint8Array;
   name?: string;
   properties?: Record<string, unknown>;
 }
 
 export interface ZomeCallRequest {
-  cellId: [Uint8Array, Uint8Array]; // [DnaHash, AgentPubKey]
+  /** Cell ID: [DnaHash, AgentPubKey] */
+  cellId: CellId;
   zome: string;
   fn: string;
   payload: unknown;
 }
-
-/**
- * Type aliases for Holochain primitives
- */
-export type DnaHash = Uint8Array;
-export type AgentPubKey = Uint8Array;
-export type CellId = [DnaHash, AgentPubKey];
 
 /**
  * hApp context - associates a domain with DNAs and agent identity
@@ -83,7 +99,7 @@ export interface HappContext {
   /** Domain this context is for (e.g., "https://example.com") */
   domain: string;
 
-  /** Agent public key (Ed25519) for this context */
+  /** Agent public key (39-byte HoloHash) for this context */
   agentPubKey: AgentPubKey;
 
   /** Tag in Lair keystore for agent key */
@@ -106,7 +122,7 @@ export interface HappContext {
  * DNA context within a hApp
  */
 export interface DnaContext {
-  /** DNA hash (32 bytes) */
+  /** DNA hash (39-byte HoloHash) */
   hash: DnaHash;
 
   /** WASM bytes (stored in IndexedDB) */
