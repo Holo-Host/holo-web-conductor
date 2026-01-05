@@ -1,10 +1,30 @@
 # Fishy Development Session
 
-**Last Updated**: 2026-01-02
-**Current Step**: Next Steps TBD
-**Status**: Step 9.6 Complete
+**Last Updated**: 2026-01-04
+**Current Step**: Step 8.0 - Hash Computation
+**Status**: IN PROGRESS
 
 ## Current Step Progress
+
+### Step 8.0: Fix Hash Computation - IN PROGRESS
+
+**Goal**: Compute proper Blake2b content hashes for entries and actions so published data can be validated by other Holochain nodes.
+
+**Status**: Starting implementation with TDD approach
+
+**Tasks**:
+- [x] Add blakejs dependency
+- [ ] Write BLAKE2b wrapper tests
+- [ ] Write HoloHash construction tests
+- [ ] Write entry hash tests
+- [ ] Write action hash tests
+- [ ] Implement hash module
+- [ ] Update host functions
+- [ ] Generate known test vectors
+
+**Details**: See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
+
+---
 
 ### Step 9.6: Remote Signal Forwarding with Kitsune2 - COMPLETE
 
@@ -334,4 +354,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 9.5 (Local Signal Delivery) is COMPLETE. Step 9.6 (Kitsune2 Remote Signals) is IN PROGRESS with planning complete. The plan is at `STEPS/9.6_PLAN.md`. The kitsune2 infrastructure in hc-http-gw-fork is 90% built - we just need to initialize GatewayKitsune in the binary and create an E2E test.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8.0 (Hash Computation) is IN PROGRESS. The plan is at `STEPS/8.0_PLAN.md`. We're implementing proper Blake2b content hashing for entries and actions using TDD - tests first, then implementation. The blakejs dependency is installed.

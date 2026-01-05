@@ -337,29 +337,33 @@ interface CallZomeRequest {
 
 ---
 
-### Step 8: hc-http-gw Extensions
+### Step 8: DHT Publishing ⏳ IN PROGRESS
 
-**Goal**: Extend hc-http-gw to support zero-arc node publish operations.
+**Goal**: Implement publishing of source chain data to the DHT via the gateway's kitsune2 node.
 
 **Dependencies**: Step 7
 
-**Reference**: `../hc-http-gw/src/`
+**Status**: IN PROGRESS - Starting with Step 8.0 (Hash Computation)
 
-**Sub-tasks**:
-1. **8.0** **CRITICAL**: Fix hash computation - Entry and action hashes are currently generated from random bytes. Must implement proper Blake2b content hashing for DHT validation to work. Other Holochain nodes will reject data with incorrect hashes.
-2. **8.1** Analyze current hc-http-gw endpoints
-3. **8.2** Design publish endpoint for zero-arc nodes
-4. **8.3** Implement `/publish` endpoint for committing to DHT
-5. **8.4** Implement authentication for publish requests
-6. **8.5** Handle publish responses in extension
+**Details**: See [STEPS/8_PLAN.md](./STEPS/8_PLAN.md)
+
+**Sub-steps**:
+1. **8.0** Fix hash computation (Blake2b) - See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
+2. **8.1** DhtOp generation - See [STEPS/8.1_PLAN.md](./STEPS/8.1_PLAN.md)
+3. **8.2** Op signing protocol - See [STEPS/8.2_PLAN.md](./STEPS/8.2_PLAN.md)
+4. **8.3** Gateway publish endpoint - See [STEPS/8.3_PLAN.md](./STEPS/8.3_PLAN.md)
+5. **8.4** Publish tracking - See [STEPS/8.4_PLAN.md](./STEPS/8.4_PLAN.md)
+6. **8.5** Integration & publish workflow - See [STEPS/8.5_PLAN.md](./STEPS/8.5_PLAN.md)
 
 **Key Files**:
-- `../hc-http-gw/src/routes/publish.rs` (new)
-- `packages/core/src/conductor/network.ts`
+- `packages/core/src/hash/` (new module)
+- `packages/core/src/dht/` (new module)
+- `hc-http-gw-fork/src/routes/publish.rs` (new)
 
 **Tests**:
-- Publish request accepted by gateway
-- Published data retrievable via get
+- Hash computation matches Holochain (known vector tests)
+- DhtOps generated correctly for all action types
+- Published data retrievable by other Holochain nodes
 
 ---
 

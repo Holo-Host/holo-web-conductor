@@ -18,6 +18,7 @@
     "@holochain/client": "^0.20.1",
     "@msgpack/msgpack": "^3.0.0",
     "@sqlite.org/sqlite-wasm": "^3.51.1-build2",
+    "blakejs": "^1.2.1",
     "js-yaml": "^4.1.0",
     "libsodium-wrappers": "^0.7.13",
     "pako": "^2.1.0"
