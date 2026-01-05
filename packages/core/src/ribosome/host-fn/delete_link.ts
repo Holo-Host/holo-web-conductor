@@ -9,6 +9,7 @@ import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { DeleteLinkAction } from "../../storage/types";
 import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { signAction } from "../../signing";
 
 /**
  * Delete link input structure
@@ -64,9 +65,8 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Compute action hash using Blake2b
   const actionHash = computeActionHash(actionForHashing);
 
-  // Generate signature (TODO: use Lair in production)
-  const signature = new Uint8Array(64);
-  crypto.getRandomValues(signature);
+  // Sign the action hash
+  const signature = signAction(agentPubKey, actionHash);
 
   // Build DeleteLink action for storage
   const action: DeleteLinkAction = {

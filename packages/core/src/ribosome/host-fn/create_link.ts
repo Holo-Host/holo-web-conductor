@@ -9,6 +9,7 @@ import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateLinkAction, Link } from "../../storage/types";
 import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { signAction } from "../../signing";
 
 /**
  * Create link input structure (matches Holochain HDK CreateLinkInput)
@@ -83,10 +84,8 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Compute action hash using Blake2b
   const actionHash = computeActionHash(actionForHashing);
 
-  // Create signature (64 bytes)
-  // TODO: Use Lair keystore for real signing
-  const signature = new Uint8Array(64);
-  crypto.getRandomValues(signature);
+  // Sign the action hash
+  const signature = signAction(agentPubKey, actionHash);
 
   // Build CreateLink action for storage
   const action: CreateLinkAction = {

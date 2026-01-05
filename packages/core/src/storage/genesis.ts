@@ -17,6 +17,7 @@ import type {
   StoredEntry,
 } from './types';
 import { computeActionHash, computeEntryHash, dhtLocationFrom32, type ActionForHashing, AGENT_PUBKEY_PREFIX, ActionType } from '../hash';
+import { signAction } from '../signing';
 
 /**
  * Initialize genesis actions for a new cell
@@ -50,9 +51,10 @@ export async function initializeGenesis(
 
   const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
 
-  // Mock signature (64 bytes) - TODO: use Lair for real signing
-  const mockSignature = new Uint8Array(64);
-  crypto.getRandomValues(mockSignature);
+  // Helper to sign action hashes
+  const signActionHash = (actionHash: Uint8Array): Uint8Array => {
+    return signAction(agentPubKey, actionHash);
+  };
 
   // === 1. Dna Action (seq: 0) ===
   // Build action structure for hashing
@@ -73,7 +75,7 @@ export async function initializeGenesis(
     timestamp,
     prevActionHash: null, // First action has no previous
     actionType: 'Dna',
-    signature: mockSignature,
+    signature: signActionHash(dnaActionHash),
     dnaHash,
   };
 
@@ -97,7 +99,7 @@ export async function initializeGenesis(
     timestamp,
     prevActionHash: dnaActionHash,
     actionType: 'AgentValidationPkg',
-    signature: mockSignature,
+    signature: signActionHash(agentValidationActionHash),
     // membraneProof is optional
   };
 
@@ -148,7 +150,7 @@ export async function initializeGenesis(
     timestamp,
     prevActionHash: agentValidationActionHash,
     actionType: 'Create',
-    signature: mockSignature,
+    signature: signActionHash(agentCreateActionHash),
     entryHash: agentEntryHash,
     entryType: null, // Agent entry has null entryType in storage format
   };
@@ -181,7 +183,7 @@ export async function initializeGenesis(
     timestamp,
     prevActionHash: agentCreateActionHash,
     actionType: 'InitZomesComplete',
-    signature: mockSignature,
+    signature: signActionHash(initZomesCompleteActionHash),
   };
 
   await storage.putAction(initZomesCompleteAction, dnaHash, agentPubKey);

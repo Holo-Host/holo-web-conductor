@@ -10,6 +10,7 @@ import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type DeleteAction, type ChainHead } from "../../storage/types";
 import { validateWasmDeleteInput } from "../wasm-io-types";
 import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { signAction } from "../../signing";
 
 /**
  * delete host function implementation
@@ -59,9 +60,8 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Compute action hash using Blake2b
   const actionHash = computeActionHash(actionForHashing);
 
-  // Generate signature (TODO: use Lair in production)
-  const signature = new Uint8Array(64);
-  crypto.getRandomValues(signature);
+  // Sign the action hash
+  const signature = signAction(agentPubKey, actionHash);
 
   // Build Delete action for storage
   const action: DeleteAction = {

@@ -125,11 +125,43 @@ export interface LairClient {
   listEntries(): Promise<EntryInfo[]>;
 
   /**
-   * Sign data with a key identified by its public key
-   * @param pub_key - The Ed25519 public key
+   * Sign data with a key identified by its public key (async)
+   * @param pub_key - The Ed25519 public key (32 bytes)
    * @param data - Data to sign
    */
   signByPubKey(pub_key: Ed25519PubKey, data: Uint8Array): Promise<Ed25519Signature>;
+
+  /**
+   * Preload a key into memory for synchronous signing
+   * Must be called before using signSync
+   * @param pub_key - The Ed25519 public key (32 bytes)
+   */
+  preloadKeyForSync(pub_key: Ed25519PubKey): Promise<void>;
+
+  /**
+   * Sign data synchronously using a preloaded key
+   * @param pub_key - The Ed25519 public key (32 bytes)
+   * @param data - Data to sign
+   * @throws Error if key not preloaded
+   */
+  signSync(pub_key: Ed25519PubKey, data: Uint8Array): Ed25519Signature;
+
+  /**
+   * Check if a key is preloaded for sync signing
+   * @param pub_key - The Ed25519 public key (32 bytes)
+   */
+  hasPreloadedKey(pub_key: Ed25519PubKey): boolean;
+
+  /**
+   * Clear a preloaded key from memory
+   * @param pub_key - The Ed25519 public key (32 bytes)
+   */
+  clearPreloadedKey(pub_key: Ed25519PubKey): void;
+
+  /**
+   * Clear all preloaded keys from memory
+   */
+  clearAllPreloadedKeys(): void;
 
   /**
    * Derive a new seed from an existing one

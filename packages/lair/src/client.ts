@@ -23,11 +23,20 @@ import type { KeyStorage } from "./storage";
 import { createKeyStorage } from "./storage";
 
 /**
+ * Cached key for synchronous signing
+ */
+interface PreloadedKey {
+  pubKey: Ed25519PubKey;
+  privateKey: Uint8Array; // 64-byte Ed25519 private key
+}
+
+/**
  * Lair keystore client implementation
  */
 export class LairClient implements ILairClient {
   private storage!: KeyStorage; // Initialized in async initialize()
   private ready: Promise<void>;
+  private preloadedKeys: Map<string, PreloadedKey> = new Map();
 
   constructor(storage?: KeyStorage) {
     // Initialize libsodium and storage
@@ -47,6 +56,13 @@ export class LairClient implements ILairClient {
    */
   private async ensureReady(): Promise<void> {
     await this.ready;
+  }
+
+  /**
+   * Convert pubKey to string for Map lookup
+   */
+  private pubKeyToString(pubKey: Ed25519PubKey): string {
+    return Array.from(pubKey).join(",");
   }
 
   /**
@@ -139,6 +155,86 @@ export class LairClient implements ILairClient {
     const signature = sodium.crypto_sign_detached(data, entry.seed);
 
     return signature;
+  }
+
+  /**
+   * Preload a key into memory for synchronous signing
+   */
+  async preloadKeyForSync(pub_key: Ed25519PubKey): Promise<void> {
+    await this.ensureReady();
+
+    if (pub_key.length !== 32) {
+      throw new Error(`Invalid public key length: ${pub_key.length} (expected 32)`);
+    }
+
+    // Find the entry with this public key
+    const entries = await this.storage.listEntries();
+    const entry_info = entries.find((info) =>
+      sodium.memcmp(info.ed25519_pub_key, pub_key)
+    );
+
+    if (!entry_info) {
+      throw new Error("Public key not found in keystore");
+    }
+
+    // Get the full entry with private key
+    const entry = await this.storage.getEntry(entry_info.tag);
+    if (!entry) {
+      throw new Error("Entry not found");
+    }
+
+    // Cache the key for sync access
+    const key = this.pubKeyToString(pub_key);
+    this.preloadedKeys.set(key, {
+      pubKey: new Uint8Array(pub_key),
+      privateKey: new Uint8Array(entry.seed),
+    });
+  }
+
+  /**
+   * Sign data synchronously using a preloaded key
+   */
+  signSync(pub_key: Ed25519PubKey, data: Uint8Array): Ed25519Signature {
+    const key = this.pubKeyToString(pub_key);
+    const cached = this.preloadedKeys.get(key);
+
+    if (!cached) {
+      throw new Error(
+        "Key not preloaded. Call preloadKeyForSync() before WASM execution."
+      );
+    }
+
+    return sodium.crypto_sign_detached(data, cached.privateKey);
+  }
+
+  /**
+   * Check if a key is preloaded for sync signing
+   */
+  hasPreloadedKey(pub_key: Ed25519PubKey): boolean {
+    return this.preloadedKeys.has(this.pubKeyToString(pub_key));
+  }
+
+  /**
+   * Clear a preloaded key from memory
+   */
+  clearPreloadedKey(pub_key: Ed25519PubKey): void {
+    const key = this.pubKeyToString(pub_key);
+    const cached = this.preloadedKeys.get(key);
+    if (cached) {
+      // Zero out private key before deleting
+      cached.privateKey.fill(0);
+      this.preloadedKeys.delete(key);
+    }
+  }
+
+  /**
+   * Clear all preloaded keys from memory
+   */
+  clearAllPreloadedKeys(): void {
+    for (const cached of this.preloadedKeys.values()) {
+      cached.privateKey.fill(0);
+    }
+    this.preloadedKeys.clear();
   }
 
   /**

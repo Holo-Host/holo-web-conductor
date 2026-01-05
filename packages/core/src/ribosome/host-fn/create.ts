@@ -10,6 +10,7 @@ import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateAction, StoredEntry, AppEntryType } from "../../storage/types";
 import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types";
 import { computeEntryHash, computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { signAction } from "../../signing";
 
 /**
  * create host function implementation
@@ -77,10 +78,8 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Compute action hash using Blake2b
   const actionHash = computeActionHash(actionForHashing);
 
-  // Create signature (64 bytes)
-  // TODO: Use Lair keystore for real signing
-  const signature = new Uint8Array(64);
-  crypto.getRandomValues(signature);
+  // Sign the action hash
+  const signature = signAction(agentPubKey, actionHash);
 
   // Build Create action for storage
   const action: CreateAction = {

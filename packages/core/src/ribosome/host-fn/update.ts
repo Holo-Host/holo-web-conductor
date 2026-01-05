@@ -10,6 +10,7 @@ import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type UpdateAction, type StoredEntry, type ChainHead } from "../../storage/types";
 import { validateWasmUpdateInput } from "../wasm-io-types";
 import { computeEntryHash, computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { signAction } from "../../signing";
 
 /**
  * update host function implementation
@@ -91,9 +92,8 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Compute action hash using Blake2b
   const actionHash = computeActionHash(actionForHashing);
 
-  // Generate signature (TODO: use Lair in production)
-  const signature = new Uint8Array(64);
-  crypto.getRandomValues(signature);
+  // Sign the action hash
+  const signature = signAction(agentPubKey, actionHash);
 
   // Build Update action for storage
   const action: UpdateAction = {

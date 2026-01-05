@@ -1,11 +1,13 @@
 /**
  * sign host function
  *
- * Signs data with the agent's key.
+ * Signs arbitrary data with the agent's key.
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { getLairClient } from "../../signing";
+import { sliceCore32 } from "@holochain/client";
 
 /**
  * Sign input structure
@@ -18,11 +20,8 @@ interface SignInput {
 /**
  * sign host function implementation
  *
- * NOTE: This is a MOCK implementation for Step 5.
- * Production implementation should delegate to Lair keystore.
- *
- * For now, this creates a deterministic signature based on the agent pub key
- * and data. This allows signatures to be verified but doesn't use Lair.
+ * Signs arbitrary data with the agent's private key using the signing provider.
+ * Falls back to mock signature if no signing provider is set.
  */
 export const sign: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
@@ -34,31 +33,11 @@ export const sign: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Get agent pub key from cell ID
   const [_dnaHash, agentPubKey] = callContext.cellId;
 
-  // TODO(Step 6+): Integrate with Lair for real signing
-  // For now, create a mock signature
-  // In production, this would be: await lairClient.signByPubKey(agentPubKey, data)
+  // Extract raw 32-byte Ed25519 key from 39-byte AgentPubKey using @holochain/client utility
+  const rawPubKey = sliceCore32(agentPubKey);
 
-  // Create a deterministic mock signature (64 bytes for Ed25519)
-  const signature = new Uint8Array(64);
-
-  // Simple deterministic signature: hash(agentPubKey + data)
-  let hash = 0;
-  for (let i = 0; i < agentPubKey.length; i++) {
-    hash = ((hash << 5) - hash + agentPubKey[i]) | 0;
-  }
-  for (let i = 0; i < data.length; i++) {
-    hash = ((hash << 5) - hash + data[i]) | 0;
-  }
-
-  // Spread hash across signature
-  const view = new DataView(signature.buffer);
-  for (let i = 0; i < 16; i++) {
-    view.setUint32(i * 4, hash ^ i, false);
-  }
-
-  console.warn(
-    "[sign] Using MOCK signature - production should use Lair keystore"
-  );
+  // Sign using Lair's synchronous signing (key must be preloaded)
+  const signature = getLairClient().signSync(rawPubKey, data);
 
   return serializeResult(instance, signature);
 };
