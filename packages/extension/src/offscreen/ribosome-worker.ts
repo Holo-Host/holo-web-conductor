@@ -993,9 +993,31 @@ self.onmessage = async (event: MessageEvent) => {
         const zomeResult = await callZome(request);
         const afterZomeCall = performance.now();
 
+        // Convert pending records for transport (Uint8Array -> Array)
+        let pendingRecordsForTransport: any[] | undefined;
+        if (zomeResult.pendingRecords && zomeResult.pendingRecords.length > 0) {
+          pendingRecordsForTransport = zomeResult.pendingRecords.map(record => ({
+            signed_action: {
+              hashed: {
+                content: record.signed_action.hashed.content,
+                hash: Array.from(record.signed_action.hashed.hash),
+              },
+              signature: Array.from(record.signed_action.signature),
+            },
+            entry: record.entry ? {
+              Present: record.entry.Present ? {
+                entry_type: record.entry.Present.entry_type,
+                entry: Array.from(record.entry.Present.entry),
+              } : undefined,
+            } : undefined,
+          }));
+          console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
+        }
+
         result = {
           result: zomeResult.result,
           signals: zomeResult.signals || [],
+          pendingRecords: pendingRecordsForTransport,
         };
 
         console.log(`[PERF Worker] CALL_ZOME message handling:

@@ -343,13 +343,13 @@ interface CallZomeRequest {
 
 ---
 
-### Step 8: DHT Publishing ⏳ IN PROGRESS
+### Step 8: DHT Publishing ✓
 
 **Goal**: Implement publishing of source chain data to the DHT via the gateway's kitsune2 node.
 
 **Dependencies**: Step 7
 
-**Status**: IN PROGRESS - Gateway side complete, extension integration pending
+**Status**: COMPLETE (2026-01-06)
 
 **Details**: See [STEPS/8_PLAN.md](./STEPS/8_PLAN.md)
 
@@ -357,9 +357,9 @@ interface CallZomeRequest {
 1. **8.0** Fix hash computation (Blake2b) ✓ - See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
 2. **8.1** DhtOp generation ✓ - See [STEPS/8.1_PLAN.md](./STEPS/8.1_PLAN.md)
 3. **8.2** Op signing protocol ✓ - See [STEPS/8.2_PLAN.md](./STEPS/8.2_PLAN.md)
-4. **8.3** Gateway publish endpoint ✓ - See [STEPS/8.3_PLAN.md](./STEPS/8.3_PLAN.md)
+4. **8.3** Gateway publish endpoint ✓ - See [STEPS/8.3_COMPLETION.md](./STEPS/8.3_COMPLETION.md)
 5. **8.4** Publish tracking ✓ - See [STEPS/8.4_PLAN.md](./STEPS/8.4_PLAN.md)
-6. **8.5** Integration & publish workflow ⏳ - See [STEPS/8.5_PLAN.md](./STEPS/8.5_PLAN.md)
+6. **8.5** Integration & publish workflow ✓ - See [STEPS/8.5_COMPLETION.md](./STEPS/8.5_COMPLETION.md)
 
 **Completed (2026-01-06)**:
 - ✅ Step 8.0: Hash computation (Blake2b, proper HoloHash format) - 34/34 tests

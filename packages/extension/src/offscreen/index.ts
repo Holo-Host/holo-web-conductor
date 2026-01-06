@@ -18,7 +18,9 @@ import {
   WebSocketNetworkService,
   type ConnectionState,
 } from "@fishy/core/network";
+import { PublishService } from "@fishy/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@fishy/core";
+import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 
 console.log("[Offscreen] Document loaded");
 
@@ -45,6 +47,9 @@ let nextRequestId = 1;
 let gatewayUrl: string = '';
 let sessionToken: string | null = null;
 let dnaHashOverride: string | null = null;
+
+// Publish service for DHT publishing
+let publishService: PublishService | null = null;
 
 // Track which DNA WASMs have been sent to the worker
 // This avoids sending 1.3MB on every call - only send once per DNA
@@ -311,6 +316,72 @@ interface MinimalZomeCallRequest {
 }
 
 /**
+ * Convert transported record back to proper HolochainRecord
+ */
+function transportedRecordToRecord(transported: any): HolochainRecord {
+  return {
+    signed_action: {
+      hashed: {
+        content: transported.signed_action.hashed.content,
+        hash: new Uint8Array(transported.signed_action.hashed.hash),
+      },
+      signature: new Uint8Array(transported.signed_action.signature),
+    },
+    entry: transported.entry ? {
+      Present: transported.entry.Present ? {
+        entry_type: transported.entry.Present.entry_type,
+        entry: new Uint8Array(transported.entry.Present.entry),
+      } : undefined,
+    } : undefined,
+  } as HolochainRecord;
+}
+
+/**
+ * Publish pending records to the gateway (runs in background)
+ */
+async function publishPendingRecords(
+  transportedRecords: any[],
+  dnaHash: DnaHash
+): Promise<void> {
+  if (!gatewayUrl) {
+    console.log("[Offscreen] No gateway URL configured, skipping publish");
+    return;
+  }
+
+  // Initialize publish service if needed
+  if (!publishService) {
+    publishService = new PublishService({
+      gatewayUrl,
+      sessionToken: sessionToken || undefined,
+    });
+    await publishService.init();
+  } else {
+    // Update config in case it changed
+    publishService.setGatewayUrl(gatewayUrl);
+    if (sessionToken) {
+      publishService.setSessionToken(sessionToken);
+    }
+  }
+
+  // Convert transported records back to proper Records
+  const records = transportedRecords.map(transportedRecordToRecord);
+
+  console.log(`[Offscreen] Publishing ${records.length} records to gateway...`);
+
+  // Publish each record (PublishService will batch them)
+  for (const record of records) {
+    try {
+      await publishService.publishRecord(record, dnaHash);
+    } catch (error) {
+      console.error("[Offscreen] Failed to publish record:", error);
+      // Continue with other records - don't fail the whole batch
+    }
+  }
+
+  console.log("[Offscreen] Publish requests queued");
+}
+
+/**
  * Execute a zome call via the ribosome worker
  */
 async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ result: unknown; signals: any[] }> {
@@ -378,6 +449,14 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
    ├─ dnaLookup:     ${(afterDnaLookup - afterContextFetch).toFixed(1)}ms
    ├─ workerCall:    ${(afterWorker - afterDnaLookup).toFixed(1)}ms
    └─ TOTAL:         ${(afterWorker - perfStart).toFixed(1)}ms`);
+
+  // Trigger publishing in background (don't await - let it run asynchronously)
+  if (result.pendingRecords && result.pendingRecords.length > 0) {
+    console.log(`[Offscreen] Triggering background publish for ${result.pendingRecords.length} records`);
+    publishPendingRecords(result.pendingRecords, dnaHash).catch((error) => {
+      console.error("[Offscreen] Background publish failed:", error);
+    });
+  }
 
   return {
     result: result.result,
