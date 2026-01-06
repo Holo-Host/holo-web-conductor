@@ -79,6 +79,12 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.putAction(action, dnaHash, agentPubKey);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
 
+  // Track record for publishing after transaction commits (no entry for delete)
+  if (!callContext.pendingRecords) {
+    callContext.pendingRecords = [];
+  }
+  callContext.pendingRecords.push({ action });
+
   console.log("[delete] Deleted entry", {
     actionHash: Array.from(actionHash.slice(0, 8)),
     actionSeq,

@@ -349,27 +349,45 @@ interface CallZomeRequest {
 
 **Dependencies**: Step 7
 
-**Status**: IN PROGRESS - Starting with Step 8.0 (Hash Computation)
+**Status**: IN PROGRESS - Gateway side complete, extension integration pending
 
 **Details**: See [STEPS/8_PLAN.md](./STEPS/8_PLAN.md)
 
 **Sub-steps**:
-1. **8.0** Fix hash computation (Blake2b) - See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
-2. **8.1** DhtOp generation - See [STEPS/8.1_PLAN.md](./STEPS/8.1_PLAN.md)
-3. **8.2** Op signing protocol - See [STEPS/8.2_PLAN.md](./STEPS/8.2_PLAN.md)
-4. **8.3** Gateway publish endpoint - See [STEPS/8.3_PLAN.md](./STEPS/8.3_PLAN.md)
-5. **8.4** Publish tracking - See [STEPS/8.4_PLAN.md](./STEPS/8.4_PLAN.md)
-6. **8.5** Integration & publish workflow - See [STEPS/8.5_PLAN.md](./STEPS/8.5_PLAN.md)
+1. **8.0** Fix hash computation (Blake2b) ✓ - See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
+2. **8.1** DhtOp generation ✓ - See [STEPS/8.1_PLAN.md](./STEPS/8.1_PLAN.md)
+3. **8.2** Op signing protocol ✓ - See [STEPS/8.2_PLAN.md](./STEPS/8.2_PLAN.md)
+4. **8.3** Gateway publish endpoint ✓ - See [STEPS/8.3_PLAN.md](./STEPS/8.3_PLAN.md)
+5. **8.4** Publish tracking ✓ - See [STEPS/8.4_PLAN.md](./STEPS/8.4_PLAN.md)
+6. **8.5** Integration & publish workflow ⏳ - See [STEPS/8.5_PLAN.md](./STEPS/8.5_PLAN.md)
+
+**Completed (2026-01-06)**:
+- ✅ Step 8.0: Hash computation (Blake2b, proper HoloHash format) - 34/34 tests
+- ✅ Step 8.1: DhtOp generation (`produceOpsFromRecord()` in extension)
+- ✅ Step 8.2: Op signing (using Lair)
+- ✅ Step 8.3: Gateway TempOpStore and `/dht/{dna}/publish` endpoint
+  - TempOpStore with 60-second TTL
+  - kitsune2 `publish_ops()` integration
+  - 120/120 gateway tests passing
+- ✅ Step 8.4: PublishTracker/PublishService in extension (IndexedDB persistence)
+
+**Remaining**:
+- ⏳ Step 8.5: Wire up automatic publishing after zome call commit
+- ⏳ E2E test: Extension creates entry → gateway publishes → conductor receives
 
 **Key Files**:
-- `packages/core/src/hash/` (new module)
-- `packages/core/src/dht/` (new module)
-- `hc-http-gw-fork/src/routes/publish.rs` (new)
+- `packages/core/src/hash/` - Hash computation module
+- `packages/core/src/dht/` - DhtOp generation, signing, publish service
+- `hc-http-gw-fork/src/temp_op_store.rs` - TempOpStore (NEW)
+- `hc-http-gw-fork/src/routes/publish.rs` - Publish endpoint (NEW)
+- `hc-http-gw-fork/src/kitsune_proxy.rs` - publish_ops() method
 
 **Tests**:
-- Hash computation matches Holochain (known vector tests)
-- DhtOps generated correctly for all action types
-- Published data retrievable by other Holochain nodes
+- Hash computation matches Holochain (known vector tests) ✓
+- DhtOps generated correctly for all action types ✓
+- Gateway accepts and stores ops ✓
+- kitsune2 publish triggered ✓
+- Published data retrievable by other Holochain nodes (pending E2E verification)
 
 ---
 

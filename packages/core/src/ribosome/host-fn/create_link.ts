@@ -121,6 +121,12 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.putLink(link, dnaHash, agentPubKey);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
 
+  // Track record for publishing after transaction commits (no entry for links)
+  if (!callContext.pendingRecords) {
+    callContext.pendingRecords = [];
+  }
+  callContext.pendingRecords.push({ action });
+
   console.log('[create_link] Created link', {
     actionHash: Array.from(actionHash.slice(0, 8)),
     actionSeq,

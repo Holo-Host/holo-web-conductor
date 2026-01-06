@@ -86,6 +86,12 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.deleteLink(input.address, actionHash);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
 
+  // Track record for publishing after transaction commits (no entry for delete_link)
+  if (!callContext.pendingRecords) {
+    callContext.pendingRecords = [];
+  }
+  callContext.pendingRecords.push({ action });
+
   console.log("[delete_link] Deleted link", {
     actionHash: Array.from(actionHash.slice(0, 8)),
     actionSeq,

@@ -1,10 +1,43 @@
 # Fishy Development Session
 
-**Last Updated**: 2026-01-04
-**Current Step**: Step 8.0 - Hash Computation
-**Status**: IN PROGRESS
+**Last Updated**: 2026-01-06
+**Current Step**: Step 8 - DHT Publishing
+**Status**: IN PROGRESS (Gateway side complete, Extension integration pending)
 
 ## Current Step Progress
+
+### Step 8.3: Gateway TempOpStore and Publish Endpoint - COMPLETE
+
+**Goal**: Implement TempOpStore and wire up publish endpoint to store ops and trigger kitsune2 publishing.
+
+**Status**: COMPLETE (2026-01-06)
+
+**Tasks**:
+- [x] Create TempOpStore - In-memory storage with 60-second TTL
+- [x] Implement OpStore trait for kitsune2 integration
+- [x] Create POST `/dht/{dna_hash}/publish` endpoint
+- [x] Decode incoming DhtOps from msgpack/base64
+- [x] Store ops in TempOpStore
+- [x] Compute OpBasis for each op
+- [x] Trigger kitsune2 publish via `publish_ops()`
+- [x] Return success response to extension
+
+**Files** (in hc-http-gw-fork):
+- `src/temp_op_store.rs` - TempOpStore implementation (NEW)
+- `src/routes/publish.rs` - Publish endpoint (NEW)
+- `src/kitsune_proxy.rs` - Added `publish_ops()` method
+- `src/error.rs` - Added `InternalServerError` variant
+- `src/bin/hc-http-gw.rs` - TempOpStoreFactory initialization
+
+**Test Results**:
+- 120/120 library tests passing
+- E2E test verified: `{"success":true,"queued":1,"failed":0}`
+
+**Details**: See [STEPS/8.3_COMPLETION.md](./STEPS/8.3_COMPLETION.md)
+
+**Commit**: `dd01802 feat: implement TempOpStore and kitsune2 publish flow`
+
+---
 
 ### Step 8.0: Fix Hash Computation - COMPLETE
 
@@ -202,29 +235,35 @@ Completion notes for each step are in separate files:
 - **Step 6.6**: Automated Integration Testing - See [STEPS/6.6_COMPLETION.md](./STEPS/6.6_COMPLETION.md)
 - **Step 6.7**: Test with profiles - See [STEPS/6.7_COMPLETION.md](./STEPS/6.7_COMPLETION.md)
 - **Step 7.0**: Network Research - See [STEPS/7_RESEARCH.md](./STEPS/7_RESEARCH.md)
+- **Step 8.0**: Hash Computation (Blake2b) - See [STEPS/8.0_PLAN.md](./STEPS/8.0_PLAN.md)
+- **Step 8.3**: Gateway TempOpStore and Publish Endpoint - See [STEPS/8.3_COMPLETION.md](./STEPS/8.3_COMPLETION.md)
 - **Step 11**: Synchronous SQLite Storage Layer - See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
 
 ---
 
 ## Related Repositories
 
-### hc-http-gw-fork (fishy branch)
+### hc-http-gw-fork (fishy-step-8 branch)
 Located at `../hc-http-gw-fork`, contains:
 - `fixture/dht_util/` - Utility zome for DHT operations
 - `src/auth/` - Authentication module (trait, ConfigListAuthenticator, SessionManager)
 - `src/routes/auth.rs` - /auth/challenge and /auth/verify endpoints
 - `src/routes/dht.rs` - /dht/* endpoints with proper hash encoding
+- `src/routes/publish.rs` - POST /dht/{dna}/publish endpoint (NEW)
+- `src/temp_op_store.rs` - TempOpStore for publish flow (NEW)
 - `tests/dht.rs` - Integration tests for DHT endpoints
+- `tests/e2e_publish_test.rs` - E2E publish tests
 
-**Recent Commits on fishy branch**:
-- `64a7fb5` fix: properly encode hashes for DHT zome calls
-- `9cdd81f` chore: add gitignore for fixture build artifacts
-- `911a8f3` feat: add DHT endpoints and agent authentication for browser extensions
+**Recent Commits on fishy-step-8 branch**:
+- `dd01802` feat: implement TempOpStore and kitsune2 publish flow
+- `88b08a8` feat: implement kitsune2 preflight protocol for peer connections
+- `9aeb8f9` feat: add kitsune2-bootstrap-srv and peer discovery test
 
-**Running DHT tests** (must be serial due to init() callback conflicts):
+**Running gateway tests**:
 ```bash
 cd ../hc-http-gw-fork
-cargo test --test dht -- --test-threads=1
+cargo test --lib  # 120 tests
+cargo test --test e2e_publish_test -- --ignored --nocapture  # E2E publish test
 ```
 
 **Building fixture WASMs** (required before running tests):
@@ -282,9 +321,10 @@ Any serialization changes MUST:
 1. **Pull latest code**:
    ```bash
    cd /path/to/holochain/fishy
+   git checkout step-8
    git pull
    cd ../hc-http-gw-fork
-   git checkout fishy
+   git checkout fishy-step-8
    git pull
    ```
 
@@ -296,7 +336,8 @@ Any serialization changes MUST:
 
 3. **Read the current step plan**:
    ```bash
-   cat STEPS/7.2_PLAN.md
+   cat STEPS/8_PLAN.md
+   cat STEPS/8.3_COMPLETION.md  # Latest completion
    ```
 
 4. **Build fixture WASMs** (if not already built):
@@ -308,8 +349,8 @@ Any serialization changes MUST:
 
 5. **Run tests to verify state**:
    ```bash
-   npm test  # fishy tests (79 passing)
-   cd ../hc-http-gw-fork && cargo test --test dht -- --test-threads=1  # DHT tests (4 passing)
+   npm test  # fishy tests
+   cd ../hc-http-gw-fork && cargo test --lib  # gateway tests (120 passing)
    ```
 
 ---
@@ -373,4 +414,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8.0 (Hash Computation) is IN PROGRESS. The plan is at `STEPS/8.0_PLAN.md`. We're implementing proper Blake2b content hashing for entries and actions using TDD - tests first, then implementation. The blakejs dependency is installed.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8 (DHT Publishing) is IN PROGRESS. The gateway-side implementation (TempOpStore, publish endpoint, kitsune2 publish) is complete - see STEPS/8.3_COMPLETION.md. The remaining work is wiring up automatic publishing in the extension after zome call commits and testing the full end-to-end flow: Extension creates entry → gateway publishes → conductor receives.

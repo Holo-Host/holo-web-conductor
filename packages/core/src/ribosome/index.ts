@@ -9,6 +9,7 @@ import {
   ZomeCallRequest,
   CallContext,
   EmittedSignal,
+  PendingRecord,
 } from "./call-context";
 import { getRibosomeRuntime } from "./runtime";
 import { getHostFunctionRegistry } from "./host-fn";
@@ -36,6 +37,8 @@ import {
   timeSync,
   timeAsync,
 } from "./perf";
+import { buildRecords } from "../dht/record-converter";
+import type { Record as HolochainRecord } from "@holochain/client";
 
 /**
  * Result of a zome call execution
@@ -46,6 +49,9 @@ export interface ZomeCallResult {
 
   /** Signals emitted during zome execution */
   signals: EmittedSignal[];
+
+  /** Records created during zome execution (ready for publishing) */
+  pendingRecords?: HolochainRecord[];
 }
 
 /**
@@ -286,12 +292,25 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     recordPhase('txCommit', performance.now() - commitStart);
     console.log('[Ribosome] Transaction committed successfully');
 
+    // Convert pending records to @holochain/client Record format for publishing
+    let pendingRecords: HolochainRecord[] | undefined;
+    if (context.pendingRecords && context.pendingRecords.length > 0) {
+      try {
+        pendingRecords = buildRecords(context.pendingRecords);
+        console.log(`[Ribosome] ${pendingRecords.length} records ready for publishing`);
+      } catch (error) {
+        console.error('[Ribosome] Failed to convert records for publishing:', error);
+        // Don't fail the zome call - publishing is secondary
+      }
+    }
+
     // End performance tracking
     endZomeCallMetrics(performance.now() - callStart);
 
     return {
       result,
       signals,
+      pendingRecords,
     };
   } catch (error) {
     // Rollback transaction on any error - discard all chain updates

@@ -5,6 +5,7 @@
  */
 
 import type { DnaManifestRuntime } from '../types/bundle-types';
+import type { StoredAction, StoredEntry } from '../storage/types';
 
 /**
  * Cell ID: [DNA hash, Agent public key]
@@ -26,6 +27,16 @@ export interface EmittedSignal {
 
   /** Timestamp when signal was emitted */
   timestamp: number;
+}
+
+/**
+ * Pending record for publishing
+ */
+export interface PendingRecord {
+  /** The stored action */
+  action: StoredAction;
+  /** The stored entry (if applicable) */
+  entry?: StoredEntry;
 }
 
 /**
@@ -52,6 +63,9 @@ export interface CallContext {
 
   /** DNA manifest (from .happ bundle) */
   dnaManifest?: DnaManifestRuntime;
+
+  /** Records created during this call (populated by create, update, delete, etc.) */
+  pendingRecords?: PendingRecord[];
 }
 
 /**

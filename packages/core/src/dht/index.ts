@@ -60,3 +60,18 @@ export {
   getOpAction,
   getOpSignature,
 } from "./produce-ops";
+
+// Publish tracking
+export { PublishTracker, type PublishAttemptResult } from "./publish-tracker";
+
+// Publish service
+export { PublishService, type PublishServiceOptions } from "./publish-service";
+
+// Record conversion utilities
+export {
+  storedActionToClientAction,
+  storedEntryToClientEntry,
+  storedEntryToRecordEntry,
+  buildRecord,
+  buildRecords,
+} from "./record-converter";
