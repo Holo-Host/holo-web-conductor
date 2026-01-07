@@ -370,10 +370,7 @@ interface CallZomeRequest {
   - kitsune2 `publish_ops()` integration
   - 120/120 gateway tests passing
 - ✅ Step 8.4: PublishTracker/PublishService in extension (IndexedDB persistence)
-
-**Remaining**:
-- ⏳ Step 8.5: Wire up automatic publishing after zome call commit
-- ⏳ E2E test: Extension creates entry → gateway publishes → conductor receives
+- ✅ Step 8.5: Automatic publishing after zome call commit - See [STEPS/8.5_COMPLETION.md](./STEPS/8.5_COMPLETION.md)
 
 **Key Files**:
 - `packages/core/src/hash/` - Hash computation module
@@ -436,32 +433,68 @@ interface CallZomeRequest {
 
 ---
 
-### Step 9.6: Kitsune2 Remote Signal Forwarding ⏳ IN PROGRESS
+### Step 9.6: Kitsune2 Remote Signal Forwarding (Receive) ✅ COMPLETE
 
 **Goal**: Wire up kitsune2 in gateway so conductor agents can send `send_remote_signal` to browser agents.
 
-**Status**: Planning Complete - Ready for Implementation
+**Status**: COMPLETE (2026-01-02)
 
-**Discovery**: Infrastructure is 90% built in hc-http-gw-fork:
-- `src/kitsune_proxy.rs` - KitsuneProxy, ProxySpaceHandler (complete)
-- `src/proxy_agent.rs` - ProxyAgent for browser agents (complete)
-- `GatewayKitsune` manager (complete)
-- **Missing**: Initialization in `bin/hc-http-gw.rs`
+**Completed**:
+- ✅ Added `gateway_kitsune` param to `service.rs:with_auth()`
+- ✅ Parses `HC_GW_KITSUNE2_*` env vars in binary
+- ✅ Build `GatewayKitsune` when enabled
+- ✅ All kitsune integration tests passing
 
-**Implementation Steps**:
-1. Add `gateway_kitsune` param to `service.rs:with_auth()`
-2. Parse `HC_GW_KITSUNE2_*` env vars in binary
-3. Build `GatewayKitsune` when enabled
-4. Create E2E test with SweetConductor
+**Signal Flow (conductor → browser)**:
+```
+Conductor Agent A ──send_remote_signal──► kitsune2 network
+                                               │
+                                               ▼
+Gateway ◄── recv_notify (RemoteSignalEvt) ◄────┘
+   │
+   └── decode WireMessage → forward to AgentProxyManager → WebSocket to browser
+```
 
-**Files to Modify**:
-- `../hc-http-gw-fork/src/service.rs` - Add gateway_kitsune param
-- `../hc-http-gw-fork/src/bin/hc-http-gw.rs` - Initialize GatewayKitsune
-- `../hc-http-gw-fork/tests/remote_signal_e2e.rs` - NEW E2E test
+---
 
-**Tests**:
-- E2E test: conductor agent sends signal, browser receives via WebSocket
+### Step 9.7: send_remote_signal (Send) ✅ COMPLETE
 
+**Goal**: Implement `send_remote_signal` host function so browser agents can send signals to other agents via kitsune2.
+
+**Status**: COMPLETE (2026-01-06)
+
+**Completed**:
+- ✅ Created `send_remote_signal.ts` host function in extension
+- ✅ Updated CallContext with `remoteSignals` field
+- ✅ Registered `__hc__send_remote_signal_1` host function
+- ✅ Transport remoteSignals from ribosome-worker
+- ✅ Forward to WebSocket via `sendRemoteSignals()`
+- ✅ Added `ClientMessage::SendRemoteSignal` to gateway
+- ✅ Added `GatewayKitsune::send_remote_signals()` method
+- ✅ 74 extension tests, 120 gateway tests passing
+
+**Signal Flow (browser → network)**:
+```
+Browser Extension (WASM)
+    │ hdk::send_remote_signal(RemoteSignal { agents, signal })
+    ▼
+Host Function: send_remote_signal.ts
+    │ - Build ZomeCallParams for each target
+    │ - Sign with Lair
+    │ - Queue in callContext.remoteSignals
+    ▼
+Ribosome Worker → Offscreen Document
+    │ - Forward via WebSocket: { type: "send_remote_signal", ... }
+    ▼
+Gateway WebSocket Handler → GatewayKitsune::send_remote_signals()
+    │ - Look up peer URL from peer_store
+    │ - Create WireMessage::remote_signal_evt
+    │ - Send via space.send_notify()
+    ▼
+Kitsune2 Network → Target Conductor/Browser
+```
+
+**Details**: See [STEPS/9.7_COMPLETION.md](./STEPS/9.7_COMPLETION.md)
 
 ---
 

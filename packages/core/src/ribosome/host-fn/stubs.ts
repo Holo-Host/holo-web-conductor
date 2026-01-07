@@ -146,7 +146,7 @@ export const call = createNotImplementedStub("call");
 
 // Signals
 export const emitSignal = createNullStub("emit_signal");
-export const sendRemoteSignal = createNullStub("send_remote_signal");
+// sendRemoteSignal moved to send_remote_signal.ts
 
 // Capabilities
 export const capabilityInfo = createNullStub("capability_info");

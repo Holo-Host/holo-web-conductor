@@ -458,6 +458,14 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
     });
   }
 
+  // Send remote signals via WebSocket (fire-and-forget)
+  if (result.remoteSignals && result.remoteSignals.length > 0 && wsService) {
+    console.log(`[Offscreen] Sending ${result.remoteSignals.length} remote signals via WebSocket`);
+    // Convert dnaHash to base64 for transport
+    const dnaHashB64 = btoa(String.fromCharCode(...dnaHash));
+    wsService.sendRemoteSignals(dnaHashB64, result.remoteSignals);
+  }
+
   return {
     result: result.result,
     signals: result.signals || [],

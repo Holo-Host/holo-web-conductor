@@ -1,10 +1,47 @@
 # Fishy Development Session
 
 **Last Updated**: 2026-01-06
-**Current Step**: Step 8 - DHT Publishing
+**Current Step**: Step 9.7 - send_remote_signal Implementation
 **Status**: COMPLETE
 
 ## Current Step Progress
+
+### Step 9.7: send_remote_signal End-to-End - COMPLETE
+
+**Goal**: Implement `send_remote_signal` host function that sends signals from browser extension agents through the gateway to target agents via kitsune2 network.
+
+**Status**: COMPLETE (2026-01-06)
+
+**Tasks**:
+- [x] Create send_remote_signal.ts host function
+- [x] Update CallContext with remoteSignals field
+- [x] Register host function in index.ts
+- [x] Update ribosome-worker to transport remoteSignals
+- [x] Forward remote signals to WebSocket in offscreen
+- [x] Add ClientMessage::SendRemoteSignal to gateway
+- [x] Add send_remote_signals method to GatewayKitsune
+- [x] Run tests to verify implementation
+
+**Files Modified (Extension)**:
+- `packages/core/src/ribosome/host-fn/send_remote_signal.ts` - NEW host function
+- `packages/core/src/ribosome/call-context.ts` - Added remoteSignals field
+- `packages/core/src/ribosome/host-fn/index.ts` - Registered host function
+- `packages/core/src/ribosome/host-fn/stubs.ts` - Removed stub
+- `packages/extension/src/offscreen/ribosome-worker.ts` - Transport remoteSignals
+- `packages/extension/src/offscreen/index.ts` - Forward to WebSocket
+- `packages/core/src/network/websocket-service.ts` - Added sendRemoteSignals()
+
+**Files Modified (Gateway)**:
+- `hc-http-gw-fork/src/routes/websocket.rs` - Added ClientMessage::SendRemoteSignal
+- `hc-http-gw-fork/src/kitsune_proxy.rs` - Added send_remote_signals() method
+
+**Test Results**:
+- 74 extension tests passing
+- 120 gateway library tests passing
+
+**Details**: See [STEPS/9.7_COMPLETION.md](./STEPS/9.7_COMPLETION.md)
+
+---
 
 ### Step 8.5: Integration & Publish Workflow - COMPLETE
 
@@ -266,6 +303,7 @@ Completion notes for each step are in separate files:
 - **Step 8.3**: Gateway TempOpStore and Publish Endpoint - See [STEPS/8.3_COMPLETION.md](./STEPS/8.3_COMPLETION.md)
 - **Step 8.5**: Integration & Publish Workflow - See [STEPS/8.5_COMPLETION.md](./STEPS/8.5_COMPLETION.md)
 - **Step 11**: Synchronous SQLite Storage Layer - See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
+- **Step 9.7**: send_remote_signal Implementation - See [STEPS/9.7_COMPLETION.md](./STEPS/9.7_COMPLETION.md)
 
 ---
 
@@ -442,4 +480,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8 (DHT Publishing) is COMPLETE. All sub-steps finished: hash computation (8.0), DhtOp generation (8.1), op signing (8.2), gateway publish endpoint (8.3), publish tracking (8.4), and extension integration (8.5). Browser extension agents can now author data that reaches the DHT via the gateway's kitsune2 node. The next step would be Step 9 (Additional Holochain Features) or other improvements.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8 (DHT Publishing) and Step 9.7 (send_remote_signal) are COMPLETE. Browser extension agents can now: (1) author data that reaches the DHT via the gateway's kitsune2 node, and (2) send remote signals to other agents via kitsune2. Bidirectional remote signals work - Step 9.6 handles conductor→browser signals, Step 9.7 handles browser→network signals. The next step would be Step 10 (Integration Testing) or other improvements from Step 9.

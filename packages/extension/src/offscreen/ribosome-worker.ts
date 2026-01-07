@@ -1014,10 +1014,18 @@ self.onmessage = async (event: MessageEvent) => {
           console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
         }
 
+        // Remote signals are already in transport-ready format (number[])
+        let remoteSignalsForTransport: any[] | undefined;
+        if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
+          remoteSignalsForTransport = zomeResult.remoteSignals;
+          console.log(`[Ribosome Worker] ${remoteSignalsForTransport.length} remote signals to send`);
+        }
+
         result = {
           result: zomeResult.result,
           signals: zomeResult.signals || [],
           pendingRecords: pendingRecordsForTransport,
+          remoteSignals: remoteSignalsForTransport,
         };
 
         console.log(`[PERF Worker] CALL_ZOME message handling:

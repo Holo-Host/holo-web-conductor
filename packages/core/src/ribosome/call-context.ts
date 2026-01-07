@@ -6,6 +6,7 @@
 
 import type { DnaManifestRuntime } from '../types/bundle-types';
 import type { StoredAction, StoredEntry } from '../storage/types';
+import type { SignedRemoteSignal } from './host-fn/send_remote_signal';
 
 /**
  * Cell ID: [DNA hash, Agent public key]
@@ -66,6 +67,9 @@ export interface CallContext {
 
   /** Records created during this call (populated by create, update, delete, etc.) */
   pendingRecords?: PendingRecord[];
+
+  /** Remote signals to send via gateway (populated by send_remote_signal host function) */
+  remoteSignals?: SignedRemoteSignal[];
 }
 
 /**

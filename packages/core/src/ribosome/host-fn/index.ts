@@ -34,6 +34,7 @@ import { mustGetValidRecord } from "./must_get_valid_record";
 import { allocate } from "./allocate";
 import { deallocate } from "./deallocate";
 import { emit_signal } from "./emit_signal";
+import { sendRemoteSignal } from "./send_remote_signal";
 import * as stubs from "./stubs";
 
 /**
@@ -180,10 +181,7 @@ function initializeRegistry(): HostFunctionRegistry {
 
   // Signals
   registry.registerHostFunction("__hc__emit_signal_1", emit_signal);
-  registry.registerHostFunction(
-    "__hc__send_remote_signal_1",
-    stubs.sendRemoteSignal
-  );
+  registry.registerHostFunction("__hc__send_remote_signal_1", sendRemoteSignal);
 
   // Capabilities
   registry.registerHostFunction("__hc__capability_info_1", stubs.capabilityInfo);
