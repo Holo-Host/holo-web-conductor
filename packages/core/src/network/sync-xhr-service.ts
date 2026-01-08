@@ -33,12 +33,6 @@ export interface SyncXHRConfig {
   timeout?: number;
   /** Session token for authenticated requests */
   sessionToken?: string;
-  /**
-   * Override DNA hash for network requests.
-   * Use this when the extension's computed DNA hash differs from the gateway's.
-   * Format: base64 string (e.g., "uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii")
-   */
-  dnaHashOverride?: string;
 }
 
 /**
@@ -56,7 +50,6 @@ export class SyncXHRNetworkService implements NetworkService {
   private gatewayUrl: string;
   private defaultTimeout: number;
   private sessionToken: string | null;
-  private dnaHashOverride: string | null;
 
   constructor(config: SyncXHRConfig | string, defaultTimeout: number = DEFAULT_TIMEOUT) {
     if (typeof config === 'string') {
@@ -64,44 +57,18 @@ export class SyncXHRNetworkService implements NetworkService {
       this.gatewayUrl = config.replace(/\/$/, '');
       this.defaultTimeout = defaultTimeout;
       this.sessionToken = null;
-      this.dnaHashOverride = null;
     } else {
       this.gatewayUrl = config.gatewayUrl.replace(/\/$/, '');
       this.defaultTimeout = config.timeout ?? DEFAULT_TIMEOUT;
       this.sessionToken = config.sessionToken ?? null;
-      this.dnaHashOverride = config.dnaHashOverride ?? null;
     }
   }
 
   /**
-   * Set the DNA hash override for network requests
-   */
-  setDnaHashOverride(hash: string | null): void {
-    this.dnaHashOverride = hash;
-    console.log(`[SyncXHR] DNA hash override ${hash ? 'set: ' + hash.substring(0, 20) + '...' : 'cleared'}`);
-  }
-
-  /**
-   * Get the current DNA hash override
-   */
-  getDnaHashOverride(): string | null {
-    return this.dnaHashOverride;
-  }
-
-  /**
-   * Get the effective DNA hash for URL building
-   * If override is set, use it; otherwise encode the provided hash
+   * Get the DNA hash as base64 for URL building
    * Note: Gateway expects Holochain base64 format "u{base64}" (with 'u' prefix)
    */
-  private getEffectiveDnaHash(dnaHash: DnaHash): string {
-    if (this.dnaHashOverride) {
-      // Ensure the hash has the 'u' prefix for Holochain base64 format
-      let hash = this.dnaHashOverride;
-      if (!hash.startsWith('u')) {
-        hash = 'u' + hash;
-      }
-      return hash;
-    }
+  private getDnaHashB64(dnaHash: DnaHash): string {
     // Use @holochain/client utility which adds 'u' prefix
     return encodeHashToBase64(dnaHash);
   }
@@ -132,7 +99,7 @@ export class SyncXHRNetworkService implements NetworkService {
    * Build URL for fetching a record
    */
   private buildRecordUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
     return `${this.gatewayUrl}/dht/${dnaHashB64}/record/${hashB64}`;
   }
@@ -141,7 +108,7 @@ export class SyncXHRNetworkService implements NetworkService {
    * Build URL for fetching details
    */
   private buildDetailsUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
     return `${this.gatewayUrl}/dht/${dnaHashB64}/details/${hashB64}`;
   }
@@ -154,7 +121,7 @@ export class SyncXHRNetworkService implements NetworkService {
     baseAddress: AnyDhtHash,
     linkType?: number
   ): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);
@@ -172,7 +139,7 @@ export class SyncXHRNetworkService implements NetworkService {
     baseAddress: AnyDhtHash,
     linkType?: number
   ): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);

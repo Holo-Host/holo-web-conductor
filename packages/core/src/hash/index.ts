@@ -15,6 +15,7 @@ import {
   ActionType,
   type EntryHash,
   type ActionHash,
+  type DnaHash,
 } from '@holochain/client';
 
 // Re-export prefixes from @holochain/client for convenience
@@ -22,10 +23,11 @@ export const ENTRY_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Entry];
 export const ACTION_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Action];
 export const AGENT_PUBKEY_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Agent];
 export const DNA_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Dna];
+export const WASM_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Wasm]; // [132, 42, 36] = 0x84, 0x2a, 0x24
 
 // Re-export library functions and types
 export { hashFrom32AndType, dhtLocationFrom32, HASH_TYPE_PREFIX, HoloHashType, ActionType };
-export type { EntryHash, ActionHash };
+export type { EntryHash, ActionHash, DnaHash };
 
 export const assembleHoloHash = (hash32: Uint8Array, prefix: Uint8Array): Uint8Array => {
   // Determine hash type from prefix
@@ -146,4 +148,106 @@ function actionToSerializable(action: ActionForHashing): Record<string, unknown>
   }
 
   return result;
+}
+
+// ============================================================================
+// WASM Hash Computation
+// ============================================================================
+
+/**
+ * Compute WasmHash from WASM bytes
+ *
+ * Holochain computes WASM hashes by:
+ * 1. Hashing the raw WASM bytes with Blake2b-256
+ * 2. Wrapping as HoloHash with Wasm type
+ *
+ * Note: Unlike other hashes, the WASM hash is computed from raw bytes,
+ * not from a msgpack-serialized struct. See holochain_types/src/dna/wasm.rs
+ * where TryFrom<&DnaWasm> for SerializedBytes just returns code.to_vec().
+ *
+ * @param wasmBytes - Raw WASM bytes
+ * @returns 39-byte WasmHash
+ */
+export function computeWasmHash(wasmBytes: Uint8Array): Uint8Array {
+  // Hash raw WASM bytes directly (not serialized as {code: bytes})
+  const hash32 = blake2b256(wasmBytes);
+  return hashFrom32AndType(hash32, HoloHashType.Wasm);
+}
+
+// ============================================================================
+// DNA Hash Computation
+// ============================================================================
+
+/**
+ * Integrity zome definition for DNA hash computation
+ */
+export interface IntegrityZomeForHash {
+  name: string;
+  wasmHash: Uint8Array;  // 39-byte WasmHash
+  dependencies: string[];
+}
+
+/**
+ * DNA modifiers for hash computation
+ */
+export interface DnaModifiersForHash {
+  network_seed: string;
+  properties: Uint8Array;  // Msgpack-encoded properties
+}
+
+/**
+ * Compute DnaHash from DNA definition
+ *
+ * Holochain computes DNA hashes by:
+ * 1. Creating a DnaDefHash structure containing only:
+ *    - modifiers: { network_seed, properties }
+ *    - integrity_zomes: [(name, { wasm_hash, dependencies }), ...]
+ * 2. Serializing with msgpack
+ * 3. Hashing with Blake2b-256
+ * 4. Wrapping as HoloHash with Dna type
+ *
+ * NOTE: Coordinator zomes are NOT included in the DNA hash.
+ *
+ * @param modifiers - DNA modifiers (network_seed, properties)
+ * @param integrityZomes - Integrity zome definitions
+ * @returns 39-byte DnaHash
+ */
+export function computeDnaHash(
+  modifiers: DnaModifiersForHash,
+  integrityZomes: IntegrityZomeForHash[]
+): DnaHash {
+  // Build the DnaDefHash structure
+  // In Rust, IntegrityZomeDef wraps ZomeDef::Wasm(WasmZome { wasm_hash, dependencies })
+  // When serialized, ZomeDef::Wasm uses #[serde(untagged)] so it becomes just WasmZome
+  const integrityZomesForHash = integrityZomes.map(zome => [
+    zome.name,
+    {
+      wasm_hash: zome.wasmHash,
+      dependencies: zome.dependencies,
+    }
+  ]);
+
+  // DnaModifiers in Rust has network_seed (String) and properties (SerializedBytes)
+  // SerializedBytes serializes as raw bytes (the inner Vec<u8>)
+  const dnaDefHash = {
+    modifiers: {
+      network_seed: modifiers.network_seed,
+      properties: modifiers.properties,
+    },
+    integrity_zomes: integrityZomesForHash,
+  };
+
+  // Serialize with msgpack
+  const serialized = encode(dnaDefHash);
+
+  // Debug: log first 100 bytes of serialized data
+  const serializedArray = new Uint8Array(serialized);
+  console.log('[computeDnaHash] Serialized bytes (first 100):', Array.from(serializedArray.slice(0, 100)));
+  console.log('[computeDnaHash] Serialized length:', serializedArray.length);
+
+  // Hash with Blake2b-256
+  const hash32 = blake2b256(serializedArray);
+
+  // Return as DnaHash HoloHash
+  return hashFrom32AndType(hash32, HoloHashType.Dna) as DnaHash;
 }

@@ -29,7 +29,7 @@ interface HolochainAPI {
     installedAppId?: string;
   }): Promise<any>;
   on(event: "signal", callback: (signal: any) => void): () => void;
-  configureNetwork(config: { gatewayUrl: string; dnaHashOverride?: string }): Promise<any>;
+  configureNetwork(config: { gatewayUrl: string }): Promise<any>;
   getNetworkStatus(): Promise<any>;
 }
 
@@ -204,7 +204,7 @@ const holochainAPI: HolochainAPI = {
     });
   },
 
-  async configureNetwork(config: { gatewayUrl: string; dnaHashOverride?: string }): Promise<any> {
+  async configureNetwork(config: { gatewayUrl: string }): Promise<any> {
     return sendToContentScript("gateway_configure", config);
   },
 

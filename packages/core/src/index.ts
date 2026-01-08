@@ -53,6 +53,28 @@ export * from './network';
 // Re-export DHT module
 export * from './dht';
 
+// Re-export hash module (excluding ActionType which is re-exported from storage)
+export {
+  computeEntryHash,
+  computeActionHash,
+  computeWasmHash,
+  computeDnaHash,
+  blake2b256,
+  assembleHoloHash,
+  ENTRY_HASH_PREFIX,
+  ACTION_HASH_PREFIX,
+  AGENT_PUBKEY_PREFIX,
+  DNA_HASH_PREFIX,
+  WASM_HASH_PREFIX,
+  hashFrom32AndType,
+  dhtLocationFrom32,
+  HASH_TYPE_PREFIX,
+  HoloHashType,
+  type ActionForHashing,
+  type IntegrityZomeForHash,
+  type DnaModifiersForHash,
+} from './hash';
+
 // Re-export utilities
 export * from './utils';
 

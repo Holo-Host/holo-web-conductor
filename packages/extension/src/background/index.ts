@@ -63,7 +63,7 @@ let networkConfigured = false;
 
 // Gateway configuration - can be set via popup settings or environment
 // Default to null (no network) until configured
-let gatewayConfig: { gatewayUrl: string; sessionToken?: string; dnaHashOverride?: string } | null = null;
+let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
 
 /**
  * Check if the offscreen document exists
@@ -111,11 +111,8 @@ async function ensureOffscreenDocument(): Promise<void> {
 /**
  * Configure the network service in the offscreen document
  */
-async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string; dnaHashOverride?: string }): Promise<void> {
+async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void> {
   console.log(`[Background] Configuring offscreen network with gateway: ${config.gatewayUrl}`);
-  if (config.dnaHashOverride) {
-    console.log(`[Background] DNA hash override: ${config.dnaHashOverride.substring(0, 20)}...`);
-  }
 
   try {
     await chrome.runtime.sendMessage({
@@ -123,7 +120,6 @@ async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionTo
       type: "CONFIGURE_NETWORK",
       gatewayUrl: config.gatewayUrl,
       sessionToken: config.sessionToken,
-      dnaHashOverride: config.dnaHashOverride,
     });
     networkConfigured = true;
     console.log("[Background] Offscreen network configured");
@@ -136,14 +132,11 @@ async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionTo
  * Set the gateway configuration
  * Call this to enable network requests via hc-http-gw
  */
-function setGatewayConfig(url: string, sessionToken?: string, dnaHashOverride?: string): void {
-  gatewayConfig = { gatewayUrl: url, sessionToken, dnaHashOverride };
+function setGatewayConfig(url: string, sessionToken?: string): void {
+  gatewayConfig = { gatewayUrl: url, sessionToken };
   networkConfigured = false; // Will be configured on next offscreen use
 
   console.log(`[Background] Gateway config set: ${url}`);
-  if (dnaHashOverride) {
-    console.log(`[Background] DNA hash override set: ${dnaHashOverride.substring(0, 20)}...`);
-  }
 }
 
 /**
@@ -183,6 +176,11 @@ async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8A
   console.log(`[Background] registerAgentWithGateway - dnaHash bytes (first 10):`, Array.from(dnaHash.slice(0, 10)));
   console.log(`[Background] registerAgentWithGateway - agentPubKey bytes (first 10):`, Array.from(agentPubKey.slice(0, 10)));
   console.log(`[Background] registerAgentWithGateway - dnaHash length: ${dnaHash.length}, agentPubKey length: ${agentPubKey.length}`);
+  // Log Ed25519 key that would be used for signing (bytes 3-35 of AgentPubKey)
+  if (agentPubKey.length === 39) {
+    const ed25519Key = agentPubKey.slice(3, 35);
+    console.log(`[Background] registerAgentWithGateway - Ed25519 key (first 8 bytes): ${Array.from(ed25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+  }
 
   const dnaHashB64 = encodeHashToBase64(dnaHash);
   const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
@@ -212,18 +210,10 @@ async function registerContextAgentsWithGateway(context: HappContext): Promise<v
   const agentPubKey = toUint8Array(context.agentPubKey);
   console.log(`[Background] registerContextAgentsWithGateway - after toUint8Array:`, agentPubKey, `length: ${agentPubKey.length}`);
 
-  // If we have a DNA hash override, use that instead of the context's DNA hash
-  // This is needed because the extension computes DNA hash from WASM only,
-  // but the conductor uses the full DNA manifest (with network seed, properties, etc.)
-  if (gatewayConfig?.dnaHashOverride) {
-    console.log(`[Background] Using DNA hash override for registration: ${gatewayConfig.dnaHashOverride}`);
-    await registerAgentWithGatewayByB64(gatewayConfig.dnaHashOverride, agentPubKey);
-  } else {
-    for (const dna of context.dnas) {
-      console.log(`[Background] registerContextAgentsWithGateway - dna.hash type:`, typeof dna.hash, dna.hash?.constructor?.name);
-      const dnaHash = toUint8Array(dna.hash);
-      await registerAgentWithGateway(dnaHash, agentPubKey);
-    }
+  for (const dna of context.dnas) {
+    console.log(`[Background] registerContextAgentsWithGateway - dna.hash type:`, typeof dna.hash, dna.hash?.constructor?.name);
+    const dnaHash = toUint8Array(dna.hash);
+    await registerAgentWithGateway(dnaHash, agentPubKey);
   }
 }
 
@@ -1494,20 +1484,20 @@ async function handleGatewayConfigure(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { gatewayUrl, dnaHashOverride } = getPayload<MessageType.GATEWAY_CONFIGURE>(message);
+    const { gatewayUrl } = getPayload<MessageType.GATEWAY_CONFIGURE>(message);
 
     if (!gatewayUrl) {
       return createErrorResponse(message.id, "gatewayUrl is required");
     }
 
-    setGatewayConfig(gatewayUrl, undefined, dnaHashOverride);
+    setGatewayConfig(gatewayUrl);
 
     // Create offscreen document if needed (so WebSocket service can connect)
     // and configure network
     await ensureOffscreenDocument();
     console.log(`[Background] networkConfigured = ${networkConfigured}`);
     if (!networkConfigured) {
-      await configureOffscreenNetwork({ gatewayUrl, dnaHashOverride });
+      await configureOffscreenNetwork({ gatewayUrl });
     } else {
       console.log("[Background] Network already configured, skipping");
     }
@@ -1522,7 +1512,7 @@ async function handleGatewayConfigure(
       }
     }
 
-    return createSuccessResponse(message.id, { configured: true, dnaHashOverride: !!dnaHashOverride });
+    return createSuccessResponse(message.id, { configured: true });
   } catch (error) {
     return createErrorResponse(
       message.id,
@@ -1626,6 +1616,16 @@ async function handleSignRequest(request: {
       ed25519PubKey = extractEd25519PubKey(pubkeyBytes);
     } else {
       throw new Error(`Invalid public key: expected 32-byte Ed25519 or 39-byte AgentPubKey, got ${pubkeyBytes.length} bytes`);
+    }
+
+    // Debug: Log the key being requested and list all keys in Lair
+    console.log(`[Background] Looking for Ed25519 key: ${Array.from(ed25519PubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}...`);
+    const allEntries = await client.listEntries();
+    console.log(`[Background] Lair has ${allEntries.length} entries:`);
+    for (const entry of allEntries) {
+      const entryKeyHex = Array.from(entry.ed25519_pub_key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
+      const matches = ed25519PubKey.every((b, i) => b === entry.ed25519_pub_key[i]);
+      console.log(`[Background]   - ${entry.tag}: ${entryKeyHex}... ${matches ? '(MATCH)' : ''}`);
     }
 
     // Sign the message using the agent's key

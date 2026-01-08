@@ -288,7 +288,6 @@ export interface RequestIdPayload {
  */
 export interface GatewayConfigurePayload {
   gatewayUrl: string;
-  dnaHashOverride?: string;
 }
 
 // ============================================================================

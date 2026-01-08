@@ -17,8 +17,13 @@ import {
   createRuntimeManifest,
   getFirstWasm,
   BundleError,
+  computeDnaHash as computeDnaHashFromDef,
+  computeWasmHash,
+  type IntegrityZomeForHash,
+  type DnaModifiersForHash,
 } from "@fishy/core";
 import { encodeHashToBase64, HoloHashType, hashFrom32AndType } from "@holochain/client";
+import { encode as msgpackEncode } from "@msgpack/msgpack";
 import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@fishy/core";
 
 /**
@@ -82,15 +87,77 @@ export class HappContextManager {
   }
 
   /**
-   * Compute DNA hash from WASM bytes in proper Holochain format (39 bytes)
-   * Uses @holochain/client's hashFrom32AndType for proper hash construction
+   * Compute DNA hash from DNA definition (modifiers + integrity zomes)
    *
-   * TODO: Proper hashing with network seed and properties (Step 6)
+   * Holochain computes DNA hashes from:
+   * - modifiers: { network_seed, properties }
+   * - integrity_zomes: [(name, { wasm_hash, dependencies }), ...]
+   *
+   * NOTE: Coordinator zomes are NOT included in the DNA hash.
    */
-  private async computeDnaHash(wasm: Uint8Array): Promise<Uint8Array> {
-    const hashBuffer = await crypto.subtle.digest("SHA-256", wasm);
-    const hashBytes = new Uint8Array(hashBuffer);
-    return hashFrom32AndType(hashBytes, HoloHashType.Dna);
+  private computeDnaHashFromBundle(
+    dnaBundle: DnaBundle,
+    roleModifiers?: { network_seed?: string; properties?: Record<string, unknown> }
+  ): Uint8Array {
+    // Get network_seed and properties from role modifiers or DNA manifest
+    const networkSeed = roleModifiers?.network_seed ||
+      dnaBundle.manifest.integrity.network_seed ||
+      "";
+    const properties = roleModifiers?.properties ||
+      dnaBundle.manifest.integrity.properties;
+
+    // Encode properties as msgpack (SerializedBytes in Holochain)
+    // When properties is null/undefined, Holochain uses msgpack-encoded () which is nil (0xc0)
+    // When properties has a value, it's msgpack-encoded as that value
+    const propertiesBytes = new Uint8Array(msgpackEncode(properties === undefined || properties === null ? null : properties));
+
+    // Build integrity zomes array with WASM hashes
+    const integrityZomes: IntegrityZomeForHash[] = [];
+
+    for (const zomeManifest of dnaBundle.manifest.integrity.zomes) {
+      // Get WASM bytes for this zome
+      const wasmBytes = dnaBundle.resources.get(zomeManifest.path);
+      if (!wasmBytes) {
+        throw new BundleError(
+          `Missing WASM for integrity zome: ${zomeManifest.name}`,
+          "MISSING_RESOURCE"
+        );
+      }
+
+      // Compute WASM hash
+      const wasmHash = computeWasmHash(wasmBytes);
+
+      // Get dependencies (integrity zomes don't have dependencies, but include for completeness)
+      const dependencies = zomeManifest.dependencies?.map(d => d.name) || [];
+
+      integrityZomes.push({
+        name: zomeManifest.name,
+        wasmHash,
+        dependencies,
+      });
+    }
+
+    // Build modifiers
+    const modifiers: DnaModifiersForHash = {
+      network_seed: networkSeed,
+      properties: propertiesBytes,
+    };
+
+    // Compute DNA hash
+    const dnaHash = computeDnaHashFromDef(modifiers, integrityZomes);
+
+    console.log(`[HappContextManager] Computed DNA hash:`, {
+      networkSeed,
+      propertiesBytes: Array.from(propertiesBytes),
+      integrityZomes: integrityZomes.map(z => ({
+        name: z.name,
+        wasmHash: encodeHashToBase64(z.wasmHash),
+        dependencies: z.dependencies,
+      })),
+      hash: encodeHashToBase64(dnaHash),
+    });
+
+    return dnaHash;
   }
 
   /**
@@ -135,8 +202,12 @@ export class HappContextManager {
 
       const lair = await this.getLairClient();
       const keyResult = await lair.newSeed(agentKeyTag, false);
+      // Debug: Log the raw Ed25519 key that was created
+      const rawEd25519Key = keyResult.entry_info.ed25519_pub_key;
+      console.log(`[HappContextManager] Created Ed25519 key (first 8 bytes): ${Array.from(rawEd25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
       // Wrap raw Ed25519 key (32 bytes) as AgentPubKey HoloHash (39 bytes)
-      const agentPubKey = wrapAsAgentPubKey(keyResult.entry_info.ed25519_pub_key);
+      const agentPubKey = wrapAsAgentPubKey(rawEd25519Key);
+      console.log(`[HappContextManager] Wrapped as AgentPubKey (first 8 bytes): ${Array.from(agentPubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
 
       // 5. Process each DNA role
       const dnaContexts: DnaContext[] = [];
@@ -170,7 +241,7 @@ export class HappContextManager {
           dnaBundle.resources
         );
 
-        // Get WASM (use first available for now - multi-zome support in Step 6)
+        // Get WASM (use first available for now - multi-zome support later)
         const wasm = getFirstWasm(dnaBundle);
         if (!wasm) {
           throw new BundleError(
@@ -179,8 +250,8 @@ export class HappContextManager {
           );
         }
 
-        // Compute DNA hash (TODO: proper hash with modifiers)
-        const dnaHash = await this.computeDnaHash(wasm);
+        // Compute DNA hash properly from modifiers + integrity zomes
+        const dnaHash = this.computeDnaHashFromBundle(dnaBundle, role.dna.modifiers);
 
         // Create DnaContext with manifest
         const dnaContext: DnaContext = {
@@ -243,10 +314,37 @@ export class HappContextManager {
 
   /**
    * Get context for a domain
+   * Validates that the agent key still exists in Lair - if not, deletes the stale context
    */
   async getContextForDomain(domain: string): Promise<HappContext | null> {
     await this.ensureReady();
-    return this.storage.getContextByDomain(domain);
+    const context = await this.storage.getContextByDomain(domain);
+
+    if (context) {
+      // Validate that the agent key still exists in Lair
+      const keyValid = await this.validateAgentKey(context);
+      if (!keyValid) {
+        console.warn(`[HappContextManager] Agent key for context ${context.id} no longer exists in Lair - deleting stale context`);
+        await this.storage.deleteContext(context.id);
+        return null;
+      }
+    }
+
+    return context;
+  }
+
+  /**
+   * Validate that the agent key for a context exists in Lair
+   */
+  private async validateAgentKey(context: HappContext): Promise<boolean> {
+    try {
+      const lair = await this.getLairClient();
+      const entry = await lair.getEntry(context.agentKeyTag);
+      return entry !== null;
+    } catch (error) {
+      console.warn(`[HappContextManager] Failed to validate agent key:`, error);
+      return false;
+    }
   }
 
   /**

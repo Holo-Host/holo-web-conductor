@@ -56,7 +56,6 @@ let nextRequestId = 1;
 // Network configuration
 let gatewayUrl: string = '';
 let sessionToken: string | null = null;
-let dnaHashOverride: string | null = null;
 
 // Publish service for DHT publishing
 let publishService: PublishService | null = null;
@@ -128,9 +127,9 @@ async function initRibosomeWorker(): Promise<void> {
     console.log("[Offscreen] Ribosome worker initialized with SQLite");
 
     // Send any existing network configuration to the worker
-    if (gatewayUrl || sessionToken || dnaHashOverride) {
+    if (gatewayUrl || sessionToken) {
       console.log("[Offscreen] Sending existing network config to worker:", gatewayUrl);
-      await sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken, dnaHashOverride });
+      await sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken });
     }
   })();
 
@@ -182,13 +181,10 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
       fullUrl = gatewayUrl + request.url;
     }
 
-    // Add session token and DNA hash override to headers
+    // Add session token to headers
     const headers = { ...(request.headers || {}) };
     if (sessionToken) {
       headers['Authorization'] = `Bearer ${sessionToken}`;
-    }
-    if (dnaHashOverride) {
-      headers['X-Holochain-Dna-Hash'] = dnaHashOverride;
     }
 
     // Make synchronous XHR
@@ -565,12 +561,11 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
  */
 interface OffscreenMessage {
   target: "offscreen";
-  type: "EXECUTE_ZOME_CALL" | "CONFIGURE_NETWORK" | "UPDATE_SESSION_TOKEN" | "SET_DNA_HASH_OVERRIDE";
+  type: "EXECUTE_ZOME_CALL" | "CONFIGURE_NETWORK" | "UPDATE_SESSION_TOKEN";
   requestId: string;
   zomeCallRequest?: MinimalZomeCallRequest;
   gatewayUrl?: string;
   sessionToken?: string;
-  dnaHashOverride?: string;
 }
 
 interface OffscreenResponse {
@@ -599,16 +594,12 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "CONFIGURE_NETWORK") {
       gatewayUrl = message.gatewayUrl || '';
       sessionToken = message.sessionToken || null;
-      dnaHashOverride = message.dnaHashOverride || null;
 
       console.log(`[Offscreen] Network configured: ${gatewayUrl}`);
-      if (dnaHashOverride) {
-        console.log(`[Offscreen] DNA hash override: ${dnaHashOverride.substring(0, 20)}...`);
-      }
 
       // Also configure the worker if it's ready
       if (workerReady && ribosomeWorker) {
-        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken, dnaHashOverride })
+        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken })
           .catch(console.error);
       }
 
@@ -626,7 +617,7 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "UPDATE_SESSION_TOKEN") {
       sessionToken = message.sessionToken || null;
       if (workerReady && ribosomeWorker) {
-        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken, dnaHashOverride })
+        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken })
           .catch(console.error);
       }
       if (wsService) {
@@ -664,16 +655,6 @@ chrome.runtime.onMessage.addListener(
         isConnected: wsService?.isConnected() || false,
         registrations: wsService?.getRegistrations() || [],
       } as any);
-      return true;
-    }
-
-    if (message.type === "SET_DNA_HASH_OVERRIDE") {
-      dnaHashOverride = message.dnaHashOverride || null;
-      if (workerReady && ribosomeWorker) {
-        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken, dnaHashOverride })
-          .catch(console.error);
-      }
-      sendResponse({ success: true, requestId: message.requestId || "dna-override" });
       return true;
     }
 

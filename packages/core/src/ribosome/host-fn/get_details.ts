@@ -39,7 +39,7 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log("[get_details] Getting details for hash", {
     hash: Array.from(inputHash.slice(0, 8)),
-    hashType: HoloHashType[hashType],
+    hashType,
   });
 
   const [dnaHash, agentPubKey] = callContext.cellId;

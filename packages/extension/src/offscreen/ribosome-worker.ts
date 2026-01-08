@@ -72,7 +72,6 @@ let signResultView: Uint8Array | null = null;
 // Network configuration
 let gatewayUrl: string = '';
 let sessionToken: string | null = null;
-let dnaHashOverride: string | null = null;
 
 // Request ID counter
 let nextNetworkRequestId = 1;
@@ -854,16 +853,9 @@ class ProxyNetworkService implements NetworkService {
   }
 
   /**
-   * Get effective DNA hash (use override if set)
+   * Get DNA hash as base64 string
    */
-  private getEffectiveDnaHash(dnaHash: Uint8Array): string {
-    if (dnaHashOverride) {
-      let hash = dnaHashOverride;
-      if (!hash.startsWith('u')) {
-        hash = 'u' + hash;
-      }
-      return hash;
-    }
+  private getDnaHashB64(dnaHash: Uint8Array): string {
     return encodeHashToBase64(dnaHash);
   }
 
@@ -878,7 +870,7 @@ class ProxyNetworkService implements NetworkService {
    * Build URL for fetching a record
    */
   private buildRecordUrl(dnaHash: Uint8Array, hash: Uint8Array): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
     return `${gatewayUrl}/dht/${dnaHashB64}/record/${hashB64}`;
   }
@@ -887,7 +879,7 @@ class ProxyNetworkService implements NetworkService {
    * Build URL for fetching details
    */
   private buildDetailsUrl(dnaHash: Uint8Array, hash: Uint8Array): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
     return `${gatewayUrl}/dht/${dnaHashB64}/details/${hashB64}`;
   }
@@ -896,7 +888,7 @@ class ProxyNetworkService implements NetworkService {
    * Build URL for fetching links
    */
   private buildLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);
@@ -910,7 +902,7 @@ class ProxyNetworkService implements NetworkService {
    * Build URL for counting links
    */
   private buildCountLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number): string {
-    const dnaHashB64 = this.getEffectiveDnaHash(dnaHash);
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);
@@ -1154,16 +1146,8 @@ class ProxyNetworkService implements NetworkService {
     return sessionToken;
   }
 
-  getDnaHashOverride(): string | null {
-    return dnaHashOverride;
-  }
-
   setSessionToken(token: string | null): void {
     sessionToken = token;
-  }
-
-  setDnaHashOverride(hash: string | null): void {
-    dnaHashOverride = hash;
   }
 }
 
@@ -1215,7 +1199,6 @@ self.onmessage = async (event: MessageEvent) => {
       case 'CONFIGURE_NETWORK':
         gatewayUrl = payload.gatewayUrl || '';
         sessionToken = payload.sessionToken || null;
-        dnaHashOverride = payload.dnaHashOverride || null;
         console.log('[Ribosome Worker] Network configured:', gatewayUrl);
         result = { success: true };
         break;

@@ -176,13 +176,6 @@
         <label for="gateway-url">Gateway URL (optional - leave empty for offline mode):</label>
         <input type="text" id="gateway-url" value="http://localhost:8090" style="width: 300px;" />
       </div>
-      <div class="form-group">
-        <label for="dna-hash-override">DNA Hash Override:</label>
-        <input type="text" id="dna-hash-override" value="uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii" style="width: 500px;" />
-        <small style="color: #888; display: block; margin-top: 5px;">
-          Default is the fixture1 DNA hash. Change if using a different DNA.
-        </small>
-      </div>
       <button id="check-gateway-btn">Check Gateway (optional)</button>
       <button id="connect-btn">Connect</button>
       <button id="disconnect-btn" disabled>Disconnect</button>
@@ -240,9 +233,9 @@
       <h3>5.1 Fetch Known Entry</h3>
       <div class="form-group">
         <label for="known-entry-hash">Entry Hash (created by e2e-test-setup.sh):</label>
-        <input type="text" id="known-entry-hash" value="uhCEkQwsTsey94mZ2LHIM1JBUqggi8HFaXhhnMUI1C8I2E8Bd27rt" style="width: 500px;" />
+        <input type="text" id="known-entry-hash" value="" placeholder="Paste entry hash from known_entry.json" style="width: 500px;" />
         <small style="color: #888; display: block; margin-top: 5px;">
-          This entry is created during setup. It exists on the network but not in your browser's local storage.
+          Run <code>./scripts/e2e-test-setup.sh start</code> then copy the entry hash from <code>fixtures/known_entry.json</code>.
         </small>
       </div>
       <button id="fetch-network-btn" disabled>Fetch from Network</button>
@@ -530,7 +523,6 @@
       // Connect to extension (with optional gateway configuration)
       document.getElementById("connect-btn").addEventListener("click", async () => {
         const gatewayUrl = document.getElementById("gateway-url").value.trim();
-        const dnaHashOverride = document.getElementById("dna-hash-override").value.trim() || undefined;
 
         addLog("Connecting to extension...");
         const startTime = performance.now();
@@ -547,14 +539,11 @@
           // Configure gateway if URL is provided
           if (gatewayUrl) {
             addLog(`Configuring gateway: ${gatewayUrl}`);
-            if (dnaHashOverride) {
-              addLog(`Using DNA hash override: ${dnaHashOverride.substring(0, 20)}...`);
-            }
 
             if (window.holochain.configureNetwork) {
-              await window.holochain.configureNetwork({ gatewayUrl, dnaHashOverride });
+              await window.holochain.configureNetwork({ gatewayUrl });
               addLog("Gateway configured", 'success');
-              showStatus("gateway-status", "success", `Using gateway: ${gatewayUrl}${dnaHashOverride ? ' (with DNA override)' : ''}`);
+              showStatus("gateway-status", "success", `Using gateway: ${gatewayUrl}`);
             } else {
               sessionStorage.setItem('fishy_gateway_url', gatewayUrl);
               addLog("Gateway URL saved locally", 'success');
@@ -587,16 +576,19 @@
             installedCellId = appInfo.cells[0];
             const dnaHash = toArray(installedCellId[0]);
             const agentPubKey = toArray(installedCellId[1]);
+            const dnaHashB64 = encodeHashToB64(dnaHash);
+            const agentPubKeyB64 = encodeHashToB64(agentPubKey);
 
             addLog(`Found existing hApp: ${appInfo.appName || appInfo.contextId}`, 'success');
-            addLog(`  DNA: ${dnaHash.slice(0,4).join(',')}...`);
-            addLog(`  Agent: ${agentPubKey.slice(0,4).join(',')}...`);
+            addLog(`  DNA: ${dnaHashB64}`);
+            addLog(`  Agent: ${agentPubKeyB64}`);
 
             showStatus("install-status", "success", `hApp already installed: ${appInfo.appName || 'unknown'}`);
             showResult("install-result", {
               contextId: appInfo.contextId,
               appName: appInfo.appName,
-              agentPubKey: agentPubKey.slice(0, 8),
+              agentPubKey: agentPubKeyB64,
+              dnaHash: dnaHashB64,
               cellCount: appInfo.cells.length,
             });
 
@@ -671,7 +663,7 @@
 
           addLog(`hApp installed (install: ${installTime}ms, total: ${totalTime}ms)`, 'success');
           showStatus("install-status", "success", `hApp installed in ${installTime}ms`);
-          showResult("install-result", result);
+          showResult("install-result", formatForDisplay(result));
 
           // Get cell ID from app info
           const appInfo = await window.holochain.appInfo('fixture1');
@@ -1142,7 +1134,6 @@
 
       document.getElementById("send-test-signal-btn").addEventListener("click", async () => {
         const gatewayUrl = document.getElementById("gateway-url").value;
-        const dnaHashOverride = document.getElementById("dna-hash-override").value.trim();
 
         addLog(`Calling ping zome function via gateway (kitsune2 signal test)...`);
         showStatus("ping-status", "info", "Calling ping via gateway...");
@@ -1154,14 +1145,13 @@
           }
 
           const cellId = appInfo.cells[0];
-          // Use DNA hash override if set, otherwise use cell's DNA hash
-          const dnaHash = dnaHashOverride || encodeHashToB64(cellId[0]);
+          const dnaHash = encodeHashToB64(cellId[0]);
           // The extension now properly stores 39-byte HoloHashes with correct type markers
           const agentPubkey = encodeHashToB64(cellId[1]);
           const agentBytes = toArray(cellId[1]);
 
           addLog(`Browser agent: ${agentPubkey} (${agentBytes.length} bytes)`);
-          addLog(`DNA: ${dnaHash}${dnaHashOverride ? ' (override)' : ' (from cell)'}`);
+          addLog(`DNA: ${dnaHash}`);
 
           // Subscribe to signals if not already
           if (!testSignalUnsubscribe) {
