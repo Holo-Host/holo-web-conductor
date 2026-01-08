@@ -174,7 +174,8 @@
             <button id="test-signing-btn" disabled>Test Signing</button>
             <button id="test-create-btn" disabled>Create Entry</button>
             <button id="test-get-btn" disabled>Get Entry</button>
-            <button id="test-get-details-btn" disabled>Get Details</button>
+            <button id="test-get-details-btn" disabled>Get Details (Action)</button>
+            <button id="test-get-details-entry-btn" disabled>Get Details (Entry)</button>
             <button id="test-update-btn" disabled>Update Entry</button>
             <button id="test-delete-entry-btn" disabled>Delete Entry</button>
             <button id="test-emit-signal-btn" disabled>Emit Signal</button>
@@ -378,6 +379,7 @@
                             document.getElementById('test-create-btn').disabled = false;
                             document.getElementById('test-get-btn').disabled = false;
                             document.getElementById('test-get-details-btn').disabled = false;
+                            document.getElementById('test-get-details-entry-btn').disabled = false;
                             document.getElementById('test-update-btn').disabled = false;
                             document.getElementById('test-delete-entry-btn').disabled = false;
                             document.getElementById('test-emit-signal-btn').disabled = false;
@@ -446,6 +448,7 @@
                         document.getElementById('test-create-btn').disabled = false;
                         document.getElementById('test-get-btn').disabled = false;
                         document.getElementById('test-get-details-btn').disabled = false;
+                        document.getElementById('test-get-details-entry-btn').disabled = false;
                         document.getElementById('test-update-btn').disabled = false;
                         document.getElementById('test-delete-entry-btn').disabled = false;
                         document.getElementById('test-emit-signal-btn').disabled = false;
@@ -494,7 +497,7 @@
             // Load the .happ bundle (packed with hc CLI)
             let happBundle;
             try {
-                const response = await fetch('test.happ');
+                const response = await fetch('test.happ?v=' + Date.now());
                 happBundle = new Uint8Array(await response.arrayBuffer());
                 log(`✓ Loaded test.happ bundle (${happBundle.length} bytes)`);
             } catch (error) {
@@ -541,6 +544,7 @@
                 document.getElementById('test-create-btn').disabled = false;
                 document.getElementById('test-get-btn').disabled = false;
                 document.getElementById('test-get-details-btn').disabled = false;
+                document.getElementById('test-get-details-entry-btn').disabled = false;
                 document.getElementById('test-update-btn').disabled = false;
                 document.getElementById('test-delete-entry-btn').disabled = false;
                 document.getElementById('test-emit-signal-btn').disabled = false;
@@ -823,6 +827,90 @@
                 showStatus('zome-test-status', 'Entry details retrieved (includes validation status).', 'success');
             } catch (error) {
                 log(`get_details_test failed: ${error.message}`, true);
+                showStatus('zome-test-status', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Track last created entry hash for entry hash queries
+        let lastCreatedEntryHash = null;
+
+        document.getElementById('test-get-details-entry-btn').addEventListener('click', async () => {
+            if (!lastCreatedHash) {
+                showStatus('zome-test-status', 'Create an entry first!', 'info');
+                return;
+            }
+
+            log('Calling get_details_by_entry_hash()...');
+
+            try {
+                // First, get the record to extract its entry hash
+                const record = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_test_entry',
+                    payload: lastCreatedHash
+                });
+
+                if (!record) {
+                    log('✗ Could not retrieve record to get entry hash', true);
+                    showStatus('zome-test-status', 'Record not found!', 'error');
+                    return;
+                }
+
+                // Extract entry hash from the action
+                const entryHash = record.signed_action?.hashed?.content?.entry_hash;
+                if (!entryHash) {
+                    log('✗ Record has no entry hash (action type might not create entries)', true);
+                    showStatus('zome-test-status', 'Record has no entry hash!', 'error');
+                    return;
+                }
+
+                const entryHashFormatted = formatForDisplay(entryHash);
+                log(`Found entry hash: ${entryHashFormatted}`);
+                log(`Now calling get_details with entry hash...`);
+
+                // Call get_details with the entry hash
+                const result = await window.holochain.callZome({
+                    contextId,
+                    zome: 'test_zome',
+                    function: 'get_details_by_entry_hash',
+                    payload: entryHash
+                });
+
+                const formatted = formatForDisplay(result);
+
+                // Decode entry content if present
+                if (formatted?.content?.entry?.entry) {
+                    let entryBytes = formatted.content.entry.entry;
+                    if (Array.isArray(entryBytes)) {
+                        entryBytes = new Uint8Array(entryBytes);
+                    }
+                    try {
+                        const entryData = msgpackDecode(entryBytes);
+                        log(`✓ Entry content decoded: ${JSON.stringify(entryData, null, 2)}`);
+                        formatted.content.entry.entry = entryData;
+                    } catch (e) {
+                        log(`Note: Could not decode entry content (${e.message})`);
+                    }
+                }
+
+                log(`✓ Entry details retrieved (by entry hash):`);
+                log(`  Type: ${formatted?.type || 'unknown'}`);
+                log(`  Actions count: ${formatted?.content?.actions?.length || 0}`);
+                log(`  Updates count: ${formatted?.content?.updates?.length || 0}`);
+                log(`  Deletes count: ${formatted?.content?.deletes?.length || 0}`);
+                log(`  DHT Status: ${formatted?.content?.entry_dht_status || 'unknown'}`);
+                log(`Full result: ${JSON.stringify(formatted, null, 2)}`);
+                console.log('Get details (entry hash) result:', formatted);
+
+                // Verify the type is "Entry" not "Record"
+                if (formatted?.type === 'Entry') {
+                    showStatus('zome-test-status', '<strong>Success!</strong> Entry details retrieved by entry hash. Type is "Entry" (correct).', 'success');
+                } else {
+                    showStatus('zome-test-status', `<strong>Warning:</strong> Got type "${formatted?.type}" instead of "Entry"`, 'info');
+                }
+            } catch (error) {
+                log(`get_details_by_entry_hash failed: ${error.message}`, true);
                 showStatus('zome-test-status', `Error: ${error.message}`, 'error');
             }
         });

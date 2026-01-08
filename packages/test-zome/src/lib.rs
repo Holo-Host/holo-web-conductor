@@ -96,10 +96,17 @@ fn get_test_entry(hash: ActionHash) -> ExternResult<Option<Record>> {
     get(hash, GetOptions::default())
 }
 
-/// Test get_details host function
+/// Test get_details host function with ActionHash
 /// Retrieves full details including validation status
 #[hdk_extern]
 fn get_details_test(hash: ActionHash) -> ExternResult<Option<Details>> {
+    get_details(hash, GetOptions::default())
+}
+
+/// Test get_details host function with EntryHash
+/// Retrieves entry details when querying by entry hash
+#[hdk_extern]
+fn get_details_by_entry_hash(hash: EntryHash) -> ExternResult<Option<Details>> {
     get_details(hash, GetOptions::default())
 }
 

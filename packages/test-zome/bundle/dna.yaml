@@ -3,7 +3,7 @@ manifest_version: "0"
 name: test-dna
 
 integrity:
-  network_seed: "00000000-0000-0000-0000-000000000000"
+  network_seed: "00000000-0000-0000-0000-000000000002"
   properties: {}
   zomes:
     - name: test_zome

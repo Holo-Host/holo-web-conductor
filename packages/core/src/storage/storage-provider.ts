@@ -16,7 +16,9 @@ import type {
   ChainHead,
   Link,
   RecordDetails,
+  EntryDetails,
 } from './types';
+import type { EntryHash, ActionHash, DnaHash, AgentPubKey } from '@holochain/client';
 
 /**
  * Storage provider interface
@@ -60,11 +62,18 @@ export interface StorageProvider {
 
   // Record operations (sync)
   getRecord(actionHash: Uint8Array): StoredRecord | null;
+  /** Get details for an entry hash (returns RecordDetails for backward compat) */
   getDetails(
-    entryHash: Uint8Array,
-    dnaHash: Uint8Array,
-    agentPubKey: Uint8Array
+    entryHash: EntryHash,
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey
   ): RecordDetails | null;
+  /** Get entry details when querying by entry hash (for Details::Entry response) */
+  getEntryDetails(
+    entryHash: EntryHash,
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey
+  ): EntryDetails | null;
 
   // Link operations (sync)
   putLink(link: Link, dnaHash: Uint8Array, agentPubKey: Uint8Array): void;

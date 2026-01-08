@@ -3,7 +3,7 @@
  * Based on Holochain's action model (holochain/crates/holochain_types/src/action/)
  */
 
-import type { ActionHash, EntryHash, AgentPubKey, Timestamp } from '@holochain/client';
+import type { ActionHash, EntryHash, AgentPubKey, DnaHash, Timestamp } from '@holochain/client';
 
 // ============================================================================
 // Action Types (Chain Actions)
@@ -217,8 +217,8 @@ export interface Link {
 // ============================================================================
 
 /**
- * Details structure returned by get_details host function
- * Includes all CRUD history for an entry
+ * RecordDetails - returned when querying get_details with an ACTION hash
+ * Includes the specific record and its updates/deletes
  */
 export interface RecordDetails {
   record: StoredRecord;
@@ -231,6 +231,41 @@ export interface RecordDetails {
     updateHash: Uint8Array;
     updateAction: UpdateAction;
   }>;
+}
+
+/**
+ * EntryDhtStatus - status of an entry on the DHT
+ */
+export type EntryDhtStatus = 'Live' | 'Dead' | 'Pending' | 'Rejected';
+
+/**
+ * EntryDetails - returned when querying get_details with an ENTRY hash
+ * Includes all actions that created this entry and its updates/deletes
+ */
+export interface EntryDetails {
+  entry: StoredEntry;
+  /** All Create/Update actions that produced this exact entry hash */
+  actions: Array<{
+    actionHash: ActionHash;
+    action: CreateAction | UpdateAction;
+  }>;
+  /** Actions that were rejected during validation */
+  rejectedActions: Array<{
+    actionHash: ActionHash;
+    action: CreateAction | UpdateAction;
+  }>;
+  /** Delete actions targeting this entry */
+  deletes: Array<{
+    deleteHash: ActionHash;
+    deleteAction: DeleteAction;
+  }>;
+  /** Update actions with originalEntryHash pointing to this entry */
+  updates: Array<{
+    updateHash: ActionHash;
+    updateAction: UpdateAction;
+  }>;
+  /** Current status of this entry */
+  entryDhtStatus: EntryDhtStatus;
 }
 
 // ============================================================================

@@ -10,7 +10,10 @@ import { allocatorWasmBytes } from "../test/allocator-wasm-bytes";
 import { serializeToWasm, deserializeFromWasm } from "../serialization";
 import { HostFunctionContext } from "./base";
 import { setStorageProvider, type StorageProvider } from "../../storage/storage-provider";
-import type { CreateAction, UpdateAction, StoredEntry, RecordDetails } from "../../storage/types";
+import type { CreateAction, UpdateAction, StoredEntry, RecordDetails, EntryDetails } from "../../storage/types";
+import { fakeEntryHash, fakeActionHash, fakeAgentPubKey, fakeDnaHash } from "@holochain/client";
+import { HoloHashType } from "@holochain/client";
+import { hashFrom32AndType } from "@holochain/client";
 
 describe("get_details", () => {
   let runtime: RibosomeRuntime;
@@ -21,10 +24,14 @@ describe("get_details", () => {
   // Mock storage
   const mockGetAction = vi.fn();
   const mockGetDetails = vi.fn();
+  const mockGetEntryDetails = vi.fn();
+  const mockGetEntry = vi.fn();
 
   const mockStorage: Partial<StorageProvider> = {
     getAction: mockGetAction,
     getDetails: mockGetDetails,
+    getEntryDetails: mockGetEntryDetails,
+    getEntry: mockGetEntry,
   };
 
   beforeEach(async () => {
@@ -52,12 +59,14 @@ describe("get_details", () => {
     };
   });
 
-  it("should return null when action not found", () => {
+  it("should return null when action not found", async () => {
     mockGetAction.mockReturnValue(null);
+    mockGetEntryDetails.mockReturnValue(null);
 
-    // Input is Vec<GetInput>
+    // Use a proper action hash (will be treated as action hash query)
+    const actionHash = await fakeActionHash();
     const input = [{
-      any_dht_hash: new Uint8Array(39).fill(1),
+      any_dht_hash: actionHash,
       get_options: null,
     }];
     const { ptr, len } = serializeToWasm(instance, input);
@@ -71,16 +80,18 @@ describe("get_details", () => {
     expect(result.Ok).toEqual([null]);
   });
 
-  it("should return null when action has no entry hash", () => {
+  it("should return null when action has no entry hash", async () => {
+    const actionHash = await fakeActionHash();
+
     // An action without entryHash (e.g., Dna, AgentValidationPkg)
     mockGetAction.mockReturnValue({
-      actionHash: new Uint8Array(39).fill(1),
+      actionHash,
       actionType: "Dna",
       signature: new Uint8Array(64).fill(2),
     });
 
     const input = [{
-      any_dht_hash: new Uint8Array(39).fill(1),
+      any_dht_hash: actionHash,
       get_options: null,
     }];
     const { ptr, len } = serializeToWasm(instance, input);
@@ -93,9 +104,9 @@ describe("get_details", () => {
     expect(result.Ok).toEqual([null]);
   });
 
-  it("should return null when storage.getDetails returns null", () => {
-    const actionHash = new Uint8Array(39).fill(1);
-    const entryHash = new Uint8Array(39).fill(2);
+  it("should return null when storage.getDetails returns null", async () => {
+    const actionHash = await fakeActionHash();
+    const entryHash = await fakeEntryHash();
 
     mockGetAction.mockReturnValue({
       actionHash,
@@ -119,16 +130,17 @@ describe("get_details", () => {
     expect(result.Ok).toEqual([null]);
   });
 
-  it("should return RecordDetails for a Create action", () => {
-    const actionHash = new Uint8Array(39).fill(1);
-    const entryHash = new Uint8Array(39).fill(2);
+  it("should return RecordDetails for a Create action", async () => {
+    const actionHash = await fakeActionHash();
+    const entryHash = await fakeEntryHash();
+    const author = await fakeAgentPubKey();
     const signature = new Uint8Array(64).fill(3);
     const entryContent = new Uint8Array([1, 2, 3, 4]);
 
     const action: CreateAction = {
       actionHash,
       actionSeq: 1,
-      author: new Uint8Array(39).fill(10),
+      author,
       timestamp: 1000n,
       prevActionHash: null,
       actionType: "Create",
@@ -177,16 +189,17 @@ describe("get_details", () => {
     expect(data[0].content.deletes).toEqual([]);
   });
 
-  it("should include updates in RecordDetails", () => {
-    const actionHash = new Uint8Array(39).fill(1);
-    const entryHash = new Uint8Array(39).fill(2);
-    const updateActionHash = new Uint8Array(39).fill(5);
-    const updateEntryHash = new Uint8Array(39).fill(6);
+  it("should include updates in RecordDetails", async () => {
+    const actionHash = await fakeActionHash();
+    const entryHash = await fakeEntryHash();
+    const updateActionHash = await fakeActionHash();
+    const updateEntryHash = await fakeEntryHash();
+    const author = await fakeAgentPubKey();
 
     const action: CreateAction = {
       actionHash,
       actionSeq: 1,
-      author: new Uint8Array(39).fill(10),
+      author,
       timestamp: 1000n,
       prevActionHash: null,
       actionType: "Create",
@@ -198,7 +211,7 @@ describe("get_details", () => {
     const updateAction: UpdateAction = {
       actionHash: updateActionHash,
       actionSeq: 2,
-      author: new Uint8Array(39).fill(10),
+      author,
       timestamp: 2000n,
       prevActionHash: actionHash,
       actionType: "Update",
@@ -248,14 +261,15 @@ describe("get_details", () => {
     expect(result.Ok[0].content.updates[0].hashed.hash).toEqual(updateActionHash);
   });
 
-  it("should handle details.record being undefined gracefully", () => {
-    const actionHash = new Uint8Array(39).fill(1);
-    const entryHash = new Uint8Array(39).fill(2);
+  it("should handle details.record being undefined gracefully", async () => {
+    const actionHash = await fakeActionHash();
+    const entryHash = await fakeEntryHash();
+    const author = await fakeAgentPubKey();
 
     const action: CreateAction = {
       actionHash,
       actionSeq: 1,
-      author: new Uint8Array(39).fill(10),
+      author,
       timestamp: 1000n,
       prevActionHash: null,
       actionType: "Create",
@@ -288,6 +302,88 @@ describe("get_details", () => {
 
     // Should return null gracefully when record is missing
     expect(result.Ok).toEqual([null]);
+  });
+
+  describe("entry hash queries", () => {
+    it("should return EntryDetails when queried with an entry hash", async () => {
+      // Create a proper entry hash (prefix [132, 33, 36] for Entry type)
+      const entryHash = await fakeEntryHash();
+      const actionHash = await fakeActionHash();
+      const author = await fakeAgentPubKey();
+
+      const action: CreateAction = {
+        actionHash,
+        actionSeq: 1,
+        author,
+        timestamp: 1000n,
+        prevActionHash: null,
+        actionType: "Create",
+        signature: new Uint8Array(64).fill(3),
+        entryHash,
+        entryType: { zome_id: 0, entry_index: 0 },
+      };
+
+      const entry: StoredEntry = {
+        entryHash,
+        entryContent: new Uint8Array([1, 2, 3, 4]),
+        entryType: { zome_id: 0, entry_index: 0 },
+      };
+
+      const entryDetails: EntryDetails = {
+        entry,
+        actions: [{ actionHash, action }],
+        rejectedActions: [],
+        deletes: [],
+        updates: [],
+        entryDhtStatus: "Live",
+      };
+
+      // When queried with entry hash, getAction returns null (not an action hash)
+      mockGetAction.mockReturnValue(null);
+      // But getEntryDetails returns the entry details
+      mockGetEntryDetails.mockReturnValue(entryDetails);
+      mockGetEntry.mockReturnValue(entry);
+
+      const input = [{
+        any_dht_hash: entryHash,
+        get_options: null,
+      }];
+      const { ptr, len } = serializeToWasm(instance, input);
+
+      const resultI64 = getDetails(hostContext, ptr, len);
+      const resultPtr = Number(resultI64 >> 32n);
+      const resultLen = Number(resultI64 & 0xffffffffn);
+      const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+      // Should return Details::Entry, not Details::Record
+      expect(result.Ok).toHaveLength(1);
+      expect(result.Ok[0]).not.toBeNull();
+      expect(result.Ok[0].type).toBe("Entry");
+      expect(result.Ok[0].content.entry).toBeDefined();
+      expect(result.Ok[0].content.actions).toHaveLength(1);
+      expect(result.Ok[0].content.entry_dht_status).toBe("Live");
+    });
+
+    it("should return null when entry hash not found", async () => {
+      const entryHash = await fakeEntryHash();
+
+      mockGetAction.mockReturnValue(null);
+      mockGetEntryDetails.mockReturnValue(null);
+      mockGetEntry.mockReturnValue(null);
+
+      const input = [{
+        any_dht_hash: entryHash,
+        get_options: null,
+      }];
+      const { ptr, len } = serializeToWasm(instance, input);
+
+      const resultI64 = getDetails(hostContext, ptr, len);
+      const resultPtr = Number(resultI64 >> 32n);
+      const resultLen = Number(resultI64 & 0xffffffffn);
+      const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+      expect(result.Ok).toEqual([null]);
+    });
   });
 
 });

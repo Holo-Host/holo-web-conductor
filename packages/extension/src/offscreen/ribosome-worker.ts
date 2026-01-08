@@ -469,6 +469,78 @@ class DirectSQLiteStorage implements StorageProvider {
     };
   }
 
+  getEntryDetails(entryHash: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array): any | null {
+    const cellId = this.getCellId(dnaHash, agentPubKey);
+
+    // Get the entry itself
+    const entry = this.getEntry(entryHash);
+    if (!entry) {
+      console.log('[SQLiteStorage.getEntryDetails] Entry not found for hash');
+      return null;
+    }
+
+    // Find all Create/Update actions that produced this entry hash
+    const actions: Array<{ actionHash: Uint8Array; action: any }> = [];
+    const stmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND entry_hash = ?');
+    try {
+      stmt.bind([cellId, toBytes(entryHash)]);
+      while (stmt.step()) {
+        const action = this.rowToAction(stmt.get({}));
+        if (action.actionType === 'Create' || action.actionType === 'Update') {
+          actions.push({ actionHash: action.actionHash, action });
+        }
+      }
+    } finally {
+      stmt.finalize();
+    }
+
+    // Find updates that have originalEntryHash pointing to this entry
+    const updates: Array<{ updateHash: Uint8Array; updateAction: any }> = [];
+    const updateStmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND action_type = ? AND original_entry_hash = ?');
+    try {
+      updateStmt.bind([cellId, 'Update', toBytes(entryHash)]);
+      while (updateStmt.step()) {
+        const action = this.rowToAction(updateStmt.get({}));
+        updates.push({ updateHash: action.actionHash, updateAction: action });
+      }
+    } finally {
+      updateStmt.finalize();
+    }
+
+    // Find deletes targeting this entry
+    const deletes: Array<{ deleteHash: Uint8Array; deleteAction: any }> = [];
+    const deleteStmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND action_type = ? AND deletes_entry_hash = ?');
+    try {
+      deleteStmt.bind([cellId, 'Delete', toBytes(entryHash)]);
+      while (deleteStmt.step()) {
+        const action = this.rowToAction(deleteStmt.get({}));
+        deletes.push({ deleteHash: action.actionHash, deleteAction: action });
+      }
+    } finally {
+      deleteStmt.finalize();
+    }
+
+    // Determine entry DHT status
+    // Live if there are no deletes, Dead if there are deletes
+    const entryDhtStatus = deletes.length > 0 ? 'Dead' : 'Live';
+
+    console.log('[SQLiteStorage.getEntryDetails] Found entry details', {
+      actionsCount: actions.length,
+      updatesCount: updates.length,
+      deletesCount: deletes.length,
+      status: entryDhtStatus,
+    });
+
+    return {
+      entry,
+      actions,
+      rejectedActions: [], // We don't track rejection in this implementation
+      deletes,
+      updates,
+      entryDhtStatus,
+    };
+  }
+
   putLink(link: any, dnaHash: Uint8Array, agentPubKey: Uint8Array): void {
     const cellId = this.getCellId(dnaHash, agentPubKey);
     const stmt = db.prepare(`

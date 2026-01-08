@@ -2,6 +2,9 @@
  * get_details host function
  *
  * Returns detailed information about a record including its updates and deletes.
+ * Routes based on hash type:
+ * - ActionHash -> Details::Record (RecordDetails)
+ * - EntryHash -> Details::Entry (EntryDetails)
  */
 
 import { HostFunctionImpl } from "./base";
@@ -9,6 +12,8 @@ import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { toHolochainAction } from "./action-serialization";
 import { buildEntry } from "./entry-utils";
+import { HoloHashType, getHashType } from "@holochain/client";
+import type { EntryHash, ActionHash } from "@holochain/client";
 
 /**
  * get_details host function implementation
@@ -29,15 +34,104 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const input = inputs[0]; // Get first element
   const inputHash = input.any_dht_hash;
 
+  // Detect hash type from prefix bytes
+  const hashType = getHashType(inputHash);
+
   console.log("[get_details] Getting details for hash", {
     hash: Array.from(inputHash.slice(0, 8)),
-    fullHash: Array.from(inputHash),
+    hashType: HoloHashType[hashType],
   });
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // Try to get as action hash first (always synchronous)
-  const action = storage.getAction(inputHash);
+  // Route based on hash type
+  if (hashType === HoloHashType.Entry) {
+    return handleEntryHashQuery(instance, inputHash as EntryHash, dnaHash, agentPubKey, storage);
+  }
+
+  // Default: treat as action hash query
+  return handleActionHashQuery(instance, inputHash as ActionHash, dnaHash, agentPubKey, storage);
+};
+
+/**
+ * Handle query by entry hash - returns Details::Entry
+ */
+function handleEntryHashQuery(
+  instance: WebAssembly.Instance,
+  entryHash: EntryHash,
+  dnaHash: Uint8Array,
+  agentPubKey: Uint8Array,
+  storage: ReturnType<typeof getStorageProvider>
+) {
+  console.log("[get_details] Handling as entry hash query");
+
+  const entryDetails = storage.getEntryDetails(entryHash, dnaHash, agentPubKey);
+
+  if (!entryDetails) {
+    console.log("[get_details] No entry details found");
+    return serializeResult(instance, [null]);
+  }
+
+  // Build EntryDetails structure matching Holochain's format
+  const result = {
+    type: "Entry",
+    content: {
+      entry: buildEntry(entryDetails.entry.entryType, entryDetails.entry.entryContent),
+      actions: entryDetails.actions.map((a) => ({
+        hashed: {
+          content: toHolochainAction(a.action),
+          hash: a.actionHash,
+        },
+        signature: a.action.signature,
+      })),
+      rejected_actions: entryDetails.rejectedActions.map((a) => ({
+        hashed: {
+          content: toHolochainAction(a.action),
+          hash: a.actionHash,
+        },
+        signature: a.action.signature,
+      })),
+      deletes: entryDetails.deletes.map((d) => ({
+        hashed: {
+          content: toHolochainAction(d.deleteAction),
+          hash: d.deleteHash,
+        },
+        signature: d.deleteAction.signature,
+      })),
+      updates: entryDetails.updates.map((u) => ({
+        hashed: {
+          content: toHolochainAction(u.updateAction),
+          hash: u.updateHash,
+        },
+        signature: u.updateAction.signature,
+      })),
+      entry_dht_status: entryDetails.entryDhtStatus,
+    },
+  };
+
+  console.log("[get_details] Returning entry details", {
+    actionsCount: entryDetails.actions.length,
+    updatesCount: entryDetails.updates.length,
+    deletesCount: entryDetails.deletes.length,
+  });
+
+  return serializeResult(instance, [result]);
+}
+
+/**
+ * Handle query by action hash - returns Details::Record
+ */
+function handleActionHashQuery(
+  instance: WebAssembly.Instance,
+  actionHash: ActionHash,
+  dnaHash: Uint8Array,
+  agentPubKey: Uint8Array,
+  storage: ReturnType<typeof getStorageProvider>
+) {
+  console.log("[get_details] Handling as action hash query");
+
+  // Try to get the action
+  const action = storage.getAction(actionHash);
 
   console.log("[get_details] Action lookup result", {
     found: !!action,
@@ -127,4 +221,4 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   // Return Vec<Option<Details>> - host function returns array
   return serializeResult(instance, [result]);
-};
+}
