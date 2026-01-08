@@ -147,6 +147,19 @@
       <div id="my-profile-display"></div>
     </div>
 
+    <!-- Step 6.5: Update Profile -->
+    <div class="section hidden" id="update-profile-section">
+      <h2>6.5 Update Profile</h2>
+      <form id="update-profile-form">
+        <label>
+          New Nickname:
+          <input type="text" name="new-nickname" required minlength="3" placeholder="Enter new nickname" />
+        </label>
+        <button type="submit" class="secondary">Update Profile</button>
+      </form>
+      <div id="update-profile-status"></div>
+    </div>
+
     <!-- Step 7: List All Profiles -->
     <div class="section hidden" id="list-profiles-section">
       <h2>7. All Profiles</h2>
@@ -203,6 +216,45 @@
       }
 
       // ============================================================
+      // Helper: Format data for display (convert Uint8Arrays to base64)
+      // ============================================================
+      function formatForDisplay(value) {
+        if (value === null || value === undefined) return value;
+
+        // Check if it's a Uint8Array
+        if (value instanceof Uint8Array) {
+          return btoa(String.fromCharCode(...value));
+        }
+
+        // Handle objects that Chrome converts Uint8Array to ({ 0: x, 1: y, ... })
+        if (typeof value === 'object' && !Array.isArray(value)) {
+          const keys = Object.keys(value);
+          if (keys.length > 0 && keys.every(k => !isNaN(parseInt(k)))) {
+            // Looks like a converted Uint8Array
+            const bytes = new Uint8Array(Object.values(value));
+            return btoa(String.fromCharCode(...bytes));
+          }
+          // Regular object - recurse
+          const result = {};
+          for (const [key, val] of Object.entries(value)) {
+            result[key] = formatForDisplay(val);
+          }
+          return result;
+        }
+
+        // Handle arrays
+        if (Array.isArray(value)) {
+          // Check if it looks like a byte array (all numbers 0-255)
+          if (value.length > 0 && value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+            return btoa(String.fromCharCode(...value));
+          }
+          return value.map(formatForDisplay);
+        }
+
+        return value;
+      }
+
+      // ============================================================
       // Helper: Decode msgpack-encoded entry bytes to object
       // ============================================================
       function decodeEntry(entryBytes) {
@@ -247,9 +299,13 @@
 
           // Set up signal forwarding
           if (holochain.on) {
+            log("Setting up signal listener on window.holochain");
             holochain.on("signal", (signal) => {
+              log("FishyAppClient received signal from window.holochain");
               this._dispatchSignal(signal);
             });
+          } else {
+            log("WARNING: window.holochain.on is not available");
           }
 
           return appInfo;
@@ -301,12 +357,14 @@
         }
 
         async createProfile(profile) {
-          log(`Creating profile: ${JSON.stringify(profile)}`);
-          return this.client.callZome({
+          log(`Creating profile with payload: ${JSON.stringify(profile)}`);
+          const result = await this.client.callZome({
             zome_name: this.zomeName,
             fn_name: "create_profile",
             payload: profile,
           });
+          log(`Create profile raw result: ${JSON.stringify(formatForDisplay(result))}`);
+          return result;
         }
 
         async getMyProfile() {
@@ -336,6 +394,15 @@
           });
         }
 
+        async updateProfile(profile) {
+          log(`Updating profile: ${JSON.stringify(profile)}`);
+          return this.client.callZome({
+            zome_name: this.zomeName,
+            fn_name: "update_profile",
+            payload: profile,
+          });
+        }
+
         onSignal(callback) {
           return this.client.on("signal", (signal) => {
             if (signal.value?.zome_name === this.zomeName) {
@@ -362,7 +429,8 @@
         signalCount++;
         signalCountEl.textContent = `${signalCount} signals`;
         const ts = new Date().toISOString().split("T")[1].split(".")[0];
-        signalLogEl.textContent += `[${ts}] Signal #${signalCount}:\n${JSON.stringify(signal, null, 2)}\n\n`;
+        const formatted = formatForDisplay(signal);
+        signalLogEl.textContent += `[${ts}] Signal #${signalCount}:\n${JSON.stringify(formatted, null, 2)}\n\n`;
         signalLogEl.scrollTop = signalLogEl.scrollHeight;
       }
 
@@ -529,19 +597,25 @@
 
           profilesClient = new SimpleProfilesClient(appClient);
 
-          // Subscribe to signals
-          profilesClient.onSignal((signal) => {
-            log("Signal received from profiles zome");
+          // Subscribe to ALL signals (for debugging)
+          appClient.on("signal", (signal) => {
+            log("Signal received (any zome)");
             addSignal(signal);
+          });
+
+          // Also subscribe via profiles client (filtered)
+          profilesClient.onSignal((signal) => {
+            log("Signal received from profiles zome (filtered)");
           });
 
           showStatus("connect-status", "success", "Connected");
           document.getElementById("app-info").classList.remove("hidden");
-          document.getElementById("app-info-content").textContent = JSON.stringify(appInfo, null, 2);
+          document.getElementById("app-info-content").textContent = JSON.stringify(formatForDisplay(appInfo), null, 2);
 
           // Show profile sections
           document.getElementById("create-profile-section").classList.remove("hidden");
           document.getElementById("my-profile-section").classList.remove("hidden");
+          document.getElementById("update-profile-section").classList.remove("hidden");
           document.getElementById("list-profiles-section").classList.remove("hidden");
 
           log("Connected and ready");
@@ -573,7 +647,7 @@
           });
 
           showStatus("create-profile-status", "success", "Profile created successfully");
-          log(`Profile created: ${JSON.stringify(result)}`);
+          log(`Profile created: ${JSON.stringify(formatForDisplay(result))}`);
 
           // Refresh my profile
           refreshMyProfile();
@@ -592,19 +666,27 @@
 
         try {
           const record = await profilesClient.getMyProfile();
-          log(`My profile result: ${JSON.stringify(record)}`);
+          log(`My profile result: ${JSON.stringify(formatForDisplay(record))}`);
 
           if (record && record.entry) {
             // Extract and decode profile from record
             // The entry is msgpack-encoded in entry.Present.entry
+            log(`Record entry structure: ${JSON.stringify(Object.keys(record.entry))}`);
+            log(`Record.entry.Present: ${record.entry?.Present ? 'exists' : 'missing'}`);
+
             let profile;
             if (record.entry?.Present?.entry) {
+              log(`Decoding from entry.Present.entry`);
               profile = decodeEntry(record.entry.Present.entry);
             } else if (record.entry?.Present) {
+              log(`Decoding from entry.Present`);
               profile = decodeEntry(record.entry.Present);
             } else {
+              log(`Using entry directly`);
               profile = record.entry;
             }
+
+            log(`Decoded profile: ${JSON.stringify(profile)}`);
 
             if (profile) {
               displayProfile(profile, appClient.myPubKey, container);
@@ -623,6 +705,38 @@
       document.getElementById("refresh-my-profile-btn").addEventListener("click", refreshMyProfile);
 
       // ============================================================
+      // Step 6.5: Update Profile
+      // ============================================================
+      document.getElementById("update-profile-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const newNickname = e.target["new-nickname"].value.trim();
+        if (newNickname.length < 3) {
+          showStatus("update-profile-status", "error", "Nickname must be at least 3 characters");
+          return;
+        }
+
+        log(`Updating profile to: ${newNickname}`);
+        showStatus("update-profile-status", "warning", "Updating profile...");
+
+        try {
+          const result = await profilesClient.updateProfile({
+            nickname: newNickname,
+            fields: {},
+          });
+
+          showStatus("update-profile-status", "success", "Profile updated successfully");
+          log(`Profile updated: ${JSON.stringify(formatForDisplay(result))}`);
+
+          // Refresh my profile to show update
+          refreshMyProfile();
+        } catch (error) {
+          log(`Update profile failed: ${error.message}`);
+          showStatus("update-profile-status", "error", `Failed: ${error.message}`);
+        }
+      });
+
+      // ============================================================
       // Step 7: List All Profiles
       // ============================================================
       document.getElementById("list-profiles-btn").addEventListener("click", async () => {
@@ -631,7 +745,7 @@
 
         try {
           const agents = await profilesClient.getAgentsWithProfile();
-          log(`Agents with profile: ${JSON.stringify(agents)}`);
+          log(`Agents with profile: ${JSON.stringify(formatForDisplay(agents))}`);
 
           if (!agents || agents.length === 0) {
             container.innerHTML = "<p>No profiles found.</p>";

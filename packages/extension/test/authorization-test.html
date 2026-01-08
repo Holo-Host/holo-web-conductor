@@ -330,9 +330,21 @@
     window.addEventListener('DOMContentLoaded', () => {
       log('Page loaded');
       displayOrigin();
-      checkExtension();
       updateUI();
     });
+
+    // Wait for fishy:ready event (fired when extension injects window.holochain)
+    window.addEventListener('fishy:ready', () => {
+      log('Received fishy:ready event');
+      checkExtension();
+    });
+
+    // Also check after a short delay in case event fired before listener attached
+    setTimeout(() => {
+      if (typeof window.holochain !== 'undefined') {
+        checkExtension();
+      }
+    }, 100);
   </script>
 </body>
 </html>

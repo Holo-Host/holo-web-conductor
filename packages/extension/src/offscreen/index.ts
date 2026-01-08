@@ -39,6 +39,15 @@ let networkSignalBuffer: SharedArrayBuffer | null = null;
 let networkSignalView: Int32Array | null = null;
 let networkResultBuffer: SharedArrayBuffer | null = null;
 
+// SharedArrayBuffers for synchronous signing
+// Signal: Int32Array[0] = status (0=waiting, 1=complete)
+// Result: [success: 1 byte] [length: 4 bytes] [data: variable - signature or error]
+const SIGN_SIGNAL_SIZE = 8; // 2 int32s
+const SIGN_RESULT_SIZE = 1024; // Room for 64-byte signature or error message
+let signSignalBuffer: SharedArrayBuffer | null = null;
+let signSignalView: Int32Array | null = null;
+let signResultBuffer: SharedArrayBuffer | null = null;
+
 // Pending worker requests
 const pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
 let nextRequestId = 1;
@@ -78,6 +87,11 @@ async function initRibosomeWorker(): Promise<void> {
     networkSignalView = new Int32Array(networkSignalBuffer);
     networkResultBuffer = new SharedArrayBuffer(NETWORK_RESULT_SIZE);
 
+    // Create SharedArrayBuffers for signing synchronization
+    signSignalBuffer = new SharedArrayBuffer(SIGN_SIGNAL_SIZE);
+    signSignalView = new Int32Array(signSignalBuffer);
+    signResultBuffer = new SharedArrayBuffer(SIGN_RESULT_SIZE);
+
     // Create worker
     const workerUrl = chrome.runtime.getURL("offscreen/ribosome-worker.js");
     console.log("[Offscreen] Worker URL:", workerUrl);
@@ -101,10 +115,12 @@ async function initRibosomeWorker(): Promise<void> {
       ribosomeWorker!.addEventListener('message', checkReady);
     });
 
-    // Initialize worker with shared buffers
+    // Initialize worker with shared buffers (network + signing)
     await sendToWorker('INIT', {
       networkSignalBuffer,
       networkResultBuffer,
+      signSignalBuffer,
+      signResultBuffer,
     });
 
     workerReady = true;
@@ -129,6 +145,12 @@ function handleWorkerMessage(event: MessageEvent): void {
   // Handle network request from worker
   if (type === 'NETWORK_REQUEST') {
     handleNetworkRequest(event.data);
+    return;
+  }
+
+  // Handle sign request from worker
+  if (type === 'SIGN_REQUEST') {
+    handleSignRequest(event.data);
     return;
   }
 
@@ -208,6 +230,72 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
 
     Atomics.store(networkSignalView!, 0, 1);
     Atomics.notify(networkSignalView!, 0);
+  }
+}
+
+/**
+ * Handle sign request from worker - forward to background and signal back
+ *
+ * Uses async messaging to background but writes result synchronously
+ * to shared buffer so worker can use Atomics.wait.
+ */
+async function handleSignRequest(request: { pub_key: number[]; data: number[] }): Promise<void> {
+  console.log(`[Offscreen] Handling sign request, data length: ${request.data.length}`);
+
+  try {
+    // Forward to background script which has access to Lair
+    const response = await chrome.runtime.sendMessage({
+      target: "background",
+      type: "SIGN_REQUEST",
+      agent_pubkey: request.pub_key,
+      message: request.data,
+    });
+
+    if (response && response.success && response.signature) {
+      // Write success result to buffer
+      // Format: [success: 1 byte] [length: 4 bytes] [signature: 64 bytes]
+      const signatureBytes = new Uint8Array(response.signature);
+      const resultView = new Uint8Array(signResultBuffer!);
+      const dv = new DataView(signResultBuffer!);
+
+      resultView[0] = 1; // success = true
+      dv.setInt32(1, signatureBytes.length, true); // little-endian
+      resultView.set(signatureBytes, 5);
+
+      console.log(`[Offscreen] Sign success, signature length: ${signatureBytes.length}`);
+    } else {
+      // Write error to buffer
+      const errorMsg = response?.error || "Signing failed";
+      const errorBytes = new TextEncoder().encode(errorMsg);
+      const resultView = new Uint8Array(signResultBuffer!);
+      const dv = new DataView(signResultBuffer!);
+
+      resultView[0] = 0; // success = false
+      dv.setInt32(1, errorBytes.length, true); // little-endian
+      resultView.set(errorBytes, 5);
+
+      console.error(`[Offscreen] Sign error: ${errorMsg}`);
+    }
+
+    // Signal worker
+    Atomics.store(signSignalView!, 0, 1);
+    Atomics.notify(signSignalView!, 0);
+
+  } catch (error) {
+    console.error("[Offscreen] Sign request failed:", error);
+
+    // Write error to buffer
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorBytes = new TextEncoder().encode(errorMsg);
+    const resultView = new Uint8Array(signResultBuffer!);
+    const dv = new DataView(signResultBuffer!);
+
+    resultView[0] = 0; // success = false
+    dv.setInt32(1, errorBytes.length, true); // little-endian
+    resultView.set(errorBytes, 5);
+
+    Atomics.store(signSignalView!, 0, 1);
+    Atomics.notify(signSignalView!, 0);
   }
 }
 
@@ -456,14 +544,6 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
     publishPendingRecords(result.pendingRecords, dnaHash).catch((error) => {
       console.error("[Offscreen] Background publish failed:", error);
     });
-  }
-
-  // Send remote signals via WebSocket (fire-and-forget)
-  if (result.remoteSignals && result.remoteSignals.length > 0 && wsService) {
-    console.log(`[Offscreen] Sending ${result.remoteSignals.length} remote signals via WebSocket`);
-    // Convert dnaHash to base64 for transport
-    const dnaHashB64 = btoa(String.fromCharCode(...dnaHash));
-    wsService.sendRemoteSignals(dnaHashB64, result.remoteSignals);
   }
 
   return {

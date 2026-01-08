@@ -20,8 +20,11 @@ import { deserializeFromWasm, serializeResult } from "../serialization";
 export const emit_signal: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
 
+  console.log(`[emit_signal] CALLED with ptr=${inputPtr}, len=${inputLen}`);
+
   // Deserialize the signal payload (AppSignal is ExternIO/Uint8Array)
   const signalBytes = deserializeFromWasm(instance, inputPtr, inputLen) as Uint8Array;
+  console.log(`[emit_signal] Deserialized ${signalBytes.length} bytes:`, signalBytes);
 
   // Initialize signals array if not present
   if (!callContext.emittedSignals) {

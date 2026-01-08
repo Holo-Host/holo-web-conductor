@@ -279,6 +279,35 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Deserialize result from WASM memory
     const result = timeSync('deserialize', () => deserializeFromWasm(instance, resultPtr, resultLen));
 
+    // Check if result is an ExternResult::Err variant
+    // ExternResult is serialized as { Err: { ... } } or { Ok: value }
+    // When zome returns Err(...), we should rollback, not commit
+    let unwrappedResult = result;
+    if (result && typeof result === 'object') {
+      if ('Err' in result) {
+        console.log('[Ribosome] Zome returned error, rolling back transaction');
+        if (storage.isTransactionActive()) {
+          storage.rollbackTransaction();
+        }
+        // Extract error message and throw
+        const errPayload = (result as any).Err;
+        const errorMsg = errPayload?.Guest || errPayload?.message || JSON.stringify(errPayload);
+        throw new Error(`Zome error: ${errorMsg}`);
+      } else if ('Ok' in result) {
+        // Unwrap the Ok variant
+        let okValue = (result as any).Ok;
+
+        // If Ok value is Uint8Array (ExternIO), decode it
+        if (okValue instanceof Uint8Array) {
+          const { decode } = await import('@msgpack/msgpack');
+          okValue = decode(okValue);
+          console.log('[Ribosome] Decoded ExternIO Ok value');
+        }
+
+        unwrappedResult = okValue;
+      }
+    }
+
     // Collect any emitted signals
     const signals = context.emittedSignals || [];
 
@@ -308,7 +337,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     endZomeCallMetrics(performance.now() - callStart);
 
     return {
-      result,
+      result: unwrappedResult,
       signals,
       pendingRecords,
     };

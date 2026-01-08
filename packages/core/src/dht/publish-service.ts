@@ -5,7 +5,7 @@
  * Works with PublishTracker for persistence and retry logic.
  */
 
-import type { DnaHash, Record } from "@holochain/client";
+import type { DnaHash, Record as HolochainRecord } from "@holochain/client";
 import type { ChainOp } from "./dht-op-types";
 import { PublishStatus } from "./dht-op-types";
 import { PublishTracker } from "./publish-tracker";
@@ -95,7 +95,7 @@ export class PublishService {
    * @param dnaHash - DNA hash for routing
    * @returns Promise that resolves when ops are queued (not necessarily published)
    */
-  async publishRecord(record: Record, dnaHash: DnaHash): Promise<string[]> {
+  async publishRecord(record: HolochainRecord, dnaHash: DnaHash): Promise<string[]> {
     // Queue the record's ops
     const publishIds = await this.tracker.queueRecordForPublish(record, dnaHash);
 

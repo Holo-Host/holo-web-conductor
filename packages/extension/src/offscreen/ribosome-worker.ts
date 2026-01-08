@@ -29,6 +29,8 @@ import { encode, decode } from '@msgpack/msgpack';
 import { SCHEMA_SQL } from '@fishy/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@fishy/core/storage';
 import { setNetworkService, type NetworkService } from '@fishy/core/network';
+import { setLairClient } from '@fishy/core/signing';
+import type { LairClient, Ed25519PubKey, Ed25519Signature } from '@fishy/lair';
 import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@fishy/core/storage/types';
 import { encodeHashToBase64, decodeHashFromBase64 } from '@holochain/client';
 
@@ -57,6 +59,15 @@ let networkSignalBuffer: SharedArrayBuffer | null = null;
 let networkSignalView: Int32Array | null = null;
 let networkResultBuffer: SharedArrayBuffer | null = null;
 let networkResultView: Uint8Array | null = null;
+
+// SharedArrayBuffer for signing synchronization
+// Signal: Int32Array[0] = status (0=waiting, 1=complete)
+// Result: Uint8Array with signature (64 bytes) or error message
+const SIGN_RESULT_SIZE = 1024; // Room for 64-byte signature or error message
+let signSignalBuffer: SharedArrayBuffer | null = null;
+let signSignalView: Int32Array | null = null;
+let signResultBuffer: SharedArrayBuffer | null = null;
+let signResultView: Uint8Array | null = null;
 
 // Network configuration
 let gatewayUrl: string = '';
@@ -552,6 +563,140 @@ function toBytes(value: any): Uint8Array | null {
 const storage = new DirectSQLiteStorage();
 
 /**
+ * Proxy Lair Client - forwards signing requests to offscreen/background
+ *
+ * Uses SharedArrayBuffers and Atomics.wait for synchronous operation
+ * so that WASM can call signing synchronously.
+ */
+class ProxyLairClient implements LairClient {
+  // Track "preloaded" keys - in our case, we always forward to background
+  // but we track which keys have been registered for preloading
+  private preloadedKeys = new Set<string>();
+
+  private keyToString(key: Uint8Array): string {
+    return btoa(String.fromCharCode(...key));
+  }
+
+  // Required interface methods - signing is what we need
+
+  async newSeed(tag: string, exportable?: boolean): Promise<any> {
+    throw new Error('ProxyLairClient does not support newSeed - use background Lair client');
+  }
+
+  async getEntry(tag: string): Promise<any> {
+    throw new Error('ProxyLairClient does not support getEntry - use background Lair client');
+  }
+
+  async listEntries(): Promise<any[]> {
+    throw new Error('ProxyLairClient does not support listEntries - use background Lair client');
+  }
+
+  async signByPubKey(pub_key: Ed25519PubKey, data: Uint8Array): Promise<Ed25519Signature> {
+    // Forward to background for async signing
+    return this.signSync(pub_key, data);
+  }
+
+  async preloadKeyForSync(pub_key: Ed25519PubKey): Promise<void> {
+    // Mark as preloaded - we don't actually preload since we proxy to background
+    this.preloadedKeys.add(this.keyToString(pub_key));
+    console.log(`[ProxyLairClient] Key marked as preloaded: ${this.keyToString(pub_key).substring(0, 20)}...`);
+  }
+
+  signSync(pub_key: Ed25519PubKey, data: Uint8Array): Ed25519Signature {
+    if (!signSignalBuffer || !signResultBuffer) {
+      throw new Error('Sign buffers not initialized');
+    }
+
+    console.log(`[ProxyLairClient] signSync called, data length: ${data.length}`);
+
+    // Reset signal
+    Atomics.store(signSignalView!, 0, 0);
+
+    // Send request to offscreen
+    self.postMessage({
+      type: 'SIGN_REQUEST',
+      pub_key: Array.from(pub_key),
+      data: Array.from(data),
+    });
+
+    // Block until offscreen responds
+    console.log('[ProxyLairClient] Waiting for sign response...');
+    const waitResult = Atomics.wait(signSignalView!, 0, 0, 30000);
+
+    if (waitResult === 'timed-out') {
+      throw new Error('Signing request timed out');
+    }
+
+    // Read response from shared buffer
+    // Format: [success: 1 byte] [length: 4 bytes] [data: variable]
+    const success = signResultView![0] === 1;
+    const dv = new DataView(signResultBuffer!);
+    const dataLength = dv.getInt32(1, true); // little-endian
+
+    if (!success) {
+      // Read error message
+      const errorBytes = new Uint8Array(signResultBuffer!, 5, dataLength);
+      const errorMsg = new TextDecoder().decode(errorBytes);
+      throw new Error(`Signing failed: ${errorMsg}`);
+    }
+
+    // Read signature (64 bytes)
+    const signature = new Uint8Array(signResultBuffer!, 5, 64);
+    console.log(`[ProxyLairClient] Sign response received, signature length: ${signature.length}`);
+
+    return new Uint8Array(signature) as Ed25519Signature;
+  }
+
+  hasPreloadedKey(pub_key: Ed25519PubKey): boolean {
+    return this.preloadedKeys.has(this.keyToString(pub_key));
+  }
+
+  clearPreloadedKey(pub_key: Ed25519PubKey): void {
+    this.preloadedKeys.delete(this.keyToString(pub_key));
+  }
+
+  clearAllPreloadedKeys(): void {
+    this.preloadedKeys.clear();
+  }
+
+  // Methods we don't support in proxy
+
+  async deriveSeed(): Promise<any> {
+    throw new Error('ProxyLairClient does not support deriveSeed');
+  }
+
+  async cryptoBoxByPubKey(): Promise<any> {
+    throw new Error('ProxyLairClient does not support cryptoBoxByPubKey');
+  }
+
+  async cryptoBoxOpenByPubKey(): Promise<any> {
+    throw new Error('ProxyLairClient does not support cryptoBoxOpenByPubKey');
+  }
+
+  async secretBoxByTag(): Promise<any> {
+    throw new Error('ProxyLairClient does not support secretBoxByTag');
+  }
+
+  async secretBoxOpenByTag(): Promise<any> {
+    throw new Error('ProxyLairClient does not support secretBoxOpenByTag');
+  }
+
+  async exportSeedByTag(): Promise<any> {
+    throw new Error('ProxyLairClient does not support exportSeedByTag');
+  }
+
+  async importSeed(): Promise<any> {
+    throw new Error('ProxyLairClient does not support importSeed');
+  }
+
+  async deleteEntry(): Promise<void> {
+    throw new Error('ProxyLairClient does not support deleteEntry');
+  }
+}
+
+const proxyLairClient = new ProxyLairClient();
+
+/**
  * Network service that proxies to offscreen document for sync XHR
  */
 class ProxyNetworkService implements NetworkService {
@@ -935,9 +1080,22 @@ self.onmessage = async (event: MessageEvent) => {
           networkResultView = new Uint8Array(networkResultBuffer);
         }
 
+        // Set up sign buffers
+        if (payload.signSignalBuffer && payload.signResultBuffer) {
+          signSignalBuffer = payload.signSignalBuffer;
+          signSignalView = new Int32Array(signSignalBuffer);
+          signResultBuffer = payload.signResultBuffer;
+          signResultView = new Uint8Array(signResultBuffer);
+          console.log('[Ribosome Worker] Sign buffers initialized');
+        }
+
         // Set storage provider for ribosome
         setStorageProvider(storage as any);
         setNetworkService(networkService);
+
+        // Set Lair client for signing
+        setLairClient(proxyLairClient);
+        console.log('[Ribosome Worker] Lair client set');
 
         result = { success: true };
         console.log('[Ribosome Worker] Initialized');
@@ -1014,18 +1172,10 @@ self.onmessage = async (event: MessageEvent) => {
           console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
         }
 
-        // Remote signals are already in transport-ready format (number[])
-        let remoteSignalsForTransport: any[] | undefined;
-        if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
-          remoteSignalsForTransport = zomeResult.remoteSignals;
-          console.log(`[Ribosome Worker] ${remoteSignalsForTransport.length} remote signals to send`);
-        }
-
         result = {
           result: zomeResult.result,
           signals: zomeResult.signals || [],
           pendingRecords: pendingRecordsForTransport,
-          remoteSignals: remoteSignalsForTransport,
         };
 
         console.log(`[PERF Worker] CALL_ZOME message handling:

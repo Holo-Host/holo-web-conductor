@@ -254,19 +254,27 @@ describe("WebSocketNetworkService", () => {
       );
     });
 
-    it("should not duplicate registrations", () => {
+    it("should always send registration (for gateway sync) but not duplicate internal tracking", () => {
       const service = new WebSocketNetworkService(options);
       service.connect();
       mockWs.simulateOpen();
       mockWs.simulateMessage({ type: "auth_ok" });
 
       service.registerAgent("dna123", "agent456");
-      service.registerAgent("dna123", "agent456"); // Duplicate
+      service.registerAgent("dna123", "agent456"); // Duplicate call
 
+      // Messages are always sent - gateway may have lost state
       const registerMessages = mockWs.sentMessages.filter(
         (m) => m.includes('"type":"register"')
       );
-      expect(registerMessages).toHaveLength(1);
+      expect(registerMessages).toHaveLength(2);
+
+      // But internal tracking should not have duplicates
+      expect(service.getRegistrations()).toHaveLength(1);
+      expect(service.getRegistrations()[0]).toEqual({
+        dna_hash: "dna123",
+        agent_pubkey: "agent456",
+      });
     });
 
     it("should track registrations", () => {

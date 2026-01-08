@@ -15,18 +15,6 @@ import { decodeHashFromBase64 } from "../types/holochain-types";
 /**
  * Messages from browser to gateway
  */
-/**
- * Signed remote signal for transport to gateway
- */
-export interface SignedRemoteSignalTransport {
-  /** Target agent public key (as array for JSON transport) */
-  target_agent: number[];
-  /** Serialized ZomeCallParams (as array for JSON transport) */
-  zome_call_params: number[];
-  /** Ed25519 signature (64 bytes, as array for JSON transport) */
-  signature: number[];
-}
-
 export type ClientMessage =
   | { type: "auth"; session_token: string }
   | { type: "register"; dna_hash: string; agent_pubkey: string }
@@ -37,11 +25,6 @@ export type ClientMessage =
       request_id: string;
       signature?: string; // base64-encoded signature
       error?: string;
-    }
-  | {
-      type: "send_remote_signal";
-      dna_hash: string; // base64-encoded DnaHash
-      signals: SignedRemoteSignalTransport[];
     };
 
 /**
@@ -307,24 +290,6 @@ export class WebSocketNetworkService {
    */
   getRegistrations(): AgentRegistration[] {
     return [...this.registrations];
-  }
-
-  /**
-   * Send remote signals to target agents via the gateway
-   *
-   * Fire-and-forget: signals are queued for delivery but success is not confirmed.
-   */
-  sendRemoteSignals(dna_hash: string, signals: SignedRemoteSignalTransport[]): void {
-    if (signals.length === 0) {
-      return;
-    }
-
-    if (this.isConnected()) {
-      console.log(`[WebSocketService] Sending ${signals.length} remote signals for DNA ${dna_hash.slice(0, 12)}...`);
-      this.send({ type: "send_remote_signal", dna_hash, signals });
-    } else {
-      console.warn(`[WebSocketService] Cannot send remote signals - not connected`);
-    }
   }
 
   // ============================================================================

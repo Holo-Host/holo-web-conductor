@@ -5,20 +5,21 @@
  * @holochain/client format (Record, SignedActionHashed) for publishing.
  */
 
-import type {
-  Action,
-  ActionHash,
-  Create,
-  Update,
-  Delete,
-  CreateLink,
-  DeleteLink,
-  Entry,
-  Record,
-  SignedActionHashed,
-  ActionHashed,
-  Signature,
-  RecordEntry,
+import {
+  ActionType,
+  type Action,
+  type ActionHash,
+  type Create,
+  type Update,
+  type Delete,
+  type CreateLink,
+  type DeleteLink,
+  type Entry,
+  type Record,
+  type SignedActionHashed,
+  type ActionHashed,
+  type Signature,
+  type RecordEntry,
 } from "@holochain/client";
 
 import type {
@@ -38,18 +39,25 @@ import type {
  * to wire format (type: "Create" with proper structure).
  */
 export function storedActionToClientAction(stored: StoredAction): Action {
+  // @holochain/client expects timestamp as number, our storage uses bigint
+  const timestamp = typeof stored.timestamp === 'bigint'
+    ? Number(stored.timestamp)
+    : stored.timestamp;
+
+  // prev_action is non-null for all action types we handle here
+  // (Dna action doesn't have prev_action and isn't handled by this function)
   const baseFields = {
     author: stored.author,
-    timestamp: stored.timestamp,
+    timestamp,
     action_seq: stored.actionSeq,
-    prev_action: stored.prevActionHash,
+    prev_action: stored.prevActionHash!,  // Assert non-null for these action types
   };
 
   switch (stored.actionType) {
     case "Create": {
       const createStored = stored as CreateAction;
       const create: Create = {
-        type: "Create",
+        type: ActionType.Create,
         ...baseFields,
         entry_type: createStored.entryType
           ? {
@@ -59,9 +67,8 @@ export function storedActionToClientAction(stored: StoredAction): Action {
                 visibility: "Public",
               },
             }
-          : { Agent: null },
+          : "Agent",
         entry_hash: createStored.entryHash,
-        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
       };
       return create;
     }
@@ -69,7 +76,7 @@ export function storedActionToClientAction(stored: StoredAction): Action {
     case "Update": {
       const updateStored = stored as UpdateAction;
       const update: Update = {
-        type: "Update",
+        type: ActionType.Update,
         ...baseFields,
         entry_type: updateStored.entryType
           ? {
@@ -79,11 +86,10 @@ export function storedActionToClientAction(stored: StoredAction): Action {
                 visibility: "Public",
               },
             }
-          : { Agent: null },
+          : "Agent",
         entry_hash: updateStored.entryHash,
         original_action_address: updateStored.originalActionHash,
         original_entry_address: updateStored.originalEntryHash,
-        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
       };
       return update;
     }
@@ -91,11 +97,10 @@ export function storedActionToClientAction(stored: StoredAction): Action {
     case "Delete": {
       const deleteStored = stored as DeleteAction;
       const del: Delete = {
-        type: "Delete",
+        type: ActionType.Delete,
         ...baseFields,
         deletes_address: deleteStored.deletesActionHash,
         deletes_entry_address: deleteStored.deletesEntryHash,
-        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
       };
       return del;
     }
@@ -103,14 +108,14 @@ export function storedActionToClientAction(stored: StoredAction): Action {
     case "CreateLink": {
       const linkStored = stored as CreateLinkAction;
       const createLink: CreateLink = {
-        type: "CreateLink",
+        type: ActionType.CreateLink,
         ...baseFields,
         base_address: linkStored.baseAddress,
         target_address: linkStored.targetAddress,
         zome_index: linkStored.zomeIndex,
         link_type: linkStored.linkType,
         tag: linkStored.tag,
-        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+        weight: { bucket_id: 0, units: 0 },
       };
       return createLink;
     }
@@ -118,7 +123,7 @@ export function storedActionToClientAction(stored: StoredAction): Action {
     case "DeleteLink": {
       const deleteLinkStored = stored as DeleteLinkAction;
       const deleteLink: DeleteLink = {
-        type: "DeleteLink",
+        type: ActionType.DeleteLink,
         ...baseFields,
         base_address: deleteLinkStored.baseAddress,
         link_add_address: deleteLinkStored.linkAddAddress,
@@ -135,16 +140,17 @@ export function storedActionToClientAction(stored: StoredAction): Action {
  * Convert a stored entry to @holochain/client Entry format
  *
  * Entries are stored as raw msgpack bytes; convert to Entry union type.
+ * Entry type is: { entry_type: string, entry: content }
  */
 export function storedEntryToClientEntry(stored: StoredEntry): Entry {
   // StoredEntry has entryType that tells us what kind of entry
   if (stored.entryType === "Agent") {
     // Agent entry - the content is the agent pub key
-    return { Agent: stored.entryContent };
+    return { entry_type: "Agent", entry: stored.entryContent };
   }
 
-  // App entries are wrapped in { App: bytes }
-  return { App: stored.entryContent };
+  // App entries
+  return { entry_type: "App", entry: stored.entryContent };
 }
 
 /**
@@ -152,7 +158,7 @@ export function storedEntryToClientEntry(stored: StoredEntry): Entry {
  */
 export function storedEntryToRecordEntry(stored: StoredEntry | undefined): RecordEntry {
   if (!stored) {
-    return { NA: null };
+    return { NotApplicable: undefined as void };
   }
 
   const entry = storedEntryToClientEntry(stored);

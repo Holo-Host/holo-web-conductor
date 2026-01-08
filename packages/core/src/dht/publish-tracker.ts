@@ -6,7 +6,7 @@
  * queueing, updating, and querying publish state.
  */
 
-import type { DnaHash, Record } from "@holochain/client";
+import type { DnaHash, Record as HolochainRecord } from "@holochain/client";
 import type { ChainOp, PendingPublish, OpBasis } from "./dht-op-types";
 import { PublishStatus, ChainOpType } from "./dht-op-types";
 import { produceOpsFromRecord, computeOpBasis, getOpAction } from "./produce-ops";
@@ -159,7 +159,7 @@ export class PublishTracker {
    * @returns Array of pending publish IDs
    */
   async queueRecordForPublish(
-    record: Record,
+    record: HolochainRecord,
     dnaHash: DnaHash
   ): Promise<string[]> {
     await this.init();

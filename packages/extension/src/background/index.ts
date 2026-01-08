@@ -726,9 +726,12 @@ async function handleCallZome(
             };
 
             // Send to content script
+            console.log("[CallZome] Sending signal to tab:", tabId, appSignal);
             chrome.tabs.sendMessage(tabId, {
               type: "signal",
               payload: appSignal,
+            }).then(() => {
+              console.log("[CallZome] Signal sent successfully to tab:", tabId);
             }).catch((err) => {
               console.warn("[CallZome] Failed to send signal to tab:", err);
             });
@@ -1610,14 +1613,20 @@ async function handleSignRequest(request: {
     // Get or create lair client
     const client = await getLairClient();
 
-    // Convert to Uint8Array and validate it's an AgentPubKey
-    const agentPubkey = new Uint8Array(request.agent_pubkey);
-    if (!isAgentPubKey(agentPubkey)) {
-      throw new Error(`Invalid AgentPubKey: expected 39-byte Uint8Array with AGENT_PREFIX [132,32,36], got ${agentPubkey.length} bytes with prefix [${agentPubkey[0]},${agentPubkey[1]},${agentPubkey[2]}]`);
-    }
+    // Convert to Uint8Array
+    const pubkeyBytes = new Uint8Array(request.agent_pubkey);
 
-    // Extract raw 32-byte Ed25519 key from 39-byte AgentPubKey
-    const ed25519PubKey = extractEd25519PubKey(agentPubkey);
+    // Handle both 32-byte Ed25519 keys and 39-byte AgentPubKeys
+    let ed25519PubKey: Uint8Array;
+    if (pubkeyBytes.length === 32) {
+      // Already a raw Ed25519 key (from signSync in proxy)
+      ed25519PubKey = pubkeyBytes;
+    } else if (isAgentPubKey(pubkeyBytes)) {
+      // 39-byte AgentPubKey - extract the Ed25519 key
+      ed25519PubKey = extractEd25519PubKey(pubkeyBytes);
+    } else {
+      throw new Error(`Invalid public key: expected 32-byte Ed25519 or 39-byte AgentPubKey, got ${pubkeyBytes.length} bytes`);
+    }
 
     // Sign the message using the agent's key
     const messageBytes = new Uint8Array(request.message);
