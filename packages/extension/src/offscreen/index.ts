@@ -20,6 +20,7 @@ import {
 } from "@fishy/core/network";
 import { PublishService } from "@fishy/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@fishy/core";
+import { encodeHashToBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 
 console.log("[Offscreen] Document loaded");
@@ -544,6 +545,13 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
     publishPendingRecords(result.pendingRecords, dnaHash).catch((error) => {
       console.error("[Offscreen] Background publish failed:", error);
     });
+  }
+
+  // Send remote signals via WebSocket (fire-and-forget)
+  if (result.remoteSignals && result.remoteSignals.length > 0 && wsService) {
+    console.log(`[Offscreen] Sending ${result.remoteSignals.length} remote signals via WebSocket`);
+    const dnaHashB64 = encodeHashToBase64(dnaHash);
+    wsService.sendRemoteSignals(dnaHashB64, result.remoteSignals);
   }
 
   return {
