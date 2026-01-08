@@ -599,7 +599,12 @@ export class SQLiteStorage {
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array
   ): RecordDetails | null {
+    console.log('[SQLiteStorage.getDetails] Looking up entry', {
+      entryHash: Array.from(entryHash.slice(0, 8)),
+    });
+
     const allActions = this.queryActions(dnaHash, agentPubKey);
+    console.log('[SQLiteStorage.getDetails] Found actions count:', allActions.length);
 
     // Find action that created/updated this entry
     let originatingAction = allActions.find(
@@ -608,18 +613,45 @@ export class SQLiteStorage {
            this.hashesEqual((a as CreateAction).entryHash, entryHash)
     ) as CreateAction | UpdateAction | undefined;
 
+    if (originatingAction) {
+      console.log('[SQLiteStorage.getDetails] Found Create action', {
+        actionHash: Array.from(originatingAction.actionHash.slice(0, 8)),
+      });
+    }
+
     if (!originatingAction) {
       originatingAction = allActions.find(
         a => a.actionType === 'Update' &&
              'entryHash' in a &&
              this.hashesEqual((a as UpdateAction).entryHash, entryHash)
       ) as UpdateAction | undefined;
+
+      if (originatingAction) {
+        console.log('[SQLiteStorage.getDetails] Found Update action', {
+          actionHash: Array.from(originatingAction.actionHash.slice(0, 8)),
+        });
+      }
     }
 
-    if (!originatingAction) return null;
+    if (!originatingAction) {
+      console.log('[SQLiteStorage.getDetails] No originating action found for entryHash');
+      // Log all Create/Update actions to see what we have
+      allActions.filter(a => a.actionType === 'Create' || a.actionType === 'Update').forEach(a => {
+        if ('entryHash' in a) {
+          console.log('[SQLiteStorage.getDetails] Existing action:', {
+            type: a.actionType,
+            entryHash: Array.from((a as CreateAction).entryHash.slice(0, 8)),
+          });
+        }
+      });
+      return null;
+    }
 
     const entry = this.getEntry(entryHash);
-    if (!entry) return null;
+    if (!entry) {
+      console.log('[SQLiteStorage.getDetails] Entry not found in storage');
+      return null;
+    }
 
     const updates = allActions
       .filter(a => a.actionType === 'Update' && this.hashesEqual((a as UpdateAction).originalEntryHash, entryHash))

@@ -34,6 +34,7 @@ import { mustGetValidRecord } from "./must_get_valid_record";
 import { allocate } from "./allocate";
 import { deallocate } from "./deallocate";
 import { emit_signal } from "./emit_signal";
+import { getDetails } from "./get_details";
 import * as stubs from "./stubs";
 
 /**
@@ -165,7 +166,7 @@ function initializeRegistry(): HostFunctionRegistry {
     "__hc__must_get_agent_activity_1",
     stubs.mustGetAgentActivity
   );
-  registry.registerHostFunction("__hc__get_details_1", stubs.getDetails);
+  registry.registerHostFunction("__hc__get_details_1", getDetails);
   registry.registerHostFunction(
     "__hc__get_links_details_1",
     stubs.getLinksDetails

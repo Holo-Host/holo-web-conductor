@@ -289,4 +289,5 @@ describe("get_details", () => {
     // Should return null gracefully when record is missing
     expect(result.Ok).toEqual([null]);
   });
+
 });

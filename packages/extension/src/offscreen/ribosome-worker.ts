@@ -386,47 +386,86 @@ class DirectSQLiteStorage implements StorageProvider {
     return { action, entry };
   }
 
-  getDetails(entryHash: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array): any | null {
+  getDetails(entryHash: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array): RecordDetails | null {
     // Get all actions that reference this entry hash
     const cellId = this.getCellId(dnaHash, agentPubKey);
-    const creates: any[] = [];
-    const updates: any[] = [];
-    const deletes: any[] = [];
+    let originatingAction: any = null;
+    const updateActions: any[] = [];
+    const deleteActions: any[] = [];
 
-    // Find creates and updates
+    // Find creates and updates that have this entry hash
     const stmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND entry_hash = ?');
     try {
       stmt.bind([cellId, toBytes(entryHash)]);
       while (stmt.step()) {
         const action = this.rowToAction(stmt.get({}));
         if (action.actionType === 'Create') {
-          creates.push(action);
+          // First Create action is the originating action
+          if (!originatingAction) {
+            originatingAction = action;
+          }
         } else if (action.actionType === 'Update') {
-          updates.push(action);
+          // If no Create found yet, an Update that created this entry is the originator
+          if (!originatingAction) {
+            originatingAction = action;
+          }
         }
       }
     } finally {
       stmt.finalize();
     }
 
-    // Find deletes that target actions with this entry
+    if (!originatingAction) {
+      console.log('[SQLiteStorage.getDetails] No originating action found for entryHash');
+      return null;
+    }
+
+    const entry = this.getEntry(entryHash);
+    if (!entry) {
+      console.log('[SQLiteStorage.getDetails] Entry not found in storage');
+      return null;
+    }
+
+    // Find updates that reference this entry's ORIGINAL entry hash
+    const updateStmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND action_type = ? AND original_entry_hash = ?');
+    try {
+      updateStmt.bind([cellId, 'Update', toBytes(entryHash)]);
+      while (updateStmt.step()) {
+        const action = this.rowToAction(updateStmt.get({}));
+        updateActions.push({
+          updateHash: action.actionHash,
+          updateAction: action,
+        });
+      }
+    } finally {
+      updateStmt.finalize();
+    }
+
+    // Find deletes that target this entry
     const deleteStmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND action_type = ? AND deletes_entry_hash = ?');
     try {
       deleteStmt.bind([cellId, 'Delete', toBytes(entryHash)]);
       while (deleteStmt.step()) {
-        deletes.push(this.rowToAction(deleteStmt.get({})));
+        const action = this.rowToAction(deleteStmt.get({}));
+        deleteActions.push({
+          deleteHash: action.actionHash,
+          deleteAction: action,
+        });
       }
     } finally {
       deleteStmt.finalize();
     }
 
-    const entry = this.getEntry(entryHash);
-
+    // Return RecordDetails shape expected by get_details.ts
     return {
-      entry,
-      creates,
-      updates,
-      deletes,
+      record: {
+        actionHash: originatingAction.actionHash,
+        action: originatingAction,
+        entry,
+      },
+      validationStatus: 'Valid',
+      updates: updateActions,
+      deletes: deleteActions,
     };
   }
 

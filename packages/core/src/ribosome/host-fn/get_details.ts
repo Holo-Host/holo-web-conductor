@@ -27,20 +27,23 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
   }>;
 
   const input = inputs[0]; // Get first element
+  const inputHash = input.any_dht_hash;
 
   console.log("[get_details] Getting details for hash", {
-    hash: Array.from(input.any_dht_hash.slice(0, 8)),
+    hash: Array.from(inputHash.slice(0, 8)),
+    fullHash: Array.from(inputHash),
   });
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Try to get as action hash first (always synchronous)
-  const action = storage.getAction(input.any_dht_hash);
+  const action = storage.getAction(inputHash);
 
   console.log("[get_details] Action lookup result", {
     found: !!action,
     actionType: action?.actionType,
     hasEntryHash: action && "entryHash" in action,
+    actionHash: action ? Array.from(action.actionHash.slice(0, 8)) : null,
   });
 
   // Get the entry hash from the action
@@ -50,6 +53,10 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
     console.log("[get_details] No entry hash found, returning null");
     return serializeResult(instance, [null]);
   }
+
+  console.log("[get_details] Entry hash to query", {
+    entryHash: Array.from(entryHashToQuery.slice(0, 8)),
+  });
 
   // Get full details for this entry
   const details = storage.getDetails(entryHashToQuery, dnaHash, agentPubKey);

@@ -9,10 +9,7 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
-import { getStorageProvider } from "../../storage/storage-provider";
-import { toHolochainAction } from "./action-serialization";
-import { buildEntry } from "./entry-utils";
+import { serializeResult } from "../serialization";
 
 /**
  * Helper to create a stub that returns null
@@ -47,97 +44,9 @@ function createNotImplementedStub(name: string): HostFunctionImpl {
 export const getAgentActivity = createEmptyArrayStub("get_agent_activity");
 export const mustGetAgentActivity = createNullStub("must_get_agent_activity");
 
-// get_details returns Vec<Option<Details>>
-export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { callContext, instance } = context;
-  const storage = getStorageProvider();
+// NOTE: get_details is implemented in ./get_details.ts, not here
+// The real implementation is registered in index.ts
 
-  // Input is Vec<GetInput> with GetInput = { any_dht_hash, get_options }
-  const inputs = deserializeFromWasm(instance, inputPtr, inputLen) as Array<{
-    any_dht_hash: Uint8Array;
-    get_options?: unknown;
-  }>;
-
-  const input = inputs[0]; // Get first element
-
-  console.log("[get_details] Getting details for hash", {
-    hash: Array.from(input.any_dht_hash.slice(0, 8)),
-    fullHash: Array.from(input.any_dht_hash),
-  });
-
-  const [dnaHash, agentPubKey] = callContext.cellId;
-
-  // Try to get as action hash first (always synchronous)
-  const action = storage.getAction(input.any_dht_hash);
-
-  console.log("[get_details] Action lookup result", {
-    found: !!action,
-    actionType: action?.actionType,
-    hasEntryHash: action && "entryHash" in action,
-    entryHash: action && "entryHash" in action ? Array.from((action as any).entryHash?.slice(0, 8) || []) : null,
-  });
-
-  // Get the entry hash from the action
-  const entryHashToQuery = action && "entryHash" in action ? action.entryHash : null;
-
-  if (entryHashToQuery) {
-    // Get full details for this entry (always synchronous with StorageProvider)
-    const details = storage.getDetails(entryHashToQuery, dnaHash, agentPubKey);
-    if (details) {
-      // Build RecordDetails structure
-      const recordDetails = {
-        record: {
-          signed_action: {
-            hashed: {
-              content: toHolochainAction(details.record.action),
-              hash: details.record.actionHash,
-            },
-            signature: details.record.action.signature,
-          },
-          entry: details.record.entry
-            ? {
-                Present: buildEntry(details.record.entry.entryType, details.record.entry.entryContent)
-              }
-            : "NA",
-        },
-        validation_status: details.validationStatus,
-        deletes: details.deletes.map((d: any) => ({
-          hashed: {
-            content: toHolochainAction(d.deleteAction),
-            hash: d.deleteHash,
-          },
-          signature: d.deleteAction.signature,
-        })),
-        updates: details.updates.map((u: any) => ({
-          hashed: {
-            content: toHolochainAction(u.updateAction),
-            hash: u.updateHash,
-          },
-          signature: u.updateAction.signature,
-        })),
-      };
-
-      // Wrap in adjacently-tagged Details enum
-      // Details is: #[serde(tag = "type", content = "content")]
-      const result = {
-        type: "Record",
-        content: recordDetails,
-      };
-
-      console.log("[get_details] Found details", {
-        deletes: details.deletes.length,
-        updates: details.updates.length,
-      });
-
-      // Return Vec<Option<Details>> - host function returns array
-      return serializeResult(instance, [result]);
-    }
-  }
-
-  // Not found - Vec<Option<Details>> with one None element
-  console.log("[get_details] No details found");
-  return serializeResult(instance, [null]);
-};
 export const getLinksDetails = createEmptyArrayStub("get_links_details");
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");
 

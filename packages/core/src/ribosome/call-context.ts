@@ -40,6 +40,18 @@ export interface PendingRecord {
 }
 
 /**
+ * Remote signal queued for delivery via kitsune2
+ */
+export interface QueuedRemoteSignal {
+  /** Target agent public key (as number array for transport) */
+  target_agent: number[];
+  /** Serialized ZomeCallParams (as number array for transport) */
+  zome_call_params: number[];
+  /** Signature over the params (as number array for transport) */
+  signature: number[];
+}
+
+/**
  * Context for a zome call invocation
  */
 export interface CallContext {
@@ -60,6 +72,9 @@ export interface CallContext {
 
   /** Signals emitted during this call (populated by emit_signal host function) */
   emittedSignals?: EmittedSignal[];
+
+  /** Remote signals queued for delivery via kitsune2 (populated by send_remote_signal host function) */
+  remoteSignals?: QueuedRemoteSignal[];
 
   /** DNA manifest (from .happ bundle) */
   dnaManifest?: DnaManifestRuntime;
