@@ -1,0 +1,152 @@
+# Step 12: Unified Encoding Strategy
+
+**Status**: PLANNED (Recommendation Approved)
+**Goal**: Simplify and unify the Uint8Array encoding/decoding strategy across all message boundaries.
+
+---
+
+## Problem Statement
+
+The project uses **multiple overlapping conversion strategies** at different boundaries:
+
+| Boundary | Current Strategy | Problem |
+|----------|-----------------|---------|
+| Content → Background | Post-normalize with `normalizeUint8Arrays()` | Chrome converts Uint8Array to `{0:x, 1:y}` |
+| Background → Offscreen | Pre-convert with `Array.from()` | Avoids Chrome issue by pre-converting |
+| Offscreen → Worker | Pre-convert with `Array.from()` | Same |
+| Worker → Offscreen | Implicit (worker sends Arrays) | Fragile, no explicit handling |
+| Return path | `serializeForTransport()` everywhere | Works but adds overhead |
+
+**The "Triple Conversion" Problem** (request path):
+```
+Page: Uint8Array
+  → Chrome: {0:x, 1:y, ...}           // Chrome's serialization
+  → normalizeUint8Arrays() → Uint8Array  // Restore
+  → encode() → Uint8Array (msgpack)      // Encode for WASM
+  → Array.from() → number[]              // Pre-convert for next boundary
+```
+
+---
+
+## Firefox vs Chrome
+
+| Browser | Message Passing | Uint8Array Handling |
+|---------|----------------|---------------------|
+| **Chrome** | JSON serialization | Converts to `{0:x, 1:y}` - LOSES type |
+| **Firefox** | Structured clone | **Preserves Uint8Array** natively |
+
+**Key insight**: Current code works on both browsers but is over-engineered for Firefox. Firefox could skip all conversions.
+
+**Note**: webextension-polyfill does NOT fix Chrome's limitation - it's an architectural constraint in Chrome's extension messaging.
+
+---
+
+## Alternative Approaches Evaluated
+
+| Approach | Verdict |
+|----------|---------|
+| msgpack-only | Marginal improvement, still needs Chrome handling |
+| base64url universal | 33% size penalty, not worth it |
+| Transferable objects | Requires iframe workaround, too complex |
+| SharedArrayBuffer | Already used for worker sync, not applicable to messaging |
+
+---
+
+## Approved Recommendation: Option A - Unified Pre-Conversion Strategy
+
+**Principle**: Always convert Uint8Array → Array BEFORE sending across any Chrome boundary.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ UNIFIED STRATEGY: Pre-convert at sender, receive as number[]   │
+│                                                                 │
+│ Page sends:        serializeForTransport(message)               │
+│                         ↓                                       │
+│ Content receives:  number[] (no restoration needed)             │
+│ Content sends:     (pass through, already arrays)               │
+│                         ↓                                       │
+│ Background receives: number[] (no normalization needed)         │
+│ Background sends:   (pass through to offscreen)                 │
+│                         ↓                                       │
+│ Worker receives:   number[] (convert to Uint8Array at use)      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Benefits**:
+- Eliminates `normalizeUint8Arrays()` entirely
+- Single conversion point (at source)
+- Cleaner code path
+- Works identically on Chrome and Firefox
+
+---
+
+## Implementation Steps
+
+### Phase 1: Audit Current Conversions
+- [ ] Map all `normalizeUint8Arrays()` calls
+- [ ] Map all `serializeForTransport()` calls
+- [ ] Map all `toUint8Array()` calls
+- [ ] Identify redundant conversions
+
+### Phase 2: Implement Unified Strategy
+- [ ] Add `serializeForTransport()` in inject/index.ts before postMessage
+- [ ] Remove `normalizeUint8Arrays()` from background message handler
+- [ ] Update worker to explicitly handle array → Uint8Array at use point
+- [ ] Add explicit `serializeForTransport()` in worker response
+
+### Phase 3: Testing
+- [ ] Run existing 18 serialization tests
+- [ ] Add test for round-trip through all boundaries
+- [ ] Manual test in Chrome
+- [ ] Manual test in Firefox (if available)
+
+### Phase 4: Documentation
+- [ ] Update ARCHITECTURE.md with unified strategy
+- [ ] Add inline comments explaining the pattern
+- [ ] Update LESSONS_LEARNED.md if applicable
+
+---
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `packages/extension/src/inject/index.ts` | Add `serializeForTransport()` before postMessage |
+| `packages/extension/src/content/index.ts` | Remove any normalization, simplify |
+| `packages/extension/src/background/index.ts` | Remove `normalizeUint8Arrays()` at line 666 |
+| `packages/extension/src/offscreen/index.ts` | Verify array handling consistent |
+| `packages/extension/src/offscreen/ribosome-worker.ts` | Add explicit `serializeForTransport()` on response |
+| `packages/core/src/utils/bytes.ts` | Possibly deprecate `normalizeUint8Arrays()` |
+| `ARCHITECTURE.md` | Document unified strategy |
+
+---
+
+## Verification
+
+1. **Unit tests**: All 18 serialization tests pass
+2. **Integration test**: Zome call round-trip works
+3. **Chrome DevTools**: Inspect message payloads, verify array format
+4. **Firefox**: If available, verify extension works without modification
+
+---
+
+## Future Enhancement: Browser-Aware Optimization (Optional)
+
+If Firefox usage grows, could add browser detection for zero-overhead path:
+
+```typescript
+const isFirefox = navigator.userAgent.includes('Firefox');
+
+function sendMessage(message: any) {
+  if (isFirefox) {
+    return chrome.runtime.sendMessage(message);  // Preserves Uint8Array
+  } else {
+    return chrome.runtime.sendMessage(serializeForTransport(message));
+  }
+}
+```
+
+This is not recommended initially due to:
+- Two code paths to maintain
+- More complex testing matrix
+- Browser detection fragility
