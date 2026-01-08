@@ -5,7 +5,7 @@
  * Works with PublishTracker for persistence and retry logic.
  */
 
-import type { DnaHash, Record as HolochainRecord } from "@holochain/client";
+import { encodeHashToBase64, type DnaHash, type Record as HolochainRecord } from "@holochain/client";
 import type { ChainOp } from "./dht-op-types";
 import { PublishStatus } from "./dht-op-types";
 import { PublishTracker } from "./publish-tracker";
@@ -247,11 +247,22 @@ export class PublishService {
    * The gateway expects:
    * - op_data: base64 encoded msgpack serialized DhtOp
    * - signature: base64 encoded 64-byte Ed25519 signature
+   *
+   * Rust serde serializes enums with tuple variants as:
+   *   { VariantName: [field0, field1, ...] }
+   *
+   * So ChainOp::StoreRecord(sig, action, entry) becomes:
+   *   { StoreRecord: [sig, action, entry] }
+   *
+   * And DhtOp::ChainOp(Box<ChainOp>) wraps that as:
+   *   { ChainOp: { StoreRecord: [sig, action, entry] } }
    */
   private async serializeOpForGateway(op: ChainOp): Promise<SignedDhtOpPayload> {
-    // Serialize the op to msgpack
-    // Note: We wrap in DhtOp::ChainOp for Rust compatibility
-    const dhtOp = { ChainOp: op };
+    // Convert the TypeScript object-based ChainOp to Rust's tuple-variant format
+    const rustChainOp = this.convertOpToRustFormat(op);
+
+    // Wrap in DhtOp::ChainOp
+    const dhtOp = { ChainOp: rustChainOp };
     const opBytes = encode(dhtOp);
 
     // Convert to base64
@@ -267,14 +278,56 @@ export class PublishService {
   }
 
   /**
+   * Convert a TypeScript ChainOp to Rust's serde tuple-variant format.
+   *
+   * TypeScript format: { type: "StoreRecord", signature, action, entry }
+   * Rust format: { StoreRecord: [signature, action, entry] }
+   */
+  private convertOpToRustFormat(op: ChainOp): Record<string, unknown[]> {
+    switch (op.type) {
+      case "StoreRecord":
+        return { StoreRecord: [op.signature, op.action, op.entry] };
+
+      case "StoreEntry":
+        return { StoreEntry: [op.signature, op.action, op.entry] };
+
+      case "RegisterAgentActivity":
+        return { RegisterAgentActivity: [op.signature, op.action] };
+
+      case "RegisterUpdatedContent":
+        return { RegisterUpdatedContent: [op.signature, op.action, op.entry] };
+
+      case "RegisterUpdatedRecord":
+        return { RegisterUpdatedRecord: [op.signature, op.action, op.entry] };
+
+      case "RegisterDeletedBy":
+        return { RegisterDeletedBy: [op.signature, op.action] };
+
+      case "RegisterDeletedEntryAction":
+        return { RegisterDeletedEntryAction: [op.signature, op.action] };
+
+      case "RegisterAddLink":
+        return { RegisterAddLink: [op.signature, op.action] };
+
+      case "RegisterRemoveLink":
+        return { RegisterRemoveLink: [op.signature, op.action] };
+
+      default:
+        throw new Error(`Unknown ChainOp type: ${(op as ChainOp).type}`);
+    }
+  }
+
+  /**
    * Send ops to the gateway publish endpoint
    */
   private async sendToGateway(
     dnaHash: DnaHash,
     ops: SignedDhtOpPayload[]
   ): Promise<GatewayPublishResponse> {
-    const dnaHashB64 = this.uint8ArrayToBase64Url(dnaHash);
+    // Use @holochain/client's encodeHashToBase64 for proper HoloHash format (u prefix)
+    const dnaHashB64 = encodeHashToBase64(dnaHash);
     const url = `${this.options.gatewayUrl}/dht/${dnaHashB64}/publish`;
+    console.log(`[PublishService] Publishing to: ${url}`);
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",

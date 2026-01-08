@@ -78,7 +78,7 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     zome_index: zomeIndex,
     link_type: linkType,
     tag,
-    weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+    weight: { bucket_id: 0, units: 0 },  // RateWeight (not EntryRateWeight)
   };
 
   // Compute action hash using Blake2b

@@ -67,8 +67,10 @@ export function storedActionToClientAction(stored: StoredAction): Action {
                 visibility: "Public",
               },
             }
-          : "Agent",
+          : "AgentPubKey",
         entry_hash: createStored.entryHash,
+        // Create uses EntryRateWeight (3 fields: bucket_id, units, rate_bytes)
+        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
       };
       return create;
     }
@@ -86,10 +88,12 @@ export function storedActionToClientAction(stored: StoredAction): Action {
                 visibility: "Public",
               },
             }
-          : "Agent",
+          : "AgentPubKey",
         entry_hash: updateStored.entryHash,
         original_action_address: updateStored.originalActionHash,
         original_entry_address: updateStored.originalEntryHash,
+        // Update uses EntryRateWeight (3 fields: bucket_id, units, rate_bytes)
+        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
       };
       return update;
     }
@@ -101,6 +105,8 @@ export function storedActionToClientAction(stored: StoredAction): Action {
         ...baseFields,
         deletes_address: deleteStored.deletesActionHash,
         deletes_entry_address: deleteStored.deletesEntryHash,
+        // Delete uses RateWeight (2 fields: bucket_id, units)
+        weight: { bucket_id: 0, units: 0 },
       };
       return del;
     }
@@ -146,7 +152,7 @@ export function storedEntryToClientEntry(stored: StoredEntry): Entry {
   // StoredEntry has entryType that tells us what kind of entry
   if (stored.entryType === "Agent") {
     // Agent entry - the content is the agent pub key
-    return { entry_type: "Agent", entry: stored.entryContent };
+    return { entry_type: "AgentPubKey", entry: stored.entryContent };
   }
 
   // App entries

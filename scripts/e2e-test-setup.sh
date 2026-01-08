@@ -6,13 +6,21 @@
 # extension with a real Holochain conductor and gateway.
 #
 # Usage:
-#   ./scripts/e2e-test-setup.sh [command]
+#   ./scripts/e2e-test-setup.sh [command] [--happ=NAME]
 #
 # Commands:
 #   start     Start conductor and gateway (default)
 #   stop      Stop all services
 #   status    Show running services
 #   clean     Clean up sandbox data
+#
+# Options:
+#   --happ=NAME   Specify which hApp to use (fixture1 or ziptest, default: fixture1)
+#
+# Examples:
+#   ./scripts/e2e-test-setup.sh start                    # Start with fixture1
+#   ./scripts/e2e-test-setup.sh start --happ=ziptest     # Start with ziptest
+#   ./scripts/e2e-test-setup.sh stop
 #
 
 set -euo pipefail
@@ -21,12 +29,62 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 GATEWAY_DIR="$(cd "$PROJECT_DIR/../hc-http-gw-fork" && pwd)"
 SANDBOX_DIR="$PROJECT_DIR/.hc-sandbox"
-HAPP_PATH="$GATEWAY_DIR/fixture/package/happ1/fixture1.happ"
+
+# Default hApp configuration
+HAPP_NAME="fixture1"
+
+# Parse arguments
+COMMAND=""
+for arg in "$@"; do
+    case $arg in
+        --happ=*)
+            HAPP_NAME="${arg#*=}"
+            shift
+            ;;
+        start|stop|status|clean)
+            COMMAND="$arg"
+            ;;
+        *)
+            # Unknown argument
+            ;;
+    esac
+done
+
+# Default command is start
+COMMAND="${COMMAND:-start}"
+
+# Configure paths based on hApp name
+configure_happ() {
+    case "$HAPP_NAME" in
+        fixture1)
+            HAPP_PATH="$GATEWAY_DIR/fixture/package/happ1/fixture1.happ"
+            APP_ID="fixture1"
+            # Zome names for fixture1
+            COORDINATOR_ZOME="coordinator1"
+            TEST_FN="create_known_entry"
+            ;;
+        ziptest)
+            HAPP_PATH="$PROJECT_DIR/fixtures/ziptest.happ"
+            APP_ID="ziptest"
+            # Zome names for ziptest
+            COORDINATOR_ZOME="ziptest"
+            TEST_FN=""  # No test entry function for ziptest
+            ;;
+        *)
+            log_error "Unknown hApp: $HAPP_NAME (supported: fixture1, ziptest)"
+            exit 1
+            ;;
+    esac
+
+    log_info "Using hApp: $HAPP_NAME"
+    log_info "  Path: $HAPP_PATH"
+    log_info "  App ID: $APP_ID"
+}
 
 # Ports
 ADMIN_PORT=8888
 APP_PORT=8889
-GATEWAY_PORT=8090
+GATEWAY_PORT=8000
 BOOTSTRAP_PORT=0  # 0 = auto-assign
 
 # Colors
@@ -106,9 +164,15 @@ check_prereqs() {
     fi
 
     if [ ! -f "$HAPP_PATH" ]; then
-        log_warn "hApp not found at $HAPP_PATH"
-        log_info "Building fixture hApp..."
-        (cd "$GATEWAY_DIR/fixture" && RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown && ./package.sh)
+        if [ "$HAPP_NAME" = "fixture1" ]; then
+            log_warn "hApp not found at $HAPP_PATH"
+            log_info "Building fixture hApp..."
+            (cd "$GATEWAY_DIR/fixture" && RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown && ./package.sh)
+        else
+            log_error "hApp not found at $HAPP_PATH"
+            log_info "For ziptest, copy the happ to: $PROJECT_DIR/fixtures/ziptest.happ"
+            exit 1
+        fi
     fi
 
     log_info "Prerequisites OK"
@@ -137,7 +201,7 @@ start_conductor() {
     rm -rf .hc conductor-* *.yaml sandbox-generate.log 2>/dev/null || true
 
     # Generate a new sandbox with the hApp
-    log_info "Generating sandbox with fixture hApp..."
+    log_info "Generating sandbox with $HAPP_NAME hApp..."
 
     # Use a directory in the sandbox dir to avoid /tmp issues
     export HC_SANDBOX_DATADIR="$SANDBOX_DIR/data"
@@ -167,14 +231,14 @@ start_conductor() {
     # --piped is a GLOBAL option that must come BEFORE the subcommand
     # Use network subcommand to set bootstrap and signal URLs
     # IMPORTANT: hApp path must come BEFORE network subcommand
-    log_info "Running: hc sandbox --piped generate --in-process-lair --run 0 --app-id fixture1 $HAPP_PATH network -b $BOOTSTRAP_URL webrtc $SIGNAL_URL $WEBRTC_CONFIG ..."
+    log_info "Running: hc sandbox --piped generate --in-process-lair --run 0 --app-id $APP_ID $HAPP_PATH network -b $BOOTSTRAP_URL webrtc $SIGNAL_URL $WEBRTC_CONFIG ..."
 
     # Run in background, piping passphrase via stdin
     # The passphrase "test-passphrase" is used for local development only
     (echo "test-passphrase" | hc sandbox --piped generate \
         --in-process-lair \
         --run 0 \
-        --app-id fixture1 \
+        --app-id "$APP_ID" \
         --root "$HC_SANDBOX_DATADIR" \
         "$HAPP_PATH" \
         network -b "$BOOTSTRAP_URL" webrtc "$SIGNAL_URL" "$WEBRTC_CONFIG") \
@@ -198,8 +262,9 @@ start_conductor() {
             fi
             log_info "Admin interface on port: $ACTUAL_ADMIN"
 
-            # Save the admin port for later use
+            # Save the admin port and app ID for later use
             echo "$ACTUAL_ADMIN" > admin_port.txt
+            echo "$APP_ID" > app_id.txt
             return 0
         fi
         # Check for errors in log
@@ -268,10 +333,18 @@ start_gateway() {
     log_info "Kitsune2 bootstrap: $BOOTSTRAP_URL"
     log_info "Kitsune2 signal: $SIGNAL_URL"
 
+    # Configure allowed app IDs and functions based on hApp
+    local ALLOWED_APP_IDS="$APP_ID"
+    local ALLOWED_FNS_VAR="HC_GW_ALLOWED_FNS_${APP_ID}"
+
+    log_info "Allowed app IDs: $ALLOWED_APP_IDS"
+
+    # Export the allowed functions variable dynamically
+    export "HC_GW_ALLOWED_FNS_${APP_ID}=*"
+
     HC_GW_ADMIN_WS_URL="ws://localhost:$ACTUAL_ADMIN" \
     HC_GW_PORT="$GATEWAY_PORT" \
-    HC_GW_ALLOWED_APP_IDS="fixture1" \
-    HC_GW_ALLOWED_FNS_fixture1="*" \
+    HC_GW_ALLOWED_APP_IDS="$ALLOWED_APP_IDS" \
     HC_GW_KITSUNE2_ENABLED="true" \
     HC_GW_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
     HC_GW_SIGNAL_URL="$SIGNAL_URL" \
@@ -349,6 +422,13 @@ show_status() {
     echo "=== E2E Test Environment Status ==="
     echo ""
 
+    # Show current hApp if saved
+    if [ -f "$SANDBOX_DIR/app_id.txt" ]; then
+        local CURRENT_APP_ID
+        CURRENT_APP_ID=$(cat "$SANDBOX_DIR/app_id.txt")
+        echo -e "hApp:      ${GREEN}$CURRENT_APP_ID${NC}"
+    fi
+
     # Check bootstrap server
     if [ -f "$SANDBOX_DIR/bootstrap.pid" ] && kill -0 "$(cat "$SANDBOX_DIR/bootstrap.pid" 2>/dev/null)" 2>/dev/null; then
         local BOOTSTRAP_ADDR=""
@@ -381,6 +461,14 @@ show_status() {
     echo "  - Gateway: http://localhost:$GATEWAY_PORT"
     echo "  - Test page: file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"
     echo ""
+
+    # Show DNA hash if available
+    if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
+        local DNA_HASH
+        DNA_HASH=$(cat "$SANDBOX_DIR/dna_hash.txt")
+        echo "DNA Hash: $DNA_HASH"
+        echo ""
+    fi
 }
 
 # Clean up
@@ -393,9 +481,15 @@ clean_sandbox() {
     log_info "Cleanup complete"
 }
 
-# Initialize test entry on the gateway
+# Initialize test entry on the gateway (for fixture1 only)
 # Creates an entry with known content "fishy" that can be fetched by the browser extension
 initialize_test_entry() {
+    # Skip for happs that don't have a test entry function
+    if [ -z "$TEST_FN" ]; then
+        log_info "Skipping test entry initialization for $HAPP_NAME (no test function)"
+        return 0
+    fi
+
     log_info "Initializing test entry on gateway..."
 
     # Wait for gateway to be ready
@@ -447,7 +541,7 @@ initialize_test_entry() {
     log_info "Creating known entry with value 'fishy'..."
 
     local RESPONSE
-    RESPONSE=$(curl -s "http://localhost:$GATEWAY_PORT/${DNA_HASH}/fixture1/coordinator1/create_known_entry?payload=$ENCODED_PAYLOAD" 2>&1)
+    RESPONSE=$(curl -s "http://localhost:$GATEWAY_PORT/${DNA_HASH}/${APP_ID}/${COORDINATOR_ZOME}/${TEST_FN}?payload=$ENCODED_PAYLOAD" 2>&1)
 
     if echo "$RESPONSE" | grep -q "entry_hash"; then
         log_info "Test entry created successfully"
@@ -467,13 +561,46 @@ initialize_test_entry() {
         log_info "Entry hashes saved to $SANDBOX_DIR/known_entry.json"
     else
         log_warn "Could not create test entry. Response: $RESPONSE"
-        log_info "Gateway URL was: http://localhost:$GATEWAY_PORT/${DNA_HASH}/fixture1/coordinator1/create_known_entry"
+        log_info "Gateway URL was: http://localhost:$GATEWAY_PORT/${DNA_HASH}/${APP_ID}/${COORDINATOR_ZOME}/${TEST_FN}"
     fi
 }
 
+# Get and save DNA hash (for happs without test entry)
+save_dna_hash() {
+    log_info "Getting DNA hash from sandbox..."
+
+    cd "$SANDBOX_DIR"
+
+    # Get the admin port
+    local ACTUAL_ADMIN
+    if [ -f admin_port.txt ]; then
+        ACTUAL_ADMIN=$(cat admin_port.txt)
+    else
+        log_warn "Admin port not saved, trying to parse from log"
+        ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' sandbox-generate.log 2>/dev/null | head -1)
+    fi
+
+    if [ -z "$ACTUAL_ADMIN" ]; then
+        log_warn "Could not determine admin port"
+        return 1
+    fi
+
+    local DNA_HASH
+    DNA_HASH=$(hc sandbox call --running="$ACTUAL_ADMIN" list-dnas 2>&1 | grep -oP '"uhC0k[^"]+' | head -1 | tr -d '"')
+
+    if [ -z "$DNA_HASH" ]; then
+        log_warn "Could not get DNA hash from sandbox"
+        return 1
+    fi
+
+    log_info "DNA hash: $DNA_HASH"
+    echo "$DNA_HASH" > "$SANDBOX_DIR/dna_hash.txt"
+}
+
 # Main command handling
-case "${1:-start}" in
+case "$COMMAND" in
     start)
+        configure_happ
         check_prereqs
         # Start local bootstrap server first (required for kitsune2 networking)
         start_bootstrap_server
@@ -483,12 +610,25 @@ case "${1:-start}" in
         start_gateway
         show_status
         echo ""
-        # Initialize test entry
-        initialize_test_entry
+        # Initialize test entry (or just save DNA hash)
+        if [ -n "$TEST_FN" ]; then
+            initialize_test_entry
+        else
+            save_dna_hash
+        fi
 
         echo ""
         echo "To test, open in browser:"
-        echo "  file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"
+        if [ "$HAPP_NAME" = "ziptest" ]; then
+            echo "  Navigate to your ziptest UI (served separately)"
+            echo "  Configure the extension with gateway URL: http://localhost:$GATEWAY_PORT"
+            if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
+                echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"
+                echo "  (Extension should compute the same hash - no override needed)"
+            fi
+        else
+            echo "  file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"
+        fi
         echo ""
         echo "Press Ctrl+C or run './scripts/e2e-test-setup.sh stop' to stop services"
         ;;
@@ -502,7 +642,15 @@ case "${1:-start}" in
         clean_sandbox
         ;;
     *)
-        echo "Usage: $0 {start|stop|status|clean}"
+        echo "Usage: $0 {start|stop|status|clean} [--happ=NAME]"
+        echo ""
+        echo "Options:"
+        echo "  --happ=NAME   Specify which hApp to use (fixture1 or ziptest, default: fixture1)"
+        echo ""
+        echo "Examples:"
+        echo "  $0 start                    # Start with fixture1"
+        echo "  $0 start --happ=ziptest     # Start with ziptest"
+        echo "  $0 stop"
         exit 1
         ;;
 esac

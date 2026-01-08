@@ -98,15 +98,19 @@ export function toHolochainAction(act: StorageAction): HolochainAction {
       } as unknown as HolochainAction;
 
     case 'Delete':
+      // Delete uses RateWeight (2 fields: bucket_id, units)
+      // NOT EntryRateWeight which has rate_bytes
       return {
         type: ActionType.Delete,
         ...common,
         deletes_address: act.deletesActionHash,
         deletes_entry_address: act.deletesEntryHash,
-        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+        weight: { bucket_id: 0, units: 0 },
       } as unknown as HolochainAction;
 
     case 'CreateLink':
+      // CreateLink uses RateWeight (2 fields: bucket_id, units)
+      // NOT EntryRateWeight which has rate_bytes
       return {
         type: ActionType.CreateLink,
         ...common,
@@ -115,7 +119,7 @@ export function toHolochainAction(act: StorageAction): HolochainAction {
         zome_index: act.zomeIndex,
         link_type: act.linkType,
         tag: act.tag,
-        weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
+        weight: { bucket_id: 0, units: 0 },
       } as unknown as HolochainAction;
 
     case 'DeleteLink':

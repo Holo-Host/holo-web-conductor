@@ -442,4 +442,4 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8 (DHT Publishing) is COMPLETE. All sub-steps finished: hash computation (8.0), DhtOp generation (8.1), op signing (8.2), gateway publish endpoint (8.3), publish tracking (8.4), and extension integration (8.5). Browser extension agents can now author data that reaches the DHT via the gateway's kitsune2 node. The next step would be Step 9 (Additional Holochain Features) or other improvements.
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8 (DHT Publishing) is COMPLETE. All sub-steps finished: hash computation (8.0), DhtOp generation (8.1), op signing (8.2), gateway publish endpoint (8.3), publish tracking (8.4), and extension integration (8.5). Browser extension agents can now author data that reaches the DHT via the gateway's kitsune2 node. 

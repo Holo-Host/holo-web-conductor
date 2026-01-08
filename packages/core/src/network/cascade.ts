@@ -386,24 +386,33 @@ export class Cascade {
       }
     }
 
-    // 3. Try network (if enabled and local is empty or we want to ensure freshness)
+    // 3. Try network (if enabled) - ALWAYS fetch to get other agents' links
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      // Only fetch from network if we have no local links
-      // (In a full implementation, we might always fetch to ensure consistency)
-      if (allLinks.length === 0) {
-        console.log(`[Cascade] Fetching links from network`);
-        try {
-          const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType);
-          if (networkLinks.length > 0) {
-            console.log(`[Cascade] Found ${networkLinks.length} links in network`);
-            if (opts.cacheNetworkResults) {
-              this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
-            }
-            allLinks.push(...networkLinks);
+      console.log(`🌐 [Cascade] Fetching links from NETWORK (always fetch for distributed data)`);
+      try {
+        const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType);
+        if (networkLinks.length > 0) {
+          console.log(`🌐 [Cascade] Found ${networkLinks.length} links in network`);
+          if (opts.cacheNetworkResults) {
+            this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
           }
-        } catch (error) {
-          console.warn(`[Cascade] Network link fetch failed:`, error);
+          // Merge with local, avoiding duplicates
+          for (const link of networkLinks) {
+            if (!allLinks.some(l => this.linksEqual(l, link))) {
+              allLinks.push(link);
+            }
+          }
+        } else {
+          console.log(`🌐 [Cascade] No links found in network`);
         }
+      } catch (error) {
+        console.warn(`[Cascade] Network link fetch failed:`, error);
+      }
+    } else if (opts.useNetwork) {
+      if (!this.network) {
+        console.log(`[Cascade] Network not configured for links - call configureNetwork() first`);
+      } else if (!this.network.isAvailable()) {
+        console.log(`[Cascade] Network service not available for links (gateway: ${this.network.getGatewayUrl()})`);
       }
     }
 
