@@ -877,12 +877,14 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 
 #### Gateway Endpoints for Get Operations
 
-| Host Function | Gateway Endpoint | Response |
-|---------------|-----------------|----------|
-| `get()` | `GET /dht/{dna}/record/{hash}` | `{ signed_action, entry }` |
-| `get_links()` | `GET /dht/{dna}/links?base={base}&type={type}` | `[{ target, tag, ... }]` |
-| `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` |
-| `count_links()` | `GET /dht/{dna}/links/count?base={base}` | `number` |
+| Host Function | Gateway Endpoint | Response | Uses Cascade |
+|---------------|-----------------|----------|--------------|
+| `get()` | `GET /dht/{dna}/record/{hash}` | `{ signed_action, entry }` | Yes |
+| `get_links()` | `GET /dht/{dna}/links?base={base}&type={type}` | `[{ target, tag, ... }]` | Yes (always network) |
+| `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` | **No** (local only)* |
+| `count_links()` | `GET /dht/{dna}/links/count?base={base}` | `number` | Yes |
+
+*`get_details` currently only queries local storage. See `STEPS/12.2_GET_DETAILS_CASCADE.md` for planned fix.
 
 #### Hash Encoding in URLs
 
