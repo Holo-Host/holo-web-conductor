@@ -794,6 +794,144 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
 
 ---
 
+### Get Flow (Cascade Pattern)
+
+The `get()`, `get_links()`, and `get_details()` host functions use a **cascade pattern** that checks local storage first, then network cache, then makes gateway requests.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ WASM Zome Code                                                  │
+│                                                                 │
+│ let record = get(entry_hash)?;  // Synchronous host function   │
+│   │                                                             │
+│   ▼                                                             │
+│ Host function: get()                                           │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Cascade (packages/core/src/network/cascade.ts)                  │
+│                                                                 │
+│ fetchRecord(hash):                                              │
+│   │                                                             │
+│   ├─► 1. LOCAL: storage.getActionByHash(hash)                  │
+│   │      └─► SQLite query (<1ms)                               │
+│   │      └─► Found? Return immediately                         │
+│   │                                                             │
+│   ├─► 2. CACHE: networkCache.get(base64(hash))                 │
+│   │      └─► In-memory Map lookup                              │
+│   │      └─► TTL: 5 minutes, max 1000 entries                  │
+│   │      └─► Found & not expired? Return                       │
+│   │                                                             │
+│   └─► 3. NETWORK: networkService.getRecordSync(dnaHash, hash)  │
+│          └─► Sync XHR to gateway                               │
+│          └─► Cache result before returning                     │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │ If network fetch needed
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ ProxyNetworkService (in Ribosome Worker)                        │
+│                                                                 │
+│ getRecordSync(dnaHash, hash):                                  │
+│   1. Post NETWORK_REQUEST to offscreen                         │
+│   2. Atomics.wait(signalBuffer) ◄── BLOCKS worker thread       │
+│   3. Read result from SharedArrayBuffer                        │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Offscreen Document (Sync XHR Proxy)                             │
+│                                                                 │
+│ handleNetworkRequest():                                         │
+│   const xhr = new XMLHttpRequest();                            │
+│   xhr.open('GET', url, false);  // false = synchronous         │
+│   xhr.send();                                                   │
+│                                                                 │
+│   // Write result to SharedArrayBuffer                         │
+│   resultBuffer.set(responseBytes);                             │
+│   Atomics.store(signalBuffer, 0, 1);                           │
+│   Atomics.notify(signalBuffer, 0);  // Wake worker             │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │ HTTP GET
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ HC-HTTP-GW                                                      │
+│                                                                 │
+│ GET /dht/{dna_hash}/record/{hash}                              │
+│   1. Parse hash from URL (Holochain base64 format)             │
+│   2. Build GetRecordInput                                       │
+│   3. Call conductor via admin WebSocket                        │
+│   4. Transcode ExternIO → JSON                                 │
+│   5. Return { signed_action, entry }                           │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ Holochain Conductor                                             │
+│                                                                 │
+│ dht_util zome → get_record():                                  │
+│   Query DHT for record at hash                                 │
+│   Return signed action + entry                                 │
+└────────────────────────────────────────────────────────────────┘
+```
+
+#### Gateway Endpoints for Get Operations
+
+| Host Function | Gateway Endpoint | Response |
+|---------------|-----------------|----------|
+| `get()` | `GET /dht/{dna}/record/{hash}` | `{ signed_action, entry }` |
+| `get_links()` | `GET /dht/{dna}/links?base={base}&type={type}` | `[{ target, tag, ... }]` |
+| `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` |
+| `count_links()` | `GET /dht/{dna}/links/count?base={base}` | `number` |
+
+#### Hash Encoding in URLs
+
+Hashes use Holochain's base64 format with `u` prefix:
+```
+Original:     Uint8Array(39) [132, 41, 36, ...]
+URL encoded:  uhCQk...  (u + URL-safe base64)
+```
+
+#### Response Normalization
+
+Gateway returns JSON with hashes as number arrays:
+```json
+{
+  "signed_action": {
+    "hashed": {
+      "hash": [132, 41, 36, ...],
+      "content": { "type": "Create", ... }
+    },
+    "signature": [1, 2, 3, ...(64 bytes)]
+  },
+  "entry": {
+    "entry_type": "App",
+    "entry": [99, 111, 110, ...]
+  }
+}
+```
+
+`normalizeByteArraysFromJson()` recursively converts all number arrays to `Uint8Array`.
+
+#### get_links() - Always Fetches Network
+
+Unlike `get()`, the `get_links()` function **always queries the network** because links are distributed across the DHT:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ get_links(base_address, link_type)                              │
+│                                                                 │
+│ 1. Fetch LOCAL links from SQLite                               │
+│ 2. Fetch NETWORK links from gateway (always)                   │
+│ 3. MERGE results (deduplicate by create_link_hash)             │
+│ 4. Return combined link set                                    │
+└────────────────────────────────────────────────────────────────┘
+```
+
+This ensures the browser agent sees links created by other agents, not just its own.
+
+---
+
 ## Key Files Reference
 
 ### Browser Extension
