@@ -15,9 +15,28 @@ import type {
   CreateAction,
   InitZomesCompleteAction,
   StoredEntry,
+  StoredAction,
 } from './types';
-import { computeActionHash, computeEntryHash, dhtLocationFrom32, type ActionForHashing, AGENT_PUBKEY_PREFIX, ActionType } from '../hash';
+import { computeActionHashV2, computeAgentEntryHash, serializeAction, dhtLocationFrom32, AGENT_PUBKEY_PREFIX } from '../hash';
+import {
+  buildDnaAction,
+  buildAgentValidationPkgAction,
+  buildCreateAction,
+  buildInitZomesCompleteAction,
+  type SerializableAction,
+} from '../types/holochain-serialization';
 import { signAction } from '../signing';
+import type { PendingRecord } from '../ribosome/call-context';
+
+/**
+ * Result of genesis initialization
+ */
+export interface GenesisResult {
+  /** Whether genesis was performed (false if chain already exists) */
+  initialized: boolean;
+  /** Records created during genesis (empty if not initialized) */
+  pendingRecords: PendingRecord[];
+}
 
 /**
  * Initialize genesis actions for a new cell
@@ -28,12 +47,13 @@ import { signAction } from '../signing';
  * @param storage - Source chain storage instance
  * @param dnaHash - DNA hash for this cell
  * @param agentPubKey - Agent public key for this cell
+ * @returns GenesisResult with initialized flag and pending records for publishing
  */
 export async function initializeGenesis(
   storage: SourceChainStorage,
   dnaHash: Uint8Array,
   agentPubKey: Uint8Array
-): Promise<void> {
+): Promise<GenesisResult> {
   console.log('[Genesis] Checking if chain needs initialization...');
 
   // Check if chain already has genesis actions
@@ -44,66 +64,69 @@ export async function initializeGenesis(
   if (chainHead !== null) {
     // Chain already initialized
     console.log('[Genesis] Chain already initialized, skipping genesis');
-    return;
+    return { initialized: false, pendingRecords: [] };
   }
+
+  // Collect pending records for publishing
+  const pendingRecords: PendingRecord[] = [];
 
   console.log('[Genesis] Initializing genesis actions for new cell');
 
-  const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
+  const timestampMicros = Date.now() * 1000; // Microseconds as number for serialization
+  const timestampBigInt = BigInt(timestampMicros); // BigInt for storage
 
-  // Helper to sign action hashes
-  const signActionHash = (actionHash: Uint8Array): Uint8Array => {
-    return signAction(agentPubKey, actionHash);
+  // Helper to sign serialized action bytes (NOT the hash - Holochain signs the Action struct)
+  const signSerializedAction = (action: SerializableAction): Uint8Array => {
+    const serialized = serializeAction(action);
+    return signAction(agentPubKey, serialized);
   };
 
   // === 1. Dna Action (seq: 0) ===
-  // Build action structure for hashing
-  const dnaActionForHashing: ActionForHashing = {
-    type: ActionType.Dna,
+  // Build action using type-safe builder (ensures correct field ordering for serialization)
+  const dnaSerializableAction = buildDnaAction({
     author: agentPubKey,
-    timestamp,
-    action_seq: 0,
-    prev_action: null,
+    timestamp: timestampMicros,
     hash: dnaHash,
-  };
-  const dnaActionHash = computeActionHash(dnaActionForHashing);
+  });
+  const dnaActionHash = computeActionHashV2(dnaSerializableAction);
 
   const dnaAction: DnaAction = {
     actionHash: dnaActionHash,
     actionSeq: 0,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash: null, // First action has no previous
     actionType: 'Dna',
-    signature: signActionHash(dnaActionHash),
+    signature: signSerializedAction(dnaSerializableAction),
     dnaHash,
   };
 
   await storage.putAction(dnaAction, dnaHash, agentPubKey);
+  pendingRecords.push({ action: dnaAction as StoredAction });
 
   // === 2. AgentValidationPkg Action (seq: 1) ===
-  const agentValidationForHashing: ActionForHashing = {
-    type: ActionType.AgentValidationPkg,
+  const agentValidationSerializableAction = buildAgentValidationPkgAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: 1,
     prev_action: dnaActionHash,
     // membrane_proof is optional
-  };
-  const agentValidationActionHash = computeActionHash(agentValidationForHashing);
+  });
+  const agentValidationActionHash = computeActionHashV2(agentValidationSerializableAction);
 
   const agentValidationAction: AgentValidationPkgAction = {
     actionHash: agentValidationActionHash,
     actionSeq: 1,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash: dnaActionHash,
     actionType: 'AgentValidationPkg',
-    signature: signActionHash(agentValidationActionHash),
+    signature: signSerializedAction(agentValidationSerializableAction),
     // membraneProof is optional
   };
 
   await storage.putAction(agentValidationAction, dnaHash, agentPubKey);
+  pendingRecords.push({ action: agentValidationAction as StoredAction });
 
   // === 3. Create (Agent Entry) Action (seq: 2) ===
   // Extract core 32-byte Ed25519 key from agentPubKey (handles both 32 and 39 byte formats)
@@ -126,31 +149,31 @@ export async function initializeGenesis(
     agentPubKeyPrefixed.set(dhtLocationFrom32(agentCore), 35);
   }
 
-  // Compute entry hash from agent pubkey content (the full 39-byte AgentPubKey)
-  const agentEntryHash = computeEntryHash(agentPubKeyPrefixed);
+  // For Agent entries, the entry hash is the AgentPubKey retyped with Entry prefix
+  // (same 32-byte core, different prefix). This matches Holochain's HashableContent impl.
+  const agentEntryHash = computeAgentEntryHash(agentPubKeyPrefixed);
 
-  // Build Create action structure for hashing
-  const agentCreateForHashing: ActionForHashing = {
-    type: ActionType.Create,
+  // Build Create action for Agent entry (uses "AgentPubKey" entry type)
+  const agentCreateSerializableAction = buildCreateAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: 2,
     prev_action: agentValidationActionHash,
-    // Agent entry uses special entry_type
-    entry_type: 'Agent',
+    // Agent entry uses "AgentPubKey" entry type (matches Rust EntryType::AgentPubKey)
+    entry_type: "AgentPubKey",
     entry_hash: agentEntryHash,
     weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
-  };
-  const agentCreateActionHash = computeActionHash(agentCreateForHashing);
+  });
+  const agentCreateActionHash = computeActionHashV2(agentCreateSerializableAction);
 
   const agentCreateAction: CreateAction = {
     actionHash: agentCreateActionHash,
     actionSeq: 2,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash: agentValidationActionHash,
     actionType: 'Create',
-    signature: signActionHash(agentCreateActionHash),
+    signature: signSerializedAction(agentCreateSerializableAction),
     entryHash: agentEntryHash,
     entryType: null, // Agent entry has null entryType in storage format
   };
@@ -165,28 +188,29 @@ export async function initializeGenesis(
   };
 
   await storage.putEntry(agentEntry, dnaHash, agentPubKey);
+  pendingRecords.push({ action: agentCreateAction as StoredAction, entry: agentEntry });
 
   // === 4. InitZomesComplete Action (seq: 3) ===
-  const initZomesCompleteForHashing: ActionForHashing = {
-    type: ActionType.InitZomesComplete,
+  const initZomesCompleteSerializableAction = buildInitZomesCompleteAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: 3,
     prev_action: agentCreateActionHash,
-  };
-  const initZomesCompleteActionHash = computeActionHash(initZomesCompleteForHashing);
+  });
+  const initZomesCompleteActionHash = computeActionHashV2(initZomesCompleteSerializableAction);
 
   const initZomesCompleteAction: InitZomesCompleteAction = {
     actionHash: initZomesCompleteActionHash,
     actionSeq: 3,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash: agentCreateActionHash,
     actionType: 'InitZomesComplete',
-    signature: signActionHash(initZomesCompleteActionHash),
+    signature: signSerializedAction(initZomesCompleteSerializableAction),
   };
 
   await storage.putAction(initZomesCompleteAction, dnaHash, agentPubKey);
+  pendingRecords.push({ action: initZomesCompleteAction as StoredAction });
 
   // Update chain head to InitZomesComplete (seq: 3)
   await storage.updateChainHead(
@@ -194,7 +218,7 @@ export async function initializeGenesis(
     agentPubKey,
     3,
     initZomesCompleteActionHash,
-    timestamp
+    timestampBigInt
   );
 
   console.log('[Genesis] Genesis complete - chain initialized at seq: 3', {
@@ -202,5 +226,8 @@ export async function initializeGenesis(
     agentValidationActionHash: Array.from(agentValidationActionHash.slice(0, 8)),
     agentCreateActionHash: Array.from(agentCreateActionHash.slice(0, 8)),
     initZomesCompleteActionHash: Array.from(initZomesCompleteActionHash.slice(0, 8)),
+    pendingRecordsCount: pendingRecords.length,
   });
+
+  return { initialized: true, pendingRecords };
 }

@@ -9,7 +9,8 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type UpdateAction, type StoredEntry, type ChainHead } from "../../storage/types";
 import { validateWasmUpdateInput } from "../wasm-io-types";
-import { computeEntryHash, computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { computeAppEntryHash, computeActionHashV2, serializeAction } from "../../hash";
+import { buildUpdateAction, buildAppEntryType } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
 
 /**
@@ -51,8 +52,8 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entryDefIndex,
   });
 
-  // Hash the new entry content using Blake2b
-  const entryHash = computeEntryHash(entryContent);
+  // Hash the new entry - App entries hash the serialized Entry enum { entry_type: "App", entry: content }
+  const entryHash = computeAppEntryHash(entryContent);
 
   // Get original action to retrieve original entry hash
   const originalAction = storage.getAction(input.original_action_address);
@@ -67,40 +68,44 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;
-  const timestamp = BigInt(Date.now()) * 1000n;
+  const timestampMicros = Date.now() * 1000; // Microseconds as number for serialization
+  const timestampBigInt = BigInt(timestampMicros); // BigInt for storage
 
-  // Build action structure for hashing (before we know the hash)
-  const actionForHashing: ActionForHashing = {
-    type: ActionType.Update,
+  // Build serializable entry type for action
+  const serializableEntryType = buildAppEntryType({
+    entry_index: entryDefIndex,
+    zome_index: zomeIndex,
+    visibility: "Public",
+  });
+
+  // Build action using type-safe builder (ensures correct field ordering for serialization)
+  const serializableAction = buildUpdateAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: actionSeq,
-    prev_action: prevActionHash,
-    entry_type: {
-      App: {
-        zome_index: zomeIndex,
-        entry_index: entryDefIndex,
-        visibility: 'Public',
-      }
-    },
-    entry_hash: entryHash,
+    prev_action: prevActionHash!,
     original_action_address: input.original_action_address,
     original_entry_address: originalEntryHash,
+    entry_type: serializableEntryType,
+    entry_hash: entryHash,
     weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
-  };
+  });
 
-  // Compute action hash using Blake2b
-  const actionHash = computeActionHash(actionForHashing);
+  // Serialize action for both hashing and signing (same bytes)
+  const serializedAction = serializeAction(serializableAction);
 
-  // Sign the action hash
-  const signature = signAction(agentPubKey, actionHash);
+  // Compute action hash using Blake2b on serialized bytes
+  const actionHash = computeActionHashV2(serializableAction);
 
-  // Build Update action for storage
+  // Sign the serialized action bytes (NOT the hash - Holochain signs the Action struct)
+  const signature = signAction(agentPubKey, serializedAction);
+
+  // Build Update action for storage (uses BigInt timestamp)
   const action: UpdateAction = {
     actionHash,
     actionSeq,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash,
     actionType: "Update",
     signature,
@@ -125,7 +130,7 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   storage.putEntry(entry, dnaHash, agentPubKey);
   storage.putAction(action, dnaHash, agentPubKey);
-  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
+  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
   // Track record for publishing after transaction commits
   if (!callContext.pendingRecords) {

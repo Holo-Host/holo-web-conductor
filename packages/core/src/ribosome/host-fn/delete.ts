@@ -9,7 +9,8 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { isEntryAction, type DeleteAction, type ChainHead } from "../../storage/types";
 import { validateWasmDeleteInput } from "../wasm-io-types";
-import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { computeActionHashV2, serializeAction } from "../../hash";
+import { buildDeleteAction } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
 
 /**
@@ -44,31 +45,35 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;
-  const timestamp = BigInt(Date.now()) * 1000n;
+  const timestampMicros = Date.now() * 1000; // Microseconds as number for serialization
+  const timestampBigInt = BigInt(timestampMicros); // BigInt for storage
 
-  // Build action structure for hashing (before we know the hash)
-  const actionForHashing: ActionForHashing = {
-    type: ActionType.Delete,
+  // Build action using type-safe builder (ensures correct field ordering for serialization)
+  const serializableAction = buildDeleteAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: actionSeq,
-    prev_action: prevActionHash,
+    prev_action: prevActionHash!,
     deletes_address: input.deletes_action_hash,
     deletes_entry_address: deletesEntryHash,
-  };
+    weight: { bucket_id: 0, units: 0 },
+  });
 
-  // Compute action hash using Blake2b
-  const actionHash = computeActionHash(actionForHashing);
+  // Serialize action for both hashing and signing (same bytes)
+  const serializedAction = serializeAction(serializableAction);
 
-  // Sign the action hash
-  const signature = signAction(agentPubKey, actionHash);
+  // Compute action hash using Blake2b on serialized bytes
+  const actionHash = computeActionHashV2(serializableAction);
 
-  // Build Delete action for storage
+  // Sign the serialized action bytes (NOT the hash - Holochain signs the Action struct)
+  const signature = signAction(agentPubKey, serializedAction);
+
+  // Build Delete action for storage (uses BigInt timestamp)
   const action: DeleteAction = {
     actionHash,
     actionSeq,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash,
     actionType: "Delete",
     signature,
@@ -77,7 +82,7 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   };
 
   storage.putAction(action, dnaHash, agentPubKey);
-  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
+  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
   // Track record for publishing after transaction commits (no entry for delete)
   if (!callContext.pendingRecords) {

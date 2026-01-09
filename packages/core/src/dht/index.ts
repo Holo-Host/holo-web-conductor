@@ -75,3 +75,11 @@ export {
   buildRecord,
   buildRecords,
 } from "./record-converter";
+
+// Op serialization for gateway
+export {
+  convertOpToRustFormat,
+  stripTypeField,
+  convertToExternallyTagged,
+  serializeOpForGateway,
+} from "./op-serialization";

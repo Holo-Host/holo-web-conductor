@@ -9,7 +9,7 @@ import { encodeHashToBase64, type DnaHash, type Record as HolochainRecord } from
 import type { ChainOp } from "./dht-op-types";
 import { PublishStatus } from "./dht-op-types";
 import { PublishTracker } from "./publish-tracker";
-import { encode } from "@msgpack/msgpack";
+import { serializeOpForGateway } from "./op-serialization";
 
 /**
  * Options for the publish service
@@ -31,9 +31,15 @@ export interface PublishServiceOptions {
  * Response from gateway publish endpoint
  */
 interface GatewayPublishResponse {
+  /** Overall success (true if ops stored AND published to at least one peer) */
   success: boolean;
+  /** Number of ops stored in TempOpStore */
   queued: number;
+  /** Number of ops that failed to store */
   failed: number;
+  /** Number of ops actually published to DHT peers (0 means retry needed) */
+  published: number;
+  /** Per-op storage results */
   results: Array<{
     success: boolean;
     error?: string;
@@ -121,39 +127,46 @@ export class PublishService {
     this.processingQueue = true;
 
     try {
-      // Get pending ops for this DNA
-      const pendingOps = await this.tracker.getPendingForDna(
-        dnaHash,
-        PublishStatus.Pending
-      );
+      // Loop to re-check for new ops that may have been added during processing
+      let hasMoreOps = true;
+      while (hasMoreOps) {
+        // Get pending ops for this DNA
+        const pendingOps = await this.tracker.getPendingForDna(
+          dnaHash,
+          PublishStatus.Pending
+        );
 
-      // Also get failed ops that are ready for retry
-      const failedOps = await this.tracker.getPendingForDna(
-        dnaHash,
-        PublishStatus.Failed
-      );
-      const retryableOps = failedOps.filter(
-        (op) =>
-          op.retryCount < this.options.maxRetries &&
-          this.isReadyForRetry(op.lastAttempt, op.retryCount)
-      );
+        // Also get failed ops that are ready for retry
+        const failedOps = await this.tracker.getPendingForDna(
+          dnaHash,
+          PublishStatus.Failed
+        );
+        const retryableOps = failedOps.filter(
+          (op) =>
+            op.retryCount < this.options.maxRetries &&
+            this.isReadyForRetry(op.lastAttempt, op.retryCount)
+        );
 
-      const opsToPublish = [...pendingOps, ...retryableOps];
+        const opsToPublish = [...pendingOps, ...retryableOps];
 
-      if (opsToPublish.length === 0) {
-        console.log("[PublishService] No ops to publish");
-        return;
-      }
+        if (opsToPublish.length === 0) {
+          console.log("[PublishService] No more ops to publish");
+          hasMoreOps = false;
+          break;
+        }
 
-      console.log(
-        `[PublishService] Processing ${opsToPublish.length} ops for publish`
-      );
+        console.log(
+          `[PublishService] Processing ${opsToPublish.length} ops for publish`
+        );
 
-      // Group ops by batch for efficiency (max 50 per request)
-      const batches = this.batchOps(opsToPublish, 50);
+        // Group ops by batch for efficiency (max 50 per request)
+        const batches = this.batchOps(opsToPublish, 50);
 
-      for (const batch of batches) {
-        await this.publishBatch(batch, dnaHash);
+        for (const batch of batches) {
+          await this.publishBatch(batch, dnaHash);
+        }
+
+        // After processing, loop back to check for new ops that arrived during processing
       }
     } finally {
       this.processingQueue = false;
@@ -204,11 +217,21 @@ export class PublishService {
     try {
       // Serialize ops for gateway
       const signedOps = await Promise.all(
-        batch.map((item) => this.serializeOpForGateway(item.op))
+        batch.map((item) => this.serializeOpForGatewayPayload(item.op))
       );
 
       // Send to gateway
       const response = await this.sendToGateway(dnaHash, signedOps);
+
+      // Check if ops were stored but not published to any peers
+      // This happens when no DHT peers are available
+      const noPeersAvailable = response.queued > 0 && response.published === 0;
+
+      if (noPeersAvailable) {
+        console.warn(
+          `[PublishService] Ops stored but no DHT peers available - ${response.queued} ops need retry`
+        );
+      }
 
       // Update status based on response
       for (let i = 0; i < batch.length; i++) {
@@ -216,10 +239,20 @@ export class PublishService {
         const result = response.results[i];
 
         if (result?.success) {
-          await this.tracker.updateStatus(item.id, PublishStatus.Published);
-          // Optionally remove from tracking after successful publish
-          await this.tracker.removePendingPublish(item.id);
-          console.log(`[PublishService] Op ${item.id} published successfully`);
+          if (noPeersAvailable) {
+            // Op was stored but not published to network - keep for retry
+            await this.tracker.updateStatus(
+              item.id,
+              PublishStatus.Failed,
+              "No DHT peers available - stored but not published"
+            );
+            console.log(`[PublishService] Op ${item.id} stored but needs retry (no peers)`);
+          } else {
+            // Op was stored AND published to at least one peer
+            await this.tracker.updateStatus(item.id, PublishStatus.Published);
+            await this.tracker.removePendingPublish(item.id);
+            console.log(`[PublishService] Op ${item.id} published successfully`);
+          }
         } else {
           await this.tracker.updateStatus(
             item.id,
@@ -247,26 +280,13 @@ export class PublishService {
    * The gateway expects:
    * - op_data: base64 encoded msgpack serialized DhtOp
    * - signature: base64 encoded 64-byte Ed25519 signature
-   *
-   * Rust serde serializes enums with tuple variants as:
-   *   { VariantName: [field0, field1, ...] }
-   *
-   * So ChainOp::StoreRecord(sig, action, entry) becomes:
-   *   { StoreRecord: [sig, action, entry] }
-   *
-   * And DhtOp::ChainOp(Box<ChainOp>) wraps that as:
-   *   { ChainOp: { StoreRecord: [sig, action, entry] } }
    */
-  private async serializeOpForGateway(op: ChainOp): Promise<SignedDhtOpPayload> {
-    // Convert the TypeScript object-based ChainOp to Rust's tuple-variant format
-    const rustChainOp = this.convertOpToRustFormat(op);
-
-    // Wrap in DhtOp::ChainOp
-    const dhtOp = { ChainOp: rustChainOp };
-    const opBytes = encode(dhtOp);
+  private async serializeOpForGatewayPayload(op: ChainOp): Promise<SignedDhtOpPayload> {
+    // Use the extracted serialization function
+    const opBytes = serializeOpForGateway(op);
 
     // Convert to base64
-    const opBase64 = this.uint8ArrayToBase64(new Uint8Array(opBytes));
+    const opBase64 = this.uint8ArrayToBase64(opBytes);
 
     // Get signature from the op (already signed by action)
     const signatureBase64 = this.uint8ArrayToBase64(op.signature);
@@ -275,46 +295,6 @@ export class PublishService {
       op_data: opBase64,
       signature: signatureBase64,
     };
-  }
-
-  /**
-   * Convert a TypeScript ChainOp to Rust's serde tuple-variant format.
-   *
-   * TypeScript format: { type: "StoreRecord", signature, action, entry }
-   * Rust format: { StoreRecord: [signature, action, entry] }
-   */
-  private convertOpToRustFormat(op: ChainOp): Record<string, unknown[]> {
-    switch (op.type) {
-      case "StoreRecord":
-        return { StoreRecord: [op.signature, op.action, op.entry] };
-
-      case "StoreEntry":
-        return { StoreEntry: [op.signature, op.action, op.entry] };
-
-      case "RegisterAgentActivity":
-        return { RegisterAgentActivity: [op.signature, op.action] };
-
-      case "RegisterUpdatedContent":
-        return { RegisterUpdatedContent: [op.signature, op.action, op.entry] };
-
-      case "RegisterUpdatedRecord":
-        return { RegisterUpdatedRecord: [op.signature, op.action, op.entry] };
-
-      case "RegisterDeletedBy":
-        return { RegisterDeletedBy: [op.signature, op.action] };
-
-      case "RegisterDeletedEntryAction":
-        return { RegisterDeletedEntryAction: [op.signature, op.action] };
-
-      case "RegisterAddLink":
-        return { RegisterAddLink: [op.signature, op.action] };
-
-      case "RegisterRemoveLink":
-        return { RegisterRemoveLink: [op.signature, op.action] };
-
-      default:
-        throw new Error(`Unknown ChainOp type: ${(op as ChainOp).type}`);
-    }
   }
 
   /**

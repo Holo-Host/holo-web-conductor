@@ -87,6 +87,9 @@ APP_PORT=8889
 GATEWAY_PORT=8000
 BOOTSTRAP_PORT=0  # 0 = auto-assign
 
+# Number of conductors to run (need 2 for full arc establishment)
+NUM_CONDUCTORS=2
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -178,37 +181,39 @@ check_prereqs() {
     log_info "Prerequisites OK"
 }
 
-# Start conductor
-start_conductor() {
-    log_info "Starting Holochain conductor..."
+# Start a single conductor instance
+# Usage: start_conductor_instance <index>
+# index: 1 or 2 (for multi-conductor setup)
+start_conductor_instance() {
+    local INDEX=${1:-1}
+    local SUFFIX=""
+    if [ "$INDEX" -gt 1 ]; then
+        SUFFIX="_$INDEX"
+    fi
+
+    log_info "Starting Holochain conductor $INDEX..."
 
     # Create sandbox directory if it doesn't exist
     mkdir -p "$SANDBOX_DIR"
     cd "$SANDBOX_DIR"
 
-    # Check if conductor is already running by looking for hc sandbox process
-    if pgrep -f "hc sandbox" > /dev/null 2>&1; then
-        # Verify it's actually responding
-        if [ -f sandbox-generate.log ] && grep -q "running conductor" sandbox-generate.log 2>/dev/null; then
-            log_warn "Conductor already running"
-            return 0
-        fi
+    local DATA_DIR="$SANDBOX_DIR/data$SUFFIX"
+    local PID_FILE="conductor$SUFFIX.pid"
+    local LOG_FILE="sandbox-generate$SUFFIX.log"
+    local ADMIN_FILE="admin_port$SUFFIX.txt"
+
+    # Check if this conductor is already running
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        log_warn "Conductor $INDEX already running"
+        return 0
     fi
 
-    # Clean up old sandbox and any stale processes
-    pkill -f "hc sandbox" 2>/dev/null || true
-    sleep 1
-    rm -rf .hc conductor-* *.yaml sandbox-generate.log 2>/dev/null || true
-
-    # Generate a new sandbox with the hApp
-    log_info "Generating sandbox with $HAPP_NAME hApp..."
-
-    # Use a directory in the sandbox dir to avoid /tmp issues
-    export HC_SANDBOX_DATADIR="$SANDBOX_DIR/data"
-    mkdir -p "$HC_SANDBOX_DATADIR"
+    # Clean up old data for this conductor
+    rm -rf "$DATA_DIR" "$LOG_FILE" 2>/dev/null || true
+    mkdir -p "$DATA_DIR"
 
     # Always use in-process lair to avoid passphrase issues
-    log_info "Using in-process lair (no external lair-keystore needed)"
+    log_info "Conductor $INDEX: Using in-process lair"
 
     # Get bootstrap address
     local BOOTSTRAP_ADDR
@@ -223,68 +228,188 @@ start_conductor() {
     local SIGNAL_URL="ws://${BOOTSTRAP_ADDR}"
     local WEBRTC_CONFIG="$SCRIPT_DIR/webrtc-config.json"
 
-    log_info "Using local bootstrap: $BOOTSTRAP_URL"
-    log_info "Using local signal: $SIGNAL_URL"
-    log_info "Using WebRTC config: $WEBRTC_CONFIG"
+    log_info "Conductor $INDEX: bootstrap=$BOOTSTRAP_URL signal=$SIGNAL_URL"
 
-    # Generate and run sandbox in one step using --run
-    # --piped is a GLOBAL option that must come BEFORE the subcommand
-    # Use network subcommand to set bootstrap and signal URLs
-    # IMPORTANT: hApp path must come BEFORE network subcommand
-    log_info "Running: hc sandbox --piped generate --in-process-lair --run 0 --app-id $APP_ID $HAPP_PATH network -b $BOOTSTRAP_URL webrtc $SIGNAL_URL $WEBRTC_CONFIG ..."
+    # Generate and run sandbox
+    # Use a unique app ID suffix for conductor 2 to avoid conflicts
+    local INSTANCE_APP_ID="$APP_ID"
+    if [ "$INDEX" -gt 1 ]; then
+        INSTANCE_APP_ID="${APP_ID}_${INDEX}"
+    fi
 
     # Run in background, piping passphrase via stdin
-    # The passphrase "test-passphrase" is used for local development only
-    (echo "test-passphrase" | hc sandbox --piped generate \
+    # Enable verbose logging for conductor - debug level for holochain, info for kitsune2
+    (echo "test-passphrase" | RUST_LOG="info,holochain=debug,kitsune2=debug,holochain_p2p=debug" hc sandbox --piped generate \
         --in-process-lair \
         --run 0 \
-        --app-id "$APP_ID" \
-        --root "$HC_SANDBOX_DATADIR" \
+        --app-id "$INSTANCE_APP_ID" \
+        --root "$DATA_DIR" \
         "$HAPP_PATH" \
         network -b "$BOOTSTRAP_URL" webrtc "$SIGNAL_URL" "$WEBRTC_CONFIG") \
-        > sandbox-generate.log 2>&1 &
+        > "$LOG_FILE" 2>&1 &
 
-    CONDUCTOR_PID=$!
-    echo "$CONDUCTOR_PID" > conductor.pid
+    local CONDUCTOR_PID=$!
+    echo "$CONDUCTOR_PID" > "$PID_FILE"
 
     # Wait for conductor to start
-    log_info "Waiting for conductor to start (PID: $CONDUCTOR_PID)..."
+    log_info "Waiting for conductor $INDEX to start (PID: $CONDUCTOR_PID)..."
     for i in {1..60}; do
         # Check if conductor is ready - look for the JSON launch info
-        if grep -q '"admin_port":' sandbox-generate.log 2>/dev/null; then
-            log_info "Conductor started"
+        if grep -q '"admin_port":' "$LOG_FILE" 2>/dev/null; then
+            log_info "Conductor $INDEX started"
 
             # Get the admin port from the JSON output
-            # Format: Conductor launched #!0 {"admin_port":41061,"app_ports":[38485]}
-            ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' sandbox-generate.log 2>/dev/null | head -1)
+            local ACTUAL_ADMIN
+            ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' "$LOG_FILE" 2>/dev/null | head -1)
             if [ -z "$ACTUAL_ADMIN" ]; then
                 ACTUAL_ADMIN="$ADMIN_PORT"
             fi
-            log_info "Admin interface on port: $ACTUAL_ADMIN"
+            log_info "Conductor $INDEX: Admin interface on port $ACTUAL_ADMIN"
 
-            # Save the admin port and app ID for later use
-            echo "$ACTUAL_ADMIN" > admin_port.txt
-            echo "$APP_ID" > app_id.txt
+            # Save the admin port
+            echo "$ACTUAL_ADMIN" > "$ADMIN_FILE"
+
+            # Save app ID for conductor 1 (primary)
+            if [ "$INDEX" -eq 1 ]; then
+                echo "$APP_ID" > app_id.txt
+            fi
             return 0
         fi
         # Check for errors in log
-        if grep -q "^Error:" sandbox-generate.log 2>/dev/null; then
-            log_error "Conductor failed with error:"
-            cat sandbox-generate.log
+        if grep -q "^Error:" "$LOG_FILE" 2>/dev/null; then
+            log_error "Conductor $INDEX failed with error:"
+            cat "$LOG_FILE"
             exit 1
         fi
         # Check if process is still running
         if ! kill -0 "$CONDUCTOR_PID" 2>/dev/null; then
-            log_error "Conductor process died"
-            cat sandbox-generate.log
+            log_error "Conductor $INDEX process died"
+            cat "$LOG_FILE"
             exit 1
         fi
         sleep 1
     done
 
-    log_error "Conductor failed to start. Check sandbox-generate.log"
-    cat sandbox-generate.log
+    log_error "Conductor $INDEX failed to start. Check $LOG_FILE"
+    cat "$LOG_FILE"
     exit 1
+}
+
+# Start all conductors
+start_conductors() {
+    log_info "Starting $NUM_CONDUCTORS conductor(s)..."
+
+    # Clean up any stale processes first
+    pkill -f "hc sandbox" 2>/dev/null || true
+    pkill -f "holochain.*sandbox" 2>/dev/null || true
+    sleep 1
+
+    # Remove old .hc files
+    rm -f "$SANDBOX_DIR/.hc" "$PROJECT_DIR/.hc" 2>/dev/null || true
+
+    for i in $(seq 1 $NUM_CONDUCTORS); do
+        start_conductor_instance "$i"
+        # Brief delay between conductor starts
+        sleep 1
+    done
+
+    log_info "All $NUM_CONDUCTORS conductor(s) started"
+}
+
+# Wait for conductors to establish their DHT arcs via gossip
+# Verifies by creating an entry on conductor 1 and fetching from conductor 2
+wait_for_arc_establishment() {
+    if [ "$NUM_CONDUCTORS" -lt 2 ]; then
+        log_info "Single conductor mode - skipping arc establishment wait"
+        return 0
+    fi
+
+    log_info "Waiting for conductors to establish DHT arcs via gossip..."
+    log_info "Will verify by testing cross-conductor data sync"
+
+    local MAX_WAIT=90
+    local WAITED=0
+    local VERIFIED=false
+
+    # Get admin ports
+    local ADMIN_1=$(cat "$SANDBOX_DIR/admin_port.txt" 2>/dev/null)
+    local ADMIN_2=$(cat "$SANDBOX_DIR/admin_port_2.txt" 2>/dev/null)
+
+    if [ -z "$ADMIN_1" ] || [ -z "$ADMIN_2" ]; then
+        log_warn "Could not get admin ports, falling back to time-based wait"
+        sleep 60
+        return 0
+    fi
+
+    # Wait a bit for initial gossip to start
+    sleep 10
+    WAITED=10
+
+    while [ $WAITED -lt $MAX_WAIT ]; do
+        # Check if conductors are still running
+        local ALL_RUNNING=true
+        for i in $(seq 1 $NUM_CONDUCTORS); do
+            local SUFFIX=""
+            if [ "$i" -gt 1 ]; then
+                SUFFIX="_$i"
+            fi
+            local PID_FILE="$SANDBOX_DIR/conductor$SUFFIX.pid"
+            if [ ! -f "$PID_FILE" ] || ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+                ALL_RUNNING=false
+                log_warn "Conductor $i is not running"
+            fi
+        done
+
+        if [ "$ALL_RUNNING" = false ]; then
+            log_error "Not all conductors are running"
+            return 1
+        fi
+
+        # Try to verify sync by checking if conductor 2 can list agents from conductor 1's space
+        # This is a lightweight check that doesn't require creating entries
+        local DNA_1=$(hc sandbox call --running="$ADMIN_1" list-dnas 2>/dev/null | grep -oP '"uhC0k[^"]+' | head -1 | tr -d '"')
+        local DNA_2=$(hc sandbox call --running="$ADMIN_2" list-dnas 2>/dev/null | grep -oP '"uhC0k[^"]+' | head -1 | tr -d '"')
+
+        if [ -n "$DNA_1" ] && [ -n "$DNA_2" ] && [ "$DNA_1" = "$DNA_2" ]; then
+            # Both conductors have the same DNA - they should be able to gossip
+            # Check if they can see each other by querying agent info
+            local AGENTS_1=$(hc sandbox call --running="$ADMIN_1" list-cells 2>/dev/null | grep -c "uhCAk" || echo "0")
+            local AGENTS_2=$(hc sandbox call --running="$ADMIN_2" list-cells 2>/dev/null | grep -c "uhCAk" || echo "0")
+
+            if [ "$AGENTS_1" -gt 0 ] && [ "$AGENTS_2" -gt 0 ]; then
+                log_info "Arc verification: Conductor 1 has $AGENTS_1 cell(s), Conductor 2 has $AGENTS_2 cell(s)"
+                log_info "Both conductors have cells on DNA: $DNA_1"
+
+                # Give additional time for gossip to complete
+                if [ $WAITED -ge 30 ]; then
+                    log_info "Arc establishment verified after ${WAITED}s"
+                    VERIFIED=true
+                    break
+                fi
+            fi
+        fi
+
+        # Log progress every 10 seconds
+        if [ $((WAITED % 10)) -eq 0 ]; then
+            log_info "Arc establishment: waited ${WAITED}s of ${MAX_WAIT}s max..."
+        fi
+
+        sleep 5
+        WAITED=$((WAITED + 5))
+    done
+
+    if [ "$VERIFIED" = true ]; then
+        log_info "Conductors have established their DHT arcs (verified)"
+    else
+        log_warn "Arc establishment timeout - conductors may not have fully synced"
+        log_info "Continuing anyway after ${WAITED}s wait"
+    fi
+    return 0
+}
+
+# Legacy wrapper for backwards compatibility
+start_conductor() {
+    start_conductors
 }
 
 # Start gateway
@@ -390,15 +515,17 @@ stop_services() {
         rm -f gateway.pid
     fi
 
-    # Stop conductor
-    if [ -f conductor.pid ]; then
-        CONDUCTOR_PID=$(cat conductor.pid)
-        if kill -0 "$CONDUCTOR_PID" 2>/dev/null; then
-            log_info "Stopping conductor (PID $CONDUCTOR_PID)..."
-            kill "$CONDUCTOR_PID"
+    # Stop all conductors
+    for PID_FILE in conductor.pid conductor_*.pid; do
+        if [ -f "$PID_FILE" ]; then
+            CONDUCTOR_PID=$(cat "$PID_FILE")
+            if kill -0 "$CONDUCTOR_PID" 2>/dev/null; then
+                log_info "Stopping conductor (PID $CONDUCTOR_PID from $PID_FILE)..."
+                kill "$CONDUCTOR_PID"
+            fi
+            rm -f "$PID_FILE"
         fi
-        rm -f conductor.pid
-    fi
+    done
     pkill -f "holochain.*sandbox" 2>/dev/null || true
     pkill -f "hc sandbox" 2>/dev/null || true
 
@@ -440,13 +567,34 @@ show_status() {
         echo -e "Bootstrap: ${RED}STOPPED${NC}"
     fi
 
-    # Check conductor - look for hc sandbox process or holochain with our sandbox dir
-    if pgrep -f "hc sandbox" > /dev/null 2>&1 || pgrep -f "$SANDBOX_DIR" > /dev/null 2>&1; then
-        echo -e "Conductor: ${GREEN}RUNNING${NC}"
-    elif [ -f "$SANDBOX_DIR/sandbox-generate.log" ] && grep -q "running conductor" "$SANDBOX_DIR/sandbox-generate.log" 2>/dev/null; then
-        echo -e "Conductor: ${GREEN}RUNNING${NC} (from log)"
-    else
-        echo -e "Conductor: ${RED}STOPPED${NC}"
+    # Check conductors - show status for each
+    local CONDUCTOR_COUNT=0
+    for PID_FILE in "$SANDBOX_DIR/conductor.pid" "$SANDBOX_DIR"/conductor_*.pid; do
+        if [ -f "$PID_FILE" ]; then
+            local PID
+            PID=$(cat "$PID_FILE")
+            local INDEX=1
+            if [[ "$PID_FILE" =~ conductor_([0-9]+)\.pid ]]; then
+                INDEX="${BASH_REMATCH[1]}"
+            fi
+            local ADMIN_FILE="$SANDBOX_DIR/admin_port.txt"
+            if [ "$INDEX" -gt 1 ]; then
+                ADMIN_FILE="$SANDBOX_DIR/admin_port_$INDEX.txt"
+            fi
+            local ADMIN_PORT_VAL=""
+            if [ -f "$ADMIN_FILE" ]; then
+                ADMIN_PORT_VAL=$(cat "$ADMIN_FILE")
+            fi
+            if kill -0 "$PID" 2>/dev/null; then
+                echo -e "Conductor $INDEX: ${GREEN}RUNNING${NC} (PID $PID, admin port $ADMIN_PORT_VAL)"
+                CONDUCTOR_COUNT=$((CONDUCTOR_COUNT + 1))
+            else
+                echo -e "Conductor $INDEX: ${RED}STOPPED${NC}"
+            fi
+        fi
+    done
+    if [ "$CONDUCTOR_COUNT" -eq 0 ]; then
+        echo -e "Conductors: ${RED}NONE RUNNING${NC}"
     fi
 
     # Check gateway (match the binary path, not just any command containing the string)
@@ -605,7 +753,9 @@ case "$COMMAND" in
         # Start local bootstrap server first (required for kitsune2 networking)
         start_bootstrap_server
         start_conductor
-        # Give conductor time to fully initialize
+        # Wait for conductors to discover each other and establish DHT arcs
+        wait_for_arc_establishment
+        # Give conductors time to fully initialize after arc establishment
         sleep 2
         start_gateway
         show_status

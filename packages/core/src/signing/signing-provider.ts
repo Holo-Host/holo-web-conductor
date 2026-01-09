@@ -53,23 +53,27 @@ export function clearLairClient(): void {
 }
 
 /**
- * Sign an action hash using the agent's key
+ * Sign serialized action bytes using the agent's key
+ *
+ * IMPORTANT: Holochain signs the msgpack-serialized Action struct,
+ * NOT the ActionHash. Use serializeActionForSigning() from the hash module
+ * to get the correct bytes.
  *
  * Uses the Lair client's synchronous signing (key must be preloaded).
  *
  * @param agentPubKey - 39-byte AgentPubKey (with prefix and location)
- * @param actionHash - 39-byte ActionHash to sign
+ * @param serializedAction - Msgpack-serialized Action bytes
  * @returns 64-byte Ed25519 signature
  */
 export function signAction(
   agentPubKey: AgentPubKey,
-  actionHash: ActionHash
+  serializedAction: Uint8Array
 ): Signature {
   const client = getLairClient();
 
   // Extract raw 32-byte Ed25519 key from 39-byte AgentPubKey
   const rawPubKey = sliceCore32(agentPubKey);
 
-  // Sign using Lair's synchronous signing (key must be preloaded)
-  return client.signSync(rawPubKey, actionHash) as Signature;
+  // Sign the serialized action bytes (NOT the hash)
+  return client.signSync(rawPubKey, serializedAction) as Signature;
 }

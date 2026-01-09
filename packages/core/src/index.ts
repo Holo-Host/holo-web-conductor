@@ -56,6 +56,8 @@ export * from './dht';
 // Re-export hash module (excluding ActionType which is re-exported from storage)
 export {
   computeEntryHash,
+  computeAppEntryHash,
+  computeAgentEntryHash,
   computeActionHash,
   computeWasmHash,
   computeDnaHash,

@@ -17,6 +17,7 @@ import {
   type ActionHash,
   type DnaHash,
 } from '@holochain/client';
+import { serializeAction, type SerializableAction } from '../types/holochain-serialization';
 
 // Re-export prefixes from @holochain/client for convenience
 export const ENTRY_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Entry];
@@ -28,6 +29,9 @@ export const WASM_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Wasm]; // [132, 42
 // Re-export library functions and types
 export { hashFrom32AndType, dhtLocationFrom32, HASH_TYPE_PREFIX, HoloHashType, ActionType };
 export type { EntryHash, ActionHash, DnaHash };
+
+// Re-export serialization types for convenience
+export { serializeAction, type SerializableAction };
 
 export const assembleHoloHash = (hash32: Uint8Array, prefix: Uint8Array): Uint8Array => {
   // Determine hash type from prefix
@@ -70,10 +74,13 @@ export function blake2b256(data: Uint8Array): Uint8Array {
 // ============================================================================
 
 /**
- * Compute EntryHash from entry content
+ * Compute EntryHash from raw content bytes
  *
- * For App entries, the content is already msgpack-encoded by the zome.
- * We hash the raw bytes and wrap in a HoloHash.
+ * DEPRECATED: Use computeAppEntryHash or computeAgentEntryHash instead.
+ *
+ * This function hashes raw bytes directly. This is ONLY correct for
+ * entries where the content has already been wrapped in the Entry enum
+ * and serialized.
  *
  * @param entryContent - Raw entry content bytes
  * @returns 39-byte EntryHash
@@ -81,6 +88,55 @@ export function blake2b256(data: Uint8Array): Uint8Array {
 export function computeEntryHash(entryContent: Uint8Array): EntryHash {
   const hash32 = blake2b256(entryContent);
   return hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
+}
+
+/**
+ * Compute EntryHash for an App entry
+ *
+ * Holochain computes App entry hashes by:
+ * 1. Wrapping the content in the Entry enum: { entry_type: "App", entry: <content> }
+ * 2. Serializing with msgpack
+ * 3. Hashing with Blake2b-256
+ * 4. Wrapping as HoloHash with Entry type
+ *
+ * @param entryContent - Raw entry content bytes (msgpack-encoded app data)
+ * @returns 39-byte EntryHash
+ */
+export function computeAppEntryHash(entryContent: Uint8Array): EntryHash {
+  // Wrap in Entry::App format with internal tagging
+  const entryStruct = {
+    entry_type: "App",
+    entry: entryContent,
+  };
+
+  // Serialize the Entry enum
+  const serialized = encode(entryStruct);
+
+  // Hash the serialized Entry
+  const hash32 = blake2b256(new Uint8Array(serialized));
+  return hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
+}
+
+/**
+ * Compute EntryHash for an Agent entry
+ *
+ * For Agent entries, Holochain does NOT hash the content.
+ * Instead, the EntryHash is the AgentPubKey retyped with Entry prefix.
+ * The 32-byte core remains the same, only the 3-byte prefix changes.
+ *
+ * @param agentPubKey - 39-byte AgentPubKey
+ * @returns 39-byte EntryHash (same core as input, Entry prefix)
+ */
+export function computeAgentEntryHash(agentPubKey: Uint8Array): EntryHash {
+  if (agentPubKey.length !== 39) {
+    throw new Error(`AgentPubKey must be 39 bytes, got ${agentPubKey.length}`);
+  }
+
+  // Extract the 32-byte core (bytes 3-35)
+  const core32 = agentPubKey.slice(3, 35);
+
+  // Retype as EntryHash (uses Entry prefix, same DHT location)
+  return hashFrom32AndType(core32, HoloHashType.Entry) as EntryHash;
 }
 
 // ============================================================================
@@ -106,6 +162,7 @@ export interface ActionForHashing {
 /**
  * Compute ActionHash from action data
  *
+ * @deprecated Use computeActionHashV2 with SerializableAction for correct serialization
  * Serializes the action using msgpack and hashes it.
  * The action must be in Holochain's internally tagged enum format.
  *
@@ -119,6 +176,37 @@ export function computeActionHash(action: ActionForHashing): ActionHash {
   // Hash the serialized action
   const hash32 = blake2b256(new Uint8Array(serialized));
   return hashFrom32AndType(hash32, HoloHashType.Action) as ActionHash;
+}
+
+/**
+ * Compute ActionHash from SerializableAction
+ *
+ * This is the preferred method that uses properly typed and ordered serialization.
+ * The action is serialized using Holochain's serde-compatible format.
+ *
+ * @param action - Action data matching Holochain's Rust types
+ * @returns 39-byte ActionHash
+ */
+export function computeActionHashV2(action: SerializableAction): ActionHash {
+  // Serialize using the type-safe serialization function
+  const serialized = serializeAction(action);
+
+  // Hash the serialized action
+  const hash32 = blake2b256(serialized);
+  return hashFrom32AndType(hash32, HoloHashType.Action) as ActionHash;
+}
+
+/**
+ * Serialize action to msgpack bytes
+ *
+ * This is the canonical serialization used for both hashing and signing.
+ * Holochain signs the serialized action bytes, NOT the hash.
+ *
+ * @param action - Action data in Holochain format
+ * @returns Msgpack-serialized action bytes
+ */
+export function serializeActionForSigning(action: ActionForHashing): Uint8Array {
+  return new Uint8Array(encode(actionToSerializable(action)));
 }
 
 /**

@@ -402,8 +402,25 @@ interface MinimalZomeCallRequest {
 
 /**
  * Convert transported record back to proper HolochainRecord
+ * Entry format is internally-tagged: { entry_type: "App", entry: bytes }
  */
 function transportedRecordToRecord(transported: any): HolochainRecord {
+  // Convert Entry from transport format back to Uint8Array
+  let entry: any = undefined;
+  if (transported.entry) {
+    if (transported.entry.Present) {
+      const presentEntry = transported.entry.Present;
+      entry = {
+        Present: {
+          entry_type: presentEntry.entry_type,
+          entry: new Uint8Array(presentEntry.entry),
+        }
+      };
+    } else if (transported.entry.NA !== undefined) {
+      entry = { NA: null };
+    }
+  }
+
   return {
     signed_action: {
       hashed: {
@@ -412,12 +429,7 @@ function transportedRecordToRecord(transported: any): HolochainRecord {
       },
       signature: new Uint8Array(transported.signed_action.signature),
     },
-    entry: transported.entry ? {
-      Present: transported.entry.Present ? {
-        entry_type: transported.entry.Present.entry_type,
-        entry: new Uint8Array(transported.entry.Present.entry),
-      } : undefined,
-    } : undefined,
+    entry,
   } as HolochainRecord;
 }
 

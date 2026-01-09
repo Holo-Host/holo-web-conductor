@@ -94,9 +94,14 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
   // Initialize genesis actions if this is a new cell
   const [dnaHash, agentPubKey] = cellId;
+  let genesisRecords: { action: any; entry?: any }[] = [];
   await timeAsync('genesisCheck', async () => {
     const { initializeGenesis } = await import('../storage/genesis');
-    await initializeGenesis(storage as any, dnaHash, agentPubKey);
+    const genesisResult = await initializeGenesis(storage as any, dnaHash, agentPubKey);
+    if (genesisResult.initialized) {
+      genesisRecords = genesisResult.pendingRecords;
+      console.log(`[Ribosome] Genesis initialized with ${genesisRecords.length} records to publish`);
+    }
   });
 
   // Pre-load chain into session cache if storage requires it (IndexedDB pattern)
@@ -322,13 +327,29 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     console.log('[Ribosome] Transaction committed successfully');
 
     // Convert pending records to @holochain/client Record format for publishing
+    // Include both genesis records (if this was a fresh chain) and zome call records
     let pendingRecords: HolochainRecord[] | undefined;
-    if (context.pendingRecords && context.pendingRecords.length > 0) {
+    const allPendingRecords = [
+      ...genesisRecords,
+      ...(context.pendingRecords || []),
+    ];
+    console.log(`[Ribosome] allPendingRecords count: ${allPendingRecords.length} (genesis: ${genesisRecords.length}, zome: ${context.pendingRecords?.length || 0})`);
+    if (allPendingRecords.length > 0) {
       try {
-        pendingRecords = buildRecords(context.pendingRecords);
+        console.log('[Ribosome] Building records for publishing...');
+        console.log('[Ribosome] First pending record:', JSON.stringify({
+          actionType: allPendingRecords[0]?.action?.actionType,
+          hasEntry: !!allPendingRecords[0]?.entry,
+          entryType: allPendingRecords[0]?.entry?.entryType,
+        }));
+        pendingRecords = buildRecords(allPendingRecords);
         console.log(`[Ribosome] ${pendingRecords.length} records ready for publishing`);
+        if (pendingRecords.length > 0) {
+          console.log('[Ribosome] First built record entry type:', pendingRecords[0]?.entry);
+        }
       } catch (error) {
         console.error('[Ribosome] Failed to convert records for publishing:', error);
+        console.error('[Ribosome] Error stack:', error instanceof Error ? error.stack : 'no stack');
         // Don't fail the zome call - publishing is secondary
       }
     }

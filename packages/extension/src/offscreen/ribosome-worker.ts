@@ -32,7 +32,7 @@ import { setNetworkService, type NetworkService } from '@fishy/core/network';
 import { setLairClient } from '@fishy/core/signing';
 import type { LairClient, Ed25519PubKey, Ed25519Signature } from '@fishy/lair';
 import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@fishy/core/storage/types';
-import { encodeHashToBase64, decodeHashFromBase64 } from '@holochain/client';
+import { encodeHashToBase64 } from '@holochain/client';
 
 // Types
 interface WorkerMessage {
@@ -977,42 +977,34 @@ class ProxyNetworkService implements NetworkService {
 
   /**
    * Parse links response from gateway
+   *
+   * Gateway returns hashes as JSON arrays (e.g., [132, 41, 36, ...])
+   * NOT as base64 strings. Use normalizeByteArrays to convert.
    */
   private parseLinksResponse(responseText: string): any[] {
     try {
       const data = JSON.parse(responseText);
       if (!Array.isArray(data)) {
+        console.log('[ProxyNetwork] Links response is not an array:', typeof data);
         return [];
       }
 
+      console.log(`[ProxyNetwork] Parsing ${data.length} links from gateway`);
+
       return data.map((link: any) => ({
-        create_link_hash: decodeHashFromBase64(link.create_link_hash),
-        base: decodeHashFromBase64(link.base),
-        target: decodeHashFromBase64(link.target),
+        create_link_hash: this.normalizeByteArrays(link.create_link_hash),
+        base: this.normalizeByteArrays(link.base),
+        target: this.normalizeByteArrays(link.target),
         zome_index: link.zome_index,
         link_type: link.link_type,
-        tag: link.tag ? this.base64ToUint8Array(link.tag) : new Uint8Array(0),
+        tag: link.tag ? this.normalizeByteArrays(link.tag) : new Uint8Array(0),
         timestamp: link.timestamp,
-        author: decodeHashFromBase64(link.author),
+        author: this.normalizeByteArrays(link.author),
       }));
     } catch (error) {
       console.error('[ProxyNetwork] Failed to parse links response:', error);
       return [];
     }
-  }
-
-  /**
-   * Convert base64 to Uint8Array
-   */
-  private base64ToUint8Array(base64: string): Uint8Array {
-    const normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    const binary = atob(padded);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
   }
 
   // NetworkService interface methods
@@ -1248,21 +1240,32 @@ self.onmessage = async (event: MessageEvent) => {
         // Convert pending records for transport (Uint8Array -> Array)
         let pendingRecordsForTransport: any[] | undefined;
         if (zomeResult.pendingRecords && zomeResult.pendingRecords.length > 0) {
-          pendingRecordsForTransport = zomeResult.pendingRecords.map(record => ({
-            signed_action: {
-              hashed: {
-                content: record.signed_action.hashed.content,
-                hash: Array.from(record.signed_action.hashed.hash),
+          pendingRecordsForTransport = zomeResult.pendingRecords.map(record => {
+            // Convert Entry for transport - Entry is internally tagged: { entry_type: "App", entry: bytes }
+            let entryForTransport: any = undefined;
+            if (record.entry && record.entry.Present) {
+              const presentEntry = record.entry.Present;
+              entryForTransport = {
+                Present: {
+                  entry_type: presentEntry.entry_type,
+                  entry: Array.from(presentEntry.entry),
+                }
+              };
+            } else if (record.entry && record.entry.NA !== undefined) {
+              entryForTransport = { NA: null };
+            }
+
+            return {
+              signed_action: {
+                hashed: {
+                  content: record.signed_action.hashed.content,
+                  hash: Array.from(record.signed_action.hashed.hash),
+                },
+                signature: Array.from(record.signed_action.signature),
               },
-              signature: Array.from(record.signed_action.signature),
-            },
-            entry: record.entry ? {
-              Present: record.entry.Present ? {
-                entry_type: record.entry.Present.entry_type,
-                entry: Array.from(record.entry.Present.entry),
-              } : undefined,
-            } : undefined,
-          }));
+              entry: entryForTransport,
+            };
+          });
           console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
         }
 

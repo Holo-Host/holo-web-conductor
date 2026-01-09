@@ -8,11 +8,23 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateLinkAction, Link } from "../../storage/types";
-import { computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { computeActionHashV2, serializeAction } from "../../hash";
+import { buildCreateLinkAction } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
 
 /**
  * Create link input structure (matches Holochain HDK CreateLinkInput)
+ *
+ * Reference: holochain/crates/holochain_zome_types/src/link.rs
+ *
+ * pub struct CreateLinkInput {
+ *     pub base_address: AnyLinkableHash,
+ *     pub target_address: AnyLinkableHash,
+ *     pub zome_index: ZomeIndex,  // u8 newtype
+ *     pub link_type: LinkType,    // u8 newtype
+ *     pub tag: LinkTag,
+ *     pub chain_top_ordering: ChainTopOrdering,
+ * }
  */
 interface CreateLinkInput {
   /** Base address (entry or action hash) */
@@ -21,11 +33,17 @@ interface CreateLinkInput {
   /** Target address (entry or action hash) */
   target_address: Uint8Array;
 
-  /** Link type */
-  link_type: number | { App: { id: number; zome_id: number } };
+  /** Zome index (ZomeIndex newtype serializes as u8) */
+  zome_index: number;
 
-  /** Optional link tag (arbitrary bytes) */
-  tag?: Uint8Array;
+  /** Link type (LinkType newtype serializes as u8) */
+  link_type: number;
+
+  /** Link tag (LinkTag - binary data) */
+  tag: Uint8Array;
+
+  /** Chain ordering (optional, defaults to Strict) */
+  chain_top_ordering?: "Strict" | "Relaxed";
 }
 
 /**
@@ -49,13 +67,10 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // Parse link type
-  const linkType = typeof input.link_type === 'number'
-    ? input.link_type
-    : input.link_type.App.id;
-  const zomeIndex = typeof input.link_type === 'number'
-    ? 0 // Default zome index if not specified
-    : input.link_type.App.zome_id;
+  // Read link type and zome index directly from input
+  // (they are separate fields in CreateLinkInput, not combined)
+  const linkType = input.link_type;
+  const zomeIndex = input.zome_index;
 
   // Get current chain head
   const chainHead = storage.getChainHead(dnaHash, agentPubKey);
@@ -63,36 +78,39 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Increment sequence from chain head, or start at 3 for new chain
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;
-  const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
+  const timestampMicros = Date.now() * 1000; // Microseconds as number for serialization
+  const timestampBigInt = BigInt(timestampMicros); // BigInt for storage
 
-  // Build action structure for hashing (before we know the hash)
-  const tag = input.tag || new Uint8Array(0);
-  const actionForHashing: ActionForHashing = {
-    type: ActionType.CreateLink,
+  // Build action using type-safe builder (ensures correct field ordering for serialization)
+  const tag = input.tag;
+  const serializableAction = buildCreateLinkAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: actionSeq,
-    prev_action: prevActionHash,
+    prev_action: prevActionHash!,
     base_address: input.base_address,
     target_address: input.target_address,
     zome_index: zomeIndex,
     link_type: linkType,
     tag,
     weight: { bucket_id: 0, units: 0 },  // RateWeight (not EntryRateWeight)
-  };
+  });
 
-  // Compute action hash using Blake2b
-  const actionHash = computeActionHash(actionForHashing);
+  // Serialize action for both hashing and signing (same bytes)
+  const serializedAction = serializeAction(serializableAction);
 
-  // Sign the action hash
-  const signature = signAction(agentPubKey, actionHash);
+  // Compute action hash using Blake2b on serialized bytes
+  const actionHash = computeActionHashV2(serializableAction);
 
-  // Build CreateLink action for storage
+  // Sign the serialized action bytes (NOT the hash - Holochain signs the Action struct)
+  const signature = signAction(agentPubKey, serializedAction);
+
+  // Build CreateLink action for storage (uses BigInt timestamp)
   const action: CreateLinkAction = {
     actionHash,
     actionSeq,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash,
     actionType: 'CreateLink',
     signature,
@@ -103,15 +121,15 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     tag,
   };
 
-  // Build link record
+  // Build link record (uses BigInt timestamp)
   const link: Link = {
     createLinkHash: actionHash,
     baseAddress: input.base_address,
     targetAddress: input.target_address,
-    timestamp,
+    timestamp: timestampBigInt,
     zomeIndex,
     linkType,
-    tag: input.tag || new Uint8Array(0),
+    tag: input.tag,
     author: agentPubKey,
     deleted: false,
   };
@@ -119,7 +137,7 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // These are synchronous when transaction is active (just buffer in memory)
   storage.putAction(action, dnaHash, agentPubKey);
   storage.putLink(link, dnaHash, agentPubKey);
-  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
+  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
   // Track record for publishing after transaction commits (no entry for links)
   if (!callContext.pendingRecords) {

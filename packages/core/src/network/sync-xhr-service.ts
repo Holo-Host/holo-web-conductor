@@ -16,7 +16,7 @@ import type {
   NetworkFetchOptions,
 } from './types';
 import type { DnaHash, AnyDhtHash, SignedActionHashed } from '../types/holochain-types';
-import { encodeHashToBase64, decodeHashFromBase64 } from '../types/holochain-types';
+import { encodeHashToBase64 } from '../types/holochain-types';
 
 /**
  * Default timeout for network requests (30 seconds)
@@ -258,7 +258,9 @@ export class SyncXHRNetworkService implements NetworkService {
 
   /**
    * Parse links response from gateway
-   * Uses @holochain/client's decodeHashFromBase64 for proper hash decoding
+   *
+   * Gateway returns hashes as byte arrays (e.g., [132, 41, 36, ...]) not base64 strings.
+   * We use normalizeByteArrays to convert these to Uint8Array.
    */
   private parseLinksResponse(responseText: string): NetworkLink[] {
     try {
@@ -268,34 +270,19 @@ export class SyncXHRNetworkService implements NetworkService {
       }
 
       return data.map((link: any): NetworkLink => ({
-        create_link_hash: decodeHashFromBase64(link.create_link_hash),
-        base: decodeHashFromBase64(link.base),
-        target: decodeHashFromBase64(link.target),
+        create_link_hash: this.normalizeByteArrays(link.create_link_hash),
+        base: this.normalizeByteArrays(link.base),
+        target: this.normalizeByteArrays(link.target),
         zome_index: link.zome_index,
         link_type: link.link_type,
-        tag: link.tag ? this.base64ToUint8Array(link.tag) : new Uint8Array(0),
+        tag: link.tag ? this.normalizeByteArrays(link.tag) : new Uint8Array(0),
         timestamp: link.timestamp,
-        author: decodeHashFromBase64(link.author),
+        author: this.normalizeByteArrays(link.author),
       }));
     } catch (error) {
-      console.error('[SyncXHR] Failed to parse links response:', error);
+      console.error('[ProxyNetwork] Failed to parse links response:', error);
       return [];
     }
-  }
-
-  /**
-   * Convert base64 string to Uint8Array
-   */
-  private base64ToUint8Array(base64: string): Uint8Array {
-    // Handle URL-safe base64
-    const normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    const binary = atob(padded);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
   }
 
   // NetworkService implementation

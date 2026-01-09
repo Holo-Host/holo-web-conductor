@@ -9,7 +9,8 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import type { CreateAction, StoredEntry, AppEntryType } from "../../storage/types";
 import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types";
-import { computeEntryHash, computeActionHash, type ActionForHashing, ActionType } from "../../hash";
+import { computeAppEntryHash, computeActionHashV2, serializeAction } from "../../hash";
+import { buildCreateAction, buildAppEntryType } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
 
 /**
@@ -39,8 +40,8 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entryDefIndex: input.entry_location.App.entry_def_index,
   });
 
-  // Hash the entry content using Blake2b
-  const entryHash = computeEntryHash(entryContent);
+  // Hash the entry - App entries hash the serialized Entry enum { entry_type: "App", entry: content }
+  const entryHash = computeAppEntryHash(entryContent);
 
   // Get current chain head (synchronous with StorageProvider interface)
   const [dnaHash, agentPubKey] = callContext.cellId;
@@ -49,44 +50,48 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Increment sequence from chain head, or start at 3 for new chain
   const actionSeq = chainHead ? chainHead.actionSeq + 1 : 3;
   const prevActionHash = chainHead ? chainHead.actionHash : null;
-  const timestamp = BigInt(Date.now()) * 1000n; // Microseconds
+  const timestampMicros = Date.now() * 1000; // Microseconds as number for serialization
+  const timestampBigInt = BigInt(timestampMicros); // BigInt for storage
 
-  // Extract entry type from entry_location
+  // Extract entry type from entry_location for storage format
   const entryType: AppEntryType = {
     zome_id: input.entry_location.App.zome_index,
     entry_index: input.entry_location.App.entry_def_index,
   };
 
-  // Build action structure for hashing (before we know the hash)
-  const actionForHashing: ActionForHashing = {
-    type: ActionType.Create,
+  // Build serializable entry type for action
+  const serializableEntryType = buildAppEntryType({
+    entry_index: entryType.entry_index,
+    zome_index: entryType.zome_id,
+    visibility: "Public",
+  });
+
+  // Build action using type-safe builder (ensures correct field ordering for serialization)
+  const serializableAction = buildCreateAction({
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampMicros,
     action_seq: actionSeq,
-    prev_action: prevActionHash,
-    entry_type: {
-      App: {
-        zome_index: entryType.zome_id,
-        entry_index: entryType.entry_index,
-        visibility: 'Public',
-      }
-    },
+    prev_action: prevActionHash!,
+    entry_type: serializableEntryType,
     entry_hash: entryHash,
     weight: { bucket_id: 0, units: 0, rate_bytes: 0 },
-  };
+  });
 
-  // Compute action hash using Blake2b
-  const actionHash = computeActionHash(actionForHashing);
+  // Serialize action for both hashing and signing (same bytes)
+  const serializedAction = serializeAction(serializableAction);
 
-  // Sign the action hash
-  const signature = signAction(agentPubKey, actionHash);
+  // Compute action hash using Blake2b on serialized bytes
+  const actionHash = computeActionHashV2(serializableAction);
 
-  // Build Create action for storage
+  // Sign the serialized action bytes (NOT the hash - Holochain signs the Action struct)
+  const signature = signAction(agentPubKey, serializedAction);
+
+  // Build Create action for storage (uses BigInt timestamp)
   const action: CreateAction = {
     actionHash,
     actionSeq,
     author: agentPubKey,
-    timestamp,
+    timestamp: timestampBigInt,
     prevActionHash,
     actionType: 'Create',
     signature,
@@ -104,7 +109,7 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // These are synchronous when transaction is active (just buffer in memory)
   storage.putEntry(entry, dnaHash, agentPubKey);
   storage.putAction(action, dnaHash, agentPubKey);
-  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestamp);
+  storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
   // Track record for publishing after transaction commits
   if (!callContext.pendingRecords) {
