@@ -249,6 +249,12 @@
         <p id="second-fetch-time">Second fetch: -</p>
         <p id="speedup">Speedup: -</p>
       </div>
+
+      <h3>5.3 Get Details (Network Cascade)</h3>
+      <p>Test get_details which should also fetch from network when not found locally.</p>
+      <button id="fetch-details-btn" disabled>Get Details from Network</button>
+      <div id="details-status" class="status info">Not tested</div>
+      <div id="details-result" class="test-result"></div>
     </div>
 
     <div class="test-section">
@@ -908,6 +914,7 @@
       // Enable network test buttons when hApp is installed
       async function enableNetworkTests() {
         document.getElementById("fetch-network-btn").disabled = false;
+        document.getElementById("fetch-details-btn").disabled = false;
       }
 
       // Fetch from network (first fetch)
@@ -1020,6 +1027,66 @@
         } catch (error) {
           addLog(`Cache fetch failed: ${error.message}`, 'error');
           showStatus("network-status", "error", error.message);
+        }
+      });
+
+      // Get details from network (tests cascade.fetchDetails)
+      document.getElementById("fetch-details-btn").addEventListener("click", async () => {
+        const hash = document.getElementById("known-entry-hash").value;
+        if (!hash) {
+          addLog("Enter an entry hash from known_entry.json first", 'error');
+          showStatus("details-status", "error", "No hash entered");
+          return;
+        }
+
+        addLog(`Getting details for known entry: ${hash.substring(0, 20)}...`);
+        showStatus("details-status", "info", "Fetching details from network...");
+        const startTime = performance.now();
+
+        try {
+          const appInfo = await window.holochain.appInfo('fixture1');
+          if (!appInfo || !appInfo.cells || appInfo.cells.length === 0) {
+            throw new Error("No app installed");
+          }
+
+          const cellId = appInfo.cells[0];
+
+          // Decode the hash from base64 string to bytes
+          const hashBytes = decodeHashFromB64(hash);
+          addLog(`Decoded hash: ${hashBytes.length} bytes, prefix: [${hashBytes.slice(0,3).join(',')}]`);
+
+          // Call dht_util/dht_get_details with decoded hash bytes
+          const callStart = performance.now();
+          const result = await window.holochain.callZome({
+            cell_id: cellId,
+            zome_name: "dht_util",
+            fn_name: "dht_get_details",
+            payload: { hash: hashBytes },
+            provenance: cellId[1],
+          });
+          const callTime = (performance.now() - callStart).toFixed(1);
+
+          addLog(`Get details completed: ${callTime}ms`, 'success');
+
+          if (result) {
+            showStatus("details-status", "success", `Details found in ${callTime}ms`);
+            showResult("details-result", formatForDisplay(result));
+
+            // Log details structure
+            if (result.type === 'Entry') {
+              addLog(`Entry details: ${result.content?.actions?.length || 0} actions, ${result.content?.updates?.length || 0} updates`);
+            } else if (result.type === 'Record') {
+              addLog(`Record details: ${result.content?.updates?.length || 0} updates, ${result.content?.deletes?.length || 0} deletes`);
+            }
+          } else {
+            showStatus("details-status", "warning", `No details found (${callTime}ms)`);
+            showResult("details-result", { result: null, note: "Entry may not exist on the network or cascade failed" });
+          }
+
+        } catch (error) {
+          addLog(`Get details failed: ${error.message}`, 'error');
+          showStatus("details-status", "error", error.message);
+          showResult("details-result", { error: error.message });
         }
       });
 

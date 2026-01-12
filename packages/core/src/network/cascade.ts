@@ -360,13 +360,15 @@ export class Cascade {
   ): NetworkLink[] {
     const opts = { ...this.options, ...options };
 
-    console.log(`[Cascade] Fetching links for: ${this.hashToShortString(baseAddress)}`);
+    console.log(`[Cascade] Fetching links for base: ${this.hashToBase64(baseAddress)}`);
 
     // Collect links from all sources
     const allLinks: NetworkLink[] = [];
 
     // 1. Try local storage (always synchronous)
+    console.log(`[Cascade] Querying local storage with base=${this.hashToBase64(baseAddress)}, linkType=${linkType}`);
     const localLinks = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, linkType);
+    console.log(`[Cascade] Local storage returned ${localLinks.length} links`);
 
     if (localLinks.length > 0) {
       console.log(`[Cascade] Found ${localLinks.length} links in local storage`);
@@ -447,6 +449,14 @@ export class Cascade {
   }
 
   /**
+   * Convert hash to base64url string for logging (matches Holochain format like uhCEk...)
+   */
+  private hashToBase64(hash: Uint8Array): string {
+    const base64 = btoa(String.fromCharCode(...hash));
+    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  /**
    * Convert hash to short string for logging
    */
   private hashToShortString(hash: Uint8Array): string {
@@ -473,5 +483,143 @@ export class Cascade {
    */
   isNetworkAvailable(): boolean {
     return this.network !== null && this.network.isAvailable();
+  }
+
+  /**
+   * Fetch details by hash using cascade pattern
+   *
+   * Order:
+   * 1. Local storage
+   * 2. Network cache (TODO: add if needed)
+   * 3. Network (if enabled and available)
+   *
+   * @param dnaHash - DNA hash for network requests
+   * @param agentPubKey - Agent public key for storage lookup
+   * @param hash - Action or entry hash to fetch details for
+   * @param options - Cascade options
+   * @returns Details if found, null otherwise
+   */
+  fetchDetails(
+    dnaHash: DnaHash,
+    agentPubKey: Uint8Array,
+    hash: AnyDhtHash,
+    options?: CascadeOptions
+  ): any | null {
+    const opts = { ...this.options, ...options };
+
+    // Detect hash type from prefix bytes
+    if (isEntryHash(hash)) {
+      console.log(`[Cascade] Fetching details by ENTRY hash: ${this.hashToShortString(hash)}`);
+      return this.fetchDetailsByEntryHash(dnaHash, agentPubKey, hash, opts);
+    } else if (isActionHash(hash)) {
+      console.log(`[Cascade] Fetching details by ACTION hash: ${this.hashToShortString(hash)}`);
+      return this.fetchDetailsByActionHash(dnaHash, agentPubKey, hash, opts);
+    } else {
+      // Unknown hash type - try action hash lookup as fallback
+      console.log(`[Cascade] Unknown hash type for details, trying action hash: ${this.hashToShortString(hash)}`);
+      return this.fetchDetailsByActionHash(dnaHash, agentPubKey, hash, opts);
+    }
+  }
+
+  /**
+   * Fetch details by entry hash - returns Details::Entry
+   */
+  private fetchDetailsByEntryHash(
+    dnaHash: DnaHash,
+    agentPubKey: Uint8Array,
+    entryHash: AnyDhtHash,
+    opts: Required<CascadeOptions>
+  ): any | null {
+    // 1. Try local storage
+    const localDetails = this.storage.getEntryDetails(entryHash, dnaHash, agentPubKey);
+    if (localDetails) {
+      console.log(`[Cascade] Found entry details in local storage`);
+      return { source: 'local', details: localDetails };
+    }
+
+    // 2. Try network (if enabled)
+    if (opts.useNetwork && this.network?.isAvailable() && this.network.getDetailsSync) {
+      console.log(`🌐 [Cascade] Fetching entry details from NETWORK`);
+      try {
+        const networkDetails = this.network.getDetailsSync(dnaHash, entryHash);
+        if (networkDetails) {
+          console.log(`🌐 [Cascade] Found entry details in NETWORK`);
+          // Normalize byte arrays from JSON
+          return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
+        }
+      } catch (error) {
+        console.warn(`[Cascade] Network details fetch failed:`, error);
+      }
+    }
+
+    console.log(`[Cascade] Entry details not found`);
+    return null;
+  }
+
+  /**
+   * Fetch details by action hash - returns Details::Record
+   */
+  private fetchDetailsByActionHash(
+    dnaHash: DnaHash,
+    agentPubKey: Uint8Array,
+    actionHash: AnyDhtHash,
+    opts: Required<CascadeOptions>
+  ): any | null {
+    // 1. Try local storage - get action and then details
+    const action = this.storage.getAction(actionHash);
+    if (action && 'entryHash' in action) {
+      const localDetails = this.storage.getDetails(action.entryHash, dnaHash, agentPubKey);
+      if (localDetails) {
+        console.log(`[Cascade] Found record details in local storage`);
+        return { source: 'local', details: localDetails, action };
+      }
+    }
+
+    // 2. Try network (if enabled)
+    if (opts.useNetwork && this.network?.isAvailable() && this.network.getDetailsSync) {
+      console.log(`🌐 [Cascade] Fetching record details from NETWORK`);
+      try {
+        const networkDetails = this.network.getDetailsSync(dnaHash, actionHash);
+        if (networkDetails) {
+          console.log(`🌐 [Cascade] Found record details in NETWORK`);
+          // Normalize byte arrays from JSON
+          return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
+        }
+      } catch (error) {
+        console.warn(`[Cascade] Network details fetch failed:`, error);
+      }
+    }
+
+    console.log(`[Cascade] Record details not found`);
+    return null;
+  }
+
+  /**
+   * Recursively normalize byte arrays from JSON format to Uint8Array
+   */
+  private normalizeByteArrays(data: any): any {
+    if (data === null || data === undefined) return data;
+    if (data instanceof Uint8Array) return data;
+
+    // Check if this looks like a byte array (array of numbers 0-255)
+    if (Array.isArray(data)) {
+      // Check if it's a flat array of numbers (likely bytes)
+      if (data.length > 0 && data.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+        return new Uint8Array(data);
+      }
+      // Otherwise recurse into array elements
+      return data.map(item => this.normalizeByteArrays(item));
+    }
+
+    // Recurse into objects
+    if (typeof data === 'object') {
+      const result: any = {};
+      for (const [key, value] of Object.entries(data)) {
+        result[key] = this.normalizeByteArrays(value);
+      }
+      return result;
+    }
+
+    return data;
   }
 }
