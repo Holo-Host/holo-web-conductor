@@ -74,6 +74,7 @@ export {
   storedEntryToRecordEntry,
   buildRecord,
   buildRecords,
+  buildSignedActionHashedArray,
 } from "./record-converter";
 
 // Op serialization for gateway

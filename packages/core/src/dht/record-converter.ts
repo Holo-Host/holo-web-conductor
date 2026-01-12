@@ -266,3 +266,26 @@ export function buildRecords(
 ): Record[] {
   return actions.map(({ action, entry }) => buildRecord(action, entry));
 }
+
+/**
+ * Build SignedActionHashed array from stored actions
+ *
+ * This is used for post_commit callback which receives Vec<SignedActionHashed>
+ *
+ * @param actions - Array of stored actions
+ * @returns Array of SignedActionHashed
+ */
+export function buildSignedActionHashedArray(
+  actions: Array<{ action: StoredAction; entry?: StoredEntry }>
+): SignedActionHashed[] {
+  return actions.map(({ action }) => {
+    const clientAction = storedActionToClientAction(action);
+    return {
+      hashed: {
+        hash: action.actionHash as ActionHash,
+        content: clientAction,
+      },
+      signature: action.signature as Signature,
+    };
+  });
+}

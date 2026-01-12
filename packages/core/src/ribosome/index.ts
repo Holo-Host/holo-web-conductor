@@ -37,8 +37,8 @@ import {
   timeSync,
   timeAsync,
 } from "./perf";
-import { buildRecords } from "../dht/record-converter";
-import type { Record as HolochainRecord } from "@holochain/client";
+import { buildRecords, buildSignedActionHashedArray } from "../dht/record-converter";
+import type { Record as HolochainRecord, SignedActionHashed } from "@holochain/client";
 
 /**
  * Result of a zome call execution
@@ -313,9 +313,6 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
       }
     }
 
-    // Collect any emitted signals
-    const signals = context.emittedSignals || [];
-
     // Commit transaction - all chain updates succeed atomically
     // May be sync (SQLiteStorage) or async (SourceChainStorage)
     const commitStart = performance.now();
@@ -326,13 +323,28 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     recordPhase('txCommit', performance.now() - commitStart);
     console.log('[Ribosome] Transaction committed successfully');
 
-    // Convert pending records to @holochain/client Record format for publishing
-    // Include both genesis records (if this was a fresh chain) and zome call records
-    let pendingRecords: HolochainRecord[] | undefined;
+    // Collect ALL pending records including genesis
     const allPendingRecords = [
       ...genesisRecords,
       ...(context.pendingRecords || []),
     ];
+
+    // Call post_commit callback if WASM exports it and there are committed actions
+    // post_commit is fire-and-forget: errors are logged but don't fail the zome call
+    // post_commit can emit_signal but CANNOT write to source chain
+    if (allPendingRecords.length > 0) {
+      try {
+        await invokePostCommit(instance, context, allPendingRecords);
+      } catch (postCommitError) {
+        console.error('[Ribosome] post_commit error (non-fatal):', postCommitError);
+      }
+    }
+
+    // Merge any signals emitted during post_commit
+    const allSignals = context.emittedSignals || [];
+
+    // Convert pending records to @holochain/client Record format for publishing
+    let pendingRecords: HolochainRecord[] | undefined;
     console.log(`[Ribosome] allPendingRecords count: ${allPendingRecords.length} (genesis: ${genesisRecords.length}, zome: ${context.pendingRecords?.length || 0})`);
     if (allPendingRecords.length > 0) {
       try {
@@ -359,7 +371,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
     return {
       result: unwrappedResult,
-      signals,
+      signals: allSignals,
       pendingRecords,
     };
   } catch (error) {
@@ -371,6 +383,79 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
     // Re-throw error for caller to handle
     throw error;
+  }
+}
+
+/**
+ * Invoke the post_commit callback if the WASM exports it
+ *
+ * post_commit is called AFTER the source chain commit is complete.
+ * It receives a Vec<SignedActionHashed> of all committed actions.
+ *
+ * Key behaviors (matching Holochain):
+ * - Errors are logged but don't fail the zome call
+ * - post_commit CAN emit_signal and call other zome functions
+ * - post_commit CANNOT write to source chain (create, update, delete)
+ *
+ * @param instance - WASM instance
+ * @param context - Call context (for signals)
+ * @param pendingRecords - Records that were committed
+ */
+async function invokePostCommit(
+  instance: WebAssembly.Instance,
+  context: CallContext,
+  pendingRecords: PendingRecord[]
+): Promise<void> {
+  // Check if WASM exports post_commit
+  const postCommitFn = instance.exports.post_commit as
+    | ((ptr: number, len: number) => bigint)
+    | undefined;
+
+  if (!postCommitFn) {
+    console.log('[post_commit] No post_commit export found, skipping');
+    return;
+  }
+
+  console.log(`[post_commit] Invoking post_commit with ${pendingRecords.length} committed actions`);
+
+  try {
+    // Build Vec<SignedActionHashed> from pending records
+    const signedActions = buildSignedActionHashedArray(pendingRecords);
+
+    // Serialize the actions for WASM
+    // post_commit expects Vec<SignedActionHashed> encoded as ExternIO (msgpack bytes)
+    const { encode } = await import('@msgpack/msgpack');
+    const actionsBytes = new Uint8Array(encode(signedActions));
+    const { ptr: inputPtr, len: inputLen } = serializeToWasm(instance, actionsBytes);
+
+    console.log(`[post_commit] Calling post_commit with ${actionsBytes.length} bytes input`);
+
+    // Call post_commit
+    const resultI64 = postCommitFn(inputPtr, inputLen);
+
+    // Extract ptr and len from result
+    const resultPtr = Number(resultI64 >> 32n);
+    const resultLen = Number(resultI64 & 0xffffffffn);
+
+    // Deserialize result (should be ExternResult<()>)
+    const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+    // Check for errors
+    if (result && typeof result === 'object' && 'Err' in result) {
+      const errPayload = (result as any).Err;
+      const errorMsg = errPayload?.Guest || errPayload?.message || JSON.stringify(errPayload);
+      console.error(`[post_commit] post_commit returned error: ${errorMsg}`);
+      // Don't throw - post_commit errors are non-fatal
+    } else {
+      console.log('[post_commit] post_commit completed successfully');
+    }
+
+    // Any signals emitted during post_commit are already in context.emittedSignals
+    const signalCount = context.emittedSignals?.length || 0;
+    console.log(`[post_commit] Total signals after post_commit: ${signalCount}`);
+  } catch (error) {
+    // Log error but don't propagate - post_commit is fire-and-forget
+    console.error('[post_commit] Exception during post_commit:', error);
   }
 }
 
