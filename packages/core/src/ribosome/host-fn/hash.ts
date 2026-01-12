@@ -1,61 +1,92 @@
 /**
  * hash host function
  *
- * Computes cryptographic hashes of data.
+ * Computes cryptographic hashes of data using Blake2b (same as Holochain).
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { blake2b } from 'blakejs';
 
 /**
- * Hash input structure
+ * Hash input structure (matches Holochain's HashInput)
+ *
+ * HashInput is an enum in Rust:
+ * - Entry(Entry) - hash an entry
+ * - Action(Action) - hash an action
+ * - Content(UnsafeBytes) - hash raw content
  */
 interface HashInput {
-  /** Data to hash */
-  data: Uint8Array;
+  /** The variant type (Entry, Action, or Content) */
+  Entry?: unknown;
+  Action?: unknown;
+  Content?: Uint8Array;
 }
 
 /**
  * hash host function implementation
  *
- * Uses Web Crypto API to compute SHA-256 hash.
- * Holochain uses Blake2b for hashing, but we'll use SHA-256 as a compatible substitute
- * since Blake2b is not available in Web Crypto API.
+ * Uses Blake2b-256 for hashing, matching Holochain's implementation.
+ * This is critical for path entries - the WASM computes path entry hashes
+ * using this host function.
  */
 export const hash: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { instance } = context;
 
-  // Deserialize input
+  // Deserialize input - it's a HashInput enum
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as HashInput;
 
-  // Handle both direct Uint8Array and structured input
-  const data = input instanceof Uint8Array ? input : input.data;
+  // Extract the data to hash based on input variant
+  let dataToHash: Uint8Array;
 
-  // Compute SHA-256 hash using Web Crypto API
-  // Note: This is async, but we need to make it sync for the host function interface
-  // We'll use a workaround with crypto.subtle.digest wrapped in a promise
-
-  // For now, return a placeholder synchronous hash
-  // TODO: In production, this should use a synchronous Blake2b implementation
-  // or we need to restructure host functions to support async
-
-  // Create a simple deterministic hash as placeholder
-  // In real implementation, we'd use @noble/hashes or similar for sync Blake2b
-  const simpleHash = new Uint8Array(32);
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    hash = ((hash << 5) - hash + data[i]) | 0;
+  if (input.Content !== undefined) {
+    // Direct content hashing
+    dataToHash = input.Content instanceof Uint8Array
+      ? input.Content
+      : new Uint8Array(Object.values(input.Content as Record<string, number>));
+  } else if (input.Entry !== undefined) {
+    // Entry hashing - the entry is already serialized
+    const entry = input.Entry;
+    if (entry instanceof Uint8Array) {
+      dataToHash = entry;
+    } else {
+      // Entry might be an object that needs to be treated as bytes
+      dataToHash = new Uint8Array(Object.values(entry as Record<string, number>));
+    }
+  } else if (input.Action !== undefined) {
+    // Action hashing
+    const action = input.Action;
+    if (action instanceof Uint8Array) {
+      dataToHash = action;
+    } else {
+      dataToHash = new Uint8Array(Object.values(action as Record<string, number>));
+    }
+  } else {
+    // Fallback - treat entire input as bytes
+    console.warn('[hash] Unknown input structure, using fallback');
+    dataToHash = input instanceof Uint8Array
+      ? input
+      : new Uint8Array(Object.values(input as Record<string, number>));
   }
 
-  // Spread the hash across the 32 bytes
-  const view = new DataView(simpleHash.buffer);
-  for (let i = 0; i < 8; i++) {
-    view.setUint32(i * 4, hash ^ i, false);
+  // Log ALL hash calls to trace path entry computation
+  let decoded = '';
+  try {
+    decoded = new TextDecoder().decode(dataToHash).substring(0, 100);
+  } catch {
+    decoded = '[binary]';
   }
 
-  console.warn(
-    "[hash] Using placeholder hash - production should use Blake2b"
-  );
+  console.log('[hash] 🔑 Hashing:', {
+    inputLength: dataToHash.length,
+    inputBytes: Array.from(dataToHash.slice(0, 50)),
+    decoded: decoded,
+  });
 
-  return serializeResult(instance, simpleHash);
+  // Compute Blake2b-256 hash (32 bytes output) - same as Holochain
+  const hash32 = blake2b(dataToHash, undefined, 32);
+
+  console.log('[hash] 🔑 Blake2b result:', Array.from(hash32));
+
+  return serializeResult(instance, hash32);
 };
