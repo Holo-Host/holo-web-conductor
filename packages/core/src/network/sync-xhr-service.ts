@@ -269,16 +269,35 @@ export class SyncXHRNetworkService implements NetworkService {
         return [];
       }
 
-      return data.map((link: any): NetworkLink => ({
-        create_link_hash: this.normalizeByteArrays(link.create_link_hash),
-        base: this.normalizeByteArrays(link.base),
-        target: this.normalizeByteArrays(link.target),
-        zome_index: link.zome_index,
-        link_type: link.link_type,
-        tag: link.tag ? this.normalizeByteArrays(link.tag) : new Uint8Array(0),
-        timestamp: link.timestamp,
-        author: this.normalizeByteArrays(link.author),
-      }));
+      console.log(`[SyncXHR] Parsing ${data.length} links from gateway`);
+
+      return data.map((link: any, idx: number): NetworkLink => {
+        const target = this.normalizeByteArrays(link.target);
+        const author = this.normalizeByteArrays(link.author);
+
+        // Debug: log raw and normalized target for AgentPubKey investigation
+        const rawTargetPrefix = Array.isArray(link.target) ? link.target.slice(0, 3) : 'not array';
+        const normalizedTargetPrefix = target instanceof Uint8Array ? Array.from(target.slice(0, 3)) : 'not Uint8Array';
+
+        console.log(`[SyncXHR] Link ${idx} from gateway:`, {
+          raw_target_prefix: rawTargetPrefix,
+          raw_target_length: Array.isArray(link.target) ? link.target.length : 'N/A',
+          normalized_target_prefix: normalizedTargetPrefix,
+          normalized_target_length: target instanceof Uint8Array ? target.length : 'N/A',
+          raw_author_prefix: Array.isArray(link.author) ? link.author.slice(0, 3) : 'not array',
+        });
+
+        return {
+          create_link_hash: this.normalizeByteArrays(link.create_link_hash),
+          base: this.normalizeByteArrays(link.base),
+          target,
+          zome_index: link.zome_index,
+          link_type: link.link_type,
+          tag: link.tag ? this.normalizeByteArrays(link.tag) : new Uint8Array(0),
+          timestamp: link.timestamp,
+          author,
+        };
+      });
     } catch (error) {
       console.error('[ProxyNetwork] Failed to parse links response:', error);
       return [];

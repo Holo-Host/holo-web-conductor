@@ -133,6 +133,49 @@ export class MockNetworkService implements NetworkService {
     return links;
   }
 
+  getDetailsSync(
+    dnaHash: DnaHash,
+    hash: AnyDhtHash,
+    options?: NetworkFetchOptions
+  ): any | null {
+    this.callLog.push({
+      method: 'getDetailsSync',
+      args: [dnaHash, hash, options],
+    });
+
+    if (!this.available) {
+      throw new Error('Network unavailable');
+    }
+
+    // Mock returns null - real implementation would return details
+    return null;
+  }
+
+  countLinksSync(
+    dnaHash: DnaHash,
+    baseAddress: AnyDhtHash,
+    linkType?: number,
+    options?: NetworkFetchOptions
+  ): number {
+    this.callLog.push({
+      method: 'countLinksSync',
+      args: [dnaHash, baseAddress, linkType, options],
+    });
+
+    if (!this.available) {
+      throw new Error('Network unavailable');
+    }
+
+    const key = toBase64(baseAddress);
+    let links = this.links.get(key) || [];
+
+    if (linkType !== undefined) {
+      links = links.filter((l) => l.link_type === linkType);
+    }
+
+    return links.length;
+  }
+
   isAvailable(): boolean {
     return this.available;
   }

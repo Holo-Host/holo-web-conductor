@@ -18,11 +18,47 @@ import { HoloHashType, getHashType } from "@holochain/client";
 import type { EntryHash, ActionHash } from "@holochain/client";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 
+// Helper to convert to base64url for logging
+const toBase64 = (arr: Uint8Array) => {
+  const base64 = btoa(String.fromCharCode(...arr));
+  return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+/**
+ * Process a single get_details input and return the details or null
+ */
+function processGetDetailsInput(
+  input: { any_dht_hash: Uint8Array; get_options?: unknown },
+  dnaHash: Uint8Array,
+  agentPubKey: Uint8Array,
+  storage: ReturnType<typeof getStorageProvider>,
+  cascade: Cascade,
+  inputIndex: number
+): any | null {
+  const inputHash = input.any_dht_hash;
+
+  // Detect hash type from prefix bytes
+  const hashType = getHashType(inputHash);
+
+  console.log(`[get_details] Input ${inputIndex}:`, {
+    hash: toBase64(inputHash),
+    hashType,
+  });
+
+  // Route based on hash type
+  if (hashType === HoloHashType.Entry) {
+    return processEntryHashQuery(inputHash as EntryHash, dnaHash, agentPubKey, storage, cascade, inputIndex);
+  }
+
+  // Default: treat as action hash query
+  return processActionHashQuery(inputHash as ActionHash, dnaHash, agentPubKey, storage, cascade, inputIndex);
+}
+
 /**
  * get_details host function implementation
  *
  * Returns Vec<Option<Details>> where Details is either Record or Entry details.
- * The profiles zome uses this to follow update chains via get_latest().
+ * Handles batch queries - processes ALL inputs.
  */
 export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
@@ -34,59 +70,49 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
     get_options?: unknown;
   }>;
 
-  const input = inputs[0]; // Get first element
-  const inputHash = input.any_dht_hash;
-
-  // Detect hash type from prefix bytes
-  const hashType = getHashType(inputHash);
-
-  console.log("[get_details] Getting details for hash", {
-    hash: Array.from(inputHash.slice(0, 8)),
-    hashType,
-  });
+  console.log('[get_details] Processing batch of', inputs.length, 'queries');
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Create cascade for network fallback
   const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
 
-  // Route based on hash type
-  if (hashType === HoloHashType.Entry) {
-    return handleEntryHashQuery(instance, inputHash as EntryHash, dnaHash, agentPubKey, storage, cascade);
-  }
+  // Process ALL inputs and collect results
+  // HDK expects Vec<Option<Details>> - one Option<Details> per input
+  const allResults = inputs.map((input, index) =>
+    processGetDetailsInput(input, dnaHash, agentPubKey, storage, cascade, index)
+  );
 
-  // Default: treat as action hash query
-  return handleActionHashQuery(instance, inputHash as ActionHash, dnaHash, agentPubKey, storage, cascade);
+  console.log('[get_details] Batch complete. Found:', allResults.filter(r => r !== null).length, '/', inputs.length);
+
+  return serializeResult(instance, allResults);
 };
 
 /**
- * Handle query by entry hash - returns Details::Entry
- *
- * Uses Cascade to fetch from network if not in local storage.
+ * Process query by entry hash - returns Details::Entry or null
  */
-function handleEntryHashQuery(
-  instance: WebAssembly.Instance,
+function processEntryHashQuery(
   entryHash: EntryHash,
   dnaHash: Uint8Array,
   agentPubKey: Uint8Array,
   storage: ReturnType<typeof getStorageProvider>,
-  cascade: Cascade
-) {
-  console.log("[get_details] Handling as entry hash query");
+  cascade: Cascade,
+  inputIndex: number
+): any | null {
+  console.log(`[get_details] Input ${inputIndex}: entry hash query`);
 
   // Use cascade for local-first with network fallback
   const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, entryHash);
 
   if (!cascadeResult) {
-    console.log("[get_details] No entry details found (local or network)");
-    return serializeResult(instance, [null]);
+    console.log(`[get_details] Input ${inputIndex}: No entry details found`);
+    return null;
   }
 
   // Check if result is from network (already formatted) or local (needs formatting)
   if (cascadeResult.source === 'network') {
-    console.log("[get_details] Returning network entry details");
-    // Network response is already in gateway format - return as-is
-    return serializeResult(instance, [cascadeResult.details]);
+    console.log(`[get_details] Input ${inputIndex}: Returning network entry details`);
+    return cascadeResult.details;
   }
 
   // Local storage result - format it
@@ -129,75 +155,58 @@ function handleEntryHashQuery(
     },
   };
 
-  console.log("[get_details] Returning local entry details", {
+  console.log(`[get_details] Input ${inputIndex}: local entry details`, {
     actionsCount: entryDetails.actions.length,
     updatesCount: entryDetails.updates.length,
-    deletesCount: entryDetails.deletes.length,
   });
 
-  return serializeResult(instance, [result]);
+  return result;
 }
 
 /**
- * Handle query by action hash - returns Details::Record
- *
- * Uses Cascade to fetch from network if not in local storage.
+ * Process query by action hash - returns Details::Record or null
  */
-function handleActionHashQuery(
-  instance: WebAssembly.Instance,
+function processActionHashQuery(
   actionHash: ActionHash,
   dnaHash: Uint8Array,
   agentPubKey: Uint8Array,
   storage: ReturnType<typeof getStorageProvider>,
-  cascade: Cascade
-) {
-  console.log("[get_details] Handling as action hash query");
-
-  // Convert to base64url for logging
-  const toBase64 = (arr: Uint8Array) => {
-    const base64 = btoa(String.fromCharCode(...arr));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
+  cascade: Cascade,
+  inputIndex: number
+): any | null {
+  console.log(`[get_details] Input ${inputIndex}: action hash query`, {
+    actionHash: toBase64(actionHash),
+  });
 
   // Use cascade for local-first with network fallback
   const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, actionHash);
 
   if (!cascadeResult) {
-    console.log("[get_details] No record details found (local or network)");
-    return serializeResult(instance, [null]);
+    console.log(`[get_details] Input ${inputIndex}: No record details found`);
+    return null;
   }
 
   // Check if result is from network (already formatted) or local (needs formatting)
   if (cascadeResult.source === 'network') {
-    console.log("[get_details] Returning network record details");
-    // Network response is already in gateway format - return as-is
-    return serializeResult(instance, [cascadeResult.details]);
+    console.log(`[get_details] Input ${inputIndex}: Returning network record details`);
+    return cascadeResult.details;
   }
 
   // Local storage result - format it
   const details = cascadeResult.details;
   const action = cascadeResult.action;
 
-  if (!details) {
-    console.log("[get_details] No details found");
-    return serializeResult(instance, [null]);
+  if (!details || !details.record) {
+    console.log(`[get_details] Input ${inputIndex}: No details.record found`);
+    return null;
   }
 
-  if (!details.record) {
-    console.error("[get_details] details.record is undefined!", { details });
-    return serializeResult(instance, [null]);
-  }
-
-  console.log("[get_details] Local storage details result", {
-    hasRecord: !!details.record,
-    hasEntry: details?.record?.entry != null,
+  console.log(`[get_details] Input ${inputIndex}: local record details`, {
     updatesCount: details?.updates?.length ?? 0,
     deletesCount: details?.deletes?.length ?? 0,
-    actionHash: toBase64(actionHash),
   });
 
-  // Build RecordDetails structure using the action we looked up
-  // This ensures we return the action that was queried, not necessarily the originating action
+  // Build RecordDetails structure
   const recordDetails = {
     record: {
       signed_action: {
@@ -237,11 +246,5 @@ function handleActionHashQuery(
     content: recordDetails,
   };
 
-  console.log("[get_details] Returning local details", {
-    updatesCount: details.updates.length,
-    deletesCount: details.deletes.length,
-  });
-
-  // Return Vec<Option<Details>> - host function returns array
-  return serializeResult(instance, [result]);
+  return result;
 }

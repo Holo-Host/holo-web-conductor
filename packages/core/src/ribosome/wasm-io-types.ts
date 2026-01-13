@@ -141,10 +141,10 @@ export function validateWasmGetInput(input: unknown): input is WasmGetInput {
   return true;
 }
 
-/** Validates array of WasmGetInput (HDK passes array for batch operations) */
+/** Validates array of WasmGetInput (HDK passes array for batch operations, including empty) */
 export function validateWasmGetInputArray(inputs: unknown): inputs is WasmGetInput[] {
   if (!Array.isArray(inputs)) return false;
-  if (inputs.length === 0) return false;
+  // Empty array is valid - means no queries to make, returns empty results
   return inputs.every(validateWasmGetInput);
 }
 
@@ -295,6 +295,19 @@ export function validateWasmQueryInput(input: unknown): input is WasmQueryInput 
 // ============================================================================
 
 /**
+ * LinkTypeFilter enum from Holochain
+ * Based on holochain_integrity_types/src/link.rs LinkTypeFilter
+ *
+ * Rust enum serializes via serde as:
+ * - Types(Vec<(ZomeIndex, Vec<LinkType>)>) -> {"Types": [[zome_idx, [link_types...]]]}
+ * - Dependencies(Vec<ZomeIndex>) -> {"Dependencies": [zome_indices...]}
+ */
+export type LinkTypeFilter =
+  | number  // Legacy/simplified format: single link type
+  | { Types: Array<[number, number[]]> }  // Match specific types per zome
+  | { Dependencies: number[] };  // Match all types from zomes
+
+/**
  * WASM GetLinks input structure
  * Based on holochain_zome_types/src/link.rs GetLinksInput
  */
@@ -302,8 +315,8 @@ export interface WasmGetLinksInput {
   /** Base hash to get links from */
   base_address: AnyLinkableHash;
 
-  /** Link type filter */
-  link_type: number | { types: number[] } | 'Dependencies';
+  /** Link type filter - matches Holochain's LinkTypeFilter enum */
+  link_type: LinkTypeFilter;
 
   /** Optional tag prefix filter */
   tag_prefix?: Uint8Array;
@@ -329,10 +342,10 @@ export function validateWasmGetLinksInput(input: unknown): input is WasmGetLinks
   return true;
 }
 
-/** Validates array of WasmGetLinksInput (HDK may pass array) */
+/** Validates array of WasmGetLinksInput (HDK may pass array, including empty) */
 export function validateWasmGetLinksInputArray(inputs: unknown): inputs is WasmGetLinksInput[] {
   if (!Array.isArray(inputs)) return false;
-  if (inputs.length === 0) return false;
+  // Empty array is valid - means no queries to make, returns empty results
   return inputs.every(validateWasmGetLinksInput);
 }
 

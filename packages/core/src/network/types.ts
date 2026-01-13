@@ -103,7 +103,7 @@ export interface NetworkService {
    * Fetch record details by hash (synchronous version)
    * Returns null if not found
    */
-  getDetailsSync?(
+  getDetailsSync(
     dnaHash: DnaHash,
     hash: AnyDhtHash,
     options?: NetworkFetchOptions
@@ -113,7 +113,7 @@ export interface NetworkService {
    * Count links by base address (synchronous version)
    * Returns 0 if none found
    */
-  countLinksSync?(
+  countLinksSync(
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,

@@ -45,36 +45,32 @@ function normalizeEntryBytes(entry: any): any {
 
 
 /**
- * get host function implementation
- *
- * Uses Cascade pattern: local storage → network cache → network
+ * Process a single get input and return the record or null
  */
-export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { callContext, instance } = context;
-  const storage = getStorageProvider();
-
-  // Deserialize and validate input - it's an array of GetInput objects
-  const inputs = deserializeTypedFromWasm(
-    instance, inputPtr, inputLen,
-    validateWasmGetInputArray, 'WasmGetInput[]'
-  );
-  const input = inputs[0];
+function processGetInput(
+  input: { any_dht_hash: Uint8Array; get_options?: unknown },
+  dnaHash: Uint8Array,
+  agentPubKey: Uint8Array,
+  storage: ReturnType<typeof getStorageProvider>,
+  cascade: Cascade,
+  toBase64: (arr: Uint8Array) => string,
+  inputIndex: number
+): HolochainRecord | null {
   const { any_dht_hash } = input;
 
-  console.log(`[get] Getting record for hash:`, Array.from(any_dht_hash.slice(0, 8)));
+  // Detect hash type based on prefix
+  const hashType = any_dht_hash[0] === 132 && any_dht_hash[1] === 33 ? 'ENTRY' :
+                   any_dht_hash[0] === 132 && any_dht_hash[1] === 41 ? 'ACTION' :
+                   any_dht_hash[0] === 132 && any_dht_hash[1] === 32 ? 'AGENT' : 'UNKNOWN';
 
-  const [dnaHash, agentPubKey] = callContext.cellId;
-
-  // Create cascade for this lookup
-  // Uses global network service if configured (MockNetworkService for testing, SyncXHRNetworkService for production)
-  const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
+  console.log(`[get] Input ${inputIndex}: Getting ${hashType} hash: ${toBase64(any_dht_hash)}`);
 
   // Try cascade: local → cache → network
   const networkRecord = cascade.fetchRecord(dnaHash, any_dht_hash);
 
   if (!networkRecord) {
-    console.log('[get] Record not found in cascade');
-    return serializeResult(instance, [null]);
+    console.log(`[get] Input ${inputIndex}: NOT FOUND`);
+    return null;
   }
 
   // Check if this action has been deleted
@@ -93,41 +89,27 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
     });
 
     if (isDeleted) {
-      console.log('[get] Record has been deleted - returning null');
-      return serializeResult(instance, [null]);
+      console.log(`[get] Input ${inputIndex}: Record deleted`);
+      return null;
     }
   }
 
-  // The cascade returns NetworkRecord format, which we need to convert to Holochain Record format
-  // NetworkRecord has: signed_action, entry (NetworkEntry)
-  // HolochainRecord needs: signed_action with toHolochainAction format, entry
-
-  // Check if this came from local storage (has our internal action format)
-  // or from network (has Holochain wire format)
-  // StoredAction uses actionType string, WireAction uses type enum
+  // Convert action format if needed
   const action = networkRecord.signed_action.hashed.content;
-
-  // If from local storage, convert to Holochain format
-  // Local actions have actionType as string, network actions have type as object
   let actionContent: WireAction;
   const localActionType = (action as unknown as StoredAction).actionType;
   if (typeof localActionType === 'string') {
-    // Local format - convert to wire format
     actionContent = toHolochainAction(action as unknown as StoredAction);
   } else {
-    // Already in network/Holochain wire format
     actionContent = action as unknown as WireAction;
   }
 
   // Build entry from network record
-  // Cascade produces entries in Holochain format: { Present: { entry_type: "App", entry: content } }
-  // Gateway returns entry bytes as JSON array - convert to Uint8Array for msgpack encoding
   let entry: RecordEntry = { NotApplicable: undefined as unknown as void };
   const recordEntry = networkRecord.entry;
   if (recordEntry && typeof recordEntry === 'object' && 'Present' in recordEntry) {
     const presentEntry = recordEntry.Present;
     if (presentEntry) {
-      // Normalize entry bytes: convert JSON arrays to Uint8Array
       const normalizedEntry = normalizeEntryBytes(presentEntry);
       entry = { Present: normalizedEntry };
     }
@@ -144,11 +126,50 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
     entry: entry as unknown as HolochainRecord['entry'],
   };
 
-  console.log('[get] Found record via cascade', {
+  console.log(`[get] Input ${inputIndex}: Found ${hashType} record`, {
     actionType: actionContent.type || localActionType,
     hasEntry: !('NotApplicable' in entry),
   });
 
-  // Return Vec<Option<Record>> - HDK host function signature
-  return serializeResult(instance, [record]);
+  return record;
+}
+
+/**
+ * get host function implementation
+ *
+ * Uses Cascade pattern: local storage → network cache → network
+ * Handles batch queries - processes ALL inputs and returns Vec<Option<Record>>
+ */
+export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
+  const { callContext, instance } = context;
+  const storage = getStorageProvider();
+
+  // Deserialize and validate input - it's an array of GetInput objects
+  const inputs = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateWasmGetInputArray, 'WasmGetInput[]'
+  );
+
+  console.log('[get] Processing batch of', inputs.length, 'queries');
+
+  // Convert to base64url for easier debugging
+  const toBase64 = (arr: Uint8Array) => {
+    const base64 = btoa(String.fromCharCode(...arr));
+    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
+  const [dnaHash, agentPubKey] = callContext.cellId;
+
+  // Create cascade for this lookup
+  const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
+
+  // Process ALL inputs and collect results
+  // HDK expects Vec<Option<Record>> - one Option<Record> per input
+  const allResults = inputs.map((input, index) =>
+    processGetInput(input, dnaHash, agentPubKey, storage, cascade, toBase64, index)
+  );
+
+  console.log('[get] Batch complete. Found:', allResults.filter(r => r !== null).length, '/', inputs.length);
+
+  return serializeResult(instance, allResults);
 };
