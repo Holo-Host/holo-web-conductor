@@ -104,6 +104,8 @@ export function computeEntryHash(entryContent: Uint8Array): EntryHash {
  */
 export function computeAppEntryHash(entryContent: Uint8Array): EntryHash {
   // Wrap in Entry::App format with internal tagging
+  // Rust serde uses #[serde(tag = "entry_type", content = "entry")]
+  // which produces {"entry_type": "App", "entry": <bytes>}
   const entryStruct = {
     entry_type: "App",
     entry: entryContent,
@@ -112,9 +114,46 @@ export function computeAppEntryHash(entryContent: Uint8Array): EntryHash {
   // Serialize the Entry enum
   const serialized = encode(entryStruct);
 
+  // Debug: show the EXACT serialized bytes we're hashing
+  console.log('[computeAppEntryHash] Serialized bytes to hash:', Array.from(new Uint8Array(serialized)));
+
+  // Debug: log the serialized bytes to compare with Rust
+  const serializedArray = new Uint8Array(serialized);
+
+  // Log ALL entries to debug what's being created
+  let decoded = '';
+  try {
+    decoded = new TextDecoder().decode(entryContent);
+  } catch {
+    decoded = '[binary - could not decode]';
+  }
+
+  // Determine entry type based on content
+  const isProfileEntry = decoded.includes('nickname');
+  const hasPathMarker = entryContent[0] === 145 || entryContent[0] === 146 || entryContent[0] === 147; // fixarray markers
+
+  if (isProfileEntry) {
+    console.log('[computeAppEntryHash] 👤 PROFILE ENTRY:', decoded.substring(0, 50));
+  } else {
+    // Log all non-profile entries - these could be paths
+    console.log('[computeAppEntryHash] 📦 ENTRY (possibly path)');
+    console.log('[computeAppEntryHash] Content length:', entryContent.length);
+    console.log('[computeAppEntryHash] First byte (msgpack type):', entryContent[0], '(145-147 = fixarray)');
+    console.log('[computeAppEntryHash] Full entry content bytes:', Array.from(entryContent));
+    console.log('[computeAppEntryHash] Decoded attempt:', decoded.substring(0, 100));
+  }
+
+  console.log('[computeAppEntryHash] Entry content length:', entryContent.length);
+  console.log('[computeAppEntryHash] Serialized Entry length:', serializedArray.length);
+
   // Hash the serialized Entry
-  const hash32 = blake2b256(new Uint8Array(serialized));
-  return hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
+  const hash32 = blake2b256(serializedArray);
+  console.log('[computeAppEntryHash] Blake2b hash32:', Array.from(hash32));
+
+  const result = hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
+  console.log('[computeAppEntryHash] Final EntryHash:', Array.from(result));
+
+  return result;
 }
 
 /**

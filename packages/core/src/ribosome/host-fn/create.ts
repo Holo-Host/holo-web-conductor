@@ -32,12 +32,29 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Extract entry content from the validated structure
   const entryContent = input.entry.entry;
 
+  // Convert to base64url for easier debugging (matches Holochain's hash display format)
+  const toBase64 = (arr: Uint8Array) => {
+    const base64 = btoa(String.fromCharCode(...arr));
+    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
+  // Try to decode entry content as UTF-8 to see if it's a path
+  let contentPreview = '';
+  try {
+    const decoded = new TextDecoder().decode(entryContent);
+    if (decoded.includes('all_profiles') || decoded.length < 100) {
+      contentPreview = decoded.substring(0, 80);
+    }
+  } catch { /* ignore */ }
+
   console.log('[create] Creating entry', {
     entryType: input.entry.entry_type,
     contentLength: entryContent.length,
     visibility: input.entry_visibility,
     zomeIndex: input.entry_location.App.zome_index,
     entryDefIndex: input.entry_location.App.entry_def_index,
+    contentFirst32: Array.from(entryContent.slice(0, 32)),
+    contentPreview: contentPreview || '[binary]',
   });
 
   // Hash the entry - App entries hash the serialized Entry enum { entry_type: "App", entry: content }
@@ -118,9 +135,9 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   callContext.pendingRecords.push({ action, entry });
 
   console.log('[create] Created entry', {
-    actionHash: Array.from(actionHash.slice(0, 8)),
+    actionHash: toBase64(actionHash),
     actionSeq,
-    entryHash: Array.from(entryHash.slice(0, 8)),
+    entryHash: toBase64(entryHash),
   });
 
   return serializeResult(instance, actionHash);

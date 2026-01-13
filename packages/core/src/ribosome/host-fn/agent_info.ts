@@ -7,7 +7,7 @@
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
-import { hashFrom32AndType, HoloHashType } from "@holochain/client";
+import { hashFrom32AndType, HoloHashType, dhtLocationFrom32 } from "@holochain/client";
 
 /**
  * Agent info response structure
@@ -72,9 +72,20 @@ export const agentInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
     timestamp, // Timestamp(i64): serializes as bare i64
   ];
 
+  // Validate DHT location before returning
+  const core32 = agentPubKey.slice(3, 35);
+  const actualDhtLoc = agentPubKey.slice(35, 39);
+  const expectedDhtLoc = dhtLocationFrom32(core32);
+  const dhtLocValid = actualDhtLoc.every((b: number, i: number) => b === expectedDhtLoc[i]);
+
   console.log("[agent_info] Returning agent info", {
     chainSeq: actionSeq,
     hasChainHead: !!storedChainHead,
+    agentPubKeyLength: agentPubKey.length,
+    agentPubKeyPrefix: Array.from(agentPubKey.slice(0, 3)),
+    actualDhtLoc: Array.from(actualDhtLoc),
+    expectedDhtLoc: Array.from(expectedDhtLoc),
+    dhtLocValid,
   });
 
   // AgentInfo is a struct: { agent_initial_pubkey, chain_head }

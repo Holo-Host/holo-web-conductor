@@ -59,10 +59,38 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
 
+  // Convert to base64url for easier debugging (matches Holochain's hash display format)
+  const toBase64 = (arr: Uint8Array) => {
+    const base64 = btoa(String.fromCharCode(...arr));
+    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
+  // Try to decode tag as UTF-8 string (paths encode component names in tags)
+  let tagString = '';
+  try {
+    tagString = new TextDecoder().decode(input.tag);
+  } catch {
+    tagString = `[binary: ${input.tag.length} bytes]`;
+  }
+
+  // Detect target hash type
+  const targetPrefix = Array.from(input.target_address.slice(0, 3));
+  const isTargetEntry = targetPrefix[0] === 132 && targetPrefix[1] === 33 && targetPrefix[2] === 36;
+  const isTargetAgent = targetPrefix[0] === 132 && targetPrefix[1] === 32 && targetPrefix[2] === 36;
+  const isTargetAction = targetPrefix[0] === 132 && targetPrefix[1] === 41 && targetPrefix[2] === 36;
+
   console.log("[create_link] Creating link", {
-    base: Array.from(input.base_address.slice(0, 8)),
-    target: Array.from(input.target_address.slice(0, 8)),
+    base_hash: toBase64(input.base_address),
+    target_hash: toBase64(input.target_address),
+    base_prefix: Array.from(input.base_address.slice(0, 3)),
+    target_prefix: targetPrefix,
+    target_is_entry: isTargetEntry,
+    target_is_agent: isTargetAgent,
+    target_is_action: isTargetAction,
+    target_length: input.target_address.length,
     linkType: input.link_type,
+    zomeIndex: input.zome_index,
+    tag: tagString,
   });
 
   const [dnaHash, agentPubKey] = callContext.cellId;
