@@ -1,10 +1,52 @@
 # Fishy Development Session
 
-**Last Updated**: 2026-01-06
-**Current Step**: Step 8 - DHT Publishing
-**Status**: COMPLETE
+**Last Updated**: 2026-01-13
+**Current Step**: Step 10.1 - Ziptest Integration / Step 10.2 - Remote Signal Architecture Fix
+**Status**: IN PROGRESS
 
 ## Current Step Progress
+
+### Step 10.2: Fix Remote Signal Architecture - IN PROGRESS
+
+**Goal**: Fix remote signal flow to invoke WASM's `recv_remote_signal` callback instead of forwarding directly to UI.
+
+**Status**: PLANNED - Ready for implementation
+
+**Problem**: Remote signals bypass WASM and go directly to UI tabs. This breaks the Holochain architecture where WASM decides whether to forward signals via `emit_signal()`.
+
+**Plan**: See [STEPS/10.2_PLAN.md](./STEPS/10.2_PLAN.md)
+
+**Pre-requisite**: Fix TypeScript compile error:
+```
+src/ribosome/index.ts(376,7): error TS2353: Object literal may only specify known
+properties, and 'remoteSignals' does not exist in type 'ZomeCallResult'.
+```
+
+---
+
+### Step 10.1: Ziptest Integration - PARTIAL
+
+**Goal**: Create FishyAppClient adapter for @holochain/client compatibility.
+
+**Status**: PARTIAL (2026-01-13)
+
+**Completed**:
+- ✅ FishyAppClient implementing AppClient interface
+- ✅ ZeroArcProfilesClient for profiles integration
+- ✅ Remote signal infrastructure (WebSocket delivery)
+- ✅ cachedAppInfo property for ZomeClient compatibility
+- ✅ get_details cascade with network fallback
+- ✅ Batch query handling fixes
+- ✅ post_commit callback support
+
+**Remaining**:
+- ⏳ Fix remote signal architecture (Step 10.2)
+- ⏳ Fix TypeScript compile error
+- ⏳ End-to-end signal verification
+
+**Details**: See [STEPS/10.1_COMPLETION.md](./STEPS/10.1_COMPLETION.md)
+
+---
 
 ### Step 8.5: Integration & Publish Workflow - COMPLETE
 
@@ -266,6 +308,8 @@ Completion notes for each step are in separate files:
 - **Step 8.3**: Gateway TempOpStore and Publish Endpoint - See [STEPS/8.3_COMPLETION.md](./STEPS/8.3_COMPLETION.md)
 - **Step 8.5**: Integration & Publish Workflow - See [STEPS/8.5_COMPLETION.md](./STEPS/8.5_COMPLETION.md)
 - **Step 11**: Synchronous SQLite Storage Layer - See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
+- **Step 10.1**: Ziptest Integration (Partial) - See [STEPS/10.1_COMPLETION.md](./STEPS/10.1_COMPLETION.md)
+- **Step 10.2**: Remote Signal Architecture Fix - See [STEPS/10.2_PLAN.md](./STEPS/10.2_PLAN.md) (planned)
 
 ---
 
@@ -442,4 +486,10 @@ Any serialization changes MUST:
 
 When resuming on another workstation, tell Claude:
 
-> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are. Step 8 (DHT Publishing) is COMPLETE. All sub-steps finished: hash computation (8.0), DhtOp generation (8.1), op signing (8.2), gateway publish endpoint (8.3), publish tracking (8.4), and extension integration (8.5). Browser extension agents can now author data that reaches the DHT via the gateway's kitsune2 node. 
+> I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are.
+>
+> Step 10.1 (Ziptest Integration) is PARTIAL - FishyAppClient created but remote signals have an architectural issue.
+>
+> Step 10.2 (Remote Signal Architecture Fix) is planned and ready for implementation. The current implementation forwards remote signals directly to UI tabs instead of invoking the WASM's `recv_remote_signal` callback. See STEPS/10.2_PLAN.md for the fix plan.
+>
+> There's also a TypeScript compile error to fix: `remoteSignals` needs to be added to `ZomeCallResult` interface in packages/core/src/ribosome/index.ts. 
