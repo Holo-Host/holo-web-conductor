@@ -16,6 +16,14 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
 
 ---
 
+## Things you must do:
+
+- use npm for build.
+- For all Holochain hashes rely on @holochain/client types and functions:  
+  - Allways use types (AgentPubKey, EntryHash, ActionHash, etc) instead of Uint8Array
+  - allways use library functions encodeHashToBase64 decodeHashFromBase64 instead of roll-your own. (never use atob)
+  - allways get the prefixes from the library, not setting them manually.
+
 ## Requirements, Tradeoffs & Dev Instructions
 
 0. When reporting on status, or asking questions don't add the emotional tags at the beginning and end of phrases, (you can tell you are doing this if there's an exclamation point at the end of the phrase/sentence).  Just code related information.
@@ -86,7 +94,7 @@ packages/
 
 Web-app developers building applications for this extension will use the standard **holochain-client-js** library (https://github.com/holochain/holochain-client-js). This project MUST maintain compatibility with those types and interfaces.
 
-**Key Types** (all using `Uint8Array`):
+**Key Types** (all using `Uint8Array` below the hood):
 - `AgentPubKey` - 39-byte Uint8Array
 - `ActionHash` - 39-byte Uint8Array
 - `EntryHash` - 39-byte Uint8Array
@@ -105,7 +113,7 @@ interface CallZomeRequest {
 ```
 
 **Critical Requirements**:
-1. Hash types MUST remain as `Uint8Array` (not base64 strings or objects)
+1. Hash types MUST remain as they hash type AgentPubKey, etc (not base64 strings or objects)
 2. Return values from zome calls MUST match holochain-client-js expectations
 3. `AppInfo` structure MUST follow the same schema as standard Holochain
 4. Future shim layer will auto-detect extension context (no code changes needed in web-apps)
