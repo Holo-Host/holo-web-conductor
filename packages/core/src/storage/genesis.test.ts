@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { initializeGenesis, type GenesisResult } from "./genesis";
 import { buildRecords, storedActionToClientAction } from "../dht/record-converter";
 import { produceOpsFromRecord } from "../dht/produce-ops";
-import { ActionType } from "@holochain/client";
+import { ActionType, HASH_TYPE_PREFIX, HoloHashType, dhtLocationFrom32 } from "@holochain/client";
 import type { StoredAction } from "./types";
 
 // Mock storage
@@ -44,18 +44,20 @@ vi.mock("../signing", () => ({
   }),
 }));
 
-// Test fixtures
-const testDnaHash = new Uint8Array([
-  132, 32, 36, // DNA hash prefix
-  ...Array(32).fill(1),
-  ...Array(4).fill(0), // DHT location
-]);
+// Test fixtures - create valid HoloHashes with correct prefixes and DHT locations
+const createTestHash = (type: HoloHashType, fillByte: number): Uint8Array => {
+  const core32 = new Uint8Array(32).fill(fillByte);
+  const prefix = HASH_TYPE_PREFIX[type];
+  const location = dhtLocationFrom32(core32);
+  const hash = new Uint8Array(39);
+  hash.set(prefix, 0);
+  hash.set(core32, 3);
+  hash.set(location, 35);
+  return hash;
+};
 
-const testAgentPubKey = new Uint8Array([
-  132, 32, 36, // AgentPubKey prefix
-  ...Array(32).fill(2),
-  ...Array(4).fill(0), // DHT location
-]);
+const testDnaHash = createTestHash(HoloHashType.Dna, 0x01);
+const testAgentPubKey = createTestHash(HoloHashType.Agent, 0x02);
 
 describe("genesis", () => {
   describe("initializeGenesis", () => {
