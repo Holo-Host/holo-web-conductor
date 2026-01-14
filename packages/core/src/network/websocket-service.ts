@@ -11,6 +11,9 @@
  */
 
 import { decodeHashFromBase64 } from "../types/holochain-types";
+import { createLogger } from "@fishy/shared";
+
+const log = createLogger('WebSocket');
 
 /**
  * Messages from browser to gateway
@@ -220,16 +223,14 @@ export class WebSocketNetworkService {
    */
   connect(): void {
     if (this.ws) {
-      console.log("[WebSocketService] Already connected or connecting");
+      log.debug("Already connected or connecting");
       return;
     }
 
     this.intentionalClose = false;
     this.setState("connecting");
 
-    console.log(
-      `[WebSocketService] Connecting to ${this.options.gatewayWsUrl}`
-    );
+    log.debug(`Connecting to ${this.options.gatewayWsUrl}`);
 
     try {
       this.ws = new WebSocket(this.options.gatewayWsUrl);
@@ -248,7 +249,7 @@ export class WebSocketNetworkService {
    * Disconnect from the gateway
    */
   disconnect(): void {
-    console.log("[WebSocketService] Disconnecting");
+    log.debug("Disconnecting");
     this.intentionalClose = true;
     this.cleanup();
     this.setState("disconnected");
@@ -270,9 +271,7 @@ export class WebSocketNetworkService {
     if (this.isConnected()) {
       // Always send registration when connected - gateway may have lost it
       // (e.g., gateway restarted while we stayed connected)
-      console.log(
-        `[WebSocketService] Sending registration: ${agent_pubkey.substring(0, 20)}... for ${dna_hash.substring(0, 20)}...`
-      );
+      log.debug(`Sending registration: ${agent_pubkey.substring(0, 20)}... for ${dna_hash.substring(0, 20)}...`);
       this.send({ type: "register", dna_hash, agent_pubkey });
       if (!alreadyTracked) {
         this.registrations.push(registration);
@@ -322,7 +321,7 @@ export class WebSocketNetworkService {
     }
 
     if (this.isConnected()) {
-      console.log(`[WebSocketService] Sending ${signals.length} remote signals for DNA ${dna_hash.slice(0, 12)}...`);
+      log.debug(` Sending ${signals.length} remote signals for DNA ${dna_hash.slice(0, 12)}...`);
       this.send({ type: "send_remote_signal", dna_hash, signals });
     } else {
       console.warn(`[WebSocketService] Cannot send remote signals - not connected`);
@@ -335,14 +334,14 @@ export class WebSocketNetworkService {
 
   private setState(state: ConnectionState): void {
     if (this.state !== state) {
-      console.log(`[WebSocketService] State: ${this.state} -> ${state}`);
+      log.debug(` State: ${this.state} -> ${state}`);
       this.state = state;
       this.stateCallback?.(state);
     }
   }
 
   private handleOpen(): void {
-    console.log("[WebSocketService] Connected");
+    log.debug("Connected");
     this.reconnectAttempts = 0;
     this.setState("authenticating");
     this.startHeartbeat();
@@ -355,7 +354,7 @@ export class WebSocketNetworkService {
   private handleMessage(event: MessageEvent): void {
     try {
       const message = JSON.parse(event.data) as ServerMessage;
-      console.log("[WebSocketService] Received:", message.type);
+      log.debug("Received:", message.type);
 
       switch (message.type) {
         case "auth_ok":
@@ -367,15 +366,11 @@ export class WebSocketNetworkService {
           break;
 
         case "registered":
-          console.log(
-            `[WebSocketService] Agent registered: ${message.agent_pubkey} for ${message.dna_hash}`
-          );
+          log.debug(`Agent registered: ${message.agent_pubkey} for ${message.dna_hash}`);
           break;
 
         case "unregistered":
-          console.log(
-            `[WebSocketService] Agent unregistered: ${message.agent_pubkey} for ${message.dna_hash}`
-          );
+          log.debug(`Agent unregistered: ${message.agent_pubkey} for ${message.dna_hash}`);
           break;
 
         case "signal":
@@ -404,17 +399,13 @@ export class WebSocketNetworkService {
   }
 
   private handleClose(event: CloseEvent): void {
-    console.log(
-      `[WebSocketService] Connection closed: code=${event.code}, reason=${event.reason}`
-    );
+    log.debug(`Connection closed: code=${event.code}, reason=${event.reason}`);
     this.cleanup();
 
     // Move registrations back to pending so they get re-sent on reconnect
     // This is needed because the gateway forgets registrations when connection drops
     if (this.registrations.length > 0) {
-      console.log(
-        `[WebSocketService] Moving ${this.registrations.length} registrations to pending for re-send`
-      );
+      log.debug(`Moving ${this.registrations.length} registrations to pending for re-send`);
       this.pendingRegistrations.push(...this.registrations);
       this.registrations = [];
     }
@@ -429,13 +420,13 @@ export class WebSocketNetworkService {
   private authenticate(): void {
     // Always send auth - gateway requires authentication before accepting registrations
     // When no authenticator is configured on gateway, any token (including empty) is accepted
-    console.log("[WebSocketService] Authenticating...");
+    log.debug("Authenticating...");
     this.setState("authenticating");
     this.send({ type: "auth", session_token: this.options.sessionToken || "" });
   }
 
   private handleAuthOk(): void {
-    console.log("[WebSocketService] Authenticated");
+    log.debug("Authenticated");
     this.authenticated = true;
     this.setState("connected");
 
@@ -451,9 +442,7 @@ export class WebSocketNetworkService {
   }
 
   private handleSignal(message: Extract<ServerMessage, { type: "signal" }>): void {
-    console.log(
-      `[WebSocketService] Signal for ${message.to_agent} from ${message.from_agent} (${message.zome_name})`
-    );
+    log.debug(`Signal for ${message.to_agent} from ${message.from_agent} (${message.zome_name})`);
 
     if (this.signalCallback) {
       try {
@@ -486,9 +475,7 @@ export class WebSocketNetworkService {
   private handleSignRequest(
     message: Extract<ServerMessage, { type: "sign_request" }>
   ): void {
-    console.log(
-      `[WebSocketService] Sign request ${message.request_id} for agent ${message.agent_pubkey.substring(0, 20)}...`
-    );
+    log.debug(`Sign request ${message.request_id} for agent ${message.agent_pubkey.substring(0, 20)}...`);
 
     if (!this.signCallback) {
       console.error("[WebSocketService] No sign callback registered");
@@ -539,9 +526,7 @@ export class WebSocketNetworkService {
         const signatureB64 = btoa(
           String.fromCharCode.apply(null, Array.from(signature))
         );
-        console.log(
-          `[WebSocketService] Sending sign response for ${message.request_id}`
-        );
+        log.debug(`Sending sign response for ${message.request_id}`);
         this.send({
           type: "sign_response",
           request_id: message.request_id,
@@ -593,7 +578,7 @@ export class WebSocketNetworkService {
     }
 
     if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-      console.log("[WebSocketService] Max reconnect attempts reached");
+      log.debug("Max reconnect attempts reached");
       this.setState("disconnected");
       return;
     }
@@ -606,9 +591,7 @@ export class WebSocketNetworkService {
     const jitter = delay * 0.2 * Math.random();
     const totalDelay = delay + jitter;
 
-    console.log(
-      `[WebSocketService] Reconnecting in ${Math.round(totalDelay)}ms (attempt ${this.reconnectAttempts + 1})`
-    );
+    log.debug(`Reconnecting in ${Math.round(totalDelay)}ms (attempt ${this.reconnectAttempts + 1})`);
 
     this.setState("reconnecting");
     this.reconnectAttempts++;
@@ -622,10 +605,10 @@ export class WebSocketNetworkService {
 
   private processPendingRegistrations(): void {
     if (this.pendingRegistrations.length > 0) {
-      console.log(`[WebSocketService] Processing ${this.pendingRegistrations.length} pending registrations`);
+      log.debug(` Processing ${this.pendingRegistrations.length} pending registrations`);
     }
     for (const registration of this.pendingRegistrations) {
-      console.log(`[WebSocketService] Sending registration: ${registration.agent_pubkey.substring(0, 20)}... for ${registration.dna_hash.substring(0, 20)}...`);
+      log.debug(` Sending registration: ${registration.agent_pubkey.substring(0, 20)}... for ${registration.dna_hash.substring(0, 20)}...`);
       this.send({
         type: "register",
         dna_hash: registration.dna_hash,

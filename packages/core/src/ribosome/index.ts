@@ -5,6 +5,9 @@
  */
 
 import sodium from "libsodium-wrappers";
+import { createLogger } from '@fishy/shared';
+
+const log = createLogger('Ribosome');
 import {
   ZomeCallRequest,
   CallContext,
@@ -80,9 +83,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
   const callStart = performance.now();
   const { dnaWasm, cellId, zome, fn, payload, provenance, dnaManifest } = request;
 
-  console.log(
-    `[Ribosome] Calling zome function: ${zome}::${fn}`
-  );
+  log.debug(`Calling zome function: ${zome}::${fn}`);
 
   // Start performance tracking
   startZomeCallMetrics(zome, fn);
@@ -104,7 +105,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     const genesisResult = await initializeGenesis(storage as any, dnaHash, agentPubKey);
     if (genesisResult.initialized) {
       genesisRecords = genesisResult.pendingRecords;
-      console.log(`[Ribosome] Genesis initialized with ${genesisRecords.length} records to publish`);
+      log.debug(` Genesis initialized with ${genesisRecords.length} records to publish`);
     }
   });
 
@@ -112,12 +113,12 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
   // SQLiteStorage doesn't need this - it queries on demand
   if (storage.preloadChainForCell) {
     await storage.preloadChainForCell(dnaHash, agentPubKey);
-    console.log('[Ribosome] Chain pre-loaded into session cache');
+    log.debug(' Chain pre-loaded into session cache');
   }
 
   // Begin transaction for atomic chain updates
   storage.beginTransaction();
-  console.log('[Ribosome] Transaction started for zome call');
+  log.debug(' Transaction started for zome call');
 
   try {
     // Ensure libsodium is ready (required for signing host functions)
@@ -131,13 +132,13 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
       // Check integrity zomes
       const integrityZome = dnaManifest.integrity_zomes.find(z => z.name === zome);
       if (integrityZome?.wasm) {
-        console.log(`[Ribosome] Using WASM from integrity zome: ${zome}`);
+        log.debug(` Using WASM from integrity zome: ${zome}`);
         zomeWasm = integrityZome.wasm;
       } else {
         // Check coordinator zomes
         const coordinatorZome = dnaManifest.coordinator_zomes?.find(z => z.name === zome);
         if (coordinatorZome?.wasm) {
-          console.log(`[Ribosome] Using WASM from coordinator zome: ${zome}`);
+          log.debug(` Using WASM from coordinator zome: ${zome}`);
           zomeWasm = coordinatorZome.wasm;
         }
       }
@@ -146,7 +147,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Fallback to dnaWasm if zome not found in manifest
     if (!zomeWasm || zomeWasm.length === 0) {
       if (dnaWasm && dnaWasm.length > 0) {
-        console.log(`[Ribosome] Using fallback dnaWasm for zome: ${zome}`);
+        log.debug(` Using fallback dnaWasm for zome: ${zome}`);
         zomeWasm = dnaWasm;
       } else {
         throw new Error(`No WASM available for zome: ${zome}. Check manifest or provide dnaWasm.`);
@@ -178,9 +179,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     const registry = getHostFunctionRegistry();
     const imports = registry.buildImportObject(instanceRef, context);
 
-    console.log(
-      `[Ribosome] Instantiating with ${registry.size} host functions`
-    );
+    log.debug(`Instantiating with ${registry.size} host functions`);
 
     // Instantiate with host function imports
     let instance: WebAssembly.Instance;
@@ -213,7 +212,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
         const needsLinkTypes = integrityZome.linkTypeCount === undefined;
 
         if ((needsEntryDefs || needsLinkTypes) && integrityZome.wasm) {
-          console.log('[Ribosome] Initializing metadata for integrity zome:', integrityZome.name);
+          log.debug(' Initializing metadata for integrity zome:', integrityZome.name);
 
           // Compile and instantiate the integrity zome's WASM
           const integrityWasmHash = new Uint8Array([...dnaHash, ...new TextEncoder().encode(integrityZome.name)]);
@@ -233,13 +232,13 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
           // Get entry_defs from integrity WASM
           if (needsEntryDefs) {
-            console.log('[Ribosome] Getting entry_defs from integrity zome:', integrityZome.name);
+            log.debug(' Getting entry_defs from integrity zome:', integrityZome.name);
             integrityZome.entryDefs = await initializeEntryDefs(integrityInstance, integrityZome.name);
           }
 
           // Get link_types from integrity WASM
           if (needsLinkTypes) {
-            console.log('[Ribosome] Getting link_types from integrity zome:', integrityZome.name);
+            log.debug(' Getting link_types from integrity zome:', integrityZome.name);
             integrityZome.linkTypeCount = initializeLinkTypes(integrityInstance, integrityZome.name);
           }
 
@@ -256,9 +255,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Serialize input payload to WASM memory
     const { ptr: dataPtr, len: dataLen } = timeSync('serialize', () => serializeToWasm(instance, payload));
 
-    console.log(
-      `[Ribosome] Calling ${zome}::${fn}(ptr=${dataPtr}, len=${dataLen})`
-    );
+    log.debug(`Calling ${zome}::${fn}(ptr=${dataPtr}, len=${dataLen})`);
 
     // Get zome function export
     // HDK exports functions with just their bare names (e.g., "get_agent_info")
@@ -281,9 +278,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     const resultPtr = Number(resultI64 >> 32n); // ptr in high 32 bits
     const resultLen = Number(resultI64 & 0xffffffffn); // len in low 32 bits
 
-    console.log(
-      `[Ribosome] Result at ptr=${resultPtr}, len=${resultLen}`
-    );
+    log.debug(`Result at ptr=${resultPtr}, len=${resultLen}`);
 
     // Deserialize result from WASM memory
     const result = timeSync('deserialize', () => deserializeFromWasm(instance, resultPtr, resultLen));
@@ -294,7 +289,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     let unwrappedResult = result;
     if (result && typeof result === 'object') {
       if ('Err' in result) {
-        console.log('[Ribosome] Zome returned error, rolling back transaction');
+        log.debug(' Zome returned error, rolling back transaction');
         if (storage.isTransactionActive()) {
           storage.rollbackTransaction();
         }
@@ -310,7 +305,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
         if (okValue instanceof Uint8Array) {
           const { decode } = await import('@msgpack/msgpack');
           okValue = decode(okValue);
-          console.log('[Ribosome] Decoded ExternIO Ok value');
+          log.debug(' Decoded ExternIO Ok value');
         }
 
         unwrappedResult = okValue;
@@ -325,7 +320,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
       await commitResult;
     }
     recordPhase('txCommit', performance.now() - commitStart);
-    console.log('[Ribosome] Transaction committed successfully');
+    log.debug(' Transaction committed successfully');
 
     // Collect ALL pending records including genesis
     const allPendingRecords = [
@@ -349,19 +344,19 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
     // Convert pending records to @holochain/client Record format for publishing
     let pendingRecords: HolochainRecord[] | undefined;
-    console.log(`[Ribosome] allPendingRecords count: ${allPendingRecords.length} (genesis: ${genesisRecords.length}, zome: ${context.pendingRecords?.length || 0})`);
+    log.debug(` allPendingRecords count: ${allPendingRecords.length} (genesis: ${genesisRecords.length}, zome: ${context.pendingRecords?.length || 0})`);
     if (allPendingRecords.length > 0) {
       try {
-        console.log('[Ribosome] Building records for publishing...');
-        console.log('[Ribosome] First pending record:', JSON.stringify({
+        log.debug(' Building records for publishing...');
+        log.debug(' First pending record:', JSON.stringify({
           actionType: allPendingRecords[0]?.action?.actionType,
           hasEntry: !!allPendingRecords[0]?.entry,
           entryType: allPendingRecords[0]?.entry?.entryType,
         }));
         pendingRecords = buildRecords(allPendingRecords);
-        console.log(`[Ribosome] ${pendingRecords.length} records ready for publishing`);
+        log.debug(` ${pendingRecords.length} records ready for publishing`);
         if (pendingRecords.length > 0) {
-          console.log('[Ribosome] First built record entry type:', pendingRecords[0]?.entry);
+          log.debug(' First built record entry type:', pendingRecords[0]?.entry);
         }
       } catch (error) {
         console.error('[Ribosome] Failed to convert records for publishing:', error);
@@ -417,11 +412,11 @@ async function invokePostCommit(
     | undefined;
 
   if (!postCommitFn) {
-    console.log('[post_commit] No post_commit export found, skipping');
+    log.debug('[post_commit] No post_commit export found, skipping');
     return;
   }
 
-  console.log(`[post_commit] Invoking post_commit with ${pendingRecords.length} committed actions`);
+  log.debug(`[post_commit] Invoking post_commit with ${pendingRecords.length} committed actions`);
 
   try {
     // Build Vec<SignedActionHashed> from pending records
@@ -433,7 +428,7 @@ async function invokePostCommit(
     const actionsBytes = new Uint8Array(encode(signedActions));
     const { ptr: inputPtr, len: inputLen } = serializeToWasm(instance, actionsBytes);
 
-    console.log(`[post_commit] Calling post_commit with ${actionsBytes.length} bytes input`);
+    log.debug(`[post_commit] Calling post_commit with ${actionsBytes.length} bytes input`);
 
     // Call post_commit
     const resultI64 = postCommitFn(inputPtr, inputLen);
@@ -452,12 +447,12 @@ async function invokePostCommit(
       console.error(`[post_commit] post_commit returned error: ${errorMsg}`);
       // Don't throw - post_commit errors are non-fatal
     } else {
-      console.log('[post_commit] post_commit completed successfully');
+      log.debug('[post_commit] post_commit completed successfully');
     }
 
     // Any signals emitted during post_commit are already in context.emittedSignals
     const signalCount = context.emittedSignals?.length || 0;
-    console.log(`[post_commit] Total signals after post_commit: ${signalCount}`);
+    log.debug(`[post_commit] Total signals after post_commit: ${signalCount}`);
   } catch (error) {
     // Log error but don't propagate - post_commit is fire-and-forget
     console.error('[post_commit] Exception during post_commit:', error);
@@ -478,11 +473,11 @@ async function initializeEntryDefs(
     | undefined;
 
   if (!entryDefsFn) {
-    console.log(`[initializeEntryDefs] No entry_defs export found for zome: ${zomeName}`);
+    log.debug(`[initializeEntryDefs] No entry_defs export found for zome: ${zomeName}`);
     return [];
   }
 
-  console.log(`[initializeEntryDefs] Calling entry_defs() for zome: ${zomeName}`);
+  log.debug(`[initializeEntryDefs] Calling entry_defs() for zome: ${zomeName}`);
 
   try {
     // Serialize unit type () as input - HDK expects SerializedBytes wrapping unit
@@ -500,7 +495,7 @@ async function initializeEntryDefs(
     // Deserialize the result
     const result = deserializeFromWasm(instance, resultPtr, resultLen);
 
-    console.log(`[initializeEntryDefs] Got result:`, result);
+    log.debug(`[initializeEntryDefs] Got result:`, result);
 
     // Result is wrapped in Ok/Err
     if (result && typeof result === 'object' && 'Ok' in result) {
@@ -510,7 +505,7 @@ async function initializeEntryDefs(
       if (okValue instanceof Uint8Array) {
         const { decode } = await import('@msgpack/msgpack');
         okValue = decode(okValue);
-        console.log(`[initializeEntryDefs] Decoded Ok value:`, okValue);
+        log.debug(`[initializeEntryDefs] Decoded Ok value:`, okValue);
       }
 
       // Ok value is { Defs: [array of EntryDef] }
@@ -548,7 +543,7 @@ function initializeLinkTypes(
 
   if (numLinkTypesFn) {
     const count = numLinkTypesFn();
-    console.log(`[initializeLinkTypes] __num_link_types() returned ${count} for zome: ${zomeName}`);
+    log.debug(`[initializeLinkTypes] __num_link_types() returned ${count} for zome: ${zomeName}`);
     return count;
   }
 
@@ -558,11 +553,11 @@ function initializeLinkTypes(
     | undefined;
 
   if (!linkTypesFn) {
-    console.log(`[initializeLinkTypes] No link_types export found for zome: ${zomeName}`);
+    log.debug(`[initializeLinkTypes] No link_types export found for zome: ${zomeName}`);
     return 0;
   }
 
-  console.log(`[initializeLinkTypes] link_types callback not supported, returning 0`);
+  log.debug(`[initializeLinkTypes] link_types callback not supported, returning 0`);
   return 0;
 }
 

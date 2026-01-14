@@ -26,6 +26,9 @@ import {
   type SignedActionHashed,
   type Entry,
 } from '../types/holochain-types';
+import { createLogger } from '@fishy/shared';
+
+const log = createLogger('Cascade');
 
 /**
  * Cascade options
@@ -135,14 +138,14 @@ export class Cascade {
 
     // Determine hash type and dispatch to appropriate method
     if (isEntryHash(hash)) {
-      console.log(`[Cascade] Fetching record by ENTRY hash: ${this.hashToShortString(hash)}`);
+      log.debug(` Fetching record by ENTRY hash: ${this.hashToShortString(hash)}`);
       return this.fetchRecordByEntryHash(dnaHash, hash, opts);
     } else if (isActionHash(hash)) {
-      console.log(`[Cascade] Fetching record by ACTION hash: ${this.hashToShortString(hash)}`);
+      log.debug(` Fetching record by ACTION hash: ${this.hashToShortString(hash)}`);
       return this.fetchRecordByActionHash(dnaHash, hash, opts);
     } else {
       // Unknown hash type - try action hash lookup as fallback
-      console.log(`[Cascade] Unknown hash type, trying action hash: ${this.hashToShortString(hash)}`);
+      log.debug(` Unknown hash type, trying action hash: ${this.hashToShortString(hash)}`);
       return this.fetchRecordByActionHash(dnaHash, hash, opts);
     }
   }
@@ -158,24 +161,24 @@ export class Cascade {
     // 1. Try local storage (session cache is synchronous)
     const record = this.buildRecordFromActionHash(actionHash);
     if (record !== null) {
-      console.log(`[Cascade] Found by action hash in local storage`);
+      log.debug(` Found by action hash in local storage`);
       return record;
     }
 
     // 2. Try network cache
     const cached = this.cache.getRecordSync(actionHash);
     if (cached !== null) {
-      console.log(`[Cascade] Found in network cache`);
+      log.debug(` Found in network cache`);
       return cached;
     }
 
     // 3. Try network (if enabled)
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      console.log(`🌐 [Cascade] Fetching from NETWORK (local lookup failed)`);
+      log.debug(`🌐 Fetching from NETWORK (local lookup failed)`);
       try {
         const networkRecord = this.network.getRecordSync(dnaHash, actionHash);
         if (networkRecord !== null) {
-          console.log(`🌐 [Cascade] Found in NETWORK`);
+          log.debug(`🌐 Found in NETWORK`);
           if (opts.cacheNetworkResults) {
             this.cache.cacheRecordSync(actionHash, networkRecord);
           }
@@ -187,13 +190,13 @@ export class Cascade {
     } else if (opts.useNetwork) {
       // Log why network wasn't tried
       if (!this.network) {
-        console.log(`[Cascade] Network not configured - call configureNetwork() first`);
+        log.debug(` Network not configured - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
-        console.log(`[Cascade] Network service not available (gateway: ${this.network.getGatewayUrl()})`);
+        log.debug(` Network service not available (gateway: ${this.network.getGatewayUrl()})`);
       }
     }
 
-    console.log(`[Cascade] Record not found by action hash`);
+    log.debug(` Record not found by action hash`);
     return null;
   }
 
@@ -208,24 +211,24 @@ export class Cascade {
     // 1. Try local storage - find action by entry hash
     const record = this.buildRecordFromEntryHash(entryHash);
     if (record !== null) {
-      console.log(`[Cascade] Found by entry hash in local storage`);
+      log.debug(` Found by entry hash in local storage`);
       return record;
     }
 
     // 2. Try network cache (keyed by entry hash)
     const cached = this.cache.getRecordSync(entryHash);
     if (cached !== null) {
-      console.log(`[Cascade] Found in network cache by entry hash`);
+      log.debug(` Found in network cache by entry hash`);
       return cached;
     }
 
     // 3. Try network (if enabled) - network service needs to handle entry hash lookups
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      console.log(`🌐 [Cascade] Fetching by entry hash from NETWORK`);
+      log.debug(`🌐 Fetching by entry hash from NETWORK`);
       try {
         const networkRecord = this.network.getRecordSync(dnaHash, entryHash);
         if (networkRecord !== null) {
-          console.log(`🌐 [Cascade] Found in NETWORK by entry hash`);
+          log.debug(`🌐 Found in NETWORK by entry hash`);
           if (opts.cacheNetworkResults) {
             this.cache.cacheRecordSync(entryHash, networkRecord);
           }
@@ -237,13 +240,13 @@ export class Cascade {
     } else if (opts.useNetwork) {
       // Log why network wasn't tried
       if (!this.network) {
-        console.log(`[Cascade] Network not configured - call configureNetwork() first`);
+        log.debug(` Network not configured - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
-        console.log(`[Cascade] Network service not available (gateway: ${this.network.getGatewayUrl()})`);
+        log.debug(` Network service not available (gateway: ${this.network.getGatewayUrl()})`);
       }
     }
 
-    console.log(`[Cascade] Record not found by entry hash`);
+    log.debug(` Record not found by entry hash`);
     return null;
   }
 
@@ -360,24 +363,24 @@ export class Cascade {
   ): NetworkLink[] {
     const opts = { ...this.options, ...options };
 
-    console.log(`[Cascade] Fetching links for base: ${this.hashToBase64(baseAddress)}`);
+    log.debug(` Fetching links for base: ${this.hashToBase64(baseAddress)}`);
 
     // linkType is encoded as (zome_index << 8) | link_type for gateway queries
     // Local storage needs just the raw link_type (lower 8 bits)
     const rawLinkType = linkType !== undefined ? (linkType & 0xFF) : undefined;
 
-    console.log(`[Cascade] linkType encoded=${linkType}, raw=${rawLinkType}`);
+    log.debug(` linkType encoded=${linkType}, raw=${rawLinkType}`);
 
     // Collect links from all sources
     const allLinks: NetworkLink[] = [];
 
     // 1. Try local storage (always synchronous) - use raw link_type
-    console.log(`[Cascade] Querying local storage with base=${this.hashToBase64(baseAddress)}, linkType=${rawLinkType}`);
+    log.debug(` Querying local storage with base=${this.hashToBase64(baseAddress)}, linkType=${rawLinkType}`);
     const localLinks = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, rawLinkType);
-    console.log(`[Cascade] Local storage returned ${localLinks.length} links`);
+    log.debug(` Local storage returned ${localLinks.length} links`);
 
     if (localLinks.length > 0) {
-      console.log(`[Cascade] Found ${localLinks.length} links in local storage`);
+      log.debug(` Found ${localLinks.length} links in local storage`);
       // Convert to NetworkLink format
       allLinks.push(...localLinks.map(l => this.storedLinkToNetworkLink(l)));
     }
@@ -385,7 +388,7 @@ export class Cascade {
     // 2. Try network cache - use raw link_type for cache key consistency
     const cached = this.cache.getLinksSync(baseAddress, rawLinkType);
     if (cached !== null && cached.length > 0) {
-      console.log(`[Cascade] Found ${cached.length} links in network cache`);
+      log.debug(` Found ${cached.length} links in network cache`);
       // Merge with local, avoiding duplicates
       for (const link of cached) {
         if (!allLinks.some(l => this.linksEqual(l, link))) {
@@ -397,11 +400,11 @@ export class Cascade {
     // 3. Try network (if enabled) - ALWAYS fetch to get other agents' links
     // Use full encoded linkType for gateway (includes zome_index)
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      console.log(`🌐 [Cascade] Fetching links from NETWORK (always fetch for distributed data)`);
+      log.debug(`🌐 Fetching links from NETWORK (always fetch for distributed data)`);
       try {
         const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType);
         if (networkLinks.length > 0) {
-          console.log(`🌐 [Cascade] Found ${networkLinks.length} links in network`);
+          log.debug(`🌐 Found ${networkLinks.length} links in network`);
           if (opts.cacheNetworkResults) {
             // Cache with raw link_type for consistency with lookups
             this.cache.cacheLinksSync(baseAddress, networkLinks, rawLinkType);
@@ -413,20 +416,20 @@ export class Cascade {
             }
           }
         } else {
-          console.log(`🌐 [Cascade] No links found in network`);
+          log.debug(`🌐 No links found in network`);
         }
       } catch (error) {
         console.warn(`[Cascade] Network link fetch failed:`, error);
       }
     } else if (opts.useNetwork) {
       if (!this.network) {
-        console.log(`[Cascade] Network not configured for links - call configureNetwork() first`);
+        log.debug(` Network not configured for links - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
-        console.log(`[Cascade] Network service not available for links (gateway: ${this.network.getGatewayUrl()})`);
+        log.debug(` Network service not available for links (gateway: ${this.network.getGatewayUrl()})`);
       }
     }
 
-    console.log(`[Cascade] Returning ${allLinks.length} total links`);
+    log.debug(` Returning ${allLinks.length} total links`);
     return allLinks;
   }
 
@@ -436,7 +439,7 @@ export class Cascade {
   private storedLinkToNetworkLink(stored: StoredLink): NetworkLink {
     // Debug: log target details for AgentPubKey investigation
     const targetPrefix = Array.from(stored.targetAddress.slice(0, 3));
-    console.log(`[Cascade] Converting local link to NetworkLink:`, {
+    log.debug(` Converting local link to NetworkLink:`, {
       target_prefix: targetPrefix,
       target_length: stored.targetAddress.length,
       is_entry_prefix: targetPrefix[0] === 132 && targetPrefix[1] === 33 && targetPrefix[2] === 36,
@@ -526,14 +529,14 @@ export class Cascade {
 
     // Detect hash type from prefix bytes
     if (isEntryHash(hash)) {
-      console.log(`[Cascade] Fetching details by ENTRY hash: ${this.hashToShortString(hash)}`);
+      log.debug(` Fetching details by ENTRY hash: ${this.hashToShortString(hash)}`);
       return this.fetchDetailsByEntryHash(dnaHash, agentPubKey, hash, opts);
     } else if (isActionHash(hash)) {
-      console.log(`[Cascade] Fetching details by ACTION hash: ${this.hashToShortString(hash)}`);
+      log.debug(` Fetching details by ACTION hash: ${this.hashToShortString(hash)}`);
       return this.fetchDetailsByActionHash(dnaHash, agentPubKey, hash, opts);
     } else {
       // Unknown hash type - try action hash lookup as fallback
-      console.log(`[Cascade] Unknown hash type for details, trying action hash: ${this.hashToShortString(hash)}`);
+      log.debug(` Unknown hash type for details, trying action hash: ${this.hashToShortString(hash)}`);
       return this.fetchDetailsByActionHash(dnaHash, agentPubKey, hash, opts);
     }
   }
@@ -550,17 +553,17 @@ export class Cascade {
     // 1. Try local storage
     const localDetails = this.storage.getEntryDetails(entryHash, dnaHash, agentPubKey);
     if (localDetails) {
-      console.log(`[Cascade] Found entry details in local storage`);
+      log.debug(` Found entry details in local storage`);
       return { source: 'local', details: localDetails };
     }
 
     // 2. Try network (if enabled)
     if (opts.useNetwork && this.network?.isAvailable()) {
-      console.log(`🌐 [Cascade] Fetching entry details from NETWORK`);
+      log.debug(`🌐 Fetching entry details from NETWORK`);
       try {
         const networkDetails = this.network.getDetailsSync(dnaHash, entryHash);
         if (networkDetails) {
-          console.log(`🌐 [Cascade] Found entry details in NETWORK`);
+          log.debug(`🌐 Found entry details in NETWORK`);
           // Normalize byte arrays from JSON
           return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
         }
@@ -569,7 +572,7 @@ export class Cascade {
       }
     }
 
-    console.log(`[Cascade] Entry details not found`);
+    log.debug(` Entry details not found`);
     return null;
   }
 
@@ -582,7 +585,7 @@ export class Cascade {
     actionHash: AnyDhtHash,
     opts: Required<CascadeOptions>
   ): any | null {
-    console.log(`[Cascade] fetchDetailsByActionHash:`, {
+    log.debug(` fetchDetailsByActionHash:`, {
       actionHash: this.hashToBase64(actionHash),
       useNetwork: opts.useNetwork,
       networkAvailable: this.network?.isAvailable(),
@@ -594,7 +597,7 @@ export class Cascade {
     if (action && 'entryHash' in action) {
       const localDetails = this.storage.getDetails(action.entryHash, dnaHash, agentPubKey);
       if (localDetails) {
-        console.log(`[Cascade] Found record details in local storage`);
+        log.debug(` Found record details in local storage`);
         return { source: 'local', details: localDetails, action };
       }
     }
@@ -603,11 +606,11 @@ export class Cascade {
     const shouldTryNetwork = opts.useNetwork && this.network?.isAvailable();
 
     if (shouldTryNetwork && this.network) {
-      console.log(`🌐 [Cascade] Fetching record details from NETWORK`);
+      log.debug(`🌐 Fetching record details from NETWORK`);
       try {
         const networkDetails = this.network.getDetailsSync(dnaHash, actionHash);
         if (networkDetails) {
-          console.log(`🌐 [Cascade] Found record details in NETWORK`);
+          log.debug(`🌐 Found record details in NETWORK`);
           // Normalize byte arrays from JSON
           return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
         }
@@ -616,7 +619,7 @@ export class Cascade {
       }
     }
 
-    console.log(`[Cascade] Record details not found`);
+    log.debug(` Record details not found`);
     return null;
   }
 

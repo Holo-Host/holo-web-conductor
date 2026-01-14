@@ -22,11 +22,53 @@ import { PublishService } from "@fishy/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@fishy/core";
 import { encodeHashToBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
+import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 
-console.log("[Offscreen] Document loaded");
+// Create loggers for different concerns
+const log = createLogger('Offscreen');
+const logNetwork = createLogger('Network');
+const logSignal = createLogger('Signal');
+const logPublish = createLogger('Publish');
+const logZome = createLogger('ZomeCall');
 
-// Ribosome worker instance
+// Ribosome worker instance (declared early for setFishyLogFilter)
 let ribosomeWorker: Worker | null = null;
+
+// Set log filter for offscreen AND worker
+function setAllLogFilters(filter: string): void {
+  // Set offscreen filter (this also saves to chrome.storage)
+  setLogFilter(filter);
+
+  // Forward to worker if initialized
+  forwardLogFilterToWorker(filter);
+}
+
+function forwardLogFilterToWorker(filter: string): void {
+  if (ribosomeWorker) {
+    ribosomeWorker.postMessage({
+      id: 0, // No response needed
+      type: 'SET_LOG_FILTER',
+      payload: { filter },
+    });
+  }
+}
+
+// Listen for runtime messages to forward log filter to worker
+// (Any context sets filter -> runtime message -> all contexts including offscreen -> forward to worker)
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'FISHY_LOG_FILTER_CHANGE') {
+      forwardLogFilterToWorker(message.filter);
+    }
+  });
+}
+
+// Expose filter control to window for runtime debugging
+// Usage: setFishyLogFilter('Signal') or setFishyLogFilter('')
+(globalThis as any).setFishyLogFilter = setAllLogFilters;
+(globalThis as any).getFishyLogFilter = getLogFilter;
+
+log.info("Document loaded");
 let workerReady = false;
 let workerInitPromise: Promise<void> | null = null;
 
@@ -80,7 +122,7 @@ async function initRibosomeWorker(): Promise<void> {
   if (workerInitPromise) return workerInitPromise;
 
   workerInitPromise = (async () => {
-    console.log("[Offscreen] Initializing ribosome worker...");
+    log.info("Initializing ribosome worker...");
 
     // Create SharedArrayBuffers for network synchronization
     networkSignalBuffer = new SharedArrayBuffer(NETWORK_SIGNAL_SIZE);
@@ -94,14 +136,14 @@ async function initRibosomeWorker(): Promise<void> {
 
     // Create worker
     const workerUrl = chrome.runtime.getURL("offscreen/ribosome-worker.js");
-    console.log("[Offscreen] Worker URL:", workerUrl);
+    log.info("Worker URL:", workerUrl);
 
     ribosomeWorker = new Worker(workerUrl);
 
     // Handle messages from worker
     ribosomeWorker.onmessage = handleWorkerMessage;
     ribosomeWorker.onerror = (error) => {
-      console.error("[Offscreen] Worker error:", error);
+      log.error("Worker error:", error);
     };
 
     // Wait for worker to signal ready
@@ -124,11 +166,11 @@ async function initRibosomeWorker(): Promise<void> {
     });
 
     workerReady = true;
-    console.log("[Offscreen] Ribosome worker initialized with SQLite");
+    log.info("Ribosome worker initialized with SQLite");
 
     // Send any existing network configuration to the worker
     if (gatewayUrl || sessionToken) {
-      console.log("[Offscreen] Sending existing network config to worker:", gatewayUrl);
+      log.info("Sending existing network config to worker:", gatewayUrl);
       await sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken });
     }
   })();
@@ -178,7 +220,7 @@ function handleWorkerMessage(event: MessageEvent): void {
  * Handle network request from worker - do sync XHR and signal back
  */
 function handleNetworkRequest(request: { id: number; method: string; url: string; headers?: Record<string, string>; body?: number[] }): void {
-  console.log("[Offscreen] Handling network request:", request.method, request.url);
+  log.info("Handling network request:", request.method, request.url);
 
   try {
     // Build full URL
@@ -217,14 +259,14 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
     dv.setInt32(4, responseBody.length);
     new Uint8Array(networkResultBuffer!, 8).set(responseBody);
 
-    console.log("[Offscreen] Network response:", xhr.status, responseBody.length, "bytes");
+    log.info("Network response:", xhr.status, responseBody.length, "bytes");
 
     // Signal worker
     Atomics.store(networkSignalView!, 0, 1);
     Atomics.notify(networkSignalView!, 0);
 
   } catch (error) {
-    console.error("[Offscreen] Network request failed:", error);
+    logNetwork.error("Network request failed:", error);
 
     // Write error response
     const dv = new DataView(networkResultBuffer!);
@@ -243,7 +285,7 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
  * to shared buffer so worker can use Atomics.wait.
  */
 async function handleSignRequest(request: { pub_key: number[]; data: number[] }): Promise<void> {
-  console.log(`[Offscreen] Handling sign request, data length: ${request.data.length}`);
+  log.debug(`Handling sign request, data length: ${request.data.length}`);
 
   try {
     // Forward to background script which has access to Lair
@@ -265,7 +307,7 @@ async function handleSignRequest(request: { pub_key: number[]; data: number[] })
       dv.setInt32(1, signatureBytes.length, true); // little-endian
       resultView.set(signatureBytes, 5);
 
-      console.log(`[Offscreen] Sign success, signature length: ${signatureBytes.length}`);
+      log.debug(`Sign success, signature length: ${signatureBytes.length}`);
     } else {
       // Write error to buffer
       const errorMsg = response?.error || "Signing failed";
@@ -277,7 +319,7 @@ async function handleSignRequest(request: { pub_key: number[]; data: number[] })
       dv.setInt32(1, errorBytes.length, true); // little-endian
       resultView.set(errorBytes, 5);
 
-      console.error(`[Offscreen] Sign error: ${errorMsg}`);
+      log.error(`Sign error: ${errorMsg}`);
     }
 
     // Signal worker
@@ -285,7 +327,7 @@ async function handleSignRequest(request: { pub_key: number[]; data: number[] })
     Atomics.notify(signSignalView!, 0);
 
   } catch (error) {
-    console.error("[Offscreen] Sign request failed:", error);
+    log.error("Sign request failed:", error);
 
     // Write error to buffer
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -310,7 +352,7 @@ async function handleSignRequest(request: { pub_key: number[]; data: number[] })
  */
 function handleSendRemoteSignals(data: { dnaHash: number[]; signals: any[] }): void {
   if (!wsService) {
-    console.warn('[Offscreen] Cannot send remote signals - WebSocket service not initialized');
+    logSignal.warn('Cannot send remote signals - WebSocket service not initialized');
     return;
   }
 
@@ -319,7 +361,7 @@ function handleSendRemoteSignals(data: { dnaHash: number[]; signals: any[] }): v
   }
 
   const dnaHashB64 = encodeHashToBase64(new Uint8Array(data.dnaHash));
-  console.log(`[Offscreen] Sending ${data.signals.length} remote signals via WebSocket`);
+  logSignal.info(`Sending ${data.signals.length} remote signals via WebSocket`);
   wsService.sendRemoteSignals(dnaHashB64, data.signals);
 }
 
@@ -352,7 +394,7 @@ function initializeWebSocketService(config: {
     .replace(/^https:/, 'wss:')
     .replace(/\/$/, '') + '/ws';
 
-  console.log(`[Offscreen] Initializing WebSocket service: ${wsUrl}`);
+  logNetwork.info(`Initializing WebSocket service: ${wsUrl}`);
 
   wsService = new WebSocketNetworkService({
     gatewayWsUrl: wsUrl,
@@ -361,12 +403,7 @@ function initializeWebSocketService(config: {
 
   // Set up signal callback to forward signals to background
   wsService.onSignal((signal) => {
-    console.log(`[Offscreen] Received remote signal via WebSocket:`);
-    console.log(`  dna_hash: ${signal.dna_hash}`);
-    console.log(`  to_agent: ${signal.to_agent}`);
-    console.log(`  from_agent: ${signal.from_agent}`);
-    console.log(`  zome_name: ${signal.zome_name}`);
-    console.log(`  signal length: ${signal.signal.length}`);
+    logSignal.info(`Received remote signal via WebSocket: dna=${signal.dna_hash.substring(0, 15)}..., to=${signal.to_agent.substring(0, 15)}..., from=${signal.from_agent}, zome=${signal.zome_name}, len=${signal.signal.length}`);
 
     // Forward to background script which will dispatch to the right tab
     chrome.runtime.sendMessage({
@@ -378,15 +415,15 @@ function initializeWebSocketService(config: {
       zome_name: signal.zome_name,
       signal: Array.from(signal.signal), // Convert Uint8Array for transport
     }).then(() => {
-      console.log(`[Offscreen] Signal forwarded to background successfully`);
+      logSignal.debug(`Signal forwarded to background successfully`);
     }).catch((err) => {
-      console.warn("[Offscreen] Failed to forward signal:", err);
+      logSignal.warn("Failed to forward signal:", err);
     });
   });
 
   // Set up state change callback for logging
   wsService.onStateChange((state: ConnectionState) => {
-    console.log(`[Offscreen] WebSocket state: ${state}`);
+    logNetwork.info(`WebSocket state: ${state}`);
 
     // Notify background of connection state changes
     chrome.runtime.sendMessage({
@@ -400,7 +437,7 @@ function initializeWebSocketService(config: {
 
   // Set up sign callback - forward sign requests to background for Lair signing
   wsService.onSign(async (request) => {
-    console.log(`[Offscreen] Sign request for agent ${btoa(String.fromCharCode(...Array.from(request.agent_pubkey))).substring(0, 20)}...`);
+    log.debug(`Sign request for agent ${btoa(String.fromCharCode(...Array.from(request.agent_pubkey))).substring(0, 20)}...`);
 
     // Send to background script which has access to Lair
     const response = await chrome.runtime.sendMessage({
@@ -476,7 +513,7 @@ async function publishPendingRecords(
   dnaHash: DnaHash
 ): Promise<void> {
   if (!gatewayUrl) {
-    console.log("[Offscreen] No gateway URL configured, skipping publish");
+    log.info("No gateway URL configured, skipping publish");
     return;
   }
 
@@ -498,19 +535,19 @@ async function publishPendingRecords(
   // Convert transported records back to proper Records
   const records = transportedRecords.map(transportedRecordToRecord);
 
-  console.log(`[Offscreen] Publishing ${records.length} records to gateway...`);
+  logPublish.info(`Publishing ${records.length} records to gateway...`);
 
   // Publish each record (PublishService will batch them)
   for (const record of records) {
     try {
       await publishService.publishRecord(record, dnaHash);
     } catch (error) {
-      console.error("[Offscreen] Failed to publish record:", error);
+      logPublish.error("Failed to publish record:", error);
       // Continue with other records - don't fail the whole batch
     }
   }
 
-  console.log("[Offscreen] Publish requests queued");
+  log.info("Publish requests queued");
 }
 
 /**
@@ -518,14 +555,14 @@ async function publishPendingRecords(
  */
 async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ result: unknown; signals: any[] }> {
   const perfStart = performance.now();
-  console.log(`[Offscreen] Executing zome call: ${request.zome}::${request.fn}`);
+  logZome.info(`Executing zome call: ${request.zome}::${request.fn}`);
 
   // Ensure worker is initialized
   await initRibosomeWorker();
   const afterWorkerInit = performance.now();
 
   // Fetch the full hApp context from storage
-  console.log(`[Offscreen] Fetching context: ${request.contextId}`);
+  logZome.debug(`Fetching context: ${request.contextId}`);
   const context = await storage.getContext(request.contextId);
   const afterContextFetch = performance.now();
   if (!context) {
@@ -544,7 +581,7 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
     throw new Error(`DNA not found for hash: ${request.dnaHashBase64}`);
   }
 
-  console.log(`[Offscreen] Found DNA: ${dna.name}, WASM size: ${dna.wasm.length} bytes`);
+  logZome.debug(`Found DNA: ${dna.name}, WASM size: ${dna.wasm.length} bytes`);
   const afterDnaLookup = performance.now();
 
   // Check if we've already sent this WASM to the worker
@@ -555,9 +592,9 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
   const dnaWasmToSend = wasmAlreadySent ? [] : Array.from(toUint8Array(dna.wasm));
   if (!wasmAlreadySent) {
     sentWasmHashes.add(dnaHashKey);
-    console.log(`[Offscreen] Sending WASM to worker (first time for this DNA)`);
+    logZome.debug(`Sending WASM to worker (first time for this DNA)`);
   } else {
-    console.log(`[Offscreen] Skipping WASM send (already cached in worker)`);
+    logZome.trace(`Skipping WASM send (already cached in worker)`);
   }
 
   // Send to worker
@@ -575,25 +612,20 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
   });
   const afterWorker = performance.now();
 
-  console.log(`[PERF Offscreen] executeZomeCall breakdown:
-   ├─ workerInit:    ${(afterWorkerInit - perfStart).toFixed(1)}ms
-   ├─ contextFetch:  ${(afterContextFetch - afterWorkerInit).toFixed(1)}ms
-   ├─ dnaLookup:     ${(afterDnaLookup - afterContextFetch).toFixed(1)}ms
-   ├─ workerCall:    ${(afterWorker - afterDnaLookup).toFixed(1)}ms
-   └─ TOTAL:         ${(afterWorker - perfStart).toFixed(1)}ms`);
+  log.perf(`executeZomeCall breakdown: workerInit=${(afterWorkerInit - perfStart).toFixed(1)}ms, contextFetch=${(afterContextFetch - afterWorkerInit).toFixed(1)}ms, dnaLookup=${(afterDnaLookup - afterContextFetch).toFixed(1)}ms, workerCall=${(afterWorker - afterDnaLookup).toFixed(1)}ms, TOTAL=${(afterWorker - perfStart).toFixed(1)}ms`);
 
   // Trigger publishing in background (don't await - let it run asynchronously)
   if (result.pendingRecords && result.pendingRecords.length > 0) {
-    console.log(`[Offscreen] Triggering background publish for ${result.pendingRecords.length} records`);
+    logPublish.info(`Triggering background publish for ${result.pendingRecords.length} records`);
     publishPendingRecords(result.pendingRecords, dnaHash).catch((error) => {
-      console.error("[Offscreen] Background publish failed:", error);
+      logPublish.error("Background publish failed:", error);
     });
   }
 
   // Note: Remote signals are now sent directly from the worker via SEND_REMOTE_SIGNALS message
   // This happens during the zome call (fire-and-forget), not after it returns
 
-  console.log(`[Offscreen] Worker returned ${(result.signals || []).length} emitted signals`);
+  logZome.debug(`Worker returned ${(result.signals || []).length} emitted signals`);
 
   return {
     result: result.result,
@@ -630,7 +662,7 @@ chrome.runtime.onMessage.addListener(
     sender: chrome.runtime.MessageSender,
     sendResponse: (response: OffscreenResponse) => void
   ) => {
-    console.log("[Offscreen] Received message:", message);
+    log.info("Received message:", message);
 
     if (message.target !== "offscreen") {
       return false;
@@ -640,7 +672,7 @@ chrome.runtime.onMessage.addListener(
       gatewayUrl = message.gatewayUrl || '';
       sessionToken = message.sessionToken || null;
 
-      console.log(`[Offscreen] Network configured: ${gatewayUrl}`);
+      logNetwork.info(`Network configured: ${gatewayUrl}`);
 
       // Also configure the worker if it's ready
       if (workerReady && ribosomeWorker) {
@@ -718,7 +750,7 @@ chrome.runtime.onMessage.addListener(
                 try {
                   unwrappedResult = decode(okValue);
                 } catch (e) {
-                  console.warn('[Offscreen] Failed to decode Ok value:', e);
+                  logZome.warn('Failed to decode Ok value:', e);
                   unwrappedResult = okValue;
                 }
               } else {
@@ -754,7 +786,7 @@ chrome.runtime.onMessage.addListener(
           });
         })
         .catch((error) => {
-          console.error("[Offscreen] Zome call error:", error);
+          logZome.error("Zome call error:", error);
           sendResponse({
             success: false,
             requestId,
@@ -773,5 +805,5 @@ chrome.runtime.onMessage.addListener(
 initRibosomeWorker().catch(console.error);
 
 // Notify background that offscreen document is ready
-console.log("[Offscreen] Sending ready signal");
+log.info("Sending ready signal");
 chrome.runtime.sendMessage({ target: "background", type: "OFFSCREEN_READY" });

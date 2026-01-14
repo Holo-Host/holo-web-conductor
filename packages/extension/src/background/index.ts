@@ -53,8 +53,24 @@ type ExternIO = Uint8Array;
 import type { ZomeCallRequest } from "@fishy/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
+import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 
-console.log("Fishy background service worker loaded");
+// Expose filter control to globalThis for runtime debugging
+// Usage in service worker console: setFishyLogFilter('Signal,CallZome') or fishyLogFilter = 'Signal'
+(globalThis as any).setFishyLogFilter = setLogFilter;
+(globalThis as any).getFishyLogFilter = getLogFilter;
+
+// Create specialized loggers for different concerns
+const log = createLogger('Background');
+const logAuth = createLogger('Auth');
+const logZome = createLogger('CallZome');
+const logOffscreenMgr = createLogger('OffscreenMgr');
+const logGateway = createLogger('Gateway');
+const logSignal = createLogger('Signal');
+const logLair = createLogger('Lair');
+const logHapp = createLogger('HappContext');
+
+log.info("Fishy background service worker loaded");
 
 // ============================================================================
 // Offscreen Document Management
@@ -63,6 +79,8 @@ console.log("Fishy background service worker loaded");
 const OFFSCREEN_DOCUMENT_PATH = "offscreen/offscreen.html";
 let creatingOffscreen: Promise<void> | null = null;
 let networkConfigured = false;
+let offscreenReady = false;
+let offscreenReadyResolvers: Array<() => void> = [];
 
 // Gateway configuration - can be set via popup settings or environment
 // Default to null (no network) until configured
@@ -80,12 +98,62 @@ async function hasOffscreenDocument(): Promise<boolean> {
 }
 
 /**
+ * Called when offscreen sends OFFSCREEN_READY message
+ */
+function markOffscreenReady(): void {
+  offscreenReady = true;
+  // Resolve any waiting promises
+  for (const resolve of offscreenReadyResolvers) {
+    resolve();
+  }
+  offscreenReadyResolvers = [];
+}
+
+/**
+ * Wait for offscreen to be ready (with timeout)
+ */
+async function waitForOffscreenReady(timeoutMs: number = 5000): Promise<void> {
+  if (offscreenReady) return;
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      // Remove this resolver
+      offscreenReadyResolvers = offscreenReadyResolvers.filter(r => r !== resolve);
+      reject(new Error('Offscreen document ready timeout'));
+    }, timeoutMs);
+
+    offscreenReadyResolvers.push(() => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+/**
  * Create the offscreen document if it doesn't exist
  */
 async function ensureOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    console.log("[Background] Offscreen document already exists");
+  const exists = await hasOffscreenDocument();
+
+  if (exists && offscreenReady) {
+    logOffscreenMgr.debug("Offscreen document already exists and ready");
     return;
+  }
+
+  if (exists && !offscreenReady) {
+    // Document exists but we haven't received ready signal
+    // This can happen after extension reload - wait for ready or timeout
+    logOffscreenMgr.debug("Offscreen exists but not ready, waiting...");
+    try {
+      await waitForOffscreenReady(3000);
+      logOffscreenMgr.debug("Offscreen is now ready");
+      return;
+    } catch {
+      // Timeout - document might be stale, close and recreate
+      logOffscreenMgr.warn("Offscreen not ready after timeout, recreating...");
+      await chrome.offscreen.closeDocument();
+      offscreenReady = false;
+    }
   }
 
   // Avoid creating multiple offscreen documents
@@ -94,7 +162,8 @@ async function ensureOffscreenDocument(): Promise<void> {
     return;
   }
 
-  console.log("[Background] Creating offscreen document...");
+  logOffscreenMgr.info("Creating offscreen document...");
+  offscreenReady = false;
   creatingOffscreen = chrome.offscreen.createDocument({
     url: OFFSCREEN_DOCUMENT_PATH,
     reasons: [chrome.offscreen.Reason.WORKERS],
@@ -103,7 +172,16 @@ async function ensureOffscreenDocument(): Promise<void> {
 
   await creatingOffscreen;
   creatingOffscreen = null;
-  console.log("[Background] Offscreen document created");
+  logOffscreenMgr.info("Offscreen document created, waiting for ready...");
+
+  // Wait for offscreen to signal ready
+  try {
+    await waitForOffscreenReady(10000);
+    logOffscreenMgr.info("Offscreen document ready");
+  } catch {
+    logOffscreenMgr.error("Offscreen document failed to become ready");
+    throw new Error("Offscreen document initialization failed");
+  }
 
   // Configure network if we have a gateway URL
   if (gatewayConfig && !networkConfigured) {
@@ -115,7 +193,7 @@ async function ensureOffscreenDocument(): Promise<void> {
  * Configure the network service in the offscreen document
  */
 async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void> {
-  console.log(`[Background] Configuring offscreen network with gateway: ${config.gatewayUrl}`);
+  logGateway.info(`Configuring offscreen network with gateway: ${config.gatewayUrl}`);
 
   try {
     await chrome.runtime.sendMessage({
@@ -125,9 +203,9 @@ async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionTo
       sessionToken: config.sessionToken,
     });
     networkConfigured = true;
-    console.log("[Background] Offscreen network configured");
+    logGateway.info("Offscreen network configured");
   } catch (error) {
-    console.error("[Background] Failed to configure offscreen network:", error);
+    logGateway.error("Failed to configure offscreen network:", error);
   }
 }
 
@@ -139,7 +217,7 @@ function setGatewayConfig(url: string, sessionToken?: string): void {
   gatewayConfig = { gatewayUrl: url, sessionToken };
   networkConfigured = false; // Will be configured on next offscreen use
 
-  console.log(`[Background] Gateway config set: ${url}`);
+  logGateway.info(`Gateway config set: ${url}`);
 }
 
 /**
@@ -158,9 +236,9 @@ async function updateGatewaySessionToken(token: string | null): Promise<void> {
         type: "UPDATE_SESSION_TOKEN",
         sessionToken: token,
       });
-      console.log("[Background] Session token updated in offscreen");
+      logGateway.debug("Session token updated in offscreen");
     } catch (error) {
-      console.error("[Background] Failed to update session token:", error);
+      logGateway.error("Failed to update session token:", error);
     }
   }
 }
@@ -171,23 +249,23 @@ async function updateGatewaySessionToken(token: string | null): Promise<void> {
  */
 async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {
   if (!networkConfigured) {
-    console.log("[Background] Skipping agent registration - network not configured");
+    logGateway.debug("Skipping agent registration - network not configured");
     return;
   }
 
   // Debug: log the raw bytes
-  console.log(`[Background] registerAgentWithGateway - dnaHash bytes (first 10):`, Array.from(dnaHash.slice(0, 10)));
-  console.log(`[Background] registerAgentWithGateway - agentPubKey bytes (first 10):`, Array.from(agentPubKey.slice(0, 10)));
-  console.log(`[Background] registerAgentWithGateway - dnaHash length: ${dnaHash.length}, agentPubKey length: ${agentPubKey.length}`);
+  logGateway.trace(`registerAgentWithGateway - dnaHash bytes (first 10):`, Array.from(dnaHash.slice(0, 10)));
+  logGateway.trace(`registerAgentWithGateway - agentPubKey bytes (first 10):`, Array.from(agentPubKey.slice(0, 10)));
+  logGateway.trace(`registerAgentWithGateway - dnaHash length: ${dnaHash.length}, agentPubKey length: ${agentPubKey.length}`);
   // Log Ed25519 key that would be used for signing (bytes 3-35 of AgentPubKey)
   if (agentPubKey.length === 39) {
     const ed25519Key = agentPubKey.slice(3, 35);
-    console.log(`[Background] registerAgentWithGateway - Ed25519 key (first 8 bytes): ${Array.from(ed25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    logGateway.trace(`registerAgentWithGateway - Ed25519 key (first 8 bytes): ${Array.from(ed25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
   }
 
   const dnaHashB64 = encodeHashToBase64(dnaHash);
   const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
-  console.log(`[Background] Registering agent with gateway: dna=${dnaHashB64}, agent=${agentPubKeyB64}`);
+  logGateway.info(`Registering agent with gateway: dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`);
 
   try {
     await chrome.runtime.sendMessage({
@@ -196,9 +274,9 @@ async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8A
       dna_hash: dnaHashB64,
       agent_pubkey: agentPubKeyB64,
     });
-    console.log("[Background] Agent registered with gateway");
+    logGateway.debug("Agent registered with gateway");
   } catch (error) {
-    console.error("[Background] Failed to register agent with gateway:", error);
+    logGateway.error("Failed to register agent with gateway:", error);
   }
 }
 
@@ -207,14 +285,12 @@ async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8A
  * If a DNA hash override is configured, register with that instead of the context's DNA hash
  */
 async function registerContextAgentsWithGateway(context: HappContext): Promise<void> {
-  console.log(`[Background] registerContextAgentsWithGateway - context.agentPubKey type:`, typeof context.agentPubKey, context.agentPubKey?.constructor?.name);
-  console.log(`[Background] registerContextAgentsWithGateway - context.agentPubKey:`, context.agentPubKey);
+  logGateway.trace(`registerContextAgentsWithGateway - context.agentPubKey type:`, typeof context.agentPubKey, context.agentPubKey?.constructor?.name);
 
   const agentPubKey = toUint8Array(context.agentPubKey);
-  console.log(`[Background] registerContextAgentsWithGateway - after toUint8Array:`, agentPubKey, `length: ${agentPubKey.length}`);
+  logGateway.trace(`registerContextAgentsWithGateway - after toUint8Array, length: ${agentPubKey.length}`);
 
   for (const dna of context.dnas) {
-    console.log(`[Background] registerContextAgentsWithGateway - dna.hash type:`, typeof dna.hash, dna.hash?.constructor?.name);
     const dnaHash = toUint8Array(dna.hash);
     await registerAgentWithGateway(dnaHash, agentPubKey);
   }
@@ -225,12 +301,12 @@ async function registerContextAgentsWithGateway(context: HappContext): Promise<v
  */
 async function registerAgentWithGatewayByB64(dnaHashB64: string, agentPubKey: Uint8Array): Promise<void> {
   if (!networkConfigured) {
-    console.log("[Background] Skipping agent registration - network not configured");
+    logGateway.debug("Skipping agent registration - network not configured");
     return;
   }
 
   const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
-  console.log(`[Background] Registering agent with gateway (override): dna=${dnaHashB64}, agent=${agentPubKeyB64}`);
+  logGateway.info(`Registering agent with gateway (override): dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`);
 
   try {
     await chrome.runtime.sendMessage({
@@ -239,9 +315,9 @@ async function registerAgentWithGatewayByB64(dnaHashB64: string, agentPubKey: Ui
       dna_hash: dnaHashB64,
       agent_pubkey: agentPubKeyB64,
     });
-    console.log("[Background] Agent registered with gateway");
+    logGateway.debug("Agent registered with gateway");
   } catch (error) {
-    console.error("[Background] Failed to register agent with gateway:", error);
+    logGateway.error("Failed to register agent with gateway:", error);
   }
 }
 
@@ -293,7 +369,7 @@ async function executeZomeCallViaOffscreen(
   };
 
   const afterBuild = performance.now();
-  console.log(`[Background] Sending zome call to offscreen: ${zomeCallRequest.zome}::${zomeCallRequest.fn} (context: ${contextId})`);
+  logZome.info(`Sending zome call to offscreen: ${zomeCallRequest.zome}::${zomeCallRequest.fn} (context: ${contextId})`);
 
   const response = await chrome.runtime.sendMessage({
     target: "offscreen",
@@ -303,10 +379,7 @@ async function executeZomeCallViaOffscreen(
   });
   const afterMessage = performance.now();
 
-  console.log(`[PERF Background] executeZomeCallViaOffscreen breakdown:
-   ├─ ensureOffscreen: ${(afterOffscreen - perfStart).toFixed(1)}ms
-   ├─ buildRequest:    ${(afterBuild - afterOffscreen).toFixed(1)}ms
-   └─ sendMessage:     ${(afterMessage - afterBuild).toFixed(1)}ms (TOTAL: ${(afterMessage - perfStart).toFixed(1)}ms)`);
+  log.perf(`executeZomeCallViaOffscreen breakdown: ensureOffscreen=${(afterOffscreen - perfStart).toFixed(1)}ms, buildRequest=${(afterBuild - afterOffscreen).toFixed(1)}ms, sendMessage=${(afterMessage - afterBuild).toFixed(1)}ms, TOTAL=${(afterMessage - perfStart).toFixed(1)}ms`);
 
   if (!response.success) {
     throw new Error(response.error || "Offscreen zome call failed");
@@ -385,7 +458,7 @@ async function handleMessage(
   message: RequestMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
-  console.log("Processing message:", message.type, "from tab:", sender.tab?.id);
+  log.debug("Processing message:", message.type, "from tab:", sender.tab?.id);
 
   try {
     switch (message.type) {
@@ -490,7 +563,7 @@ async function handleMessage(
         );
     }
   } catch (error) {
-    console.error("Error handling message:", error);
+    log.error("Error handling message:", error);
     return createErrorResponse(
       message.id,
       error instanceof Error ? error.message : String(error)
@@ -519,14 +592,14 @@ async function handleConnect(
     return createErrorResponse(message.id, `Invalid URL: ${url}`);
   }
 
-  console.log("Connect request from:", origin);
+  logAuth.info("Connect request from:", origin);
 
   // Check existing permission
   const permission = await permissionManager.checkPermission(origin);
 
   if (permission?.granted) {
     // Already approved - instant connection
-    console.log(`[Auth] Origin ${origin} already approved`);
+    logAuth.debug(`Origin ${origin} already approved`);
     return createSuccessResponse(message.id, {
       connected: true,
       origin,
@@ -535,7 +608,7 @@ async function handleConnect(
 
   if (permission?.granted === false) {
     // Previously denied
-    console.log(`[Auth] Origin ${origin} was previously denied`);
+    logAuth.debug(`Origin ${origin} was previously denied`);
     return createErrorResponse(
       message.id,
       "Connection denied. This site was previously denied access to Fishy."
@@ -543,7 +616,7 @@ async function handleConnect(
   }
 
   // No permission set - create authorization request and open popup
-  console.log(`[Auth] No permission for ${origin} - opening authorization popup`);
+  logAuth.info(`No permission for ${origin} - opening authorization popup`);
 
   const authRequest = await authManager.createAuthRequest(
     origin,
@@ -580,7 +653,7 @@ async function handleDisconnect(
   message: RequestMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
-  console.log("Disconnect request from:", sender.tab?.url);
+  log.debug("Disconnect request from:", sender.tab?.url);
 
   return createSuccessResponse(message.id, {
     disconnected: true,
@@ -604,7 +677,7 @@ async function handleCallZome(
 
     const origin = new URL(url).origin;
     const requestPayload = message.payload as any;
-    console.log("Zome call request:", requestPayload);
+    logZome.debug("Zome call request:", requestPayload);
     const afterValidation = performance.now();
 
     // Check permission first
@@ -637,15 +710,15 @@ async function handleCallZome(
     const payload = requestPayload.payload;
 
     // Build cell_id from context
-    console.log(`[CallZome] Building cell_id from context`, context);
+    logZome.trace(`Building cell_id from context`, context.id);
     const agentPubKey = toUint8Array(context.agentPubKey);
     const dnaHash = toUint8Array(context.dnas[0].hash); // Use first DNA's hash
     const cellId: [Uint8Array, Uint8Array] = [dnaHash, agentPubKey];
     const provenanceBytes = agentPubKey;
-    console.log(`[CallZome] Cell ID built: DNA hash ${dnaHash.length} bytes, Agent ${agentPubKey.length} bytes`);
+    logZome.trace(`Cell ID built: DNA hash ${dnaHash.length} bytes, Agent ${agentPubKey.length} bytes`);
 
     // Find the DNA in the context
-    console.log(`[CallZome] Looking for DNA in ${context.dnas.length} DNAs`);
+    logZome.trace(`Looking for DNA in ${context.dnas.length} DNAs`);
     const dna = context.dnas.find((d) => {
       const dnaHashBytes = toUint8Array(d.hash);
       return (
@@ -655,14 +728,14 @@ async function handleCallZome(
     });
 
     if (!dna) {
-      console.error(`[CallZome] DNA not found!`);
+      logZome.error(`DNA not found`);
       return createErrorResponse(
         message.id,
         `DNA not found in hApp context: ${Buffer.from(dnaHash).toString("hex").substring(0, 16)}...`
       );
     }
 
-    console.log(`[CallZome] DNA found, WASM size: ${dna.wasm.length} bytes`);
+    logZome.trace(`DNA found, WASM size: ${dna.wasm.length} bytes`);
 
     // Normalize payload: convert object-like Uint8Arrays back to real Uint8Arrays
     // Chrome's message passing converts Uint8Arrays to objects like {0: byte0, 1: byte1, ...}
@@ -670,7 +743,7 @@ async function handleCallZome(
 
     // Serialize payload to MessagePack
     const payloadBytes = new Uint8Array(encode(normalizedPayload));
-    console.log(`[CallZome] Payload serialized: ${payloadBytes.length} bytes`);
+    logZome.trace(`Payload serialized: ${payloadBytes.length} bytes`);
     const afterPrepare = performance.now();
 
     // Build minimal zome call request
@@ -685,20 +758,20 @@ async function handleCallZome(
       dnaManifest: undefined, // Not used - offscreen fetches from storage
     };
 
-    console.log(`[CallZome] Executing ${zome_name}::${fn_name} via offscreen (context: ${context.id})`);
+    logZome.info(`Executing ${zome_name}::${fn_name} via offscreen (context: ${context.id})`);
     const beforeOffscreen = performance.now();
 
     // Execute via offscreen document (which can make sync XHR calls)
     // The offscreen document fetches WASM/manifest from IndexedDB
     const { result: transportSafeResult, signals } = await executeZomeCallViaOffscreen(context.id, zomeCallRequest);
     const afterOffscreen = performance.now();
-    console.log(`[CallZome] Result from offscreen:`, transportSafeResult);
+    logZome.trace(`Result from offscreen:`, typeof transportSafeResult);
 
     // Deliver signals to the content script which will forward to the page
     if (signals && signals.length > 0) {
       const tabId = sender.tab?.id;
       if (tabId) {
-        console.log(`[CallZome] Delivering ${signals.length} signals to tab ${tabId}`);
+        logSignal.info(`Delivering ${signals.length} signals to tab ${tabId}`);
         for (const signal of signals) {
           try {
             // Convert signal payload from Array back to Uint8Array and decode
@@ -721,21 +794,21 @@ async function handleCallZome(
             };
 
             // Send to content script
-            console.log("[CallZome] Sending signal to tab:", tabId, appSignal);
+            logSignal.debug("Sending signal to tab:", tabId);
             chrome.tabs.sendMessage(tabId, {
               type: "signal",
               payload: appSignal,
             }).then(() => {
-              console.log("[CallZome] Signal sent successfully to tab:", tabId);
+              logSignal.debug("Signal sent successfully to tab:", tabId);
             }).catch((err) => {
-              console.warn("[CallZome] Failed to send signal to tab:", err);
+              logSignal.warn("Failed to send signal to tab:", err);
             });
           } catch (err) {
-            console.error("[CallZome] Error processing signal:", err);
+            logSignal.error("Error processing signal:", err);
           }
         }
       } else {
-        console.warn("[CallZome] No tab ID available for signal delivery");
+        logSignal.warn("No tab ID available for signal delivery");
       }
     }
 
@@ -743,18 +816,11 @@ async function handleCallZome(
     await happContextManager.touchContext(context.id);
     const afterSignals = performance.now();
 
-    console.log(`[PERF Background] handleCallZome breakdown:
-   ├─ validation:    ${(afterValidation - handleStart).toFixed(1)}ms
-   ├─ permission:    ${(afterPermission - afterValidation).toFixed(1)}ms
-   ├─ getContext:    ${(afterContext - afterPermission).toFixed(1)}ms
-   ├─ prepare:       ${(afterPrepare - afterContext).toFixed(1)}ms
-   ├─ offscreen:     ${(afterOffscreen - beforeOffscreen).toFixed(1)}ms
-   ├─ signals:       ${(afterSignals - afterOffscreen).toFixed(1)}ms
-   └─ TOTAL:         ${(afterSignals - handleStart).toFixed(1)}ms`);
+    log.perf(`handleCallZome breakdown: validation=${(afterValidation - handleStart).toFixed(1)}ms, permission=${(afterPermission - afterValidation).toFixed(1)}ms, getContext=${(afterContext - afterPermission).toFixed(1)}ms, prepare=${(afterPrepare - afterContext).toFixed(1)}ms, offscreen=${(afterOffscreen - beforeOffscreen).toFixed(1)}ms, signals=${(afterSignals - afterOffscreen).toFixed(1)}ms, TOTAL=${(afterSignals - handleStart).toFixed(1)}ms`);
 
     return createSuccessResponse(message.id, transportSafeResult);
   } catch (error) {
-    console.error("Error in handleCallZome:", error);
+    logZome.error("Error in handleCallZome:", error);
     return createErrorResponse(
       message.id,
       error instanceof Error ? error.message : String(error)
@@ -776,7 +842,7 @@ async function handleAppInfo(
     }
 
     const origin = new URL(url).origin;
-    console.log("App info request from:", origin);
+    logHapp.debug("App info request from:", origin);
 
     // Check permission first
     const permission = await permissionManager.checkPermission(origin);
@@ -832,7 +898,7 @@ async function handleInstallHapp(
     }
 
     const origin = new URL(url).origin;
-    console.log("Install hApp request from:", origin);
+    logHapp.info("Install hApp request from:", origin);
 
     const request = message.payload as InstallHappRequest;
     if (!request || !request.happBundle) {
@@ -851,7 +917,7 @@ async function handleInstallHapp(
     // Register agents with gateway for signal forwarding
     // Do this asynchronously - don't block the install response
     registerContextAgentsWithGateway(context).catch((err) => {
-      console.warn("[Background] Failed to register agents with gateway:", err);
+      logGateway.warn("Failed to register agents with gateway:", err);
     });
 
     return createSuccessResponse(message.id, {
@@ -882,7 +948,7 @@ async function handleUninstallHapp(
     }
 
     await happContextManager.uninstallHapp(contextId);
-    console.log(`[HappContext] Uninstalled hApp ${contextId}`);
+    logHapp.info(`Uninstalled hApp ${contextId}`);
 
     return createSuccessResponse(message.id, { uninstalled: true });
   } catch (error) {
@@ -938,7 +1004,7 @@ async function handleEnableHapp(
     }
 
     await happContextManager.setContextEnabled(contextId, true);
-    console.log(`[HappContext] Enabled context ${contextId}`);
+    logHapp.info(`Enabled context ${contextId}`);
 
     return createSuccessResponse(message.id, { enabled: true });
   } catch (error) {
@@ -963,7 +1029,7 @@ async function handleDisableHapp(
     }
 
     await happContextManager.setContextEnabled(contextId, false);
-    console.log(`[HappContext] Disabled context ${contextId}`);
+    logHapp.info(`Disabled context ${contextId}`);
 
     return createSuccessResponse(message.id, { disabled: true });
   } catch (error) {
@@ -1347,7 +1413,7 @@ async function handlePermissionGrant(
 
     // Grant permission
     await permissionManager.grantPermission(origin);
-    console.log(`[Auth] Permission granted for ${origin}`);
+    logAuth.info(`Permission granted for ${origin}`);
 
     // Resolve pending auth request
     const resolved = await authManager.resolveAuthRequest(
@@ -1383,7 +1449,7 @@ async function handlePermissionDeny(
 
     // Deny permission
     await permissionManager.denyPermission(origin);
-    console.log(`[Auth] Permission denied for ${origin}`);
+    logAuth.info(`Permission denied for ${origin}`);
 
     // Resolve pending auth request with error
     const resolved = await authManager.resolveAuthRequest(
@@ -1435,7 +1501,7 @@ async function handlePermissionRevoke(
     }
 
     await permissionManager.revokePermission(origin);
-    console.log(`[Auth] Permission revoked for ${origin}`);
+    logAuth.info(`Permission revoked for ${origin}`);
 
     return createSuccessResponse(message.id, { revoked: true });
   } catch (error) {
@@ -1500,11 +1566,11 @@ async function handleGatewayConfigure(
     // Create offscreen document if needed (so WebSocket service can connect)
     // and configure network
     await ensureOffscreenDocument();
-    console.log(`[Background] networkConfigured = ${networkConfigured}`);
+    logGateway.debug(`networkConfigured = ${networkConfigured}`);
     if (!networkConfigured) {
       await configureOffscreenNetwork({ gatewayUrl });
     } else {
-      console.log("[Background] Network already configured, skipping");
+      logGateway.debug("Network already configured, skipping");
     }
 
     // Register agents for existing hApp contexts
@@ -1512,7 +1578,7 @@ async function handleGatewayConfigure(
     for (const context of contexts) {
       if (context.enabled) {
         registerContextAgentsWithGateway(context).catch((err) => {
-          console.warn(`[Background] Failed to register agents for ${context.id}:`, err);
+          logGateway.warn(`Failed to register agents for ${context.id}:`, err);
         });
       }
     }
@@ -1556,12 +1622,7 @@ async function handleRemoteSignal(signalData: {
   zome_name: string;
   signal: number[]; // Uint8Array converted to array for transport
 }): Promise<void> {
-  console.log(`[Background] handleRemoteSignal called:`);
-  console.log(`  dna_hash: ${signalData.dna_hash}`);
-  console.log(`  to_agent: ${signalData.to_agent}`);
-  console.log(`  from_agent: ${signalData.from_agent}`);
-  console.log(`  zome_name: ${signalData.zome_name}`);
-  console.log(`  signal length: ${signalData.signal.length}`);
+  logSignal.info(`handleRemoteSignal: dna=${signalData.dna_hash.substring(0, 15)}..., to=${signalData.to_agent.substring(0, 15)}..., from=${signalData.from_agent}, zome=${signalData.zome_name}, len=${signalData.signal.length}`);
 
   try {
     // Find the context for this agent
@@ -1572,21 +1633,21 @@ async function handleRemoteSignal(signalData: {
     const { decodeHashFromBase64, encodeHashToBase64 } = await import("@holochain/client");
     const targetDnaHash = decodeHashFromBase64(signalData.dna_hash);
 
-    console.log(`[Background] Searching ${contexts.length} contexts for agent match (to_agent: ${signalData.to_agent})...`);
+    logSignal.debug(`Searching ${contexts.length} contexts for agent match (to_agent: ${signalData.to_agent.substring(0, 15)}...)`);
     const context = contexts.find((ctx) => {
       // Compare agent pubkey - the context stores it as Uint8Array
       const ctxAgentB64 = encodeHashToBase64(toUint8Array(ctx.agentPubKey));
       const match = ctxAgentB64 === signalData.to_agent;
-      console.log(`[Background] Checking context: ${ctx.id} (${ctx.domain}), agent=${ctxAgentB64.substring(0, 20)}... match=${match}`);
+      logSignal.trace(`Checking context: ${ctx.id} (${ctx.domain}), agent=${ctxAgentB64.substring(0, 20)}... match=${match}`);
       return match;
     });
 
     if (!context) {
-      console.warn(`[Background] No context found for agent: ${signalData.to_agent}`);
+      logSignal.warn(`No context found for agent: ${signalData.to_agent.substring(0, 20)}...`);
       return;
     }
 
-    console.log(`[Background] Found context for remote signal: ${context.id} (${context.domain})`);
+    logSignal.debug(`Found context for remote signal: ${context.id} (${context.domain})`);
 
     // The signal payload contains serialized ZomeCallParams which includes:
     // - zome_name: the actual zome to call (e.g., "profiles")
@@ -1610,7 +1671,7 @@ async function handleRemoteSignal(signalData: {
         cell_id?: CellId;
       };
 
-      console.log("[Background] Decoded ZomeCallParams:", {
+      logSignal.trace("Decoded ZomeCallParams:", {
         zome_name: zomeCallParams.zome_name,
         fn_name: zomeCallParams.fn_name,
         has_provenance: !!zomeCallParams.provenance,
@@ -1626,7 +1687,7 @@ async function handleRemoteSignal(signalData: {
         ? toUint8Array(zomeCallParams.payload) as ExternIO
         : signalPayloadBytes as ExternIO;
     } catch (decodeError) {
-      console.warn("[Background] Failed to decode ZomeCallParams, using fallback:", decodeError);
+      logSignal.warn("Failed to decode ZomeCallParams, using fallback:", decodeError);
       // Fallback to using the raw payload if decoding fails
       zomeName = signalData.zome_name;
       provenance = context.agentPubKey;
@@ -1651,20 +1712,17 @@ async function handleRemoteSignal(signalData: {
       zomeCallRequest
     );
 
-    console.log(`[Background] recv_remote_signal completed, ${signals?.length || 0} signals emitted`);
+    logSignal.debug(`recv_remote_signal completed, ${signals?.length || 0} signals emitted`);
 
     // Deliver any emitted signals to tabs matching this context's domain
     if (signals && signals.length > 0) {
       // Find tabs for this context's domain
-      console.log(`[Background] Looking for tabs matching: ${context.domain}/*`);
+      logSignal.trace(`Looking for tabs matching: ${context.domain}/*`);
       const tabs = await chrome.tabs.query({ url: `${context.domain}/*` });
-      console.log(`[Background] Found ${tabs.length} tabs for domain ${context.domain}`);
-      tabs.forEach((tab, i) => {
-        console.log(`[Background]   Tab ${i}: id=${tab.id}, url=${tab.url}`);
-      });
+      logSignal.debug(`Found ${tabs.length} tabs for domain ${context.domain}`);
 
       if (tabs.length === 0) {
-        console.warn(`[Background] No tabs found for domain: ${context.domain}`);
+        logSignal.warn(`No tabs found for domain: ${context.domain}`);
         return;
       }
 
@@ -1692,7 +1750,7 @@ async function handleRemoteSignal(signalData: {
               },
             };
 
-            console.log(`[Background] Sending signal to tab ${tab.id}:`, appSignal);
+            logSignal.debug(`Sending signal to tab ${tab.id}`);
             chrome.tabs.sendMessage(tab.id, {
               type: "signal",
               payload: appSignal,
@@ -1700,13 +1758,13 @@ async function handleRemoteSignal(signalData: {
               // Ignore errors for tabs without content script
             });
           } catch (err) {
-            console.error("[Background] Error processing signal:", err);
+            logSignal.error("Error processing signal:", err);
           }
         }
       }
     }
   } catch (error) {
-    console.error("[Background] Error handling remote signal:", error);
+    logSignal.error("Error handling remote signal:", error);
     // Don't rethrow - remote signals are fire-and-forget
   }
 }
@@ -1722,7 +1780,7 @@ async function handleSignRequest(request: {
   agent_pubkey: number[];
   message: number[];
 }): Promise<{ success: boolean; signature?: number[]; error?: string }> {
-  console.log(`[Background] Sign request for agent (pubkey len: ${request.agent_pubkey.length})`);
+  logLair.debug(`Sign request for agent (pubkey len: ${request.agent_pubkey.length})`);
 
   try {
     // Check if lair is locked
@@ -1750,27 +1808,29 @@ async function handleSignRequest(request: {
     }
 
     // Debug: Log the key being requested and list all keys in Lair
-    console.log(`[Background] Looking for Ed25519 key: ${Array.from(ed25519PubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}...`);
+    logLair.trace(`Looking for Ed25519 key: ${Array.from(ed25519PubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}...`);
     const allEntries = await client.listEntries();
-    console.log(`[Background] Lair has ${allEntries.length} entries:`);
+    logLair.trace(`Lair has ${allEntries.length} entries`);
     for (const entry of allEntries) {
       const entryKeyHex = Array.from(entry.ed25519_pub_key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
       const matches = ed25519PubKey.every((b, i) => b === entry.ed25519_pub_key[i]);
-      console.log(`[Background]   - ${entry.tag}: ${entryKeyHex}... ${matches ? '(MATCH)' : ''}`);
+      if (matches) {
+        logLair.trace(`Found matching key: ${entry.tag}: ${entryKeyHex}...`);
+      }
     }
 
     // Sign the message using the agent's key
     const messageBytes = new Uint8Array(request.message);
     const signature = await client.signByPubKey(ed25519PubKey, messageBytes);
 
-    console.log(`[Background] Signed successfully, signature length: ${signature.length}`);
+    logLair.debug(`Signed successfully, signature length: ${signature.length}`);
 
     return {
       success: true,
       signature: Array.from(signature),
     };
   } catch (error) {
-    console.error("[Background] Sign request failed:", error);
+    logLair.error("Sign request failed:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -1787,12 +1847,12 @@ chrome.runtime.onMessage.addListener(
     sender: chrome.runtime.MessageSender,
     sendResponse: (response: any) => void
   ) => {
-    console.log("Received raw message:", rawMessage, "from:", sender);
+    log.trace("Received raw message:", rawMessage?.type, "from:", sender?.tab?.id);
 
     // Handle internal messages from offscreen document
     if (rawMessage.target === "background") {
       if (rawMessage.type === "OFFSCREEN_READY") {
-        console.log("[Background] Offscreen document ready");
+        markOffscreenReady();
         return false;
       }
 
@@ -1800,14 +1860,14 @@ chrome.runtime.onMessage.addListener(
         handleRemoteSignal(rawMessage).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
-          console.error("[Background] Error handling remote signal:", error);
+          logSignal.error("Error handling remote signal:", error);
           sendResponse({ success: false, error: String(error) });
         });
         return true; // Async response
       }
 
       if (rawMessage.type === "WS_STATE_CHANGE") {
-        console.log(`[Background] WebSocket state changed: ${rawMessage.state}`);
+        logGateway.debug(`WebSocket state changed: ${rawMessage.state}`);
         return false;
       }
 
@@ -1816,7 +1876,7 @@ chrome.runtime.onMessage.addListener(
         handleSignRequest(rawMessage).then((result) => {
           sendResponse(result);
         }).catch((error) => {
-          console.error("[Background] Sign request error:", error);
+          logLair.error("Sign request error:", error);
           sendResponse({ success: false, error: String(error) });
         });
         return true; // Async response
@@ -1854,7 +1914,7 @@ chrome.runtime.onMessage.addListener(
           sendResponse(response);
         })
         .catch((error) => {
-          console.error("Error in message handler:", error);
+          log.error("Error in message handler:", error);
           sendResponse(
             createErrorResponse(
               message.id,
@@ -1866,7 +1926,7 @@ chrome.runtime.onMessage.addListener(
       // Return true to indicate async response
       return true;
     } catch (error) {
-      console.error("Error processing message:", error);
+      log.error("Error processing message:", error);
       sendResponse(
         createErrorResponse(
           "unknown",

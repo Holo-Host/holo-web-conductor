@@ -6,6 +6,9 @@
 
 import { CallContext } from "../call-context";
 import { HostFunctionImpl, wrapHostFunction } from "./base";
+import { createLogger } from "@fishy/shared";
+
+const log = createLogger('HostFn');
 
 // Import all host functions
 import { agentInfo } from "./agent_info";
@@ -54,7 +57,7 @@ export class HostFunctionRegistry {
    * @param impl - Host function implementation
    */
   registerHostFunction(name: string, impl: HostFunctionImpl): void {
-    console.log(`[Ribosome] Registering host function: ${name}`);
+    log.debug(` Registering host function: ${name}`);
     this.functions.set(name, impl);
   }
 
@@ -280,9 +283,7 @@ function initializeRegistry(): HostFunctionRegistry {
   // DNA info version 2
   registry.registerHostFunction("__hc__dna_info_2", stubs.dnaInfo2);
 
-  console.log(
-    `[Ribosome] Initialized registry with ${registry.size} host functions`
-  );
+  log.debug(`Initialized registry with ${registry.size} host functions`);
 
   return registry;
 }

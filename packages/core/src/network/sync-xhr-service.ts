@@ -17,6 +17,9 @@ import type {
 } from './types';
 import type { DnaHash, AnyDhtHash, SignedActionHashed } from '../types/holochain-types';
 import { encodeHashToBase64 } from '../types/holochain-types';
+import { createLogger } from '@fishy/shared';
+
+const log = createLogger('SyncXHR');
 
 /**
  * Default timeout for network requests (30 seconds)
@@ -269,7 +272,7 @@ export class SyncXHRNetworkService implements NetworkService {
         return [];
       }
 
-      console.log(`[SyncXHR] Parsing ${data.length} links from gateway`);
+      log.debug(` Parsing ${data.length} links from gateway`);
 
       return data.map((link: any, idx: number): NetworkLink => {
         const target = this.normalizeByteArrays(link.target);
@@ -279,7 +282,7 @@ export class SyncXHRNetworkService implements NetworkService {
         const rawTargetPrefix = Array.isArray(link.target) ? link.target.slice(0, 3) : 'not array';
         const normalizedTargetPrefix = target instanceof Uint8Array ? Array.from(target.slice(0, 3)) : 'not Uint8Array';
 
-        console.log(`[SyncXHR] Link ${idx} from gateway:`, {
+        log.debug(` Link ${idx} from gateway:`, {
           raw_target_prefix: rawTargetPrefix,
           raw_target_length: Array.isArray(link.target) ? link.target.length : 'N/A',
           normalized_target_prefix: normalizedTargetPrefix,
@@ -314,7 +317,7 @@ export class SyncXHRNetworkService implements NetworkService {
     const url = this.buildRecordUrl(dnaHash, hash);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    console.log(`[SyncXHR] Fetching record: ${url}`);
+    log.debug(` Fetching record: ${url}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -327,10 +330,10 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const record = this.parseRecordResponse(xhr.responseText);
-        console.log(`[SyncXHR] Record fetched successfully`);
+        log.debug(` Record fetched successfully`);
         return record;
       } else if (xhr.status === 404) {
-        console.log(`[SyncXHR] Record not found (404)`);
+        log.debug(` Record not found (404)`);
         return null;
       } else {
         console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
@@ -354,7 +357,7 @@ export class SyncXHRNetworkService implements NetworkService {
     const url = this.buildLinksUrl(dnaHash, baseAddress, linkType);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    console.log(`[SyncXHR] Fetching links: ${url}`);
+    log.debug(` Fetching links: ${url}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -366,10 +369,10 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const links = this.parseLinksResponse(xhr.responseText);
-        console.log(`[SyncXHR] Fetched ${links.length} links`);
+        log.debug(` Fetched ${links.length} links`);
         return links;
       } else if (xhr.status === 404) {
-        console.log(`[SyncXHR] No links found (404)`);
+        log.debug(` No links found (404)`);
         return [];
       } else {
         console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
@@ -392,7 +395,7 @@ export class SyncXHRNetworkService implements NetworkService {
     const url = this.buildDetailsUrl(dnaHash, hash);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    console.log(`[SyncXHR] Fetching details: ${url}`);
+    log.debug(` Fetching details: ${url}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -404,10 +407,10 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const details = JSON.parse(xhr.responseText);
-        console.log(`[SyncXHR] Details fetched successfully`);
+        log.debug(` Details fetched successfully`);
         return details;
       } else if (xhr.status === 404) {
-        console.log(`[SyncXHR] Details not found (404)`);
+        log.debug(` Details not found (404)`);
         return null;
       } else {
         console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
@@ -431,7 +434,7 @@ export class SyncXHRNetworkService implements NetworkService {
     const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    console.log(`[SyncXHR] Counting links: ${url}`);
+    log.debug(` Counting links: ${url}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -443,10 +446,10 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const count = JSON.parse(xhr.responseText);
-        console.log(`[SyncXHR] Link count: ${count}`);
+        log.debug(` Link count: ${count}`);
         return typeof count === 'number' ? count : 0;
       } else if (xhr.status === 404) {
-        console.log(`[SyncXHR] No links found (404)`);
+        log.debug(` No links found (404)`);
         return 0;
       } else {
         console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
@@ -476,7 +479,7 @@ export class SyncXHRNetworkService implements NetworkService {
   requestChallenge(): { nonce: string; expires_at: number } {
     const url = `${this.gatewayUrl}/auth/challenge`;
 
-    console.log(`[SyncXHR] Requesting auth challenge: ${url}`);
+    log.debug(` Requesting auth challenge: ${url}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -487,7 +490,7 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const challenge = JSON.parse(xhr.responseText);
-        console.log(`[SyncXHR] Auth challenge received`);
+        log.debug(` Auth challenge received`);
         return challenge;
       } else {
         console.error(`[SyncXHR] Auth challenge failed: ${xhr.status} ${xhr.statusText}`);
@@ -516,7 +519,7 @@ export class SyncXHRNetworkService implements NetworkService {
   ): { token: string; expires_at: number } {
     const url = `${this.gatewayUrl}/auth/verify`;
 
-    console.log(`[SyncXHR] Verifying auth challenge: ${url}`);
+    log.debug(` Verifying auth challenge: ${url}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -531,7 +534,7 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const session = JSON.parse(xhr.responseText);
-        console.log(`[SyncXHR] Auth verified, session token received`);
+        log.debug(` Auth verified, session token received`);
         // Automatically set the session token
         this.sessionToken = session.token;
         return session;

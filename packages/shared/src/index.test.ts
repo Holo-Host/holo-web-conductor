@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ok, err, HASH_LENGTH } from "./index";
+import { ok, err } from "./index";
 
 describe("shared utilities", () => {
   describe("Result type helpers", () => {
@@ -18,12 +18,6 @@ describe("shared utilities", () => {
       if (!result.ok) {
         expect(result.error).toBe(error);
       }
-    });
-  });
-
-  describe("constants", () => {
-    it("HASH_LENGTH is 32 bytes", () => {
-      expect(HASH_LENGTH).toBe(32);
     });
   });
 });

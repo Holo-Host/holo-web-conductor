@@ -10,6 +10,52 @@
  * - Network requests use Atomics.wait to block while offscreen does sync XHR
  */
 
+// ============================================================================
+// Worker Log Filter
+// ============================================================================
+// Control logging via SET_LOG_FILTER message from offscreen
+// Filter: '*' = all, '' = none, 'Ribosome,PERF' = only matching prefixes
+
+let workerLogFilter = '*'; // Default: show all
+
+// Save original console methods
+const originalConsoleLog = console.log.bind(console);
+const originalConsoleWarn = console.warn.bind(console);
+const originalConsoleError = console.error.bind(console);
+
+function shouldWorkerLog(args: any[]): boolean {
+  if (workerLogFilter === '*') return true;
+  if (workerLogFilter === '') return false;
+
+  // Check if first arg is a string with a bracket prefix like [Ribosome]
+  const firstArg = args[0];
+  if (typeof firstArg === 'string') {
+    const match = firstArg.match(/^\[([^\]]+)\]/);
+    if (match) {
+      const prefix = match[1].toLowerCase();
+      const allowed = workerLogFilter.toLowerCase().split(',').map(p => p.trim());
+      return allowed.some(a => prefix.includes(a) || a.includes(prefix));
+    }
+    // Also check for emoji prefixes like "⏱️ [PERF]"
+    const perfMatch = firstArg.match(/\[PERF\]/i);
+    if (perfMatch) {
+      const allowed = workerLogFilter.toLowerCase().split(',').map(p => p.trim());
+      return allowed.some(a => a.includes('perf'));
+    }
+  }
+  return true; // Allow logs without recognized prefix
+}
+
+// Override console.log to filter
+console.log = (...args: any[]) => {
+  if (shouldWorkerLog(args)) {
+    originalConsoleLog(...args);
+  }
+};
+
+// Warnings and errors always show (like the main logger)
+// console.warn and console.error are kept as-is
+
 // Polyfill document for sqlite-wasm which tries to access it during module init in workers
 if (typeof document === 'undefined') {
   const workerUrl = (self as any).location?.href || 'chrome-extension://placeholder/offscreen/ribosome-worker.js';
@@ -1193,6 +1239,12 @@ self.onmessage = async (event: MessageEvent) => {
         sessionToken = payload.sessionToken || null;
         console.log('[Ribosome Worker] Network configured:', gatewayUrl);
         result = { success: true };
+        break;
+
+      case 'SET_LOG_FILTER':
+        workerLogFilter = payload.filter ?? '*';
+        originalConsoleLog(`[Ribosome Worker] Log filter set to: ${workerLogFilter === '*' ? 'all' : workerLogFilter === '' ? 'none' : workerLogFilter}`);
+        result = { success: true, filter: workerLogFilter };
         break;
 
       case 'CALL_ZOME':
