@@ -96,10 +96,12 @@ window.addEventListener("message", (event) => {
 
   // Handle signal messages (push from extension)
   if (message.type === "signal") {
-    console.log("[Fishy] Signal received:", message.payload);
+    // Restore Uint8Arrays that Chrome converted to {0: x, 1: y, ...} objects
+    const restoredPayload = restoreUint8Arrays(message.payload);
+    console.log("[Fishy] Signal received:", restoredPayload);
     signalHandlers.forEach((handler) => {
       try {
-        handler(message.payload);
+        handler(restoredPayload);
       } catch (e) {
         console.error("[Fishy] Signal handler error:", e);
       }
@@ -132,6 +134,53 @@ function toUint8Array(data: any): Uint8Array | null {
     return new Uint8Array(values);
   }
   return null;
+}
+
+// Helper to check if an object looks like a serialized Uint8Array
+// (has numeric keys from 0 to n-1 with byte values)
+function looksLikeUint8Array(obj: any): boolean {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  if (obj instanceof Uint8Array) return false; // Already a Uint8Array
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return false;
+  // Check if all keys are sequential numbers starting from 0
+  // and all values are numbers in byte range
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i] !== String(i)) return false;
+    const val = obj[keys[i]];
+    if (typeof val !== "number" || val < 0 || val > 255 || !Number.isInteger(val)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Recursively restore Uint8Arrays from Chrome's object serialization
+function restoreUint8Arrays(data: any): any {
+  if (data === null || data === undefined) return data;
+  if (data instanceof Uint8Array) return data;
+
+  // Check if this looks like a serialized Uint8Array
+  if (looksLikeUint8Array(data)) {
+    const values = Object.values(data) as number[];
+    return new Uint8Array(values);
+  }
+
+  // Recurse into arrays
+  if (Array.isArray(data)) {
+    return data.map(item => restoreUint8Arrays(item));
+  }
+
+  // Recurse into objects
+  if (typeof data === "object") {
+    const restored: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      restored[key] = restoreUint8Arrays(value);
+    }
+    return restored;
+  }
+
+  return data;
 }
 
 // Create the Holochain API

@@ -10,6 +10,7 @@ import {
   CallContext,
   EmittedSignal,
   PendingRecord,
+  QueuedRemoteSignal,
 } from "./call-context";
 import { getRibosomeRuntime } from "./runtime";
 import { getHostFunctionRegistry } from "./host-fn";
@@ -52,6 +53,9 @@ export interface ZomeCallResult {
 
   /** Records created during zome execution (ready for publishing) */
   pendingRecords?: HolochainRecord[];
+
+  /** Remote signals queued for delivery via kitsune2 network */
+  remoteSignals?: QueuedRemoteSignal[];
 }
 
 /**
@@ -373,6 +377,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
       result: unwrappedResult,
       signals: allSignals,
       pendingRecords,
+      remoteSignals: context.remoteSignals,
     };
   } catch (error) {
     // Rollback transaction on any error - discard all chain updates

@@ -1,5 +1,23 @@
 # Fishy
 
+## CRITICAL RULES:
+
+- **Use @holochain/client types and utilities**: ALWAYS check `@holochain/client` for existing types, enums, and utility functions before defining new ones. This includes:
+    - Hash types: `EntryHash`, `ActionHash`, `AgentPubKey`, `DnaHash` (not generic `Uint8Array`)
+    - Enums: `ActionType`, `HoloHashType`
+    - Hash utilities: `HASH_TYPE_PREFIX`, `hashFrom32AndType`, `dhtLocationFrom32`,`encodeHashToBase64`, `decodeHashFromBase64` (not atob)
+    - Type guards and utilities in `@holochain/client/lib/utils/`
+    - Return typed hashes (e.g., `EntryHash`) not `Uint8Array` from functions that compute specific hash types
+- use npm for build.
+- **Commit Hygene** Don't add claude co-authored/generated messages in commit descriptions
+- **Strong typing**: when possible allways use strong typeing in typescript, ESPECIALLY when serializing and deserializing accross WASM boundaries.  Look in Holochain code base for types and make typscript equivalents, paying atttention the the serde serialization method being used (which is generally internal, i.e. type: "name")
+- **reference sources, where to search** All sources are local:
+   1. We are using Holochain 0.6. look in ../holochain
+   2. @holochain/client, look in ../holochain-client-js
+   3. @holochain-open-dev/profiles, look in ../profiles
+   4. gateway: look in ../hc-http-gw-fork
+   DO NOT USE .cargo files or web searches to research these codebases, just look locally.
+
 ## Overview
 
 This project is a browser extension-based implementation of the Holochain conductor as implemented in https://github.com/holochain/holochain/ as well as lair keystore as implemented in https://github.com/holochain/lair.
@@ -16,13 +34,6 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
 
 ---
 
-## Things you must do:
-
-- use npm for build.
-- For all Holochain hashes rely on @holochain/client types and functions:  
-  - Allways use types (AgentPubKey, EntryHash, ActionHash, etc) instead of Uint8Array
-  - allways use library functions encodeHashToBase64 decodeHashFromBase64 instead of roll-your own. (never use atob)
-  - allways get the prefixes from the library, not setting them manually.
 
 ## Requirements, Tradeoffs & Dev Instructions
 
@@ -31,7 +42,6 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
 2. **User testing is required before commits**: After implementing features, user testing must be performed in a real browser environment before creating git commits. This ensures functionality works as expected.
 3. Different portions of the plan, or even the same plan may be worked on from different workstations, so claude must be set up to pick up sessions where they were left off.
 4. Perfect is the enemy of the good. This plan should not be implemented to the highest possible standard of efficiency or robustness, but rather in a way that allows for reaching the functionality goals in reasonable time, and iterating on quality goals over time.
-5. Don't add claude co-authored/generated messages in commit descriptions
 6. **Avoiding Solution Loops**: When debugging persistent issues (especially serialization):
    - ALWAYS read the "Failed Solutions Archive" before proposing solutions
    - Document WHY a solution failed, not just WHAT failed
@@ -39,16 +49,8 @@ The Holochain repo is a large mono-repo and the portions to be implemented here 
    - Use the Explore agent to research Holochain's actual implementation before making assumptions
    - Add comprehensive logging to compare byte-level differences
    - DO NOT assume version incompatibilities without proof
-7. **Strong typing**: when possible allways use strong typeing in typescript, ESPECIALLY when serializing and deserializing accross WASM boundaries.  Look in Holochain code base for types and make typscript equivalents, paying atttention the the serde serialization method being used (which is generally internal, i.e. type: "name")
-8. **Holochain reference sources**: We are using Holochain 0.6.  The source for this is local and lives at the same level as this repo. DO NOT USE .cargo files or web searches to research holochain, just look locally.
 9. **Serialization Errors**: Make sure to look at TRACE output when trying to figure out serialization problems, the WASM will tell you what was wrong in that error message.
 10. **holochain dependencies via nix**: when running tests and holochain and so on, correct dependencies will be loaded if commands are run using `nix develop`
-11. **Use @holochain/client types and utilities**: ALWAYS check `@holochain/client` for existing types, enums, and utility functions before defining new ones. This includes:
-    - Hash types: `EntryHash`, `ActionHash`, `AgentPubKey`, `DnaHash` (not generic `Uint8Array`)
-    - Enums: `ActionType`, `HoloHashType`
-    - Hash utilities: `HASH_TYPE_PREFIX`, `hashFrom32AndType`, `dhtLocationFrom32`
-    - Type guards and utilities in `@holochain/client/lib/utils/`
-    - Return typed hashes (e.g., `EntryHash`) not `Uint8Array` from functions that compute specific hash types
 ---
 
 ## Development Strategy
@@ -479,10 +481,20 @@ interface CallZomeRequest {
 
 **Dependencies**: All previous steps
 
+**Status**: IN PROGRESS
+
 **Sub-tasks**:
-1. **10.1** created updated version of @holochain/client that detects in-browser-extension context
-2. **10.2** Test version of scaffold created forum app in this context
-3. **10.3** Test version of kando in this context
+1. **10.1** ✅ Create FishyAppClient adapter for @holochain/client compatibility - COMPLETE (2026-01-13)
+2. **10.2** ✅ Fix remote signal architecture (recv_remote_signal callback, call_info host function) - COMPLETE (2026-01-13)
+3. **10.3** ⏳ Test version of kando in this context
+
+**Key Files**:
+- `packages/extension/test/lib/fishy-app-client.ts` - FishyAppClient implementing AppClient interface
+- `packages/core/src/ribosome/host-fn/call_info.ts` - CallInfo with proper CapGrant structure
+
+**Details**:
+- Step 10.1: See [STEPS/10.1_COMPLETION.md](./STEPS/10.1_COMPLETION.md)
+- Step 10.2: See [STEPS/10.2_COMPLETION.md](./STEPS/10.2_COMPLETION.md)
 
 ---
 

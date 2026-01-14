@@ -154,6 +154,12 @@ function handleWorkerMessage(event: MessageEvent): void {
     return;
   }
 
+  // Handle remote signals from worker (fire-and-forget)
+  if (type === 'SEND_REMOTE_SIGNALS') {
+    handleSendRemoteSignals(event.data);
+    return;
+  }
+
   // Handle response to our request
   if (id !== undefined) {
     const pending = pendingRequests.get(id);
@@ -297,6 +303,27 @@ async function handleSignRequest(request: { pub_key: number[]; data: number[] })
 }
 
 /**
+ * Handle send remote signals request from worker (fire-and-forget)
+ *
+ * This mirrors Holochain's tokio::spawn pattern - signals are sent
+ * asynchronously without blocking the zome call.
+ */
+function handleSendRemoteSignals(data: { dnaHash: number[]; signals: any[] }): void {
+  if (!wsService) {
+    console.warn('[Offscreen] Cannot send remote signals - WebSocket service not initialized');
+    return;
+  }
+
+  if (!data.signals || data.signals.length === 0) {
+    return;
+  }
+
+  const dnaHashB64 = encodeHashToBase64(new Uint8Array(data.dnaHash));
+  console.log(`[Offscreen] Sending ${data.signals.length} remote signals via WebSocket`);
+  wsService.sendRemoteSignals(dnaHashB64, data.signals);
+}
+
+/**
  * Send message to worker and wait for response
  */
 function sendToWorker(type: string, payload?: any): Promise<any> {
@@ -334,16 +361,24 @@ function initializeWebSocketService(config: {
 
   // Set up signal callback to forward signals to background
   wsService.onSignal((signal) => {
-    console.log(`[Offscreen] Received remote signal from ${signal.from_agent}`);
+    console.log(`[Offscreen] Received remote signal via WebSocket:`);
+    console.log(`  dna_hash: ${signal.dna_hash}`);
+    console.log(`  to_agent: ${signal.to_agent}`);
+    console.log(`  from_agent: ${signal.from_agent}`);
+    console.log(`  zome_name: ${signal.zome_name}`);
+    console.log(`  signal length: ${signal.signal.length}`);
 
     // Forward to background script which will dispatch to the right tab
     chrome.runtime.sendMessage({
       target: "background",
       type: "REMOTE_SIGNAL",
       dna_hash: signal.dna_hash,
+      to_agent: signal.to_agent,
       from_agent: signal.from_agent,
       zome_name: signal.zome_name,
       signal: Array.from(signal.signal), // Convert Uint8Array for transport
+    }).then(() => {
+      console.log(`[Offscreen] Signal forwarded to background successfully`);
     }).catch((err) => {
       console.warn("[Offscreen] Failed to forward signal:", err);
     });
@@ -555,12 +590,10 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
     });
   }
 
-  // Send remote signals via WebSocket (fire-and-forget)
-  if (result.remoteSignals && result.remoteSignals.length > 0 && wsService) {
-    console.log(`[Offscreen] Sending ${result.remoteSignals.length} remote signals via WebSocket`);
-    const dnaHashB64 = encodeHashToBase64(dnaHash);
-    wsService.sendRemoteSignals(dnaHashB64, result.remoteSignals);
-  }
+  // Note: Remote signals are now sent directly from the worker via SEND_REMOTE_SIGNALS message
+  // This happens during the zome call (fire-and-forget), not after it returns
+
+  console.log(`[Offscreen] Worker returned ${(result.signals || []).length} emitted signals`);
 
   return {
     result: result.result,

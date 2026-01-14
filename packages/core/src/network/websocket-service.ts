@@ -55,6 +55,7 @@ export type ServerMessage =
   | {
       type: "signal";
       dna_hash: string;
+      to_agent: string; // Target agent this signal is addressed to
       from_agent: string;
       zome_name: string;
       signal: string; // base64-encoded signal payload
@@ -83,6 +84,7 @@ export type ConnectionState =
  */
 export type SignalCallback = (signal: {
   dna_hash: string;
+  to_agent: string; // Target agent this signal is addressed to
   from_agent: string;
   zome_name: string;
   signal: Uint8Array; // decoded from base64
@@ -450,7 +452,7 @@ export class WebSocketNetworkService {
 
   private handleSignal(message: Extract<ServerMessage, { type: "signal" }>): void {
     console.log(
-      `[WebSocketService] Signal from ${message.from_agent} (${message.zome_name})`
+      `[WebSocketService] Signal for ${message.to_agent} from ${message.from_agent} (${message.zome_name})`
     );
 
     if (this.signalCallback) {
@@ -462,6 +464,7 @@ export class WebSocketNetworkService {
 
         this.signalCallback({
           dna_hash: message.dna_hash,
+          to_agent: message.to_agent,
           from_agent: message.from_agent,
           zome_name: message.zome_name,
           signal: signalBytes,

@@ -46,7 +46,10 @@ import {
   isAgentPubKey,
   extractEd25519PubKey,
 } from "@fishy/core";
-import { encodeHashToBase64 } from "@holochain/client";
+import { encodeHashToBase64, type AgentPubKey, type CellId } from "@holochain/client";
+
+// ExternIO is msgpack-encoded bytes - use Uint8Array as the underlying type
+type ExternIO = Uint8Array;
 import type { ZomeCallRequest } from "@fishy/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
@@ -705,13 +708,15 @@ async function handleCallZome(
             const decodedPayload = decode(signalBytes);
 
             // Format as Holochain AppSignal structure
-            // cell_id is already serialized for transport from offscreen
+            // Note: We use normalizeUint8Arrays instead of serializeForTransport
+            // because apps expect Uint8Arrays in signal payloads (e.g., for AgentPubKey.subarray())
+            // chrome.tabs.sendMessage supports structured cloning which preserves Uint8Array
             const appSignal = {
               type: "app",
               value: {
-                cell_id: signal.cell_id, // Already serialized as arrays
+                cell_id: normalizeUint8Arrays(signal.cell_id),
                 zome_name: signal.zome_name,
-                payload: serializeForTransport(decodedPayload),
+                payload: normalizeUint8Arrays(decodedPayload),
               },
             };
 
@@ -1537,46 +1542,172 @@ async function handleGatewayGetStatus(
 
 /**
  * Handle remote signal from offscreen document
- * Dispatches the signal to all tabs that have the hApp context
+ *
+ * Per Holochain architecture, remote signals are delivered by invoking the
+ * WASM's recv_remote_signal callback. The WASM decides whether to forward
+ * to the UI by calling emit_signal().
+ *
+ * Flow: Gateway → WebSocket → Background → WASM recv_remote_signal → emit_signal → UI
  */
 async function handleRemoteSignal(signalData: {
   dna_hash: string;
+  to_agent: string; // Target agent this signal is addressed to
   from_agent: string;
   zome_name: string;
   signal: number[]; // Uint8Array converted to array for transport
 }): Promise<void> {
-  console.log(`[Background] Remote signal from ${signalData.from_agent} (${signalData.zome_name})`);
+  console.log(`[Background] handleRemoteSignal called:`);
+  console.log(`  dna_hash: ${signalData.dna_hash}`);
+  console.log(`  to_agent: ${signalData.to_agent}`);
+  console.log(`  from_agent: ${signalData.from_agent}`);
+  console.log(`  zome_name: ${signalData.zome_name}`);
+  console.log(`  signal length: ${signalData.signal.length}`);
 
   try {
-    // Decode the signal payload (msgpack encoded)
-    const signalBytes = new Uint8Array(signalData.signal);
-    const decodedPayload = decode(signalBytes);
+    // Find the context for this agent
+    const happContextManager = getHappContextManager();
+    const contexts = await happContextManager.listContexts();
 
-    // Format as Holochain AppSignal structure
-    const appSignal = {
-      type: "remote_signal",
-      value: {
-        dna_hash: signalData.dna_hash,
-        from_agent: signalData.from_agent,
-        zome_name: signalData.zome_name,
-        payload: serializeForTransport(decodedPayload),
-      },
+    // Find context with matching agent pubkey (to_agent)
+    const { decodeHashFromBase64, encodeHashToBase64 } = await import("@holochain/client");
+    const targetDnaHash = decodeHashFromBase64(signalData.dna_hash);
+
+    console.log(`[Background] Searching ${contexts.length} contexts for agent match (to_agent: ${signalData.to_agent})...`);
+    const context = contexts.find((ctx) => {
+      // Compare agent pubkey - the context stores it as Uint8Array
+      const ctxAgentB64 = encodeHashToBase64(toUint8Array(ctx.agentPubKey));
+      const match = ctxAgentB64 === signalData.to_agent;
+      console.log(`[Background] Checking context: ${ctx.id} (${ctx.domain}), agent=${ctxAgentB64.substring(0, 20)}... match=${match}`);
+      return match;
+    });
+
+    if (!context) {
+      console.warn(`[Background] No context found for agent: ${signalData.to_agent}`);
+      return;
+    }
+
+    console.log(`[Background] Found context for remote signal: ${context.id} (${context.domain})`);
+
+    // The signal payload contains serialized ZomeCallParams which includes:
+    // - zome_name: the actual zome to call (e.g., "profiles")
+    // - fn_name: "recv_remote_signal"
+    // - provenance: the sender's agent pubkey
+    // - payload: the actual signal data (ExternIO)
+    // We need to decode this to extract the real zome name and sender
+    const signalPayloadBytes = new Uint8Array(signalData.signal);
+    let zomeName: string;
+    let provenance: AgentPubKey;
+    let innerPayload: ExternIO;
+
+    try {
+      // Decode the ZomeCallParams from the signal payload
+      // ZomeCallParams structure from holochain_zome_types::zome_io
+      const zomeCallParams = decode(signalPayloadBytes) as {
+        zome_name?: string;
+        fn_name?: string;
+        provenance?: AgentPubKey;
+        payload?: ExternIO;
+        cell_id?: CellId;
+      };
+
+      console.log("[Background] Decoded ZomeCallParams:", {
+        zome_name: zomeCallParams.zome_name,
+        fn_name: zomeCallParams.fn_name,
+        has_provenance: !!zomeCallParams.provenance,
+        has_payload: !!zomeCallParams.payload,
+      });
+
+      zomeName = zomeCallParams.zome_name || signalData.zome_name;
+      provenance = zomeCallParams.provenance
+        ? toUint8Array(zomeCallParams.provenance) as AgentPubKey
+        : context.agentPubKey;
+      // The payload inside ZomeCallParams is the actual signal to pass to recv_remote_signal
+      innerPayload = zomeCallParams.payload
+        ? toUint8Array(zomeCallParams.payload) as ExternIO
+        : signalPayloadBytes as ExternIO;
+    } catch (decodeError) {
+      console.warn("[Background] Failed to decode ZomeCallParams, using fallback:", decodeError);
+      // Fallback to using the raw payload if decoding fails
+      zomeName = signalData.zome_name;
+      provenance = context.agentPubKey;
+      innerPayload = signalPayloadBytes as ExternIO;
+    }
+
+    const zomeCallRequest: ZomeCallRequest = {
+      cellId: [
+        targetDnaHash,
+        context.agentPubKey, // Local agent receives the signal
+      ],
+      zome: zomeName,
+      fn: "recv_remote_signal",
+      payload: innerPayload,
+      provenance: provenance,
     };
 
-    // Send to all tabs (they will filter by their registered DNAs)
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: "signal",
-          payload: appSignal,
-        }).catch(() => {
-          // Ignore errors for tabs without content script
-        });
+    // Execute the zome call (fire-and-forget for the signal delivery itself)
+    // If WASM calls emit_signal(), we'll deliver those to tabs
+    const { result: _, signals } = await executeZomeCallViaOffscreen(
+      context.id,
+      zomeCallRequest
+    );
+
+    console.log(`[Background] recv_remote_signal completed, ${signals?.length || 0} signals emitted`);
+
+    // Deliver any emitted signals to tabs matching this context's domain
+    if (signals && signals.length > 0) {
+      // Find tabs for this context's domain
+      console.log(`[Background] Looking for tabs matching: ${context.domain}/*`);
+      const tabs = await chrome.tabs.query({ url: `${context.domain}/*` });
+      console.log(`[Background] Found ${tabs.length} tabs for domain ${context.domain}`);
+      tabs.forEach((tab, i) => {
+        console.log(`[Background]   Tab ${i}: id=${tab.id}, url=${tab.url}`);
+      });
+
+      if (tabs.length === 0) {
+        console.warn(`[Background] No tabs found for domain: ${context.domain}`);
+        return;
+      }
+
+      for (const tab of tabs) {
+        if (!tab.id) continue;
+
+        for (const signal of signals) {
+          try {
+            // Convert signal payload from Array back to Uint8Array and decode
+            const signalBytes = Array.isArray(signal.signal)
+              ? new Uint8Array(signal.signal)
+              : toUint8Array(signal.signal);
+            const decodedPayload = decode(signalBytes);
+
+            // Format as Holochain AppSignal structure
+            // Note: We use normalizeUint8Arrays instead of serializeForTransport
+            // because apps expect Uint8Arrays in signal payloads (e.g., for AgentPubKey.subarray())
+            // chrome.tabs.sendMessage supports structured cloning which preserves Uint8Array
+            const appSignal = {
+              type: "app",
+              value: {
+                cell_id: normalizeUint8Arrays(signal.cell_id),
+                zome_name: signal.zome_name,
+                payload: normalizeUint8Arrays(decodedPayload),
+              },
+            };
+
+            console.log(`[Background] Sending signal to tab ${tab.id}:`, appSignal);
+            chrome.tabs.sendMessage(tab.id, {
+              type: "signal",
+              payload: appSignal,
+            }).catch(() => {
+              // Ignore errors for tabs without content script
+            });
+          } catch (err) {
+            console.error("[Background] Error processing signal:", err);
+          }
+        }
       }
     }
   } catch (error) {
     console.error("[Background] Error handling remote signal:", error);
+    // Don't rethrow - remote signals are fire-and-forget
   }
 }
 

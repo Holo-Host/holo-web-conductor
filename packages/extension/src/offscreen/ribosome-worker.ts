@@ -1269,19 +1269,26 @@ self.onmessage = async (event: MessageEvent) => {
           console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
         }
 
-        // Remote signals are already in transport-ready format (number[])
-        let remoteSignalsForTransport: any[] | undefined;
+        // Send remote signals immediately via postMessage (fire-and-forget)
+        // This mirrors Holochain's tokio::spawn pattern for send_remote_signal
         if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
-          remoteSignalsForTransport = zomeResult.remoteSignals;
-          console.log(`[Ribosome Worker] ${remoteSignalsForTransport.length} remote signals to send`);
+          console.log(`[Ribosome Worker] Sending ${zomeResult.remoteSignals.length} remote signals`);
+          // Send as separate message - offscreen will forward to WebSocket
+          // Include DNA hash so offscreen knows which gateway connection to use
+          self.postMessage({
+            type: 'SEND_REMOTE_SIGNALS',
+            dnaHash: Array.from(cellIdBytes[0]),
+            signals: zomeResult.remoteSignals,
+          });
         }
 
         result = {
           result: zomeResult.result,
           signals: zomeResult.signals || [],
           pendingRecords: pendingRecordsForTransport,
-          remoteSignals: remoteSignalsForTransport,
         };
+
+        console.log(`[Ribosome Worker] Returning ${(zomeResult.signals || []).length} emitted signals`);
 
         console.log(`[PERF Worker] CALL_ZOME message handling:
    ├─ setContext:     ${(afterSetContext - workerCallStart).toFixed(1)}ms
