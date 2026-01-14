@@ -17,7 +17,7 @@ import type {
   StoredEntry,
   StoredAction,
 } from './types';
-import { computeActionHashV2, computeAgentEntryHash, serializeAction, dhtLocationFrom32, AGENT_PUBKEY_PREFIX } from '../hash';
+import { computeActionHashV2, computeAgentEntryHash, serializeAction, dhtLocationFrom32, HASH_TYPE_PREFIX, HoloHashType } from '../hash';
 import {
   buildDnaAction,
   buildAgentValidationPkgAction,
@@ -143,7 +143,7 @@ export async function initializeGenesis(
   } else {
     // Manually construct prefixed pubkey
     agentPubKeyPrefixed = new Uint8Array(39);
-    agentPubKeyPrefixed.set(AGENT_PUBKEY_PREFIX, 0);
+    agentPubKeyPrefixed.set(HASH_TYPE_PREFIX[HoloHashType.Agent], 0);
     agentPubKeyPrefixed.set(agentCore, 3);
     // DHT location for last 4 bytes (computed from core hash)
     agentPubKeyPrefixed.set(dhtLocationFrom32(agentCore), 35);

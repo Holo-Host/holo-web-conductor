@@ -475,22 +475,26 @@ interface CallZomeRequest {
 
 ---
 
-### Step 10: Integration Testing
+### Step 10: Integration Testing ✓
 
 **Goal**: Test with existing Holochain hApps.
 
 **Dependencies**: All previous steps
 
-**Status**: IN PROGRESS
+**Status**: COMPLETE (2026-01-14)
 
 **Sub-tasks**:
 1. **10.1** ✅ Create FishyAppClient adapter for @holochain/client compatibility - COMPLETE (2026-01-13)
 2. **10.2** ✅ Fix remote signal architecture (recv_remote_signal callback, call_info host function) - COMPLETE (2026-01-13)
-3. **10.3** ⏳ Test version of kando in this context
+3. **10.3** ⏸️ Kando testing - deferred
+
+**Additional Work** (2026-01-14):
+- Added centralized filterable logger utility in shared package
 
 **Key Files**:
 - `packages/extension/test/lib/fishy-app-client.ts` - FishyAppClient implementing AppClient interface
 - `packages/core/src/ribosome/host-fn/call_info.ts` - CallInfo with proper CapGrant structure
+- `packages/shared/src/logger.ts` - Centralized filterable logger
 
 **Details**:
 - Step 10.1: See [STEPS/10.1_COMPLETION.md](./STEPS/10.1_COMPLETION.md)
@@ -522,6 +526,26 @@ interface CallZomeRequest {
 - `packages/extension/src/offscreen/index.ts` - Offscreen document, spawns worker
 
 **Details**: See [STEPS/11_COMPLETION.md](./STEPS/11_COMPLETION.md)
+
+---
+
+### Step 12: Code Quality & Testing Improvements
+
+**Goal**: Improve code quality through unified encoding, debug tooling, and test strengthening.
+
+**Status**: IN PROGRESS
+
+**Sub-steps**:
+1. **12.1** ⏳ Unified Encoding Strategy - Simplify Uint8Array encoding/decoding across message boundaries
+   - Details: See [STEPS/12.1_ENCODING_PLAN.md](./STEPS/12.1_ENCODING_PLAN.md)
+
+2. **12.2** ⏳ DHT Publishing Debug Panel - Add per-hApp debug UI for publish status and republish functionality
+   - Details: See [STEPS/12.2_PLAN.md](./STEPS/12.2_PLAN.md)
+
+3. **12.3** ⏳ Test Audit - Fix tautological tests with known-good test vectors
+   - Phase 1: fishy project tests (hash, serialization, genesis, messaging)
+   - Phase 2: hc-http-gw-fork tests (DHT assertions, integration tests)
+   - Details: See [STEPS/12.3_PLAN.md](./STEPS/12.3_PLAN.md)
 
 ---
 

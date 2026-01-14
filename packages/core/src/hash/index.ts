@@ -3,6 +3,11 @@
  *
  * Provides Blake2b hashing utilities for Holochain compatibility.
  * Uses @holochain/client library functions where available.
+ *
+ * Why we need these functions (vs just using @holochain/client):
+ * - @holochain/client's hashFromContentAndType() always msgpack-encodes content before hashing
+ * - We need to hash pre-encoded bytes (from WASM, with specific field ordering for actions)
+ * - blake2b256() gives us direct access to hash raw bytes
  */
 
 import { blake2b } from 'blakejs';
@@ -19,38 +24,12 @@ import {
 } from '@holochain/client';
 import { serializeAction, type SerializableAction } from '../types/holochain-serialization';
 
-// Re-export prefixes from @holochain/client for convenience
-export const ENTRY_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Entry];
-export const ACTION_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Action];
-export const AGENT_PUBKEY_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Agent];
-export const DNA_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Dna];
-export const WASM_HASH_PREFIX = HASH_TYPE_PREFIX[HoloHashType.Wasm]; // [132, 42, 36] = 0x84, 0x2a, 0x24
-
 // Re-export library functions and types
 export { hashFrom32AndType, dhtLocationFrom32, HASH_TYPE_PREFIX, HoloHashType, ActionType };
 export type { EntryHash, ActionHash, DnaHash };
 
 // Re-export serialization types for convenience
 export { serializeAction, type SerializableAction };
-
-export const assembleHoloHash = (hash32: Uint8Array, prefix: Uint8Array): Uint8Array => {
-  // Determine hash type from prefix
-  const type = Object.entries(HASH_TYPE_PREFIX).find(
-    ([, p]) => p[0] === prefix[0] && p[1] === prefix[1] && p[2] === prefix[2]
-  )?.[0] as HoloHashType | undefined;
-
-  if (type) {
-    return hashFrom32AndType(hash32, type);
-  }
-
-  // Fallback for unknown prefix types
-  const location = dhtLocationFrom32(hash32);
-  const holoHash = new Uint8Array(39);
-  holoHash.set(prefix, 0);
-  holoHash.set(hash32, 3);
-  holoHash.set(location, 35);
-  return holoHash;
-};
 
 // ============================================================================
 // BLAKE2b Functions (thin wrappers for direct byte hashing)
@@ -72,23 +51,6 @@ export function blake2b256(data: Uint8Array): Uint8Array {
 // ============================================================================
 // Entry Hash Computation
 // ============================================================================
-
-/**
- * Compute EntryHash from raw content bytes
- *
- * DEPRECATED: Use computeAppEntryHash or computeAgentEntryHash instead.
- *
- * This function hashes raw bytes directly. This is ONLY correct for
- * entries where the content has already been wrapped in the Entry enum
- * and serialized.
- *
- * @param entryContent - Raw entry content bytes
- * @returns 39-byte EntryHash
- */
-export function computeEntryHash(entryContent: Uint8Array): EntryHash {
-  const hash32 = blake2b256(entryContent);
-  return hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
-}
 
 /**
  * Compute EntryHash for an App entry
@@ -113,47 +75,12 @@ export function computeAppEntryHash(entryContent: Uint8Array): EntryHash {
 
   // Serialize the Entry enum
   const serialized = encode(entryStruct);
-
-  // Debug: show the EXACT serialized bytes we're hashing
-  console.log('[computeAppEntryHash] Serialized bytes to hash:', Array.from(new Uint8Array(serialized)));
-
-  // Debug: log the serialized bytes to compare with Rust
   const serializedArray = new Uint8Array(serialized);
-
-  // Log ALL entries to debug what's being created
-  let decoded = '';
-  try {
-    decoded = new TextDecoder().decode(entryContent);
-  } catch {
-    decoded = '[binary - could not decode]';
-  }
-
-  // Determine entry type based on content
-  const isProfileEntry = decoded.includes('nickname');
-  const hasPathMarker = entryContent[0] === 145 || entryContent[0] === 146 || entryContent[0] === 147; // fixarray markers
-
-  if (isProfileEntry) {
-    console.log('[computeAppEntryHash] 👤 PROFILE ENTRY:', decoded.substring(0, 50));
-  } else {
-    // Log all non-profile entries - these could be paths
-    console.log('[computeAppEntryHash] 📦 ENTRY (possibly path)');
-    console.log('[computeAppEntryHash] Content length:', entryContent.length);
-    console.log('[computeAppEntryHash] First byte (msgpack type):', entryContent[0], '(145-147 = fixarray)');
-    console.log('[computeAppEntryHash] Full entry content bytes:', Array.from(entryContent));
-    console.log('[computeAppEntryHash] Decoded attempt:', decoded.substring(0, 100));
-  }
-
-  console.log('[computeAppEntryHash] Entry content length:', entryContent.length);
-  console.log('[computeAppEntryHash] Serialized Entry length:', serializedArray.length);
 
   // Hash the serialized Entry
   const hash32 = blake2b256(serializedArray);
-  console.log('[computeAppEntryHash] Blake2b hash32:', Array.from(hash32));
 
-  const result = hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
-  console.log('[computeAppEntryHash] Final EntryHash:', Array.from(result));
-
-  return result;
+  return hashFrom32AndType(hash32, HoloHashType.Entry) as EntryHash;
 }
 
 /**
@@ -183,41 +110,6 @@ export function computeAgentEntryHash(agentPubKey: Uint8Array): EntryHash {
 // ============================================================================
 
 /**
- * Action structure for hashing
- *
- * This is a generic structure that covers all action types.
- * Specific action types have additional fields.
- */
-export interface ActionForHashing {
-  type: ActionType;
-  author: Uint8Array;
-  timestamp: bigint;
-  action_seq: number;
-  prev_action: Uint8Array | null;
-  // Additional fields depending on action type
-  [key: string]: unknown;
-}
-
-/**
- * Compute ActionHash from action data
- *
- * @deprecated Use computeActionHashV2 with SerializableAction for correct serialization
- * Serializes the action using msgpack and hashes it.
- * The action must be in Holochain's internally tagged enum format.
- *
- * @param action - Action data in Holochain format
- * @returns 39-byte ActionHash
- */
-export function computeActionHash(action: ActionForHashing): ActionHash {
-  // Serialize action to msgpack
-  const serialized = encode(actionToSerializable(action));
-
-  // Hash the serialized action
-  const hash32 = blake2b256(new Uint8Array(serialized));
-  return hashFrom32AndType(hash32, HoloHashType.Action) as ActionHash;
-}
-
-/**
  * Compute ActionHash from SerializableAction
  *
  * This is the preferred method that uses properly typed and ordered serialization.
@@ -233,48 +125,6 @@ export function computeActionHashV2(action: SerializableAction): ActionHash {
   // Hash the serialized action
   const hash32 = blake2b256(serialized);
   return hashFrom32AndType(hash32, HoloHashType.Action) as ActionHash;
-}
-
-/**
- * Serialize action to msgpack bytes
- *
- * This is the canonical serialization used for both hashing and signing.
- * Holochain signs the serialized action bytes, NOT the hash.
- *
- * @param action - Action data in Holochain format
- * @returns Msgpack-serialized action bytes
- */
-export function serializeActionForSigning(action: ActionForHashing): Uint8Array {
-  return new Uint8Array(encode(actionToSerializable(action)));
-}
-
-/**
- * Convert action to a serializable format
- *
- * Converts BigInt timestamps to numbers and handles Uint8Array fields
- * for proper msgpack serialization.
- */
-function actionToSerializable(action: ActionForHashing): Record<string, unknown> {
-  const result: Record<string, unknown> = {
-    type: action.type,
-    author: action.author,
-    timestamp: Number(action.timestamp),  // Convert BigInt to number
-    action_seq: action.action_seq,
-  };
-
-  // Only include prev_action if it's not null (Holochain omits None values)
-  if (action.prev_action !== null) {
-    result.prev_action = action.prev_action;
-  }
-
-  // Copy other fields (entry_type, entry_hash, weight, etc.)
-  for (const [key, value] of Object.entries(action)) {
-    if (!['type', 'author', 'timestamp', 'action_seq', 'prev_action'].includes(key)) {
-      result[key] = value;
-    }
-  }
-
-  return result;
 }
 
 // ============================================================================
@@ -366,11 +216,7 @@ export function computeDnaHash(
 
   // Serialize with msgpack
   const serialized = encode(dnaDefHash);
-
-  // Debug: log first 100 bytes of serialized data
   const serializedArray = new Uint8Array(serialized);
-  console.log('[computeDnaHash] Serialized bytes (first 100):', Array.from(serializedArray.slice(0, 100)));
-  console.log('[computeDnaHash] Serialized length:', serializedArray.length);
 
   // Hash with Blake2b-256
   const hash32 = blake2b256(serializedArray);

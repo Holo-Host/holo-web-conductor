@@ -56,8 +56,8 @@ export function clearLairClient(): void {
  * Sign serialized action bytes using the agent's key
  *
  * IMPORTANT: Holochain signs the msgpack-serialized Action struct,
- * NOT the ActionHash. Use serializeActionForSigning() from the hash module
- * to get the correct bytes.
+ * NOT the ActionHash. Use serializeAction() from the types/holochain-serialization
+ * module to get the correct bytes.
  *
  * Uses the Lair client's synchronous signing (key must be preloaded).
  *
