@@ -355,6 +355,9 @@ async function executeZomeCallViaOffscreen(
   const dnaHashBase64 = btoa(String.fromCharCode(...zomeCallRequest.cellId[0]));
 
   // Build minimal request - no WASM or manifest, just references
+  // Pre-conversion pattern: Convert Uint8Arrays to number[] before Chrome message passing.
+  // Chrome's structured cloning converts Uint8Array to {0:x, 1:y} objects which is harder
+  // to work with. Using Array.from() produces clean number[] that toUint8Array() can restore.
   const minimalRequest: MinimalZomeCallRequest = {
     contextId,
     dnaHashBase64,

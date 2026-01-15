@@ -1,20 +1,41 @@
 /**
  * Byte Array Utilities
  *
- * Shared utilities for working with Uint8Arrays, especially handling
- * Chrome message passing serialization which converts Uint8Arrays to
- * plain objects with numeric keys.
+ * Shared utilities for working with Uint8Arrays across Chrome message boundaries.
+ *
+ * ## Chrome Message Passing Problem
+ * Chrome's structured cloning algorithm converts Uint8Array to plain objects
+ * with numeric keys: `{0: 1, 1: 2, ...}`. This happens with chrome.runtime.sendMessage
+ * and window.postMessage.
+ *
+ * ## Two Encoding Patterns
+ *
+ * The codebase uses two patterns depending on the boundary:
+ *
+ * 1. **Post-normalization** (Page ↔ Content ↔ Background):
+ *    - Let Chrome convert Uint8Array to `{0:x, 1:y}` objects
+ *    - Call `normalizeUint8Arrays()` after receiving to restore
+ *
+ * 2. **Pre-conversion** (Background ↔ Offscreen ↔ Worker, remote signals):
+ *    - Call `serializeForTransport()` before sending to convert to number[]
+ *    - Call `toUint8Array()` after receiving to restore
+ *
+ * Both patterns work. Pre-conversion produces cleaner number[] arrays,
+ * while post-normalization handles Chrome's `{0:x}` format.
  */
 
 /**
  * Convert various array-like formats to Uint8Array
  *
+ * Use at the receiving end of a Chrome message boundary to restore
+ * Uint8Arrays from either pre-converted number[] or Chrome's {0:x,1:y} format.
+ *
  * Handles:
  * - Uint8Array (passthrough)
  * - ArrayBuffer (wrap in Uint8Array)
  * - Other TypedArray views (convert to Uint8Array)
- * - number[] (direct conversion)
- * - Object with numeric keys (Chrome message passing format: {0: 1, 1: 2, ...})
+ * - number[] (from pre-conversion pattern)
+ * - Object with numeric keys (Chrome's {0: 1, 1: 2, ...} format)
  *
  * @param data - Data to convert
  * @returns Uint8Array
@@ -97,8 +118,14 @@ function looksLikeSerializedUint8Array(data: unknown): boolean {
 /**
  * Recursively normalize Uint8Arrays in nested data structures
  *
+ * **Post-normalization pattern**: Call this after receiving data from
+ * chrome.runtime.sendMessage or window.postMessage to restore Uint8Arrays.
+ *
  * Chrome's message passing converts Uint8Arrays to objects with numeric keys
- * like {0: 1, 1: 2, ...}. This function converts them back to Uint8Arrays.
+ * like {0: 1, 1: 2, ...}. This function recursively finds and converts them
+ * back to Uint8Arrays.
+ *
+ * Used for: Page ↔ Content ↔ Background message paths
  *
  * @param data - Data structure to normalize
  * @returns Normalized data with Uint8Arrays restored
@@ -177,9 +204,13 @@ export function normalizeByteArraysFromJson<T = unknown>(data: T): T {
 /**
  * Convert Uint8Arrays to regular Arrays for Chrome message passing
  *
- * Chrome's structured cloning algorithm converts Uint8Arrays to plain objects
- * with numeric keys. By explicitly converting to Arrays, we preserve the data
- * in a cleaner format that can easily be converted back.
+ * **Pre-conversion pattern**: Call this before sending data across Chrome
+ * message boundaries to avoid Chrome's lossy Uint8Array serialization.
+ *
+ * By explicitly converting to number[] arrays, we preserve the data in a
+ * cleaner format that can easily be converted back with `toUint8Array()`.
+ *
+ * Used for: Background ↔ Offscreen ↔ Worker paths, remote signals
  *
  * @param data - Data structure to serialize
  * @returns Data with Uint8Arrays converted to number[]
