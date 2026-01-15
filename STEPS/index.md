@@ -45,6 +45,12 @@
 | 13.1 | 📋 | Persistent Storage + Seed Phrase Export |
 | 13.2 | 📋 | DHT Chain Recovery |
 | 13.3 | 📋 | Convenience Features (backup file, sync) |
+| 14 | 📋 | Fishy Client Library Package |
+| 14.1 | 📋 | Package Setup & Migration |
+| 14.2 | 📋 | Connection Status Interface |
+| 14.3 | 📋 | Enhanced FishyAppClient |
+| 14.4 | 📋 | Extension API Enhancements |
+| 15 | 📋 | Robust Publish Verification |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
@@ -73,6 +79,28 @@ Protect against data loss from extension uninstall or browser cache clear:
 - **13.3** Manual backup file, chrome.storage.sync bootstrap
 
 See [13_PLAN.md](./13_PLAN.md)
+
+### Step 14: Fishy Client Library Package
+**Priority**: High (enables ecosystem adoption)
+
+Create standalone npm package `@anthropic/fishy-client`:
+- **14.1** Package setup, migrate FishyAppClient from ziptest
+- **14.2** Connection status types and monitoring
+- **14.3** Enhanced client with reconnection logic
+- **14.4** Extension API for connection status
+
+See [14_PLAN.md](./14_PLAN.md)
+
+### Step 15: Robust Publish Verification
+**Priority**: Medium (reliability improvement)
+
+Ensure publishing only proceeds when network connectivity is verified:
+- Add peer count to WebSocket protocol (gateway sends connected peer count in ping/pong)
+- Wait for at least one peer connection before allowing publish attempts
+- Provide UI feedback when waiting for peers
+- Replace current 2-second delay heuristic with actual peer verification
+
+**Background**: Currently auto-retry on reconnect uses a 2-second delay to hope agent registration propagates. This should verify actual peer connectivity instead.
 
 ---
 
