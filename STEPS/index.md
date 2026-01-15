@@ -41,9 +41,13 @@
 | 12.1 | ✅ | Unified Encoding Documentation |
 | 12.2 | ⏳ | DHT Publishing Debug Panel |
 | 12.3 | ⏳ | Test Audit |
+| 13 | 📋 | Storage Backup & Recovery |
+| 13.1 | 📋 | Persistent Storage + Seed Phrase Export |
+| 13.2 | 📋 | DHT Chain Recovery |
+| 13.3 | 📋 | Convenience Features (backup file, sync) |
 | Meta-1 | 📋 | Process Review (periodic) |
 
-**Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked
+**Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
 
 ---
 
@@ -59,6 +63,16 @@ See [12.2_PLAN.md](./12.2_PLAN.md)
 
 ### Step 12.3: Test Audit
 See [12.3_PLAN.md](./12.3_PLAN.md)
+
+### Step 13: Storage Backup & Recovery
+**Priority**: High (data loss risk mitigation)
+
+Protect against data loss from extension uninstall or browser cache clear:
+- **13.1** Request persistent storage, implement seed phrase export/import
+- **13.2** DHT-based chain recovery for published data
+- **13.3** Manual backup file, chrome.storage.sync bootstrap
+
+See [13_PLAN.md](./13_PLAN.md)
 
 ---
 
