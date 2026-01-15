@@ -99,6 +99,7 @@ let nextRequestId = 1;
 let gatewayUrl: string = '';
 let sessionToken: string | null = null;
 
+
 // Publish service for DHT publishing
 let publishService: PublishService | null = null;
 
@@ -732,6 +733,73 @@ chrome.runtime.onMessage.addListener(
         isConnected: wsService?.isConnected() || false,
         registrations: wsService?.getRegistrations() || [],
       } as any);
+      return true;
+    }
+
+    // Gateway disconnect - actually close the WebSocket
+    if (message.type === "GATEWAY_DISCONNECT") {
+      logNetwork.info("Disconnecting gateway WebSocket...");
+      if (wsService) {
+        wsService.disconnect();
+      }
+      sendResponse({ success: true, disconnected: true });
+      return true;
+    }
+
+    // Gateway reconnect - reopen the WebSocket connection
+    if (message.type === "GATEWAY_RECONNECT") {
+      logNetwork.info("Reconnecting gateway WebSocket...");
+      if (wsService) {
+        // connect() is synchronous (void), it initiates the connection
+        wsService.connect();
+        // Registrations are preserved and will be re-sent on reconnect
+      }
+      sendResponse({ success: true, reconnected: true });
+      return true;
+    }
+
+    // Process publish queue for specified DNAs (called after retry)
+    if (message.type === "PROCESS_PUBLISH_QUEUE") {
+      const { dnaHashes } = message;
+      logPublish.info(`Processing publish queue for ${dnaHashes?.length || 0} DNAs`);
+
+      // Process asynchronously
+      (async () => {
+        try {
+          if (!publishService) {
+            if (!gatewayUrl) {
+              sendResponse({
+                success: false,
+                error: "No gateway configured",
+                requestId: message.requestId || "process",
+              });
+              return;
+            }
+            publishService = new PublishService({
+              gatewayUrl,
+              sessionToken: sessionToken || undefined,
+            });
+            await publishService.init();
+          }
+
+          // Process queue for each DNA
+          for (const dnaHashArray of dnaHashes || []) {
+            const dnaHash = new Uint8Array(dnaHashArray);
+            await publishService.processQueue(dnaHash);
+          }
+          sendResponse({
+            success: true,
+            requestId: message.requestId || "process",
+          });
+        } catch (error) {
+          logPublish.error("Failed to process publish queue:", error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            requestId: message.requestId || "process",
+          });
+        }
+      })();
       return true;
     }
 

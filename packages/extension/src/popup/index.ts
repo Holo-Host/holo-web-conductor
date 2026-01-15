@@ -20,6 +20,18 @@ async function updatePopupState(): Promise<void> {
   }
 
   try {
+    // Check if we're running in a popup window (no tab association)
+    const currentWindow = await chrome.windows.getCurrent();
+    const isPopupWindow = currentWindow.type === "popup";
+
+    if (isPopupWindow) {
+      // Running as a standalone window - show extension status instead of tab status
+      activePageEl.textContent = "Running in standalone window";
+      statusEl.className = "status connected";
+      statusTextEl.textContent = "Extension Active";
+      return;
+    }
+
     // Get active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 

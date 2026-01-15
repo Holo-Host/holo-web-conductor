@@ -54,6 +54,19 @@
       text-decoration: underline;
     }
 
+    .open-window-link {
+      background: #667eea;
+      color: white !important;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      text-decoration: none !important;
+    }
+
+    .open-window-link:hover {
+      background: #5568d3;
+    }
+
     .stats {
       display: flex;
       gap: 10px;
@@ -313,6 +326,80 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    /* Debug section styles */
+    .debug-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed #e5e7eb;
+    }
+
+    .debug-status {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .debug-status .badge {
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .debug-status .badge.pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .debug-status .badge.in-flight {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .debug-status .badge.failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .debug-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .debug-actions button {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    /* Gateway status styles */
+    .gateway-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-indicator.connected {
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
+
+    .status-indicator.disconnected {
+      background: #ef4444;
+    }
+
+    .status-indicator.unknown {
+      background: #9ca3af;
+    }
   </style>
 </head>
 <body>
@@ -329,11 +416,20 @@
         <div class="stat">
           <strong id="disabledCount">0</strong> disabled
         </div>
+        <div class="stat gateway-status">
+          <span class="status-indicator disconnected" id="httpIndicator"></span>
+          <span id="httpStatusText">HTTP: ...</span>
+        </div>
+        <div class="stat gateway-status">
+          <span class="status-indicator disconnected" id="wsIndicator"></span>
+          <span id="wsStatusText">WS: ...</span>
+        </div>
       </div>
       <div class="nav">
         <a href="index.html">← Back to Home</a>
         <a href="lair.html">Lair Keystore</a>
         <a href="permissions.html">Permissions</a>
+        <a href="#" id="openInWindow" class="open-window-link">Open in Window ↗</a>
       </div>
     </div>
 

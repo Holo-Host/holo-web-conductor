@@ -11,6 +11,8 @@
 # Commands:
 #   start     Start conductor and gateway (default)
 #   stop      Stop all services
+#   pause     Stop only the gateway (conductors keep running)
+#   unpause   Start only the gateway (when conductors are already running)
 #   status    Show running services
 #   clean     Clean up sandbox data
 #
@@ -41,7 +43,7 @@ for arg in "$@"; do
             HAPP_NAME="${arg#*=}"
             shift
             ;;
-        start|stop|status|clean)
+        start|stop|pause|unpause|status|clean)
             COMMAND="$arg"
             ;;
         *)
@@ -499,9 +501,9 @@ start_gateway() {
     exit 1
 }
 
-# Stop services
-stop_services() {
-    log_info "Stopping services..."
+# Stop only the gateway (pause)
+pause_gateway() {
+    log_info "Pausing gateway (stopping gateway only, conductors keep running)..."
 
     cd "$SANDBOX_DIR" 2>/dev/null || true
 
@@ -511,9 +513,70 @@ stop_services() {
         if kill -0 "$GATEWAY_PID" 2>/dev/null; then
             log_info "Stopping gateway (PID $GATEWAY_PID)..."
             kill "$GATEWAY_PID"
+            # Wait for it to actually stop
+            for i in {1..10}; do
+                if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+                    break
+                fi
+                sleep 0.5
+            done
         fi
         rm -f gateway.pid
+    else
+        # Also check by process name
+        if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
+            log_info "Stopping gateway by process name..."
+            pkill -f "target/release/hc-http-gw$" || true
+        fi
     fi
+
+    log_info "Gateway paused (conductors still running)"
+}
+
+# Start only the gateway (unpause) - assumes conductors already running
+unpause_gateway() {
+    log_info "Unpausing gateway (starting gateway only)..."
+
+    cd "$SANDBOX_DIR" 2>/dev/null || true
+
+    # Check if conductors are running
+    local CONDUCTOR_RUNNING=false
+    for PID_FILE in conductor.pid conductor_*.pid; do
+        if [ -f "$PID_FILE" ]; then
+            local PID
+            PID=$(cat "$PID_FILE")
+            if kill -0 "$PID" 2>/dev/null; then
+                CONDUCTOR_RUNNING=true
+                break
+            fi
+        fi
+    done
+
+    if [ "$CONDUCTOR_RUNNING" = false ]; then
+        log_error "No conductors running. Use 'start' instead of 'unpause'."
+        exit 1
+    fi
+
+    # Check if gateway already running
+    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
+        log_warn "Gateway already running"
+        return 0
+    fi
+
+    # Start gateway (reuse start_gateway function)
+    start_gateway
+
+    log_info "Gateway unpaused"
+}
+
+# Stop services
+stop_services() {
+    log_info "Stopping services..."
+
+    cd "$SANDBOX_DIR" 2>/dev/null || true
+
+    # Stop gateway first
+    pause_gateway 2>/dev/null || true
 
     # Stop all conductors
     for PID_FILE in conductor.pid conductor_*.pid; do
@@ -785,6 +848,15 @@ case "$COMMAND" in
     stop)
         stop_services
         ;;
+    pause)
+        pause_gateway
+        show_status
+        ;;
+    unpause)
+        configure_happ
+        unpause_gateway
+        show_status
+        ;;
     status)
         show_status
         ;;
@@ -792,7 +864,15 @@ case "$COMMAND" in
         clean_sandbox
         ;;
     *)
-        echo "Usage: $0 {start|stop|status|clean} [--happ=NAME]"
+        echo "Usage: $0 {start|stop|pause|unpause|status|clean} [--happ=NAME]"
+        echo ""
+        echo "Commands:"
+        echo "  start     Start conductor and gateway"
+        echo "  stop      Stop all services"
+        echo "  pause     Stop only the gateway (conductors keep running)"
+        echo "  unpause   Start only the gateway (conductors must be running)"
+        echo "  status    Show running services"
+        echo "  clean     Clean up sandbox data"
         echo ""
         echo "Options:"
         echo "  --happ=NAME   Specify which hApp to use (fixture1 or ziptest, default: fixture1)"
@@ -800,6 +880,8 @@ case "$COMMAND" in
         echo "Examples:"
         echo "  $0 start                    # Start with fixture1"
         echo "  $0 start --happ=ziptest     # Start with ziptest"
+        echo "  $0 pause                    # Stop gateway, keep conductors"
+        echo "  $0 unpause                  # Restart gateway"
         echo "  $0 stop"
         exit 1
         ;;

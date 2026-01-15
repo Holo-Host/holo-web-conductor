@@ -45,6 +45,7 @@ import {
   serializeForTransport,
   isAgentPubKey,
   extractEd25519PubKey,
+  PublishTracker,
 } from "@fishy/core";
 import { encodeHashToBase64, type AgentPubKey, type CellId } from "@holochain/client";
 
@@ -85,6 +86,7 @@ let offscreenReadyResolvers: Array<() => void> = [];
 // Gateway configuration - can be set via popup settings or environment
 // Default to null (no network) until configured
 let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
+
 
 /**
  * Check if the offscreen document exists
@@ -558,6 +560,22 @@ async function handleMessage(
 
       case MessageType.GATEWAY_GET_STATUS:
         return handleGatewayGetStatus(message);
+
+      case MessageType.GATEWAY_DISCONNECT:
+        return handleGatewayDisconnect(message);
+
+      case MessageType.GATEWAY_RECONNECT:
+        return handleGatewayReconnect(message);
+
+      // DHT Publishing Debug
+      case MessageType.PUBLISH_GET_STATUS:
+        return handlePublishGetStatus(message);
+
+      case MessageType.PUBLISH_RETRY_FAILED:
+        return handlePublishRetryFailed(message);
+
+      case MessageType.PUBLISH_ALL_RECORDS:
+        return handlePublishAllRecords(message);
 
       default:
         return createErrorResponse(
@@ -1610,6 +1628,165 @@ async function handleGatewayGetStatus(
 }
 
 /**
+ * Handle gateway disconnect request - actually disconnects WebSocket
+ */
+async function handleGatewayDisconnect(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  log.info("[Gateway] Disconnecting WebSocket...");
+
+  try {
+    await ensureOffscreenDocument();
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "GATEWAY_DISCONNECT",
+    });
+  } catch (error) {
+    log.warn("Failed to disconnect gateway:", error);
+    return createErrorResponse(message.id, error instanceof Error ? error.message : "Failed to disconnect");
+  }
+
+  return createSuccessResponse(message.id, { disconnected: true });
+}
+
+/**
+ * Handle gateway reconnect request - reconnects WebSocket
+ */
+async function handleGatewayReconnect(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  log.info("[Gateway] Reconnecting WebSocket...");
+
+  try {
+    await ensureOffscreenDocument();
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "GATEWAY_RECONNECT",
+    });
+  } catch (error) {
+    log.warn("Failed to reconnect gateway:", error);
+    return createErrorResponse(message.id, error instanceof Error ? error.message : "Failed to reconnect");
+  }
+
+  return createSuccessResponse(message.id, { reconnected: true });
+}
+
+// ============================================================================
+// DHT Publishing Debug Handlers
+// ============================================================================
+
+/**
+ * Handle PUBLISH_GET_STATUS request
+ * Returns publish status counts for all DNAs in the specified hApp context
+ */
+async function handlePublishGetStatus(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  const payload = getPayload<MessageType.PUBLISH_GET_STATUS>(message);
+  const { contextId } = payload as ContextIdPayload;
+
+  try {
+    const context = await happContextManager.getContext(contextId);
+    if (!context) {
+      return createErrorResponse(message.id, `HApp context not found: ${contextId}`);
+    }
+
+    // Get DNA hashes from context
+    const dnaHashes = context.dnas.map((dna) => dna.hash);
+
+    // Query publish tracker for status counts
+    const tracker = PublishTracker.getInstance();
+    const counts = await tracker.getStatusCountsForDnas(dnaHashes);
+
+    return createSuccessResponse(message.id, counts);
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PUBLISH_RETRY_FAILED request
+ * Resets all failed ops to pending for all DNAs in the specified hApp context,
+ * then triggers the publish queue processing.
+ */
+async function handlePublishRetryFailed(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  const payload = getPayload<MessageType.PUBLISH_RETRY_FAILED>(message);
+  const { contextId } = payload as ContextIdPayload;
+
+  try {
+    const context = await happContextManager.getContext(contextId);
+    if (!context) {
+      return createErrorResponse(message.id, `HApp context not found: ${contextId}`);
+    }
+
+    // Get DNA hashes from context
+    const dnaHashes = context.dnas.map((dna) => dna.hash);
+
+    // Reset failed ops to pending
+    const tracker = PublishTracker.getInstance();
+    const resetCount = await tracker.resetFailedForDnas(dnaHashes);
+
+    // Trigger publish queue processing in offscreen
+    if (resetCount > 0) {
+      await ensureOffscreenDocument();
+      chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "PROCESS_PUBLISH_QUEUE",
+        dnaHashes: dnaHashes.map((h) => Array.from(h)),
+      }).catch((err) => {
+        log.error("Failed to trigger publish queue processing:", err);
+      });
+    }
+
+    return createSuccessResponse(message.id, { resetCount });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PUBLISH_ALL_RECORDS request
+ * Regenerates and queues all DhtOps from local chain records for republishing
+ * This is implemented in Phase 4 - GET_ALL_RECORDS flow
+ */
+async function handlePublishAllRecords(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  const payload = getPayload<MessageType.PUBLISH_ALL_RECORDS>(message);
+  const { contextId } = payload as ContextIdPayload;
+
+  try {
+    const context = await happContextManager.getContext(contextId);
+    if (!context) {
+      return createErrorResponse(message.id, `HApp context not found: ${contextId}`);
+    }
+
+    // TODO: Implement Phase 4 - GET_ALL_RECORDS flow
+    // 1. For each DNA in context, send GET_ALL_RECORDS to offscreen/worker
+    // 2. Convert returned records to Holochain Record format
+    // 3. Call produceOpsFromRecord() on each
+    // 4. Queue ops via PublishTracker
+    return createErrorResponse(
+      message.id,
+      "PUBLISH_ALL_RECORDS not yet implemented - requires GET_ALL_RECORDS flow (Phase 4)"
+    );
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
  * Handle remote signal from offscreen document
  *
  * Per Holochain architecture, remote signals are delivered by invoking the
@@ -1887,6 +2064,23 @@ chrome.runtime.onMessage.addListener(
 
       // Unknown internal message
       return false;
+    }
+
+    // Forward messages targeted to offscreen
+    if (rawMessage.target === "offscreen") {
+      log.trace("Forwarding message to offscreen:", rawMessage.type);
+      ensureOffscreenDocument().then(() => {
+        chrome.runtime.sendMessage(rawMessage).then((response) => {
+          sendResponse(response);
+        }).catch((error) => {
+          log.error("Error forwarding to offscreen:", error);
+          sendResponse({ success: false, error: String(error) });
+        });
+      }).catch((error) => {
+        log.error("Error ensuring offscreen document:", error);
+        sendResponse({ success: false, error: String(error) });
+      });
+      return true; // Async response
     }
 
     // Parse and validate message

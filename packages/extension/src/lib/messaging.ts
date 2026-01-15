@@ -65,6 +65,13 @@ export enum MessageType {
   // Gateway Configuration (for network requests via hc-http-gw)
   GATEWAY_CONFIGURE = "gateway_configure",
   GATEWAY_GET_STATUS = "gateway_get_status",
+  GATEWAY_DISCONNECT = "gateway_disconnect",
+  GATEWAY_RECONNECT = "gateway_reconnect",
+
+  // DHT Publishing Debug (per-hApp)
+  PUBLISH_GET_STATUS = "publish_get_status",
+  PUBLISH_RETRY_FAILED = "publish_retry_failed",
+  PUBLISH_ALL_RECORDS = "publish_all_records",
 
   // Responses
   SUCCESS = "success",
@@ -113,7 +120,12 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.ENABLE_HAPP
     | MessageType.DISABLE_HAPP
     | MessageType.GATEWAY_CONFIGURE
-    | MessageType.GATEWAY_GET_STATUS;
+    | MessageType.GATEWAY_GET_STATUS
+    | MessageType.GATEWAY_DISCONNECT
+    | MessageType.GATEWAY_RECONNECT
+    | MessageType.PUBLISH_GET_STATUS
+    | MessageType.PUBLISH_RETRY_FAILED
+    | MessageType.PUBLISH_ALL_RECORDS;
   payload?: unknown;
 }
 
@@ -290,6 +302,15 @@ export interface GatewayConfigurePayload {
   gatewayUrl: string;
 }
 
+/**
+ * Publish status counts response payload
+ */
+export interface PublishStatusPayload {
+  pending: number;
+  inFlight: number;
+  failed: number;
+}
+
 // ============================================================================
 // Response Payload Types
 // ============================================================================
@@ -400,6 +421,11 @@ export interface RequestPayloadMap {
   [MessageType.DISABLE_HAPP]: ContextIdPayload;
   [MessageType.GATEWAY_CONFIGURE]: GatewayConfigurePayload;
   [MessageType.GATEWAY_GET_STATUS]: undefined;
+  [MessageType.GATEWAY_DISCONNECT]: undefined;
+  [MessageType.GATEWAY_RECONNECT]: undefined;
+  [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
+  [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
+  [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;
 }
 
 /**
@@ -538,7 +564,12 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.ENABLE_HAPP ||
     message.type === MessageType.DISABLE_HAPP ||
     message.type === MessageType.GATEWAY_CONFIGURE ||
-    message.type === MessageType.GATEWAY_GET_STATUS
+    message.type === MessageType.GATEWAY_GET_STATUS ||
+    message.type === MessageType.GATEWAY_DISCONNECT ||
+    message.type === MessageType.GATEWAY_RECONNECT ||
+    message.type === MessageType.PUBLISH_GET_STATUS ||
+    message.type === MessageType.PUBLISH_RETRY_FAILED ||
+    message.type === MessageType.PUBLISH_ALL_RECORDS
   );
 }
 

@@ -12,7 +12,7 @@ import { PublishStatus, ChainOpType } from "./dht-op-types";
 import { produceOpsFromRecord, computeOpBasis, getOpAction } from "./produce-ops";
 
 const DB_NAME = "fishy_publish_tracker";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: Changed dnaHash from number[] to dnaHashStr string for proper indexing
 
 const STORES = {
   PENDING_PUBLISHES: "pendingPublishes",
@@ -31,7 +31,7 @@ interface StorablePendingPublish {
   retryCount: number;
   lastAttempt: number;
   error?: string;
-  dnaHash: number[]; // For filtering by DNA
+  dnaHashStr: string; // Base64 string for indexing (arrays don't work as keys)
   createdAt: number;
 }
 
@@ -96,6 +96,7 @@ export class PublishTracker {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        const oldVersion = event.oldVersion;
 
         if (!db.objectStoreNames.contains(STORES.PENDING_PUBLISHES)) {
           const store = db.createObjectStore(STORES.PENDING_PUBLISHES, {
@@ -103,12 +104,32 @@ export class PublishTracker {
           });
           // Index by status for querying pending/failed ops
           store.createIndex("status", "status", { unique: false });
-          // Index by DNA hash for filtering
-          store.createIndex("dnaHash", "dnaHash", { unique: false });
+          // Index by DNA hash string for filtering
+          store.createIndex("dnaHashStr", "dnaHashStr", { unique: false });
           // Compound index for DNA + status queries
-          store.createIndex("dnaHash_status", ["dnaHash", "status"], {
+          store.createIndex("dnaHashStr_status", ["dnaHashStr", "status"], {
             unique: false,
           });
+        } else if (oldVersion < 2) {
+          // Migration from v1: Add new indexes for string-based DNA hash
+          const tx = (event.target as IDBOpenDBRequest).transaction!;
+          const store = tx.objectStore(STORES.PENDING_PUBLISHES);
+
+          // Delete old array-based indexes
+          if (store.indexNames.contains("dnaHash")) {
+            store.deleteIndex("dnaHash");
+          }
+          if (store.indexNames.contains("dnaHash_status")) {
+            store.deleteIndex("dnaHash_status");
+          }
+
+          // Create new string-based indexes
+          store.createIndex("dnaHashStr", "dnaHashStr", { unique: false });
+          store.createIndex("dnaHashStr_status", ["dnaHashStr", "status"], {
+            unique: false,
+          });
+
+          console.log("[PublishTracker] Migrated indexes from v1 to v2");
         }
 
         console.log("[PublishTracker] Database upgraded to version", DB_VERSION);
@@ -123,6 +144,17 @@ export class PublishTracker {
    */
   private generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  }
+
+  /**
+   * Convert DNA hash to base64 string for indexing
+   */
+  private dnaHashToString(dnaHash: DnaHash): string {
+    let binary = "";
+    for (let i = 0; i < dnaHash.length; i++) {
+      binary += String.fromCharCode(dnaHash[i]);
+    }
+    return btoa(binary);
   }
 
   /**
@@ -212,7 +244,7 @@ export class PublishTracker {
       retryCount: pending.retryCount,
       lastAttempt: pending.lastAttempt,
       error: pending.error,
-      dnaHash: Array.from(dnaHash),
+      dnaHashStr: this.dnaHashToString(dnaHash),
       createdAt: Date.now(),
     };
 
@@ -297,17 +329,19 @@ export class PublishTracker {
   ): Promise<PendingPublish[]> {
     await this.init();
 
+    const dnaHashStr = this.dnaHashToString(dnaHash);
+
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(STORES.PENDING_PUBLISHES, "readonly");
       const store = tx.objectStore(STORES.PENDING_PUBLISHES);
 
       let request: IDBRequest;
       if (status !== undefined) {
-        const index = store.index("dnaHash_status");
-        request = index.getAll([Array.from(dnaHash), status]);
+        const index = store.index("dnaHashStr_status");
+        request = index.getAll([dnaHashStr, status]);
       } else {
-        const index = store.index("dnaHash");
-        request = index.getAll(Array.from(dnaHash));
+        const index = store.index("dnaHashStr");
+        request = index.getAll(dnaHashStr);
       }
 
       request.onsuccess = () => {
@@ -428,6 +462,102 @@ export class PublishTracker {
       const request = tx.objectStore(STORES.PENDING_PUBLISHES).clear();
 
       request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get status counts for multiple DNAs (for per-hApp status)
+   * Returns aggregate counts across all specified DNAs
+   */
+  async getStatusCountsForDnas(
+    dnaHashes: DnaHash[]
+  ): Promise<{ pending: number; inFlight: number; failed: number }> {
+    await this.init();
+
+    const counts = { pending: 0, inFlight: 0, failed: 0 };
+
+    // Create a Set of DNA hash strings for efficient lookup
+    const dnaHashStrings = new Set(
+      dnaHashes.map((h) => this.dnaHashToString(h))
+    );
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(STORES.PENDING_PUBLISHES, "readonly");
+      const store = tx.objectStore(STORES.PENDING_PUBLISHES);
+      const request = store.openCursor();
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          const storable = cursor.value as StorablePendingPublish;
+
+          if (dnaHashStrings.has(storable.dnaHashStr)) {
+            switch (storable.status) {
+              case PublishStatus.Pending:
+                counts.pending++;
+                break;
+              case PublishStatus.InFlight:
+                counts.inFlight++;
+                break;
+              case PublishStatus.Failed:
+                counts.failed++;
+                break;
+              // Published ops are not counted (they're removed after success)
+            }
+          }
+          cursor.continue();
+        } else {
+          resolve(counts);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Reset all failed ops to pending for specified DNAs
+   * Used by "Retry Failed" button in debug panel
+   */
+  async resetFailedForDnas(dnaHashes: DnaHash[]): Promise<number> {
+    await this.init();
+
+    // Create a Set of DNA hash strings (base64) for efficient lookup
+    const dnaHashStrings = new Set(
+      dnaHashes.map((h) => this.dnaHashToString(h))
+    );
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(STORES.PENDING_PUBLISHES, "readwrite");
+      const store = tx.objectStore(STORES.PENDING_PUBLISHES);
+      const request = store.openCursor();
+      let resetCount = 0;
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          const storable = cursor.value as StorablePendingPublish;
+
+          if (
+            dnaHashStrings.has(storable.dnaHashStr) &&
+            storable.status === PublishStatus.Failed
+          ) {
+            storable.status = PublishStatus.Pending;
+            storable.error = undefined;
+            storable.retryCount = 0;
+            cursor.update(storable);
+            resetCount++;
+          }
+          cursor.continue();
+        } else {
+          console.log(
+            `[PublishTracker] Reset ${resetCount} failed ops to pending`
+          );
+          resolve(resetCount);
+        }
+      };
+
       request.onerror = () => reject(request.error);
     });
   }
