@@ -46,6 +46,7 @@ import {
   isAgentPubKey,
   extractEd25519PubKey,
   PublishTracker,
+  buildRecords,
 } from "@fishy/core";
 import { encodeHashToBase64, type AgentPubKey, type CellId } from "@holochain/client";
 
@@ -1755,7 +1756,6 @@ async function handlePublishRetryFailed(
 /**
  * Handle PUBLISH_ALL_RECORDS request
  * Regenerates and queues all DhtOps from local chain records for republishing
- * This is implemented in Phase 4 - GET_ALL_RECORDS flow
  */
 async function handlePublishAllRecords(
   message: RequestMessage
@@ -1769,21 +1769,159 @@ async function handlePublishAllRecords(
       return createErrorResponse(message.id, `HApp context not found: ${contextId}`);
     }
 
-    // TODO: Implement Phase 4 - GET_ALL_RECORDS flow
-    // 1. For each DNA in context, send GET_ALL_RECORDS to offscreen/worker
-    // 2. Convert returned records to Holochain Record format
-    // 3. Call produceOpsFromRecord() on each
-    // 4. Queue ops via PublishTracker
-    return createErrorResponse(
-      message.id,
-      "PUBLISH_ALL_RECORDS not yet implemented - requires GET_ALL_RECORDS flow (Phase 4)"
-    );
+    log.info(`[PUBLISH_ALL_RECORDS] Starting republish for context: ${contextId}`);
+
+    // Ensure offscreen is ready
+    await ensureOffscreenDocument();
+
+    const tracker = PublishTracker.getInstance();
+    let cellsProcessed = 0;
+    let opsQueued = 0;
+    const errors: string[] = [];
+
+    // For each DNA in context, get all records and queue them
+    for (const dna of context.dnas) {
+      const dnaHash = toUint8Array(dna.hash);
+      const agentPubKey = toUint8Array(context.agentPubKey);
+
+      log.debug(`[PUBLISH_ALL_RECORDS] Getting records for DNA: ${encodeHashToBase64(dnaHash).substring(0, 15)}...`);
+
+      // Send GET_ALL_RECORDS to offscreen
+      const response = await chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "GET_ALL_RECORDS",
+        dnaHash: Array.from(dnaHash),
+        agentPubKey: Array.from(agentPubKey),
+      });
+
+      if (!response.success) {
+        log.error(`[PUBLISH_ALL_RECORDS] Failed to get records: ${response.error}`);
+        errors.push(`DNA ${encodeHashToBase64(dnaHash).substring(0, 8)}...: ${response.error}`);
+        continue;
+      }
+
+      cellsProcessed++;
+      const transportRecords = response.records || [];
+      log.info(`[PUBLISH_ALL_RECORDS] Got ${transportRecords.length} records from worker`);
+
+      if (transportRecords.length === 0) {
+        continue;
+      }
+
+      // Convert transport format (arrays) back to Uint8Arrays for buildRecords
+      const storedRecords = transportRecords.map((r: any) => ({
+        action: convertTransportActionToStored(r.action),
+        entry: r.entry ? convertTransportEntryToStored(r.entry) : undefined,
+      }));
+
+      // Build @holochain/client Record format
+      const records = buildRecords(storedRecords);
+      log.debug(`[PUBLISH_ALL_RECORDS] Built ${records.length} records for queuing`);
+
+      // Queue each record for publishing
+      for (const record of records) {
+        try {
+          const publishIds = await tracker.queueRecordForPublish(record, dnaHash);
+          opsQueued += publishIds.length;
+        } catch (err) {
+          log.error(`[PUBLISH_ALL_RECORDS] Failed to queue record:`, err);
+          // Don't add to errors array - continue processing other records
+        }
+      }
+    }
+
+    log.info(`[PUBLISH_ALL_RECORDS] Queued ${opsQueued} ops from ${cellsProcessed} cells`);
+
+    // Trigger publish queue processing in offscreen
+    if (opsQueued > 0) {
+      const dnaHashes = context.dnas.map((d) => Array.from(toUint8Array(d.hash)));
+
+      // Ensure agents are registered with gateway WebSocket before publishing
+      // This is critical: the gateway's kitsune2 needs to know about the agents
+      // before it can accept publish requests on their behalf
+      log.info(`[PUBLISH_ALL_RECORDS] Registering agents with gateway WebSocket...`);
+
+      for (const dna of context.dnas) {
+        const dnaHash = toUint8Array(dna.hash);
+        const agentPubKey = toUint8Array(context.agentPubKey);
+
+        try {
+          await chrome.runtime.sendMessage({
+            target: "offscreen",
+            type: "REGISTER_AGENT",
+            dna_hash: encodeHashToBase64(dnaHash),
+            agent_pubkey: encodeHashToBase64(agentPubKey),
+          });
+          log.debug(`[PUBLISH_ALL_RECORDS] Registered agent for DNA: ${encodeHashToBase64(dnaHash).substring(0, 15)}...`);
+        } catch (err) {
+          log.warn(`[PUBLISH_ALL_RECORDS] Failed to register agent, continuing anyway:`, err);
+        }
+      }
+
+      // Wait a brief moment for agent info to propagate through kitsune2
+      // This allows the gateway proxy agents to be recognized by conductors
+      log.info(`[PUBLISH_ALL_RECORDS] Waiting for agent propagation (2s)...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Now trigger publish
+      chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "PROCESS_PUBLISH_QUEUE",
+        dnaHashes,
+      }).catch((err) => {
+        log.error("Failed to trigger publish queue processing:", err);
+      });
+    }
+
+    return createSuccessResponse(message.id, {
+      cellsProcessed,
+      opsQueued,
+      errors: errors.length > 0 ? errors : undefined,
+    });
   } catch (error) {
+    log.error("[PUBLISH_ALL_RECORDS] Error:", error);
     return createErrorResponse(
       message.id,
       error instanceof Error ? error.message : String(error)
     );
   }
+}
+
+/**
+ * Convert transport format action (arrays) back to stored action format (Uint8Arrays)
+ */
+function convertTransportActionToStored(transportAction: any): any {
+  return {
+    ...transportAction,
+    actionHash: transportAction.actionHash ? new Uint8Array(transportAction.actionHash) : null,
+    author: transportAction.author ? new Uint8Array(transportAction.author) : null,
+    prevActionHash: transportAction.prevActionHash ? new Uint8Array(transportAction.prevActionHash) : null,
+    signature: transportAction.signature ? new Uint8Array(transportAction.signature) : null,
+    entryHash: transportAction.entryHash ? new Uint8Array(transportAction.entryHash) : undefined,
+    originalActionHash: transportAction.originalActionHash ? new Uint8Array(transportAction.originalActionHash) : undefined,
+    originalEntryHash: transportAction.originalEntryHash ? new Uint8Array(transportAction.originalEntryHash) : undefined,
+    deletesActionHash: transportAction.deletesActionHash ? new Uint8Array(transportAction.deletesActionHash) : undefined,
+    deletesEntryHash: transportAction.deletesEntryHash ? new Uint8Array(transportAction.deletesEntryHash) : undefined,
+    baseAddress: transportAction.baseAddress ? new Uint8Array(transportAction.baseAddress) : undefined,
+    targetAddress: transportAction.targetAddress ? new Uint8Array(transportAction.targetAddress) : undefined,
+    tag: transportAction.tag ? new Uint8Array(transportAction.tag) : undefined,
+    linkAddAddress: transportAction.linkAddAddress ? new Uint8Array(transportAction.linkAddAddress) : undefined,
+    dnaHash: transportAction.dnaHash ? new Uint8Array(transportAction.dnaHash) : undefined,
+    membraneProof: transportAction.membraneProof ? new Uint8Array(transportAction.membraneProof) : undefined,
+    // Convert timestamp from string back to BigInt (was serialized as string for Chrome message passing)
+    timestamp: BigInt(transportAction.timestamp || '0'),
+  };
+}
+
+/**
+ * Convert transport format entry (arrays) back to stored entry format (Uint8Arrays)
+ */
+function convertTransportEntryToStored(transportEntry: any): any {
+  return {
+    entryHash: new Uint8Array(transportEntry.entryHash),
+    entryContent: new Uint8Array(transportEntry.entryContent),
+    entryType: transportEntry.entryType,
+  };
 }
 
 /**

@@ -34,6 +34,7 @@ SANDBOX_DIR="$PROJECT_DIR/.hc-sandbox"
 
 # Default hApp configuration
 HAPP_NAME="fixture1"
+HAPP_EXPLICIT=false  # Track if --happ was explicitly provided
 
 # Parse arguments
 COMMAND=""
@@ -41,6 +42,7 @@ for arg in "$@"; do
     case $arg in
         --happ=*)
             HAPP_NAME="${arg#*=}"
+            HAPP_EXPLICIT=true
             shift
             ;;
         start|stop|pause|unpause|status|clean)
@@ -54,6 +56,17 @@ done
 
 # Default command is start
 COMMAND="${COMMAND:-start}"
+
+# For unpause command, read saved app_id if --happ wasn't explicitly provided
+if [ "$COMMAND" = "unpause" ] && [ "$HAPP_EXPLICIT" = "false" ]; then
+    if [ -f "$SANDBOX_DIR/app_id.txt" ]; then
+        SAVED_APP_ID=$(cat "$SANDBOX_DIR/app_id.txt")
+        if [ -n "$SAVED_APP_ID" ]; then
+            HAPP_NAME="$SAVED_APP_ID"
+            echo -e "\033[0;32m[INFO]\033[0m Using saved hApp from previous session: $HAPP_NAME"
+        fi
+    fi
+fi
 
 # Configure paths based on hApp name
 configure_happ() {

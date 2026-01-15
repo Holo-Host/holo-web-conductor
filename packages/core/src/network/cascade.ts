@@ -400,11 +400,15 @@ export class Cascade {
     // 3. Try network (if enabled) - ALWAYS fetch to get other agents' links
     // Use full encoded linkType for gateway (includes zome_index)
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      log.debug(`🌐 Fetching links from NETWORK (always fetch for distributed data)`);
+      log.info(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, linkType=${linkType}`);
       try {
         const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType);
+        log.info(`🌐 Network returned ${networkLinks.length} links`);
         if (networkLinks.length > 0) {
-          log.debug(`🌐 Found ${networkLinks.length} links in network`);
+          // Log each link for debugging
+          networkLinks.forEach((link, i) => {
+            log.info(`🌐 Network link ${i}: target=${this.hashToBase64(link.target)}, author=${this.hashToBase64(link.author)}`);
+          });
           if (opts.cacheNetworkResults) {
             // Cache with raw link_type for consistency with lookups
             this.cache.cacheLinksSync(baseAddress, networkLinks, rawLinkType);
@@ -416,10 +420,11 @@ export class Cascade {
             }
           }
         } else {
-          log.debug(`🌐 No links found in network`);
+          log.info(`🌐 No links found in network for this base`);
         }
       } catch (error) {
         console.warn(`[Cascade] Network link fetch failed:`, error);
+        log.error(`🌐 Network fetch error: ${error}`);
       }
     } else if (opts.useNetwork) {
       if (!this.network) {

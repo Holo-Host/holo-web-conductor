@@ -361,6 +361,36 @@ class DirectSQLiteStorage implements StorageProvider {
     return results;
   }
 
+  /**
+   * Get all records (actions + entries) for a cell
+   * Used for republishing all data to the DHT
+   */
+  getAllRecords(dnaHash: Uint8Array, agentPubKey: Uint8Array): Array<{ action: any; entry: any | null }> {
+    const cellId = this.getCellId(dnaHash, agentPubKey);
+    const records: Array<{ action: any; entry: any | null }> = [];
+
+    // Get all actions for this cell, ordered by sequence
+    const stmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? ORDER BY action_seq');
+    try {
+      stmt.bind([cellId]);
+      while (stmt.step()) {
+        const action = this.rowToAction(stmt.get({}));
+
+        // Get entry if this action has one
+        let entry = null;
+        if (action.entryHash) {
+          entry = this.getEntry(action.entryHash);
+        }
+
+        records.push({ action, entry });
+      }
+    } finally {
+      stmt.finalize();
+    }
+
+    return records;
+  }
+
   getActionByEntryHash(entryHash: Uint8Array): any | null {
     const stmt = db.prepare('SELECT * FROM actions WHERE entry_hash = ? ORDER BY action_seq ASC LIMIT 1');
     try {
@@ -1352,6 +1382,57 @@ self.onmessage = async (event: MessageEvent) => {
       case 'NETWORK_RESPONSE':
         // Response from offscreen's sync XHR - signal is handled via Atomics
         break;
+
+      case 'GET_ALL_RECORDS': {
+        // Get all records for a cell - used for republishing
+        const { dnaHash: dnaHashArr, agentPubKey: agentPubKeyArr } = payload;
+        const dnaHashBytes = new Uint8Array(dnaHashArr);
+        const agentPubKeyBytes = new Uint8Array(agentPubKeyArr);
+
+        console.log('[Ribosome Worker] Getting all records for republishing');
+        const records = storage.getAllRecords(dnaHashBytes, agentPubKeyBytes);
+        console.log(`[Ribosome Worker] Found ${records.length} records`);
+
+        // Convert records to transport format (Uint8Array -> Array)
+        const recordsForTransport = records.map(record => {
+          // Convert entry for transport
+          let entryForTransport: any = null;
+          if (record.entry) {
+            entryForTransport = {
+              entryHash: Array.from(record.entry.entryHash),
+              entryContent: Array.from(record.entry.entryContent),
+              entryType: record.entry.entryType,
+            };
+          }
+
+          // Convert action for transport - need to convert all Uint8Array fields and BigInt timestamp
+          const actionForTransport = {
+            ...record.action,
+            // Convert BigInt timestamp to string (Chrome can't serialize BigInt)
+            timestamp: record.action.timestamp?.toString() || '0',
+            actionHash: record.action.actionHash ? Array.from(record.action.actionHash) : null,
+            author: record.action.author ? Array.from(record.action.author) : null,
+            prevActionHash: record.action.prevActionHash ? Array.from(record.action.prevActionHash) : null,
+            signature: record.action.signature ? Array.from(record.action.signature) : null,
+            entryHash: record.action.entryHash ? Array.from(record.action.entryHash) : null,
+            originalActionHash: record.action.originalActionHash ? Array.from(record.action.originalActionHash) : null,
+            originalEntryHash: record.action.originalEntryHash ? Array.from(record.action.originalEntryHash) : null,
+            deletesActionHash: record.action.deletesActionHash ? Array.from(record.action.deletesActionHash) : null,
+            deletesEntryHash: record.action.deletesEntryHash ? Array.from(record.action.deletesEntryHash) : null,
+            baseAddress: record.action.baseAddress ? Array.from(record.action.baseAddress) : null,
+            targetAddress: record.action.targetAddress ? Array.from(record.action.targetAddress) : null,
+            tag: record.action.tag ? Array.from(record.action.tag) : null,
+            linkAddAddress: record.action.linkAddAddress ? Array.from(record.action.linkAddAddress) : null,
+            dnaHash: record.action.dnaHash ? Array.from(record.action.dnaHash) : null,
+            membraneProof: record.action.membraneProof ? Array.from(record.action.membraneProof) : null,
+          };
+
+          return { action: actionForTransport, entry: entryForTransport };
+        });
+
+        result = { records: recordsForTransport };
+        break;
+      }
 
       default:
         throw new Error(`Unknown message type: ${type}`);

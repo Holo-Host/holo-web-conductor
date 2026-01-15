@@ -20,7 +20,7 @@ import {
 } from "@fishy/core/network";
 import { PublishService } from "@fishy/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@fishy/core";
-import { encodeHashToBase64 } from "@holochain/client";
+import { encodeHashToBase64, decodeHashFromBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 
@@ -206,13 +206,18 @@ function handleWorkerMessage(event: MessageEvent): void {
   // Handle response to our request
   if (id !== undefined) {
     const pending = pendingRequests.get(id);
+    log.debug(`Worker response received: id=${id}, success=${success}, hasPending=${!!pending}, type=${type || 'response'}`);
     if (pending) {
       pendingRequests.delete(id);
       if (success) {
+        log.debug(`Resolving pending request ${id} with result keys: ${result ? Object.keys(result).join(', ') : 'null'}`);
         pending.resolve(result);
       } else {
+        log.debug(`Rejecting pending request ${id} with error: ${error}`);
         pending.reject(new Error(error || 'Unknown error'));
       }
+    } else {
+      log.warn(`No pending request found for id ${id}. Pending IDs: ${Array.from(pendingRequests.keys()).join(', ')}`);
     }
   }
 }
@@ -422,7 +427,7 @@ function initializeWebSocketService(config: {
     });
   });
 
-  // Set up state change callback for logging
+  // Set up state change callback for logging and auto-retry
   wsService.onStateChange((state: ConnectionState) => {
     logNetwork.info(`WebSocket state: ${state}`);
 
@@ -434,6 +439,28 @@ function initializeWebSocketService(config: {
     }).catch(() => {
       // Ignore errors if background is not listening
     });
+
+    // When connected, automatically process failed publish queue
+    // This ensures failed publishes are retried when connection is re-established
+    if (state === "connected") {
+      // Small delay to allow agent registrations to propagate
+      setTimeout(() => {
+        logPublish.info("Connection established - triggering auto-retry of failed publishes");
+        // Get registered DNAs from the websocket service and trigger publish processing
+        const registrations = wsService?.getRegistrations() || [];
+        if (registrations.length > 0 && publishService) {
+          const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
+          for (const dnaHashB64 of uniqueDnas) {
+            // Convert base64 to Uint8Array
+            const dnaHash = decodeHashFromBase64(dnaHashB64);
+            logPublish.info(`Auto-processing publish queue for DNA: ${dnaHashB64.substring(0, 15)}...`);
+            publishService.processQueue(dnaHash).catch(err => {
+              logPublish.warn(`Auto-retry failed for DNA ${dnaHashB64.substring(0, 15)}...:`, err);
+            });
+          }
+        }
+      }, 2000); // 2 second delay for agent registration propagation
+    }
   });
 
   // Set up sign callback - forward sign requests to background for Lair signing
@@ -755,6 +782,41 @@ chrome.runtime.onMessage.addListener(
         // Registrations are preserved and will be re-sent on reconnect
       }
       sendResponse({ success: true, reconnected: true });
+      return true;
+    }
+
+    // Get all records for a cell - used for republishing
+    if (message.type === "GET_ALL_RECORDS") {
+      const { dnaHash, agentPubKey } = message;
+      log.info(`[GET_ALL_RECORDS] Starting - dnaHash length: ${dnaHash?.length}, agentPubKey length: ${agentPubKey?.length}`);
+
+      (async () => {
+        try {
+          log.debug("[GET_ALL_RECORDS] Ensuring ribosome worker...");
+          await initRibosomeWorker();
+          log.debug("[GET_ALL_RECORDS] Worker ready, sending request...");
+
+          // sendToWorker resolves with just the 'result' part of the worker response
+          // Worker returns { id, success: true, result: { records: [...] } }
+          // So response here is { records: [...] }
+          const response = await sendToWorker("GET_ALL_RECORDS", {
+            dnaHash,
+            agentPubKey,
+          });
+
+          log.info(`[GET_ALL_RECORDS] Got response: ${response?.records?.length || 0} records`);
+          sendResponse({
+            success: true,
+            records: response?.records || [],
+          });
+        } catch (error) {
+          log.error("[GET_ALL_RECORDS] Error:", error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
       return true;
     }
 

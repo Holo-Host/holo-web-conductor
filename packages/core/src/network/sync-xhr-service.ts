@@ -357,7 +357,8 @@ export class SyncXHRNetworkService implements NetworkService {
     const url = this.buildLinksUrl(dnaHash, baseAddress, linkType);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    log.debug(` Fetching links: ${url}`);
+    log.info(`🔗 Fetching links from gateway: ${url}`);
+    log.info(`🔗 Base address: ${this.toHolochainBase64(baseAddress)}, linkType: ${linkType}`);
 
     try {
       const xhr = new XMLHttpRequest();
@@ -368,14 +369,15 @@ export class SyncXHRNetworkService implements NetworkService {
       xhr.send();
 
       if (xhr.status === 200) {
+        log.info(`🔗 Gateway returned status 200, response length: ${xhr.responseText.length}`);
         const links = this.parseLinksResponse(xhr.responseText);
-        log.debug(` Fetched ${links.length} links`);
+        log.info(`🔗 Parsed ${links.length} links from gateway response`);
         return links;
       } else if (xhr.status === 404) {
-        log.debug(` No links found (404)`);
+        log.info(`🔗 No links found (404)`);
         return [];
       } else {
-        console.error(`[SyncXHR] Network error: ${xhr.status} ${xhr.statusText}`);
+        log.error(`🔗 Gateway error: ${xhr.status} ${xhr.statusText}`);
         throw new Error(`Network error: ${xhr.status} ${xhr.statusText}`);
       }
     } catch (error) {
