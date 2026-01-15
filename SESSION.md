@@ -1,35 +1,52 @@
 # Fishy Development Session
 
-**Last Updated**: 2026-01-14
-**Current Step**: Step 12.3 Phase 1 - Test Audit (fishy tests)
+**Last Updated**: 2026-01-15
+**Current Step**: Step 12.2 - DHT Publishing Debug Panel
 **Status**: READY TO START
 
 ## Current Step Progress
 
-### Step 12.3 Phase 1: Test Audit - Add Test Vectors (fishy)
+### Step 12.2: DHT Publishing Debug Panel (Per-hApp)
 
-**Goal**: Replace circular/tautological tests with known-good test vectors from Holochain.
+**Goal**: Add debug functionality to each installed hApp card in the popup to view and manage publish status.
 
 **Status**: READY TO START
 
-**Scope**:
-1. **Hash test vectors** - `packages/core/src/hash/hash.test.ts`
-   - Get actual hashes from Holochain/holochain-client for known inputs
-   - Add tests comparing computed hashes to reference values
+**Features**:
+- Shows publish status (pending, in-flight, failed) for each hApp's DNAs
+- "Retry Failed" button to retry failed op publishes
+- "Republish All" button to regenerate and republish all ops from local chain
 
-2. **Serialization test vectors** - `packages/core/src/ribosome/serialization.test.ts`
-   - Capture msgpack bytes from Holochain for known payloads
-   - Test serializer output matches reference bytes
+**Phases**:
+1. **Phase 1**: Backend Message Handlers - Add PUBLISH_GET_STATUS, PUBLISH_RETRY_FAILED, PUBLISH_ALL_RECORDS
+2. **Phase 2**: PublishTracker Enhancements - Add status count and reset methods
+3. **Phase 3**: UI Enhancement - Add debug button/section to hApp cards
+4. **Phase 4**: Republish All Implementation - GET_ALL_RECORDS flow through offscreen/worker
 
-3. **Genesis test vectors** - `packages/core/src/storage/genesis.test.ts`
-   - Get genesis action sequence from real Holochain source chain
-   - Verify action types and structure match
+**Details**: See [STEPS/12.2_PLAN.md](./STEPS/12.2_PLAN.md)
 
-4. **Messaging test vectors** - `packages/extension/src/lib/messaging.test.ts`
-   - Add known msgpack binary format assertions
-   - Test edge cases like null bytes, missing fields, malformed input
+---
 
-**Details**: See [STEPS/12.3_PLAN.md](./STEPS/12.3_PLAN.md)
+### Step 12.1: Unified Encoding Strategy - COMPLETE
+
+**Goal**: Document the two Uint8Array encoding patterns for Chrome message boundaries.
+
+**Status**: COMPLETE (2026-01-15)
+
+**Changes**:
+- `bytes.ts`: Added module header and JSDoc documenting encoding patterns
+- `background/index.ts`: Added pre-conversion pattern comment at Array.from() usage
+- `inject/index.ts`: Added JSDoc for restoreUint8Arrays()
+
+**Commit**: `21ed159` - docs: add Uint8Array encoding pattern documentation
+
+---
+
+### Earlier Work (Step 12.3 Phase 1 partial)
+
+**Hash module cleanup** - Removed redundant functions that duplicate @holochain/client:
+- Commit: `e8193a8` - refactor(hash): remove redundant hash utilities
+- Commit: `aa19529` - test(genesis): fix test fixtures to use correct hash prefixes
 
 ---
 
@@ -183,6 +200,5 @@ When resuming on another workstation, tell Claude:
 
 > I'm continuing the Fishy project. Please read SESSION.md and CLAUDE.md to understand where we are.
 >
-> Step 10 (Integration Testing) is COMPLETE - FishyAppClient created, remote signal architecture fixed.
->
-> Ready to start Step 12.3 Phase 1 (Test Audit - fishy tests). See STEPS/12.3_PLAN.md for details.
+> Step 12.1 (Encoding documentation) is COMPLETE.
+> Ready to start Step 12.2 (DHT Publishing Debug Panel). See STEPS/12.2_PLAN.md for details.
