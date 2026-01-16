@@ -173,13 +173,25 @@ export class ConnectionMonitor {
     });
   }
 
+  /**
+   * Update gateway health status without changing overall connection status.
+   * Used when extension is connected but gateway may be unreachable.
+   */
+  setGatewayHealth(httpHealthy: boolean, wsHealthy: boolean, error?: string): void {
+    this.updateState({
+      httpHealthy,
+      wsHealthy,
+      lastError: error,
+    });
+  }
+
   private async checkHealth(): Promise<void> {
     try {
-      // Check extension's connection status if available
+      // Check extension's connection status
       if (window.holochain?.getConnectionStatus) {
         const status = await window.holochain.getConnectionStatus();
-        const wasHealthy = this.state.httpHealthy && this.state.wsHealthy;
-        const isHealthy = status.httpHealthy && status.wsHealthy;
+        const wasHealthy = this.state.httpHealthy;
+        const isHealthy = status.httpHealthy;
 
         if (wasHealthy && !isHealthy) {
           // Connection lost
@@ -187,10 +199,10 @@ export class ConnectionMonitor {
             status: ConnectionStatus.Error,
             httpHealthy: status.httpHealthy,
             wsHealthy: status.wsHealthy,
-            lastError: 'Gateway connection lost',
+            lastError: status.lastError || 'Gateway connection lost',
           });
           this.emit('connection:error', {
-            error: 'Gateway connection lost',
+            error: status.lastError || 'Gateway connection lost',
             recoverable: true,
           });
         } else if (!wasHealthy && isHealthy) {
@@ -198,7 +210,7 @@ export class ConnectionMonitor {
           this.updateState({
             status: ConnectionStatus.Connected,
             httpHealthy: true,
-            wsHealthy: true,
+            wsHealthy: status.wsHealthy,
             lastError: undefined,
           });
           if (this.state.status === ConnectionStatus.Reconnecting) {
@@ -209,6 +221,7 @@ export class ConnectionMonitor {
           this.updateState({
             httpHealthy: status.httpHealthy,
             wsHealthy: status.wsHealthy,
+            lastError: status.lastError,
           });
         }
       }

@@ -30,13 +30,21 @@ export interface FishyHolochainAPI {
   // Network configuration
   configureNetwork(config: { gatewayUrl: string }): Promise<void>;
 
-  // Connection status (added in Step 14)
-  getConnectionStatus?(): Promise<{
+  // Connection status (real-time health monitoring)
+  getConnectionStatus(): Promise<{
     httpHealthy: boolean;
     wsHealthy: boolean;
-    gatewayUrl: string;
+    gatewayUrl: string | null;
+    lastChecked: number;
+    lastError?: string;
   }>;
-  onConnectionChange?(callback: (status: ConnectionState) => void): () => void;
+  onConnectionChange(callback: (status: {
+    httpHealthy: boolean;
+    wsHealthy: boolean;
+    gatewayUrl: string | null;
+    lastChecked: number;
+    lastError?: string;
+  }) => void): () => void;
   reconnectWebSocket?(): Promise<void>;
 }
 

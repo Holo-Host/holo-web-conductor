@@ -88,6 +88,124 @@ let offscreenReadyResolvers: Array<() => void> = [];
 // Default to null (no network) until configured
 let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
 
+// Connection status tracking
+interface ConnectionStatus {
+  httpHealthy: boolean;
+  wsHealthy: boolean;
+  gatewayUrl: string | null;
+  lastChecked: number;
+  lastError?: string;
+}
+
+let connectionStatus: ConnectionStatus = {
+  httpHealthy: false,
+  wsHealthy: false,
+  gatewayUrl: null,
+  lastChecked: 0,
+};
+
+let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+const HEALTH_CHECK_INTERVAL_MS = 5000;
+
+// Tabs subscribed to connection status updates
+const connectionStatusSubscribers = new Set<number>();
+
+/**
+ * Check gateway health by making a simple HTTP request
+ */
+async function checkGatewayHealth(): Promise<void> {
+  if (!gatewayConfig?.gatewayUrl) {
+    connectionStatus = {
+      httpHealthy: false,
+      wsHealthy: false,
+      gatewayUrl: null,
+      lastChecked: Date.now(),
+      lastError: 'No gateway configured',
+    };
+    notifyConnectionStatusChange();
+    return;
+  }
+
+  const previousStatus = { ...connectionStatus };
+
+  try {
+    // Simple health check - try to reach the gateway
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+
+    const response = await fetch(`${gatewayConfig.gatewayUrl}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    connectionStatus = {
+      httpHealthy: response.ok,
+      wsHealthy: connectionStatus.wsHealthy, // WebSocket status tracked separately
+      gatewayUrl: gatewayConfig.gatewayUrl,
+      lastChecked: Date.now(),
+      lastError: response.ok ? undefined : `HTTP ${response.status}`,
+    };
+  } catch (error) {
+    connectionStatus = {
+      httpHealthy: false,
+      wsHealthy: false,
+      gatewayUrl: gatewayConfig.gatewayUrl,
+      lastChecked: Date.now(),
+      lastError: error instanceof Error ? error.message : 'Connection failed',
+    };
+  }
+
+  // Notify subscribers if status changed
+  if (
+    previousStatus.httpHealthy !== connectionStatus.httpHealthy ||
+    previousStatus.wsHealthy !== connectionStatus.wsHealthy ||
+    previousStatus.lastError !== connectionStatus.lastError
+  ) {
+    notifyConnectionStatusChange();
+  }
+}
+
+/**
+ * Notify all subscribed tabs of connection status change
+ */
+function notifyConnectionStatusChange(): void {
+  const message = {
+    type: 'connectionStatusChange',
+    payload: connectionStatus,
+  };
+
+  for (const tabId of connectionStatusSubscribers) {
+    chrome.tabs.sendMessage(tabId, message).catch(() => {
+      // Tab might be closed, remove from subscribers
+      connectionStatusSubscribers.delete(tabId);
+    });
+  }
+}
+
+/**
+ * Start periodic health checks
+ */
+function startHealthChecks(): void {
+  if (healthCheckInterval) return;
+
+  // Immediate check
+  checkGatewayHealth();
+
+  // Periodic checks
+  healthCheckInterval = setInterval(checkGatewayHealth, HEALTH_CHECK_INTERVAL_MS);
+}
+
+/**
+ * Stop periodic health checks
+ */
+function stopHealthChecks(): void {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+}
+
 
 /**
  * Check if the offscreen document exists
@@ -221,6 +339,9 @@ function setGatewayConfig(url: string, sessionToken?: string): void {
   networkConfigured = false; // Will be configured on next offscreen use
 
   logGateway.info(`Gateway config set: ${url}`);
+
+  // Start health checks when gateway is configured
+  startHealthChecks();
 }
 
 /**
@@ -567,6 +688,16 @@ async function handleMessage(
 
       case MessageType.GATEWAY_RECONNECT:
         return handleGatewayReconnect(message);
+
+      // Connection Status
+      case MessageType.CONNECTION_STATUS_GET:
+        return handleConnectionStatusGet(message);
+
+      case MessageType.CONNECTION_STATUS_SUBSCRIBE:
+        return handleConnectionStatusSubscribe(message, sender);
+
+      case MessageType.CONNECTION_STATUS_UNSUBSCRIBE:
+        return handleConnectionStatusUnsubscribe(message, sender);
 
       // DHT Publishing Debug
       case MessageType.PUBLISH_GET_STATUS:
@@ -1670,6 +1801,60 @@ async function handleGatewayReconnect(
   }
 
   return createSuccessResponse(message.id, { reconnected: true });
+}
+
+// ============================================================================
+// Connection Status Handlers
+// ============================================================================
+
+/**
+ * Handle CONNECTION_STATUS_GET request
+ * Returns current connection health status
+ */
+async function handleConnectionStatusGet(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  return createSuccessResponse(message.id, connectionStatus);
+}
+
+/**
+ * Handle CONNECTION_STATUS_SUBSCRIBE request
+ * Subscribes the tab to receive connection status updates
+ */
+async function handleConnectionStatusSubscribe(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  const tabId = sender.tab?.id;
+  if (!tabId) {
+    return createErrorResponse(message.id, "No tab ID available");
+  }
+
+  connectionStatusSubscribers.add(tabId);
+  log.info(`Tab ${tabId} subscribed to connection status updates`);
+
+  // Start health checks if not already running
+  startHealthChecks();
+
+  // Send current status immediately
+  return createSuccessResponse(message.id, connectionStatus);
+}
+
+/**
+ * Handle CONNECTION_STATUS_UNSUBSCRIBE request
+ * Unsubscribes the tab from connection status updates
+ */
+async function handleConnectionStatusUnsubscribe(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  const tabId = sender.tab?.id;
+  if (tabId) {
+    connectionStatusSubscribers.delete(tabId);
+    log.info(`Tab ${tabId} unsubscribed from connection status updates`);
+  }
+
+  return createSuccessResponse(message.id, { unsubscribed: true });
 }
 
 // ============================================================================

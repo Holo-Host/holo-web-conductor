@@ -5,6 +5,14 @@
  * It communicates with the content script via window.postMessage.
  */
 
+interface ConnectionStatus {
+  httpHealthy: boolean;
+  wsHealthy: boolean;
+  gatewayUrl: string | null;
+  lastChecked: number;
+  lastError?: string;
+}
+
 interface HolochainAPI {
   isFishy: boolean;
   version: string;
@@ -31,10 +39,17 @@ interface HolochainAPI {
   on(event: "signal", callback: (signal: any) => void): () => void;
   configureNetwork(config: { gatewayUrl: string }): Promise<any>;
   getNetworkStatus(): Promise<any>;
+  // Connection status APIs
+  getConnectionStatus(): Promise<ConnectionStatus>;
+  onConnectionChange(callback: (status: ConnectionStatus) => void): () => void;
 }
 
 // Signal subscription handlers
 const signalHandlers = new Set<(signal: any) => void>();
+
+// Connection status subscription handlers
+const connectionStatusHandlers = new Set<(status: ConnectionStatus) => void>();
+let isSubscribedToConnectionStatus = false;
 
 // Cached state from connection
 let _myPubKey: Uint8Array | null = null;
@@ -104,6 +119,19 @@ window.addEventListener("message", (event) => {
         handler(restoredPayload);
       } catch (e) {
         console.error("[Fishy] Signal handler error:", e);
+      }
+    });
+    return;
+  }
+
+  // Handle connection status change messages (push from extension)
+  if (message.type === "connectionStatusChange") {
+    const status = message.payload as ConnectionStatus;
+    connectionStatusHandlers.forEach((handler) => {
+      try {
+        handler(status);
+      } catch (e) {
+        console.error("[Fishy] Connection status handler error:", e);
       }
     });
     return;
@@ -275,6 +303,35 @@ const holochainAPI: HolochainAPI = {
     }
     // For unknown events, return a no-op unsubscribe function
     return () => {};
+  },
+
+  async getConnectionStatus(): Promise<ConnectionStatus> {
+    return sendToContentScript("connection_status_get", null);
+  },
+
+  onConnectionChange(callback: (status: ConnectionStatus) => void): () => void {
+    connectionStatusHandlers.add(callback);
+
+    // Subscribe to connection status updates if not already subscribed
+    if (!isSubscribedToConnectionStatus) {
+      isSubscribedToConnectionStatus = true;
+      // Fire-and-forget subscription request
+      sendToContentScript("connection_status_subscribe", null).catch((e) => {
+        console.warn("[Fishy] Failed to subscribe to connection status:", e);
+      });
+    }
+
+    return () => {
+      connectionStatusHandlers.delete(callback);
+
+      // Unsubscribe if no more handlers
+      if (connectionStatusHandlers.size === 0 && isSubscribedToConnectionStatus) {
+        isSubscribedToConnectionStatus = false;
+        sendToContentScript("connection_status_unsubscribe", null).catch((e) => {
+          console.warn("[Fishy] Failed to unsubscribe from connection status:", e);
+        });
+      }
+    };
   },
 };
 

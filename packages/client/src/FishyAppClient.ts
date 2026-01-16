@@ -178,7 +178,8 @@ export class FishyAppClient implements AppClient {
         // Already installed
         await this.setupFromAppInfo(info);
         this.connection.setConnected();
-        this.connection.start();
+        // Subscribe to extension's push status updates (no polling needed)
+        this.subscribeToExtensionConnectionStatus();
         return;
       }
     } catch (e) {
@@ -197,7 +198,47 @@ export class FishyAppClient implements AppClient {
 
     await this.setupFromAppInfo(info);
     this.connection.setConnected();
-    this.connection.start();
+    // Don't call this.connection.start() - we get push updates from extension
+    // via subscribeToExtensionConnectionStatus() instead of polling
+    this.subscribeToExtensionConnectionStatus();
+  }
+
+  /**
+   * Subscribe to extension's connection status updates for real-time monitoring.
+   * The extension handles health checks - we just reflect its status.
+   *
+   * Extension connection status is separate from gateway health:
+   * - Extension: Always "connected" if window.holochain exists
+   * - Gateway: May be healthy or unreachable
+   */
+  private subscribeToExtensionConnectionStatus(): void {
+    const holochain = window.holochain;
+    if (!holochain?.onConnectionChange) return;
+
+    // Disable client-side auto-reconnection since extension handles health monitoring
+    this.reconnectionManager.cancel();
+
+    // Get initial status immediately (subscription only fires on changes)
+    if (holochain.getConnectionStatus) {
+      holochain.getConnectionStatus().then((status) => {
+        this.connection.setGatewayHealth(
+          status.httpHealthy,
+          status.wsHealthy,
+          status.lastError
+        );
+      }).catch(() => {
+        // Ignore - extension may not support this API
+      });
+    }
+
+    // Subscribe to future changes
+    holochain.onConnectionChange((status) => {
+      this.connection.setGatewayHealth(
+        status.httpHealthy,
+        status.wsHealthy,
+        status.lastError
+      );
+    });
   }
 
   private async setupFromAppInfo(info: FishyAppInfo): Promise<void> {

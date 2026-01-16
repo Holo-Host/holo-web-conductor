@@ -121,12 +121,12 @@ function injectAPI() {
 injectAPI();
 
 /**
- * Listen for push messages from the background script (e.g., signals)
+ * Listen for push messages from the background script (e.g., signals, connection status)
  * These are not request/response pairs but one-way messages
  */
 chrome.runtime.onMessage.addListener((message, sender) => {
   // Only handle messages from our extension (not from web pages)
-  if (sender.id !== chrome.runtime.id) return;
+  if (sender.id !== chrome.runtime.id) return false;
 
   // Handle signal messages
   if (message.type === "signal") {
@@ -139,5 +139,22 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       },
       "*"
     );
+    return false; // No async response needed
   }
+
+  // Handle connection status change messages
+  if (message.type === "connectionStatusChange") {
+    window.postMessage(
+      {
+        source: "fishy-content",
+        type: "connectionStatusChange",
+        payload: message.payload,
+      },
+      "*"
+    );
+    return false; // No async response needed
+  }
+
+  // Unknown message type - don't handle
+  return false;
 });

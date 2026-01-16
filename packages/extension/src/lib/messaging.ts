@@ -68,6 +68,11 @@ export enum MessageType {
   GATEWAY_DISCONNECT = "gateway_disconnect",
   GATEWAY_RECONNECT = "gateway_reconnect",
 
+  // Connection status (real-time health monitoring)
+  CONNECTION_STATUS_GET = "connection_status_get",
+  CONNECTION_STATUS_SUBSCRIBE = "connection_status_subscribe",
+  CONNECTION_STATUS_UNSUBSCRIBE = "connection_status_unsubscribe",
+
   // DHT Publishing Debug (per-hApp)
   PUBLISH_GET_STATUS = "publish_get_status",
   PUBLISH_RETRY_FAILED = "publish_retry_failed",
@@ -567,6 +572,9 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.GATEWAY_GET_STATUS ||
     message.type === MessageType.GATEWAY_DISCONNECT ||
     message.type === MessageType.GATEWAY_RECONNECT ||
+    message.type === MessageType.CONNECTION_STATUS_GET ||
+    message.type === MessageType.CONNECTION_STATUS_SUBSCRIBE ||
+    message.type === MessageType.CONNECTION_STATUS_UNSUBSCRIBE ||
     message.type === MessageType.PUBLISH_GET_STATUS ||
     message.type === MessageType.PUBLISH_RETRY_FAILED ||
     message.type === MessageType.PUBLISH_ALL_RECORDS
