@@ -180,9 +180,27 @@
       <pre id="log"></pre>
     </div>
 
+    <!-- Import map for module resolution -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@holochain/client": "https://esm.sh/@holochain/client@0.19.0"
+        }
+      }
+    </script>
+
     <script type="module">
       // Import msgpack for decoding entry bytes
       import { decode as msgpackDecode } from "https://esm.sh/@msgpack/msgpack@3.0.0-beta2";
+
+      // Import FishyAppClient from the built package
+      import {
+        FishyAppClient,
+        waitForFishy,
+        toUint8Array,
+        deepConvertByteArrays,
+        ConnectionStatus
+      } from "./lib/fishy-client.js";
 
       // ============================================================
       // Logging utilities
@@ -199,20 +217,6 @@
         const el = document.getElementById(id);
         el.className = `status ${type}`;
         el.textContent = msg;
-      }
-
-      // ============================================================
-      // Helper: Convert Chrome message object back to Uint8Array
-      // ============================================================
-      function toUint8Array(data) {
-        if (!data) return null;
-        if (data instanceof Uint8Array) return data;
-        if (Array.isArray(data)) return new Uint8Array(data);
-        if (typeof data === "object") {
-          const values = Object.values(data);
-          return new Uint8Array(values);
-        }
-        return null;
       }
 
       // ============================================================
@@ -268,84 +272,8 @@
         }
       }
 
-      // ============================================================
-      // FishyAppClient - Adapter for window.holochain
-      // ============================================================
-      class FishyAppClient {
-        constructor() {
-          this._myPubKey = null;
-          this._installedAppId = null;
-          this._connected = false;
-        }
-
-        get myPubKey() {
-          return this._myPubKey;
-        }
-
-        get installedAppId() {
-          return this._installedAppId;
-        }
-
-        async connect() {
-          const holochain = window.holochain;
-          if (!holochain) throw new Error("Fishy extension not detected");
-
-          await holochain.connect();
-          const appInfo = await holochain.appInfo();
-
-          this._myPubKey = toUint8Array(appInfo.agentPubKey);
-          this._installedAppId = appInfo.contextId;
-          this._connected = true;
-
-          // Set up signal forwarding
-          if (holochain.on) {
-            log("Setting up signal listener on window.holochain");
-            holochain.on("signal", (signal) => {
-              log("FishyAppClient received signal from window.holochain");
-              this._dispatchSignal(signal);
-            });
-          } else {
-            log("WARNING: window.holochain.on is not available");
-          }
-
-          return appInfo;
-        }
-
-        _signalHandlers = new Set();
-
-        on(event, callback) {
-          if (event === "signal") {
-            this._signalHandlers.add(callback);
-            return () => this._signalHandlers.delete(callback);
-          }
-          return () => {};
-        }
-
-        _dispatchSignal(signal) {
-          this._signalHandlers.forEach((h) => {
-            try { h(signal); } catch (e) { console.error("Signal handler error:", e); }
-          });
-        }
-
-        async callZome(request) {
-          const holochain = window.holochain;
-          const appInfo = await holochain.appInfo();
-          const cellId = appInfo.cells[0];
-
-          return holochain.callZome({
-            cell_id: cellId,
-            zome_name: request.zome_name,
-            fn_name: request.fn_name,
-            payload: request.payload,
-            provenance: cellId[1],
-            cap_secret: null,
-          });
-        }
-
-        async appInfo() {
-          return window.holochain.appInfo();
-        }
-      }
+      // FishyAppClient is imported from the package above
+      // It provides connection monitoring and automatic reconnection
 
       // ============================================================
       // SimpleProfilesClient - Direct zome calls
@@ -587,13 +515,19 @@
       // ============================================================
       // Step 4: Connect
       // ============================================================
+      const GATEWAY_URL = "http://localhost:8090";
+
       document.getElementById("connect-btn").addEventListener("click", async () => {
         log("Connecting...");
         showStatus("connect-status", "warning", "Connecting...");
 
         try {
-          appClient = new FishyAppClient();
-          const appInfo = await appClient.connect();
+          // Use the package's FishyAppClient with gateway configuration
+          appClient = await FishyAppClient.connect({
+            gatewayUrl: GATEWAY_URL,
+            autoReconnect: true,
+            // hApp is already installed manually, so no happBundlePath needed
+          });
 
           profilesClient = new SimpleProfilesClient(appClient);
 
@@ -608,6 +542,16 @@
             log("Signal received from profiles zome (filtered)");
           });
 
+          // Subscribe to connection status changes
+          appClient.onConnection("connection:change", (state) => {
+            const statusText = `Gateway: ${state.httpHealthy ? "✓" : "✗"} HTTP, ${state.wsHealthy ? "✓" : "✗"} WS`;
+            log(`Connection status changed: ${state.status} - ${statusText}`);
+            if (state.status === ConnectionStatus.Error && state.lastError) {
+              log(`Connection error: ${state.lastError}`);
+            }
+          });
+
+          const appInfo = await appClient.appInfo();
           showStatus("connect-status", "success", "Connected");
           document.getElementById("app-info").classList.remove("hidden");
           document.getElementById("app-info-content").textContent = JSON.stringify(formatForDisplay(appInfo), null, 2);

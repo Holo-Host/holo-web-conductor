@@ -166,6 +166,33 @@ FishyAppClient implements the full `AppClient` interface from `@holochain/client
 - ⚠️ `dumpNetworkStats()` - Returns empty result
 - ⚠️ `dumpNetworkMetrics()` - Returns empty result
 
+## Byte Array Utilities
+
+Chrome messaging converts `Uint8Array` to plain objects with numeric keys. The package provides utilities to handle this:
+
+```typescript
+import {
+  toUint8Array,
+  deepConvertByteArrays,
+  looksLikeByteArray
+} from '@zippy/fishy-client';
+
+// Convert a single value back to Uint8Array
+const bytes = toUint8Array({ 0: 132, 1: 32, 2: 36 });
+
+// Deep convert nested structures (automatically handles response objects)
+const result = deepConvertByteArrays({
+  hash: { 0: 132, 1: 41, 2: 36, /* ... */ },
+  nested: { data: [1, 2, 3] }
+});
+
+// Check if a value looks like a byte array
+looksLikeByteArray({ 0: 1, 1: 2, 2: 3 }); // true
+looksLikeByteArray([1, 2, 3]); // true (if all values 0-255)
+```
+
+Note: `callZome()` automatically converts response byte arrays, so you typically don't need these utilities directly.
+
 ## Requirements
 
 - Fishy browser extension installed
