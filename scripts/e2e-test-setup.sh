@@ -6,7 +6,7 @@
 # extension with a real Holochain conductor and gateway.
 #
 # Usage:
-#   ./scripts/e2e-test-setup.sh [command] [--happ=NAME]
+#   ./scripts/e2e-test-setup.sh [command] [--happ=NAME] [--gateway=TYPE]
 #
 # Commands:
 #   start     Start conductor and gateway (default)
@@ -17,11 +17,13 @@
 #   clean     Clean up sandbox data
 #
 # Options:
-#   --happ=NAME   Specify which hApp to use (fixture1 or ziptest, default: fixture1)
+#   --happ=NAME      Specify which hApp to use (fixture1 or ziptest, default: fixture1)
+#   --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)
 #
 # Examples:
-#   ./scripts/e2e-test-setup.sh start                    # Start with fixture1
-#   ./scripts/e2e-test-setup.sh start --happ=ziptest     # Start with ziptest
+#   ./scripts/e2e-test-setup.sh start                              # Start with fixture1 + gw-fork
+#   ./scripts/e2e-test-setup.sh start --happ=ziptest               # Start with ziptest + gw-fork
+#   ./scripts/e2e-test-setup.sh start --happ=ziptest --gateway=membrane  # Start with ziptest + membrane
 #   ./scripts/e2e-test-setup.sh stop
 #
 
@@ -29,13 +31,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-GATEWAY_DIR="$(cd "$PROJECT_DIR/../hc-http-gw-fork" && pwd)"
 # Use /tmp for sandbox to avoid Unix socket path length limits (SUN_LEN ~108 chars)
 SANDBOX_DIR="/tmp/fishy-e2e"
 
 # Default hApp configuration
 HAPP_NAME="fixture1"
 HAPP_EXPLICIT=false  # Track if --happ was explicitly provided
+
+# Default gateway configuration
+GATEWAY_TYPE="gw-fork"
+GATEWAY_EXPLICIT=false  # Track if --gateway was explicitly provided
 
 # Parse arguments
 COMMAND=""
@@ -44,6 +49,11 @@ for arg in "$@"; do
         --happ=*)
             HAPP_NAME="${arg#*=}"
             HAPP_EXPLICIT=true
+            shift
+            ;;
+        --gateway=*)
+            GATEWAY_TYPE="${arg#*=}"
+            GATEWAY_EXPLICIT=true
             shift
             ;;
         start|stop|pause|unpause|status|clean)
@@ -58,22 +68,52 @@ done
 # Default command is start
 COMMAND="${COMMAND:-start}"
 
-# For unpause command, read saved app_id if --happ wasn't explicitly provided
-if [ "$COMMAND" = "unpause" ] && [ "$HAPP_EXPLICIT" = "false" ]; then
-    if [ -f "$SANDBOX_DIR/app_id.txt" ]; then
+# For unpause command, read saved app_id and gateway_type if not explicitly provided
+if [ "$COMMAND" = "unpause" ]; then
+    if [ "$HAPP_EXPLICIT" = "false" ] && [ -f "$SANDBOX_DIR/app_id.txt" ]; then
         SAVED_APP_ID=$(cat "$SANDBOX_DIR/app_id.txt")
         if [ -n "$SAVED_APP_ID" ]; then
             HAPP_NAME="$SAVED_APP_ID"
             echo -e "\033[0;32m[INFO]\033[0m Using saved hApp from previous session: $HAPP_NAME"
         fi
     fi
+    if [ "$GATEWAY_EXPLICIT" = "false" ] && [ -f "$SANDBOX_DIR/gateway_type.txt" ]; then
+        SAVED_GATEWAY=$(cat "$SANDBOX_DIR/gateway_type.txt")
+        if [ -n "$SAVED_GATEWAY" ]; then
+            GATEWAY_TYPE="$SAVED_GATEWAY"
+            echo -e "\033[0;32m[INFO]\033[0m Using saved gateway from previous session: $GATEWAY_TYPE"
+        fi
+    fi
 fi
+
+# Configure gateway paths based on type
+configure_gateway() {
+    case "$GATEWAY_TYPE" in
+        gw-fork)
+            GATEWAY_DIR="$PROJECT_DIR/../hc-http-gw-fork"
+            GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-http-gw"
+            GATEWAY_PGREP_PATTERN="target/release/hc-http-gw$"
+            ;;
+        membrane)
+            GATEWAY_DIR="$PROJECT_DIR/../hc-membrane"
+            GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-membrane"
+            GATEWAY_PGREP_PATTERN="target/release/hc-membrane$"
+            ;;
+        *)
+            log_error "Unknown gateway type: $GATEWAY_TYPE (supported: gw-fork, membrane)"
+            exit 1
+            ;;
+    esac
+}
 
 # Configure paths based on hApp name
 configure_happ() {
+    # Configure gateway first (needed for fixture1 path)
+    configure_gateway
+
     case "$HAPP_NAME" in
         fixture1)
-            HAPP_PATH="$GATEWAY_DIR/fixture/package/happ1/fixture1.happ"
+            HAPP_PATH="$PROJECT_DIR/../hc-http-gw-fork/fixture/package/happ1/fixture1.happ"
             APP_ID="fixture1"
             # Zome names for fixture1
             COORDINATOR_ZOME="coordinator1"
@@ -95,6 +135,8 @@ configure_happ() {
     log_info "Using hApp: $HAPP_NAME"
     log_info "  Path: $HAPP_PATH"
     log_info "  App ID: $APP_ID"
+    log_info "Using gateway: $GATEWAY_TYPE"
+    log_info "  Binary: $GATEWAY_BINARY"
 }
 
 # Ports
@@ -431,10 +473,10 @@ start_conductor() {
 
 # Start gateway
 start_gateway() {
-    log_info "Starting hc-http-gw..."
+    log_info "Starting $GATEWAY_TYPE gateway..."
 
-    # Check if gateway is already running (match the binary path, not just any command containing the string)
-    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
+    # Check if gateway is already running
+    if pgrep -f "$GATEWAY_PGREP_PATTERN" > /dev/null 2>&1; then
         log_warn "Gateway already running"
         return 0
     fi
@@ -451,7 +493,7 @@ start_gateway() {
     fi
 
     # Build gateway if needed
-    if [ ! -f "$GATEWAY_DIR/target/release/hc-http-gw" ]; then
+    if [ ! -f "$GATEWAY_BINARY" ]; then
         log_info "Building gateway..."
         (cd "$GATEWAY_DIR" && cargo build --release)
     fi
@@ -475,23 +517,33 @@ start_gateway() {
     log_info "Kitsune2 bootstrap: $BOOTSTRAP_URL"
     log_info "Kitsune2 signal: $SIGNAL_URL"
 
-    # Configure allowed app IDs and functions based on hApp
-    local ALLOWED_APP_IDS="$APP_ID"
-    local ALLOWED_FNS_VAR="HC_GW_ALLOWED_FNS_${APP_ID}"
+    # Save gateway type for unpause
+    echo "$GATEWAY_TYPE" > gateway_type.txt
 
-    log_info "Allowed app IDs: $ALLOWED_APP_IDS"
+    if [ "$GATEWAY_TYPE" = "gw-fork" ]; then
+        # hc-http-gw-fork configuration
+        local ALLOWED_APP_IDS="$APP_ID"
+        log_info "Allowed app IDs: $ALLOWED_APP_IDS"
 
-    # Export the allowed functions variable dynamically
-    export "HC_GW_ALLOWED_FNS_${APP_ID}=*"
+        # Export the allowed functions variable dynamically
+        export "HC_GW_ALLOWED_FNS_${APP_ID}=*"
 
-    HC_GW_ADMIN_WS_URL="ws://localhost:$ACTUAL_ADMIN" \
-    HC_GW_PORT="$GATEWAY_PORT" \
-    HC_GW_ALLOWED_APP_IDS="$ALLOWED_APP_IDS" \
-    HC_GW_KITSUNE2_ENABLED="true" \
-    HC_GW_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
-    HC_GW_SIGNAL_URL="$SIGNAL_URL" \
-    RUST_LOG="info,holochain_http_gateway=debug" \
-    "$GATEWAY_DIR/target/release/hc-http-gw" > gateway.log 2>&1 &
+        HC_GW_ADMIN_WS_URL="ws://localhost:$ACTUAL_ADMIN" \
+        HC_GW_PORT="$GATEWAY_PORT" \
+        HC_GW_ALLOWED_APP_IDS="$ALLOWED_APP_IDS" \
+        HC_GW_KITSUNE2_ENABLED="true" \
+        HC_GW_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
+        HC_GW_SIGNAL_URL="$SIGNAL_URL" \
+        RUST_LOG="info,holochain_http_gateway=debug" \
+        "$GATEWAY_BINARY" > gateway.log 2>&1 &
+    else
+        # hc-membrane configuration (needs IP address, not hostname)
+        HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
+        HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
+        HC_MEMBRANE_SIGNAL_URL="$SIGNAL_URL" \
+        RUST_LOG="info,hc_membrane=debug" \
+        "$GATEWAY_BINARY" --port "$GATEWAY_PORT" > gateway.log 2>&1 &
+    fi
 
     GATEWAY_PID=$!
     echo "$GATEWAY_PID" > gateway.pid
@@ -538,10 +590,14 @@ pause_gateway() {
         fi
         rm -f gateway.pid
     else
-        # Also check by process name
+        # Also check by process name (both gateways)
         if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
-            log_info "Stopping gateway by process name..."
+            log_info "Stopping hc-http-gw by process name..."
             pkill -f "target/release/hc-http-gw$" || true
+        fi
+        if pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
+            log_info "Stopping hc-membrane by process name..."
+            pkill -f "target/release/hc-membrane$" || true
         fi
     fi
 
@@ -572,8 +628,9 @@ unpause_gateway() {
         exit 1
     fi
 
-    # Check if gateway already running
-    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
+    # Check if either gateway already running
+    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1 || \
+       pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
         log_warn "Gateway already running"
         return 0
     fi
@@ -675,9 +732,16 @@ show_status() {
         echo -e "Conductors: ${RED}NONE RUNNING${NC}"
     fi
 
-    # Check gateway (match the binary path, not just any command containing the string)
+    # Check gateway (both types)
+    local RUNNING_GATEWAY=""
     if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
-        echo -e "Gateway:   ${GREEN}RUNNING${NC} on port $GATEWAY_PORT"
+        RUNNING_GATEWAY="gw-fork"
+    elif pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
+        RUNNING_GATEWAY="membrane"
+    fi
+
+    if [ -n "$RUNNING_GATEWAY" ]; then
+        echo -e "Gateway:   ${GREEN}RUNNING${NC} ($RUNNING_GATEWAY) on port $GATEWAY_PORT"
     else
         echo -e "Gateway:   ${RED}STOPPED${NC}"
     fi
@@ -879,7 +943,7 @@ case "$COMMAND" in
         clean_sandbox
         ;;
     *)
-        echo "Usage: $0 {start|stop|pause|unpause|status|clean} [--happ=NAME]"
+        echo "Usage: $0 {start|stop|pause|unpause|status|clean} [--happ=NAME] [--gateway=TYPE]"
         echo ""
         echo "Commands:"
         echo "  start     Start conductor and gateway"
@@ -890,13 +954,15 @@ case "$COMMAND" in
         echo "  clean     Clean up sandbox data"
         echo ""
         echo "Options:"
-        echo "  --happ=NAME   Specify which hApp to use (fixture1 or ziptest, default: fixture1)"
+        echo "  --happ=NAME      Specify which hApp to use (fixture1 or ziptest, default: fixture1)"
+        echo "  --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)"
         echo ""
         echo "Examples:"
-        echo "  $0 start                    # Start with fixture1"
-        echo "  $0 start --happ=ziptest     # Start with ziptest"
-        echo "  $0 pause                    # Stop gateway, keep conductors"
-        echo "  $0 unpause                  # Restart gateway"
+        echo "  $0 start                                    # Start with fixture1 + gw-fork"
+        echo "  $0 start --happ=ziptest                     # Start with ziptest + gw-fork"
+        echo "  $0 start --happ=ziptest --gateway=membrane  # Start with ziptest + hc-membrane"
+        echo "  $0 pause                                    # Stop gateway, keep conductors"
+        echo "  $0 unpause                                  # Restart gateway"
         echo "  $0 stop"
         exit 1
         ;;
