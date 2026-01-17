@@ -371,7 +371,7 @@ describe('FishyAppClient', () => {
         });
 
       // Mock fetch for hApp bundle
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
       });

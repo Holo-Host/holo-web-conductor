@@ -82,7 +82,7 @@ describe('waitForFishy', () => {
   });
 
   it('clears timeout when fishy:ready event fires', async () => {
-    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
     const promise = waitForFishy(5000);
 
