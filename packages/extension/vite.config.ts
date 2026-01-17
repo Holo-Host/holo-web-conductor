@@ -47,11 +47,6 @@ export default defineConfig({
       "@fishy/shared": resolve(__dirname, "../shared/src"),
       "@fishy/core": resolve(__dirname, "../core/src"),
       "@fishy/lair": resolve(__dirname, "../lair/src"),
-      // Force CommonJS version of libsodium-wrappers to avoid ESM module resolution issues
-      "libsodium-wrappers": resolve(
-        __dirname,
-        "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-      ),
     },
   },
   plugins: [
@@ -86,10 +81,6 @@ export default defineConfig({
               "@fishy/shared": resolve(__dirname, "../shared/src"),
               "@fishy/core": resolve(__dirname, "../core/src"),
               "@fishy/lair": resolve(__dirname, "../lair/src"),
-              "libsodium-wrappers": resolve(
-                __dirname,
-                "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-              ),
             },
           },
         });
@@ -173,10 +164,6 @@ export default defineConfig({
               "@fishy/shared": resolve(__dirname, "../shared/src"),
               "@fishy/core": resolve(__dirname, "../core/src"),
               "@fishy/lair": resolve(__dirname, "../lair/src"),
-              "libsodium-wrappers": resolve(
-                __dirname,
-                "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-              ),
             },
           },
         });

@@ -23,12 +23,20 @@
     "e2e:test": "npx playwright test --config=packages/e2e/playwright.config.cjs"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
-    "vitest": "^2.0.0",
     "eslint": "^9.0.0",
-    "prettier": "^3.0.0"
+    "prettier": "^3.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "libsodium": "^0.8.0",
+    "libsodium-wrappers": "^0.8.0"
+  },
+  "overrides": {
+    "libsodium": "^0.8.0",
+    "libsodium-wrappers": "^0.8.0"
   }
 }

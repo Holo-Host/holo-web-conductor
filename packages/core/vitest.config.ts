@@ -4,7 +4,7 @@ import { resolve } from "path";
 export default defineConfig({
   resolve: {
     alias: {
-      // Force CommonJS version of libsodium-wrappers to avoid ESM module resolution issues
+      // Force CommonJS version of libsodium-wrappers - the ESM version has issues in vitest node environment
       "libsodium-wrappers": resolve(
         __dirname,
         "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"

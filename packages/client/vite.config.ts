@@ -4,24 +4,9 @@ import dts from 'vite-plugin-dts';
 import { resolve } from 'path';
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      // Force CommonJS version of libsodium-wrappers to avoid ESM module resolution issues
-      "libsodium-wrappers": resolve(
-        __dirname,
-        "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-      ),
-    },
-  },
   test: {
     environment: 'jsdom',
     globals: true,
-    server: {
-      deps: {
-        // Force vitest to inline libsodium to use the alias
-        inline: ['libsodium-wrappers', '@holochain/client'],
-      },
-    },
   },
   build: {
     lib: {
