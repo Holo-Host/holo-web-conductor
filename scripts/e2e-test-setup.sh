@@ -734,9 +734,9 @@ show_status() {
 
     # Check gateway (both types)
     local RUNNING_GATEWAY=""
-    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
+    if pgrep -f "target/release/hc-http-gw " > /dev/null 2>&1; then
         RUNNING_GATEWAY="gw-fork"
-    elif pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
+    elif pgrep -f "target/release/hc-membrane " > /dev/null 2>&1; then
         RUNNING_GATEWAY="membrane"
     fi
 
