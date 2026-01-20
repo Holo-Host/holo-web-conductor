@@ -495,13 +495,7 @@ start_gateway() {
     # Build gateway if needed
     if [ ! -f "$GATEWAY_BINARY" ]; then
         log_info "Building gateway..."
-        if [ "$GATEWAY_TYPE" = "membrane" ]; then
-            # Build hc-membrane with conductor-dht feature (uses conductor like http-gw)
-            # Direct kitsune2 wire protocol mode has issues with conductor responses
-            (cd "$GATEWAY_DIR" && cargo build --release --features conductor-dht)
-        else
-            (cd "$GATEWAY_DIR" && cargo build --release)
-        fi
+        (cd "$GATEWAY_DIR" && cargo build --release)
     fi
 
     # Start gateway with kitsune2 enabled for remote signal testing
