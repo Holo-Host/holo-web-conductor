@@ -122,7 +122,8 @@ export class SyncXHRNetworkService implements NetworkService {
   private buildLinksUrl(
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
-    linkType?: number
+    linkType?: number,
+    zomeIndex?: number
   ): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
@@ -130,6 +131,9 @@ export class SyncXHRNetworkService implements NetworkService {
     params.set('base', baseB64);
     if (linkType !== undefined) {
       params.set('type', linkType.toString());
+    }
+    if (zomeIndex !== undefined) {
+      params.set('zome_index', zomeIndex.toString());
     }
     return `${this.gatewayUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
   }
@@ -352,13 +356,14 @@ export class SyncXHRNetworkService implements NetworkService {
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,
+    zomeIndex?: number,
     options?: NetworkFetchOptions
   ): NetworkLink[] {
-    const url = this.buildLinksUrl(dnaHash, baseAddress, linkType);
+    const url = this.buildLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
     log.info(`🔗 Fetching links from gateway: ${url}`);
-    log.info(`🔗 Base address: ${this.toHolochainBase64(baseAddress)}, linkType: ${linkType}`);
+    log.info(`🔗 Base address: ${this.toHolochainBase64(baseAddress)}, linkType: ${linkType}, zomeIndex: ${zomeIndex}`);
 
     try {
       const xhr = new XMLHttpRequest();

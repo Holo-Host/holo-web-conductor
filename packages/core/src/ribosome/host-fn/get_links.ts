@@ -42,30 +42,43 @@ interface Link {
 }
 
 /**
- * Parse LinkTypeFilter from WASM input format to gateway-encoded format
+ * Parsed link type filter with separate zome_index and link_type
+ */
+export interface ParsedLinkTypeFilter {
+  zomeIndex?: number;
+  linkType?: number;
+}
+
+/**
+ * Parse LinkTypeFilter from WASM input format
  *
  * Holochain LinkTypeFilter enum serializes as:
  * - {"Types": [[zome_index, [link_type, ...]], ...]} - match specific types
  * - {"Dependencies": [zome_index, ...]} - match all types from zomes
  * - number - simple link type (legacy/simplified format)
  *
- * Gateway expects encoded format: (zome_index << 8) | link_type
+ * Returns separate zomeIndex and linkType for gateway query parameters
  */
-function parseLinkTypeFilter(linkType: unknown): number | undefined {
+function parseLinkTypeFilter(linkType: unknown): ParsedLinkTypeFilter {
   if (typeof linkType === 'number') {
-    return linkType;
+    // Legacy format - just a link type number without zome context
+    return { linkType };
   } else if (typeof linkType === 'object' && linkType !== null) {
     const lt = linkType as { Types?: Array<[number, number[]]>; Dependencies?: number[] };
     if (lt.Types && Array.isArray(lt.Types) && lt.Types.length > 0) {
       const [zomeIndex, linkTypes] = lt.Types[0];
       if (Array.isArray(linkTypes) && linkTypes.length > 0) {
-        // Encode as (zome_index << 8) | link_type for gateway query
-        return (zomeIndex << 8) | linkTypes[0];
+        return { zomeIndex, linkType: linkTypes[0] };
       }
+      // Has zome index but no link types - return just zome index (all types from that zome)
+      return { zomeIndex };
     }
-    // 'Dependencies' means all types from specified zomes, so leave undefined
+    if (lt.Dependencies && Array.isArray(lt.Dependencies) && lt.Dependencies.length > 0) {
+      // Dependencies - return first zome index, no specific link type
+      return { zomeIndex: lt.Dependencies[0] };
+    }
   }
-  return undefined;
+  return {};
 }
 
 /**

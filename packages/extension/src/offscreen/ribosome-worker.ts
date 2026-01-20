@@ -963,13 +963,16 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Build URL for fetching links
    */
-  private buildLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number): string {
+  private buildLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
     params.set('base', baseB64);
     if (linkType !== undefined) {
       params.set('type', linkType.toString());
+    }
+    if (zomeIndex !== undefined) {
+      params.set('zome_index', zomeIndex.toString());
     }
     return `${gatewayUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
   }
@@ -1114,12 +1117,12 @@ class ProxyNetworkService implements NetworkService {
     }
   }
 
-  getLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, options?: any): any[] {
+  getLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number, options?: any): any[] {
     if (!gatewayUrl) {
       return [];
     }
 
-    const url = this.buildLinksUrl(dnaHash, baseAddress, linkType);
+    const url = this.buildLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
     console.log(`[ProxyNetwork] Fetching links: ${url}`);
 
     try {

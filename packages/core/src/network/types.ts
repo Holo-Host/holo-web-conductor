@@ -91,11 +91,13 @@ export interface NetworkService {
   /**
    * Fetch links by base address (synchronous version)
    * Returns empty array if none found
+   * @param zomeIndex - Optional zome index for filtering. Required when linkType is specified.
    */
   getLinksSync(
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,
+    zomeIndex?: number,
     options?: NetworkFetchOptions
   ): NetworkLink[];
 

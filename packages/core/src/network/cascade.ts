@@ -40,6 +40,14 @@ export interface CascadeOptions {
   cacheNetworkResults?: boolean;
 }
 
+/**
+ * Link type filter with separate zome_index and link_type
+ */
+export interface LinkTypeFilter {
+  zomeIndex?: number;
+  linkType?: number;
+}
+
 const DEFAULT_OPTIONS: Required<CascadeOptions> = {
   useNetwork: true,
   cacheNetworkResults: true,
@@ -350,7 +358,7 @@ export class Cascade {
    * @param dnaHash - DNA hash for network requests
    * @param agentPubKey - Agent public key for storage lookup
    * @param baseAddress - Base address to fetch links for
-   * @param linkType - Optional link type filter
+   * @param filter - Optional link type filter with zomeIndex and linkType
    * @param options - Cascade options
    * @returns Array of links (may be empty)
    */
@@ -358,25 +366,25 @@ export class Cascade {
     dnaHash: DnaHash,
     agentPubKey: Uint8Array,
     baseAddress: AnyDhtHash,
-    linkType?: number,
+    filter?: LinkTypeFilter,
     options?: CascadeOptions
   ): NetworkLink[] {
     const opts = { ...this.options, ...options };
 
     log.debug(` Fetching links for base: ${this.hashToBase64(baseAddress)}`);
 
-    // linkType is encoded as (zome_index << 8) | link_type for gateway queries
-    // Local storage needs just the raw link_type (lower 8 bits)
-    const rawLinkType = linkType !== undefined ? (linkType & 0xFF) : undefined;
+    // Extract zomeIndex and linkType from filter
+    const zomeIndex = filter?.zomeIndex;
+    const linkType = filter?.linkType;
 
-    log.debug(` linkType encoded=${linkType}, raw=${rawLinkType}`);
+    log.debug(` linkType filter: zomeIndex=${zomeIndex}, linkType=${linkType}`);
 
     // Collect links from all sources
     const allLinks: NetworkLink[] = [];
 
-    // 1. Try local storage (always synchronous) - use raw link_type
-    log.debug(` Querying local storage with base=${this.hashToBase64(baseAddress)}, linkType=${rawLinkType}`);
-    const localLinks = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, rawLinkType);
+    // 1. Try local storage (always synchronous)
+    log.debug(` Querying local storage with base=${this.hashToBase64(baseAddress)}, linkType=${linkType}`);
+    const localLinks = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, linkType);
     log.debug(` Local storage returned ${localLinks.length} links`);
 
     if (localLinks.length > 0) {
@@ -385,8 +393,8 @@ export class Cascade {
       allLinks.push(...localLinks.map(l => this.storedLinkToNetworkLink(l)));
     }
 
-    // 2. Try network cache - use raw link_type for cache key consistency
-    const cached = this.cache.getLinksSync(baseAddress, rawLinkType);
+    // 2. Try network cache
+    const cached = this.cache.getLinksSync(baseAddress, linkType);
     if (cached !== null && cached.length > 0) {
       log.debug(` Found ${cached.length} links in network cache`);
       // Merge with local, avoiding duplicates
@@ -398,11 +406,11 @@ export class Cascade {
     }
 
     // 3. Try network (if enabled) - ALWAYS fetch to get other agents' links
-    // Use full encoded linkType for gateway (includes zome_index)
+    // Pass both linkType and zomeIndex for gateway query
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      log.info(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, linkType=${linkType}`);
+      log.info(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, zomeIndex=${zomeIndex}, linkType=${linkType}`);
       try {
-        const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType);
+        const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType, zomeIndex);
         log.info(`🌐 Network returned ${networkLinks.length} links`);
         if (networkLinks.length > 0) {
           // Log each link for debugging
@@ -410,8 +418,7 @@ export class Cascade {
             log.info(`🌐 Network link ${i}: target=${this.hashToBase64(link.target)}, author=${this.hashToBase64(link.author)}`);
           });
           if (opts.cacheNetworkResults) {
-            // Cache with raw link_type for consistency with lookups
-            this.cache.cacheLinksSync(baseAddress, networkLinks, rawLinkType);
+            this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
           }
           // Merge with local, avoiding duplicates
           for (const link of networkLinks) {

@@ -92,12 +92,12 @@ configure_gateway() {
         gw-fork)
             GATEWAY_DIR="$PROJECT_DIR/../hc-http-gw-fork"
             GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-http-gw"
-            GATEWAY_PGREP_PATTERN="target/release/hc-http-gw$"
+            GATEWAY_PGREP_PATTERN="target/release/hc-http-gw"
             ;;
         membrane)
             GATEWAY_DIR="$PROJECT_DIR/../hc-membrane"
             GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-membrane"
-            GATEWAY_PGREP_PATTERN="target/release/hc-membrane$"
+            GATEWAY_PGREP_PATTERN="target/release/hc-membrane"
             ;;
         *)
             log_error "Unknown gateway type: $GATEWAY_TYPE (supported: gw-fork, membrane)"
@@ -495,7 +495,13 @@ start_gateway() {
     # Build gateway if needed
     if [ ! -f "$GATEWAY_BINARY" ]; then
         log_info "Building gateway..."
-        (cd "$GATEWAY_DIR" && cargo build --release)
+        if [ "$GATEWAY_TYPE" = "membrane" ]; then
+            # Build hc-membrane with conductor-dht feature (uses conductor like http-gw)
+            # Direct kitsune2 wire protocol mode has issues with conductor responses
+            (cd "$GATEWAY_DIR" && cargo build --release --features conductor-dht)
+        else
+            (cd "$GATEWAY_DIR" && cargo build --release)
+        fi
     fi
 
     # Start gateway with kitsune2 enabled for remote signal testing
@@ -733,10 +739,11 @@ show_status() {
     fi
 
     # Check gateway (both types)
+    # Note: hc-http-gw runs without args, hc-membrane runs with --port
     local RUNNING_GATEWAY=""
-    if pgrep -f "target/release/hc-http-gw " > /dev/null 2>&1; then
+    if pgrep -f "target/release/hc-http-gw" > /dev/null 2>&1; then
         RUNNING_GATEWAY="gw-fork"
-    elif pgrep -f "target/release/hc-membrane " > /dev/null 2>&1; then
+    elif pgrep -f "target/release/hc-membrane" > /dev/null 2>&1; then
         RUNNING_GATEWAY="membrane"
     fi
 

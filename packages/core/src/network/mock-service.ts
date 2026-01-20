@@ -111,11 +111,12 @@ export class MockNetworkService implements NetworkService {
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,
+    zomeIndex?: number,
     options?: NetworkFetchOptions
   ): NetworkLink[] {
     this.callLog.push({
       method: 'getLinksSync',
-      args: [dnaHash, baseAddress, linkType, options],
+      args: [dnaHash, baseAddress, linkType, zomeIndex, options],
     });
 
     if (!this.available) {
