@@ -38,4 +38,7 @@ web-ext-artifacts/
 
 # Holochain sandbox
 .hc-sandbox/
-.playwright-user-data/
+
+# Playwright test artifacts
+.playwright-user-data*/
+packages/e2e/test-results/
