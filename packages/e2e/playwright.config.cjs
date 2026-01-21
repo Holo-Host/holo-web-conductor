@@ -1,0 +1,47 @@
+// @ts-check
+const { defineConfig, devices } = require('@playwright/test');
+const path = require('path');
+
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const EXTENSION_PATH = path.join(PROJECT_ROOT, 'packages', 'extension', 'dist');
+
+/**
+ * Playwright configuration for Fishy E2E tests
+ */
+module.exports = defineConfig({
+  testDir: './tests',
+  fullyParallel: false,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: 1,
+  reporter: [
+    ['list'],
+    ['json', { outputFile: 'test-results/results.json' }],
+  ],
+  timeout: 60000,
+
+  use: {
+    headless: false,
+    trace: 'on-first-retry',
+    video: 'on-first-retry',
+  },
+
+  projects: [
+    {
+      name: 'chromium-extension',
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: [
+            `--disable-extensions-except=${EXTENSION_PATH}`,
+            `--load-extension=${EXTENSION_PATH}`,
+            '--no-first-run',
+            '--disable-default-apps',
+          ],
+        },
+      },
+    },
+  ],
+
+  outputDir: 'test-results/',
+});

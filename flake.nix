@@ -2,7 +2,7 @@
   description = "Flake for Holochain HTTP Gateway";
 
   inputs = {
-    holonix.url = "github:holochain/holonix?ref=main";
+    holonix.url = "github:holochain/holonix?ref=main-0.6";
 
     nixpkgs.follows = "holonix/nixpkgs";
     flake-parts.follows = "holonix/flake-parts";
@@ -33,6 +33,7 @@
               pkgs.perl
               pkgs.go
               pkgs.cmake
+              pkgs.nodejs_22  # Node 22 for Playwright ESM support
               rustFromFile
             ];
 

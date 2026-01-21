@@ -38,3 +38,4 @@ web-ext-artifacts/
 
 # Holochain sandbox
 .hc-sandbox/
+.playwright-user-data/

@@ -51,6 +51,7 @@
 | 14.3 | ✅ | Enhanced FishyAppClient |
 | 14.4 | ✅ | Extension API Enhancements |
 | 15 | 📋 | Robust Publish Verification |
+| 16 | ⏳ | E2E Debugging Automation |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
@@ -90,6 +91,18 @@ Ensure publishing only proceeds when network connectivity is verified:
 - Replace current 2-second delay heuristic with actual peer verification
 
 **Background**: Currently auto-retry on reconnect uses a 2-second delay to hope agent registration propagates. This should verify actual peer connectivity instead.
+
+### Step 16: E2E Debugging Automation
+**Priority**: High (developer productivity)
+**Status**: In Progress
+
+Enable Claude to run e2e tests programmatically without manual intervention:
+- Playwright-based test runner with extension loading
+- Environment manager wrapping e2e-test-setup.sh
+- Log aggregation from gateway/conductor/extension
+- Structured JSON output for programmatic parsing
+
+See [16_PLAN.md](./16_PLAN.md)
 
 ---
 

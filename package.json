@@ -16,7 +16,11 @@
     "test:unit": "vitest run --exclude 'packages/core/src/ribosome/integration.test.ts'",
     "test:watch": "vitest watch",
     "lint": "npm run lint --workspaces",
-    "clean": "npm run clean --workspaces"
+    "clean": "npm run clean --workspaces",
+    "e2e": "npx tsx packages/e2e/src/index.ts",
+    "e2e:env": "npx tsx packages/e2e/src/index.ts env",
+    "e2e:logs": "npx tsx packages/e2e/src/index.ts logs",
+    "e2e:test": "npx playwright test --config=packages/e2e/playwright.config.cjs"
   },
   "devDependencies": {
     "typescript": "^5.3.0",

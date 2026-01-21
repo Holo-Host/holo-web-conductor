@@ -30,7 +30,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 GATEWAY_DIR="$(cd "$PROJECT_DIR/../hc-http-gw-fork" && pwd)"
-SANDBOX_DIR="$PROJECT_DIR/.hc-sandbox"
+# Use /tmp for sandbox to avoid Unix socket path length limits (SUN_LEN ~108 chars)
+SANDBOX_DIR="/tmp/fishy-e2e"
 
 # Default hApp configuration
 HAPP_NAME="fixture1"
