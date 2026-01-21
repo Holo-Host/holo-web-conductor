@@ -55,4 +55,11 @@ export default defineConfig({
   // Global setup/teardown
   globalSetup: undefined, // Environment is managed by TestRunner
   globalTeardown: undefined,
+
+  // Serve test page via HTTP to avoid file:// URL issues with Chrome extension
+  webServer: {
+    command: `npx http-server ${join(PROJECT_ROOT, 'packages', 'extension', 'test')} -p 3333 --cors -c-1`,
+    url: 'http://localhost:3333',
+    reuseExistingServer: !process.env.CI,
+  },
 });

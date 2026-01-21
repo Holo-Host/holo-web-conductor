@@ -19,7 +19,8 @@ const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
 const SANDBOX_DIR = '/tmp/fishy-e2e';
-const TEST_PAGE = join(PROJECT_ROOT, 'packages', 'extension', 'test', 'e2e-gateway-test.html');
+// Use HTTP URL to avoid file:// issues with Chrome extension signal delivery
+const TEST_PAGE_URL = 'http://localhost:3333/e2e-gateway-test.html';
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
 
 export interface FishyFixtures {
@@ -164,7 +165,7 @@ export const test = base.extend<FishyFixtures>({
 
   testPage: async ({ extensionContext }, use) => {
     const page = await extensionContext.newPage();
-    await page.goto(`file://${TEST_PAGE}`);
+    await page.goto(TEST_PAGE_URL);
     // Wait for extension to be detected
     await page.waitForFunction(() => (window as any).holochain?.isFishy, {
       timeout: 10000,

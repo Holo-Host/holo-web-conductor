@@ -44,4 +44,11 @@ module.exports = defineConfig({
   ],
 
   outputDir: 'test-results/',
+
+  // Serve test page via HTTP to avoid file:// URL issues with Chrome extension
+  webServer: {
+    command: `npx http-server ${path.join(PROJECT_ROOT, 'packages', 'extension', 'test')} -p 3333 --cors -c-1`,
+    url: 'http://localhost:3333',
+    reuseExistingServer: !process.env.CI,
+  },
 });
