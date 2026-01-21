@@ -7,12 +7,16 @@
  * - Get details cascade
  */
 
-import { test, expect, connectAndConfigure, decodeHashFromB64 } from './fixtures.js';
+import { test, expect, connectAndConfigure, decodeHashFromB64, ensureHappInstalled } from './fixtures.js';
 
 test.describe('Network Cascade', () => {
-  test.beforeEach(async ({ testPage, gatewayUrl }) => {
+  test.beforeEach(async ({ testPage, gatewayUrl, happPath, appId }) => {
     // Connect and configure gateway
     await connectAndConfigure(testPage, gatewayUrl);
+
+    // Ensure hApp is installed
+    await ensureHappInstalled(testPage, happPath, appId || 'fixture1');
+
     await testPage.waitForTimeout(500);
   });
 

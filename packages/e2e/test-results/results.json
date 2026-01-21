@@ -78,62 +78,47 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/cascade.test.ts",
-                        "line": 24,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1820,
+                      "status": "passed",
+                      "duration": 7718,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "[E2E] Authorization popup detected, auto-approving...\n"
+                          "text": "[E2E] Installing hApp from /home/eric/code/metacurrency/holochain/hc-http-gw-fork/fixture/package/happ1/fixture1.happ...\n"
                         },
                         {
-                          "text": "[E2E] Clicked approve button\n"
+                          "text": "[E2E] hApp fixture1 installed successfully\n"
                         },
                         {
-                          "text": "No known entry hash found in .hc-sandbox/known_entry.json\n"
+                          "text": "Fetching known entry: uhCEkQwsTsey94mZ2LHIM1JBUqggi8HFaXhhnMUI1C8I2E8Bd27rt\n"
                         },
                         {
-                          "text": "Run: ./scripts/e2e-test-setup.sh start\n"
+                          "text": "Network fetch completed in 702ms\n"
+                        },
+                        {
+                          "text": "Entry content: {\"entry_type\":\"App\",\"entry\":[129,165,118,97,108,117,101,165,102,105,115,104,121]}\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-20T22:33:33.669Z",
-                      "annotations": [
-                        {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/cascade.test.ts",
-                            "line": 24,
-                            "column": 12
-                          }
-                        }
-                      ],
+                      "startTime": "2026-01-21T16:27:46.876Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "d2cbf4807101c73a596a-9509e674ff96b5be34a9",
               "file": "cascade.test.ts",
-              "line": 19,
+              "line": 23,
               "column": 3
             },
             {
@@ -143,49 +128,44 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/cascade.test.ts",
-                        "line": 82,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1219,
+                      "status": "passed",
+                      "duration": 2095,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:35.511Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/cascade.test.ts",
-                            "line": 82,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "First fetch: 514ms\n"
+                        },
+                        {
+                          "text": "Second fetch: 21ms\n"
+                        },
+                        {
+                          "text": "Speedup: 24.5x\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:27:54.615Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "d2cbf4807101c73a596a-e96863feb65f0bda668f",
               "file": "cascade.test.ts",
-              "line": 79,
+              "line": 83,
               "column": 3
             },
             {
@@ -195,49 +175,47 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/cascade.test.ts",
-                        "line": 158,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1177,
+                      "status": "passed",
+                      "duration": 2094,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:36.745Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/cascade.test.ts",
-                            "line": 158,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Getting details for entry: uhCEkQwsTsey94mZ2LHIM1JBUqggi8HFaXhhnMUI1C8I2E8Bd27rt\n"
+                        },
+                        {
+                          "text": "Details type: Entry\n"
+                        },
+                        {
+                          "text": "Actions: \u001b[33m1\u001b[39m\n"
+                        },
+                        {
+                          "text": "Updates: \u001b[33m0\u001b[39m\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:27:56.722Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "d2cbf4807101c73a596a-eb9ac9f4f216585be34a",
               "file": "cascade.test.ts",
-              "line": 155,
+              "line": 159,
               "column": 3
             }
           ]
@@ -273,12 +251,16 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1196,
+                      "duration": 1555,
                       "errors": [],
-                      "stdout": [],
+                      "stdout": [
+                        {
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        }
+                      ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-20T22:33:37.943Z",
+                      "startTime": "2026-01-21T16:27:58.833Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -288,7 +270,7 @@
               ],
               "id": "4ef42922866c0e062e37-b704d06b8542e2d8eeca",
               "file": "dht-ops.test.ts",
-              "line": 22,
+              "line": 25,
               "column": 3
             },
             {
@@ -307,12 +289,16 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1188,
+                      "duration": 1531,
                       "errors": [],
-                      "stdout": [],
+                      "stdout": [
+                        {
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        }
+                      ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-20T22:33:39.147Z",
+                      "startTime": "2026-01-21T16:28:00.398Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -322,7 +308,7 @@
               ],
               "id": "4ef42922866c0e062e37-b7cf0d18a04cd1ce5fc5",
               "file": "dht-ops.test.ts",
-              "line": 29,
+              "line": 32,
               "column": 3
             },
             {
@@ -341,16 +327,19 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1200,
+                      "duration": 1619,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "No hApp installed yet\n"
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Found existing hApp: fixture1\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-20T22:33:40.344Z",
+                      "startTime": "2026-01-21T16:28:01.940Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -360,7 +349,7 @@
               ],
               "id": "4ef42922866c0e062e37-93d2febe103617a4c133",
               "file": "dht-ops.test.ts",
-              "line": 45,
+              "line": 48,
               "column": 3
             },
             {
@@ -370,49 +359,38 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                        "line": 79,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1174,
+                      "status": "passed",
+                      "duration": 2183,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:41.553Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                            "line": 79,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Created entry with hash: uhCkkzU1Nxpgc4YJipIjF3Y08s8s5Pf5BEKJYZ3h44XzroXkiJEcy\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:28:03.572Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4ef42922866c0e062e37-33a5660dc2794697f567",
               "file": "dht-ops.test.ts",
-              "line": 66,
+              "line": 69,
               "column": 3
             },
             {
@@ -422,49 +400,35 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                        "line": 109,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1180,
+                      "status": "passed",
+                      "duration": 2174,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:42.738Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                            "line": 109,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:28:05.769Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4ef42922866c0e062e37-38eddc2fde0357b94700",
               "file": "dht-ops.test.ts",
-              "line": 96,
+              "line": 99,
               "column": 3
             },
             {
@@ -474,49 +438,38 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                        "line": 161,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1209,
+                      "status": "passed",
+                      "duration": 2130,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:43.932Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                            "line": 161,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Found 2 entries\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:28:07.954Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4ef42922866c0e062e37-2505aed4affdd9b35033",
               "file": "dht-ops.test.ts",
-              "line": 148,
+              "line": 151,
               "column": 3
             },
             {
@@ -526,49 +479,38 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                        "line": 189,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1174,
+                      "status": "passed",
+                      "duration": 2085,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:45.154Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/dht-ops.test.ts",
-                            "line": 189,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Found 2 links\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:28:10.095Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4ef42922866c0e062e37-8af90e9dde481cfdb755",
               "file": "dht-ops.test.ts",
-              "line": 176,
+              "line": 179,
               "column": 3
             }
           ]
@@ -595,53 +537,38 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/signals.test.ts",
-                        "line": 33,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1175,
+                      "status": "passed",
+                      "duration": 1584,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "No hApp installed\n"
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Successfully subscribed to signals\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-20T22:33:46.343Z",
-                      "annotations": [
-                        {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/signals.test.ts",
-                            "line": 33,
-                            "column": 12
-                          }
-                        }
-                      ],
+                      "startTime": "2026-01-21T16:28:12.196Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4147590d878445c8bbfb-a82a255a52233ba477d9",
               "file": "signals.test.ts",
-              "line": 19,
+              "line": 23,
               "column": 3
             },
             {
@@ -651,53 +578,47 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/signals.test.ts",
-                        "line": 68,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1188,
+                      "status": "passed",
+                      "duration": 11578,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "No hApp installed\n"
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "DNA hash: uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii\n"
+                        },
+                        {
+                          "text": "Agent pubkey: uhCAkYQrn9-Px5u3nLDHQy8JukPPgGI0y8ayKcN28epiH5Ae23KEC\n"
+                        },
+                        {
+                          "text": "Signal not received within timeout\n"
+                        },
+                        {
+                          "text": "This may be expected if kitsune2 signal forwarding is not configured\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-01-20T22:33:47.529Z",
-                      "annotations": [
-                        {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/signals.test.ts",
-                            "line": 68,
-                            "column": 12
-                          }
-                        }
-                      ],
+                      "startTime": "2026-01-21T16:28:13.788Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4147590d878445c8bbfb-ef12fd4268fcfd7460ba",
               "file": "signals.test.ts",
-              "line": 54,
+              "line": 58,
               "column": 3
             },
             {
@@ -707,49 +628,38 @@
               "tests": [
                 {
                   "timeout": 60000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "location": {
-                        "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/signals.test.ts",
-                        "line": 183,
-                        "column": 12
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium-extension",
                   "projectName": "chromium-extension",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 1188,
+                      "status": "passed",
+                      "duration": 1523,
                       "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-01-20T22:33:48.727Z",
-                      "annotations": [
+                      "stdout": [
                         {
-                          "type": "skip",
-                          "location": {
-                            "file": "/home/eric/code/metacurrency/holochain/fishy-e2e-automation/packages/e2e/tests/signals.test.ts",
-                            "line": 183,
-                            "column": 12
-                          }
+                          "text": "[E2E] hApp fixture1 already installed\n"
+                        },
+                        {
+                          "text": "Test signal sent successfully\n"
                         }
                       ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-01-21T16:28:25.376Z",
+                      "annotations": [],
                       "attachments": []
                     }
                   ],
-                  "status": "skipped"
+                  "status": "expected"
                 }
               ],
               "id": "4147590d878445c8bbfb-e63e70c7b8a5924502ae",
               "file": "signals.test.ts",
-              "line": 170,
+              "line": 174,
               "column": 3
             }
           ]
@@ -759,10 +669,10 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-01-20T22:33:32.835Z",
-    "duration": 17108.005,
-    "expected": 3,
-    "skipped": 10,
+    "startTime": "2026-01-21T16:27:46.014Z",
+    "duration": 40917.962,
+    "expected": 13,
+    "skipped": 0,
     "unexpected": 0,
     "flaky": 0
   }

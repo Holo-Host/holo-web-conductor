@@ -285,9 +285,10 @@ start_conductor_instance() {
             # Save the admin port
             echo "$ACTUAL_ADMIN" > "$ADMIN_FILE"
 
-            # Save app ID for conductor 1 (primary)
+            # Save app ID and hApp path for conductor 1 (primary)
             if [ "$INDEX" -eq 1 ]; then
                 echo "$APP_ID" > app_id.txt
+                echo "$HAPP_PATH" > happ_path.txt
             fi
             return 0
         fi

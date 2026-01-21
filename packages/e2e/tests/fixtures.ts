@@ -18,7 +18,7 @@ const __dirname = dirname(__filename);
 
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
-const SANDBOX_DIR = join(PROJECT_ROOT, '.hc-sandbox');
+const SANDBOX_DIR = '/tmp/fishy-e2e';
 const TEST_PAGE = join(PROJECT_ROOT, 'packages', 'extension', 'test', 'e2e-gateway-test.html');
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
 
@@ -37,6 +37,8 @@ export interface FishyFixtures {
   knownEntryHash: string | null;
   /** App ID from sandbox */
   appId: string | null;
+  /** Path to hApp file */
+  happPath: string | null;
 }
 
 /**
@@ -83,10 +85,12 @@ async function readSandboxState(): Promise<{
   dnaHash: string | null;
   knownEntryHash: string | null;
   appId: string | null;
+  happPath: string | null;
 }> {
   let dnaHash: string | null = null;
   let knownEntryHash: string | null = null;
   let appId: string | null = null;
+  let happPath: string | null = null;
 
   try {
     dnaHash = (await readFile(join(SANDBOX_DIR, 'dna_hash.txt'), 'utf-8')).trim();
@@ -102,7 +106,11 @@ async function readSandboxState(): Promise<{
     appId = (await readFile(join(SANDBOX_DIR, 'app_id.txt'), 'utf-8')).trim();
   } catch {}
 
-  return { dnaHash, knownEntryHash, appId };
+  try {
+    happPath = (await readFile(join(SANDBOX_DIR, 'happ_path.txt'), 'utf-8')).trim();
+  } catch {}
+
+  return { dnaHash, knownEntryHash, appId, happPath };
 }
 
 /**
@@ -184,6 +192,11 @@ export const test = base.extend<FishyFixtures>({
     const { appId } = await readSandboxState();
     await use(appId);
   },
+
+  happPath: async ({}, use) => {
+    const { happPath } = await readSandboxState();
+    await use(happPath);
+  },
 });
 
 export { expect };
@@ -222,6 +235,47 @@ export async function installHapp(
     },
     { bundle: happArray, installedAppId: appId }
   );
+}
+
+/**
+ * Helper to ensure hApp is installed, installing if needed
+ */
+export async function ensureHappInstalled(
+  page: Page,
+  happPath: string | null,
+  appId: string = 'fixture1'
+): Promise<boolean> {
+  // Check if already installed
+  const hasApp = await page.evaluate(async (appId) => {
+    const holochain = (window as any).holochain;
+    try {
+      const info = await holochain.appInfo(appId);
+      return info?.cells?.length > 0;
+    } catch {
+      return false;
+    }
+  }, appId);
+
+  if (hasApp) {
+    console.log(`[E2E] hApp ${appId} already installed`);
+    return true;
+  }
+
+  // Need to install
+  if (!happPath) {
+    console.log('[E2E] No hApp path available, cannot install');
+    return false;
+  }
+
+  console.log(`[E2E] Installing hApp from ${happPath}...`);
+  try {
+    await installHapp(page, happPath, appId);
+    console.log(`[E2E] hApp ${appId} installed successfully`);
+    return true;
+  } catch (err) {
+    console.error('[E2E] Failed to install hApp:', err);
+    return false;
+  }
 }
 
 /**
