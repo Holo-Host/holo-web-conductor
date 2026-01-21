@@ -46,7 +46,7 @@ test.describe('Network Cascade', () => {
       return;
     }
 
-    console.log('Fetching known entry:', knownEntryHash);
+    console.log(`Fetching known entry: ${knownEntryHash}`);
     const hashBytes = decodeHashFromB64(knownEntryHash);
 
     const startTime = Date.now();
@@ -76,7 +76,7 @@ test.describe('Network Cascade', () => {
 
     // Verify entry content if present
     if (result.entry?.Present) {
-      console.log('Entry content:', JSON.stringify(result.entry.Present));
+      console.log(`Entry content: ${JSON.stringify(result.entry.Present)}`);
     }
   });
 
@@ -179,7 +179,7 @@ test.describe('Network Cascade', () => {
       return;
     }
 
-    console.log('Getting details for entry:', knownEntryHash);
+    console.log(`Getting details for entry: ${knownEntryHash}`);
     const hashBytes = decodeHashFromB64(knownEntryHash);
 
     const result = await testPage.evaluate(
@@ -200,10 +200,10 @@ test.describe('Network Cascade', () => {
     );
 
     if (result) {
-      console.log('Details type:', result.type);
+      console.log(`Details type: ${result.type}`);
       if (result.type === 'Entry') {
-        console.log('Actions:', result.content?.actions?.length || 0);
-        console.log('Updates:', result.content?.updates?.length || 0);
+        console.log(`Actions: ${result.content?.actions?.length || 0}`);
+        console.log(`Updates: ${result.content?.updates?.length || 0}`);
       }
     }
 

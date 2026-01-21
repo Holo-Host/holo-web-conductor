@@ -106,8 +106,8 @@ test.describe('Remote Signals', () => {
     const dnaHashB64 = encodeHashToB64(cellInfo.dnaHash);
     const agentB64 = encodeHashToB64(cellInfo.agentPubKey);
 
-    console.log('DNA hash:', dnaHashB64);
-    console.log('Agent pubkey:', agentB64);
+    console.log(`DNA hash: ${dnaHashB64}`);
+    console.log(`Agent pubkey: ${agentB64}`);
 
     // Set up signal listener and call ping
     const signalReceived = await testPage.evaluate(
@@ -255,7 +255,7 @@ test.describe('Remote Signals', () => {
     if (result.success) {
       console.log('Test signal sent successfully');
     } else {
-      console.log('Test signal endpoint may not be available:', result.error);
+      console.log(`Test signal endpoint may not be available: ${result.error}`);
     }
 
     // Test passes either way - endpoint may not exist

@@ -57,7 +57,7 @@ test.describe('DHT Operations', () => {
 
     // Log what we found
     if (appInfo?.cells?.length > 0) {
-      console.log('Found existing hApp:', appInfo.appName || appInfo.contextId);
+      console.log(`Found existing hApp: ${appInfo.appName || appInfo.contextId}`);
     } else {
       console.log('No hApp installed yet');
     }
@@ -93,7 +93,7 @@ test.describe('DHT Operations', () => {
     expect(result).toBeDefined();
     expect(result.created).toBeDefined();
 
-    console.log('Created entry with hash:', result.created);
+    console.log(`Created entry with hash: ${result.created}`);
   });
 
   test('should get record by hash', async ({ testPage, appId }) => {
