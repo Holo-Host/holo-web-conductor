@@ -146,6 +146,12 @@ async function checkGatewayHealth(): Promise<void> {
       lastChecked: Date.now(),
       lastError: response.ok ? undefined : `HTTP ${response.status}`,
     };
+
+    // Also sync WebSocket state from offscreen to ensure wsHealthy is accurate
+    // This catches cases where WS_STATE_CHANGE messages were missed
+    if (offscreenReady) {
+      syncWebSocketStateFromOffscreen();
+    }
   } catch (error) {
     connectionStatus = {
       httpHealthy: false,
@@ -206,6 +212,36 @@ function stopHealthChecks(): void {
   }
 }
 
+/**
+ * Sync WebSocket connection state from offscreen document.
+ * This ensures connectionStatus.wsHealthy is accurate after extension reload
+ * or when offscreen reconnects without sending WS_STATE_CHANGE.
+ */
+async function syncWebSocketStateFromOffscreen(): Promise<void> {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "GET_WS_STATE",
+    });
+
+    if (response?.success) {
+      const isConnected = response.isConnected || false;
+      const state = response.state || "disconnected";
+      const wasHealthy = connectionStatus.wsHealthy;
+      connectionStatus.wsHealthy = isConnected || state === "connected";
+
+      logGateway.debug(`Synced WebSocket state from offscreen: state=${state}, isConnected=${isConnected}, wsHealthy=${connectionStatus.wsHealthy}`);
+
+      if (wasHealthy !== connectionStatus.wsHealthy) {
+        notifyConnectionStatusChange();
+      }
+    }
+  } catch (error) {
+    // Offscreen might not be ready yet, ignore
+    logGateway.debug("Could not sync WebSocket state from offscreen:", error);
+  }
+}
+
 
 /**
  * Check if the offscreen document exists
@@ -228,6 +264,10 @@ function markOffscreenReady(): void {
     resolve();
   }
   offscreenReadyResolvers = [];
+
+  // Sync WebSocket state from offscreen to ensure connectionStatus.wsHealthy is accurate
+  // This handles cases where offscreen was already connected before background initialized
+  syncWebSocketStateFromOffscreen();
 }
 
 /**
@@ -325,6 +365,12 @@ async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionTo
     });
     networkConfigured = true;
     logGateway.info("Offscreen network configured");
+
+    // Sync WebSocket state after a short delay to allow connection to establish
+    // This ensures connectionStatus.wsHealthy is updated even if WS_STATE_CHANGE was missed
+    setTimeout(() => {
+      syncWebSocketStateFromOffscreen();
+    }, 1000);
   } catch (error) {
     logGateway.error("Failed to configure offscreen network:", error);
   }
@@ -2371,6 +2417,13 @@ chrome.runtime.onMessage.addListener(
 
       if (rawMessage.type === "WS_STATE_CHANGE") {
         logGateway.debug(`WebSocket state changed: ${rawMessage.state}`);
+        // Update wsHealthy based on WebSocket connection state
+        const wasHealthy = connectionStatus.wsHealthy;
+        connectionStatus.wsHealthy = rawMessage.state === "connected";
+        // Notify subscribers if status changed
+        if (wasHealthy !== connectionStatus.wsHealthy) {
+          notifyConnectionStatusChange();
+        }
         return false;
       }
 
