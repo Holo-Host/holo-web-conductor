@@ -338,3 +338,515 @@ export function encodeHashToB64(bytes: number[]): string {
   b64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return 'u' + b64;
 }
+
+// ============================================================================
+// Multi-Agent Testing Helpers (for ziptest and similar multi-agent scenarios)
+// ============================================================================
+
+import { existsSync, rmSync } from 'fs';
+
+const ZIPTEST_UI_URL = 'http://localhost:8081';
+
+/**
+ * Agent context containing a browser context and page for a single agent
+ */
+export interface AgentContext {
+  name: string;
+  context: BrowserContext;
+  page: Page;
+  userDataDir: string;
+}
+
+/**
+ * Create a persistent browser context for an agent with the extension loaded.
+ * Each agent gets its own user data directory for isolated IndexedDB storage.
+ */
+export async function createAgentContext(agentName: string): Promise<AgentContext> {
+  const userDataDir = join(PROJECT_ROOT, `.playwright-user-data-${agentName}`);
+
+  // Clean up any existing user data to start fresh
+  if (existsSync(userDataDir)) {
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    headless: false, // Extensions require headed mode
+    args: [
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+      '--no-first-run',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-background-networking',
+    ],
+    viewport: { width: 1280, height: 720 },
+  });
+
+  // Set up auto-approval for extension permission dialogs
+  setupAutoApproval(context);
+
+  // Wait for extension service worker to be ready
+  console.log(`[${agentName}] Waiting for extension service worker...`);
+  let extensionId = '';
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  while (!extensionId && attempts < maxAttempts) {
+    const serviceWorkers = context.serviceWorkers();
+    for (const worker of serviceWorkers) {
+      const url = worker.url();
+      const match = url.match(/chrome-extension:\/\/([a-z]{32})\//);
+      if (match) {
+        extensionId = match[1];
+        break;
+      }
+    }
+    if (!extensionId) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      attempts++;
+    }
+  }
+
+  if (!extensionId) {
+    console.warn(`[${agentName}] Could not find extension ID after ${maxAttempts} attempts`);
+  } else {
+    console.log(`[${agentName}] Extension ready: ${extensionId}`);
+  }
+
+  const page = await context.newPage();
+
+  return {
+    name: agentName,
+    context,
+    page,
+    userDataDir,
+  };
+}
+
+/**
+ * Clean up an agent context
+ */
+export async function cleanupAgentContext(agent: AgentContext): Promise<void> {
+  try {
+    await agent.context.close();
+  } catch {
+    // Ignore close errors
+  }
+}
+
+/**
+ * Wait for the extension to be ready by checking for the holochain API
+ */
+export async function waitForExtensionReady(page: Page, timeout = 10000): Promise<void> {
+  await page.waitForFunction(
+    () => (window as any).holochain?.isFishy === true,
+    { timeout }
+  );
+}
+
+/**
+ * Create a profile using the create-profile web component (shadow DOM)
+ * If a profile already exists (no create-profile component), skips creation.
+ */
+export async function createProfile(page: Page, nickname: string): Promise<void> {
+  console.log(`[createProfile] Starting for nickname: ${nickname}`);
+
+  // Check if we're already past the profile creation screen
+  // (profile might already exist from previous test run)
+  const hasController = await page.$('.test-type');
+  if (hasController) {
+    console.log(`[createProfile] Profile already exists, skipping creation`);
+    return;
+  }
+
+  // Wait for either create-profile component OR the controller (if profile exists)
+  try {
+    await page.waitForSelector('create-profile, .test-type', { timeout: 30000 });
+  } catch {
+    console.log(`[createProfile] Neither create-profile nor controller found`);
+    throw new Error('Could not find create-profile component or controller');
+  }
+
+  // Check again if controller appeared (profile already exists)
+  const controllerAppeared = await page.$('.test-type');
+  if (controllerAppeared) {
+    console.log(`[createProfile] Profile already exists (controller visible), skipping creation`);
+    return;
+  }
+
+  console.log(`[createProfile] Found create-profile component`);
+
+  // Give the component time to fully initialize
+  await page.waitForTimeout(1000);
+
+  // sl-input is a web component with shadow DOM containing the actual input
+  // We need to target the inner input element
+  const innerInputLocator = page.locator('create-profile sl-input input').first();
+
+  // Wait for the inner input to be visible
+  await innerInputLocator.waitFor({ state: 'visible', timeout: 10000 });
+  console.log(`[createProfile] Found inner input`);
+
+  // Click and fill the input
+  await innerInputLocator.click();
+  await innerInputLocator.fill(nickname);
+  console.log(`[createProfile] Filled nickname: ${nickname}`);
+
+  // Small delay to let the component react
+  await page.waitForTimeout(500);
+
+  // Find and click the submit button - sl-button also has shadow DOM
+  // We can click the sl-button directly since Playwright handles click events on custom elements
+  const buttonLocator = page.locator('create-profile sl-button').first();
+  await buttonLocator.waitFor({ state: 'visible', timeout: 5000 });
+  await buttonLocator.click();
+  console.log(`[createProfile] Clicked submit button`);
+
+  // Wait for Controller to load (indicates profile was created)
+  await page.waitForSelector('.test-type', { timeout: 60000 });
+  console.log(`[createProfile] Profile created successfully`);
+}
+
+/**
+ * Wait for another agent to appear in the people list.
+ * Waits for at least 1 active agent (not grayed out), excluding "Everybody".
+ */
+export async function waitForAgentVisible(
+  page: Page,
+  _agentNickname: string,
+  timeout = 60000
+): Promise<void> {
+  const startTime = Date.now();
+  const pollInterval = 2000;
+
+  while (Date.now() - startTime < timeout) {
+    const state = await page.evaluate(() => {
+      const persons = document.querySelectorAll('.person');
+      const details: Array<{ text: string; isActive: boolean }> = [];
+      let activeAgent: string | null = null;
+
+      for (const person of persons) {
+        const text = (person.textContent || '').trim();
+        // Skip Everybody - check if text starts with it
+        if (text.toLowerCase().startsWith('everybody')) continue;
+
+        // .person-inactive is a direct child div that indicates inactive status
+        const hasInactiveChild = !!person.querySelector('.person-inactive');
+        const isActive = !hasInactiveChild;
+        details.push({ text: text.substring(0, 20), isActive });
+
+        if (isActive && !activeAgent) {
+          activeAgent = text.substring(0, 20);
+        }
+      }
+
+      return { activeAgent, details, totalPersons: persons.length };
+    });
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    const agentSummary = state.details.map(d => `${d.text}(${d.isActive ? 'ACTIVE' : 'inactive'})`).join(', ');
+    console.log(`[waitForAgentVisible] ${elapsed}s: ${state.details.length} agents. ${agentSummary || 'none'}`);
+
+    if (state.activeAgent) {
+      console.log(`[waitForAgentVisible] SUCCESS: Found active agent "${state.activeAgent}" after ${elapsed}s`);
+      return;
+    }
+
+    await page.waitForTimeout(pollInterval);
+  }
+
+  throw new Error(`Timeout waiting for active agent after ${timeout}ms`);
+}
+
+/**
+ * Wait for an agent to become active (not grayed out)
+ * Active status is determined by ping responses (30s intervals)
+ * This is now the same as waitForAgentVisible since it already waits for active.
+ */
+export async function waitForAgentActive(
+  page: Page,
+  agentNickname: string,
+  timeout = 120000
+): Promise<void> {
+  await waitForAgentVisible(page, agentNickname, timeout);
+}
+
+/**
+ * Navigate to the Entries tab
+ */
+export async function navigateToEntries(page: Page): Promise<void> {
+  await page.click('.test-type:has-text("Entries")');
+  // Wait for the ThingsPane to load
+  await page.waitForSelector('.send-controls', { timeout: 10000 });
+}
+
+/**
+ * Navigate to the Signals tab
+ */
+export async function navigateToSignals(page: Page): Promise<void> {
+  await page.click('.test-type:has-text("Signals")');
+}
+
+/**
+ * Click on the first active agent in the people list.
+ * Ignores the nickname parameter - just clicks the first non-grayed, non-Everybody agent.
+ * Waits for the StreamPane to appear after clicking.
+ */
+export async function selectAgent(
+  page: Page,
+  _agentNickname: string
+): Promise<void> {
+  console.log('[selectAgent] Looking for active agent...');
+
+  // Find and click the first active agent (excluding Everybody)
+  const result = await page.evaluate(() => {
+    const persons = document.querySelectorAll('.person');
+    for (const person of persons) {
+      const text = person.textContent?.trim() || '';
+      // Skip the "Everybody" broadcast option
+      if (text.toLowerCase().startsWith('everybody')) continue;
+
+      const hasInactiveChild = !!person.querySelector('.person-inactive');
+      if (!hasInactiveChild) {
+        (person as HTMLElement).click();
+        return { clicked: true, agent: text.substring(0, 20) };
+      }
+    }
+    return { clicked: false, agent: null };
+  });
+
+  if (!result.clicked) {
+    throw new Error('No active agent found (excluding Everybody)');
+  }
+  console.log(`[selectAgent] Clicked on agent: ${result.agent}`);
+
+  // Wait for the StreamPane to appear (contains .send-controls)
+  console.log('[selectAgent] Waiting for StreamPane to load...');
+  await page.waitForSelector('.send-controls', { timeout: 10000 });
+  console.log('[selectAgent] StreamPane loaded');
+}
+
+/**
+ * Create a new entry test with specified parameters.
+ * Sets Count input (2nd sl-input in .send-controls) then clicks New Test.
+ */
+export async function createEntryTest(
+  page: Page,
+  options: { count?: number } = {}
+): Promise<void> {
+  const { count = 10 } = options;
+
+  console.log(`[createEntryTest] Setting count to ${count}...`);
+
+  // The inputs in .send-controls are: Reps (0), Count (1), Delay (2)
+  // Set the Count input (index 1)
+  await page.evaluate((countValue) => {
+    const sendControls = document.querySelector('.send-controls');
+    if (!sendControls) throw new Error('No .send-controls found');
+
+    const inputs = sendControls.querySelectorAll('sl-input');
+    if (inputs.length < 2) throw new Error(`Only ${inputs.length} inputs found`);
+
+    // Count is the 2nd input (index 1)
+    const countInput = inputs[1] as any;
+    countInput.value = String(countValue);
+  }, count);
+
+  console.log('[createEntryTest] Clicking New Test button...');
+
+  // Check if button is visible
+  const buttonVisible = await page.isVisible('sl-button:has-text("New Test")');
+  console.log(`[createEntryTest] New Test button visible: ${buttonVisible}`);
+
+  if (!buttonVisible) {
+    // Debug: show what buttons are available
+    const buttons = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('sl-button')).map(b => b.textContent?.trim());
+    });
+    console.log('[createEntryTest] Available buttons:', buttons);
+  }
+
+  // Click New Test button
+  await page.click('sl-button:has-text("New Test")');
+  console.log('[createEntryTest] Clicked New Test');
+
+  // Wait for test to appear in the list
+  console.log('[createEntryTest] Waiting for test to appear...');
+  await page.waitForSelector('.bunch-item', { timeout: 30000 });
+  console.log('[createEntryTest] Test created');
+}
+
+/**
+ * Select a test from the test list by creator name and wait for details to load.
+ * Handles toggle behavior - if already selected, doesn't click again.
+ * @param creatorName - The nickname of the test creator to match
+ */
+export async function selectTest(page: Page, creatorName: string): Promise<void> {
+  console.log(`[selectTest] Looking for test created by "${creatorName}"...`);
+
+  // Find and click the LATEST test by the creator (unless already selected)
+  const result = await page.evaluate((name) => {
+    const items = document.querySelectorAll('.bunch-item');
+    let latestItem: Element | null = null;
+    let latestTimestamp = '';
+
+    for (const item of items) {
+      const text = item.textContent || '';
+      // Test names are formatted as "nickname:timestamp"
+      if (text.toLowerCase().startsWith(name.toLowerCase() + ':')) {
+        // Extract timestamp (everything after the first colon)
+        const timestamp = text.substring(text.indexOf(':') + 1).trim();
+        if (timestamp > latestTimestamp) {
+          latestTimestamp = timestamp;
+          latestItem = item;
+        }
+      }
+    }
+
+    if (latestItem) {
+      const text = latestItem.textContent || '';
+      const isSelected = latestItem.classList.contains('selected');
+      if (!isSelected) {
+        (latestItem as HTMLElement).click();
+        return { success: true, clicked: true, text: text.substring(0, 50) };
+      } else {
+        return { success: true, clicked: false, text: text.substring(0, 50), alreadySelected: true };
+      }
+    }
+
+    // Return list of available tests for debugging
+    const available = Array.from(items).map(i => i.textContent?.substring(0, 30));
+    return { success: false, available };
+  }, creatorName);
+
+  if (!result.success) {
+    throw new Error(`No test found created by "${creatorName}". Available: ${JSON.stringify((result as any).available)}`);
+  }
+
+  if ((result as any).alreadySelected) {
+    console.log(`[selectTest] Test already selected: ${(result as any).text}`);
+  } else {
+    console.log(`[selectTest] Clicked test: ${(result as any).text}`);
+  }
+
+  // Wait for Bunch details to load
+  console.log(`[selectTest] Waiting for bunch details to load...`);
+
+  // Debug: check what's on the page
+  const pageState = await page.evaluate(() => {
+    return {
+      hasBunchContent: !!document.querySelector('.bunch-content'),
+      hasBunch: !!document.querySelector('.bunch'),
+      bunchItems: document.querySelectorAll('.bunch-item').length,
+      selectedItem: document.querySelector('.bunch-item.selected')?.textContent?.substring(0, 30)
+    };
+  });
+  console.log(`[selectTest] Page state:`, pageState);
+
+  await page.waitForSelector('.bunch-content', { timeout: 30000 });
+
+  // Also wait for loading skeleton to disappear
+  await page.waitForFunction(
+    () => !document.querySelector('.bunch-content sl-skeleton'),
+    { timeout: 30000 }
+  );
+  console.log(`[selectTest] Bunch details loaded`);
+}
+
+/**
+ * Start running a test (as the test creator)
+ */
+export async function startTest(page: Page): Promise<void> {
+  console.log('[startTest] Waiting for Start Test button...');
+
+  // Debug: Log what's in the bunch content
+  const bunchContent = await page.evaluate(() => {
+    const content = document.querySelector('.bunch-content');
+    return {
+      text: content?.textContent?.trim().substring(0, 200),
+      buttons: Array.from(document.querySelectorAll('.bunch-content sl-button')).map(b => b.textContent?.trim())
+    };
+  });
+  console.log('[startTest] Bunch content:', bunchContent);
+
+  await page.waitForSelector('sl-button:has-text("Start Test")', { timeout: 30000 });
+  await page.click('sl-button:has-text("Start Test")');
+  console.log('[startTest] Clicked Start Test');
+}
+
+/**
+ * Watch a test (as an observer)
+ */
+export async function watchTest(page: Page): Promise<void> {
+  console.log('[watchTest] Waiting for Watch Test button...');
+
+  // Debug: Log what's in the bunch content
+  const bunchContent = await page.evaluate(() => {
+    const content = document.querySelector('.bunch-content');
+    return {
+      text: content?.textContent?.trim().substring(0, 200),
+      buttons: Array.from(document.querySelectorAll('.bunch-content sl-button')).map(b => b.textContent?.trim())
+    };
+  });
+  console.log('[watchTest] Bunch content:', bunchContent);
+
+  await page.waitForSelector('sl-button:has-text("Watch Test")', { timeout: 30000 });
+  await page.click('sl-button:has-text("Watch Test")');
+  console.log('[watchTest] Clicked Watch Test');
+}
+
+/**
+ * Wait for test completion message: "All X entries found after Y seconds."
+ */
+export async function waitForTestCompletion(page: Page, timeout = 120000): Promise<void> {
+  console.log('[waitForTestCompletion] Waiting for completion...');
+  await page.waitForSelector('text=/All \\d+ entries found/', { timeout });
+  console.log('[waitForTestCompletion] Test completed');
+}
+
+/**
+ * Start a signal test with specified parameters.
+ * Assumes the Signals tab is already selected and an agent is selected.
+ */
+export async function startSignalTest(
+  page: Page,
+  options: { count?: number; delay?: number } = {}
+): Promise<void> {
+  const { count = 3, delay = 500 } = options;
+
+  console.log('[startSignalTest] Starting...');
+
+  // Fill in test parameters using position-based selection within .send-controls
+  // StreamPane inputs: Count (index 0), Delay (index 1)
+  await page.evaluate(({ count, delay }) => {
+    const sendControls = document.querySelector('.send-controls');
+    if (!sendControls) throw new Error('No .send-controls found');
+
+    const inputs = sendControls.querySelectorAll('sl-input');
+    if (inputs.length < 2) throw new Error(`Only ${inputs.length} inputs found in .send-controls`);
+
+    // Count is index 0, Delay is index 1
+    (inputs[0] as any).value = String(count);
+    (inputs[1] as any).value = String(delay);
+  }, { count, delay });
+  console.log(`[startSignalTest] Set count=${count}, delay=${delay}`);
+
+  // Click Start Test button
+  console.log('[startSignalTest] Looking for Start Test button...');
+  const buttonVisible = await page.isVisible('sl-button:has-text("Start Test")');
+  console.log('[startSignalTest] Start Test button visible:', buttonVisible);
+
+  if (!buttonVisible) {
+    // List all sl-buttons for debugging
+    const buttons = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('sl-button')).map(b => b.textContent?.trim());
+    });
+    console.log('[startSignalTest] Available buttons:', buttons);
+  }
+
+  await page.click('sl-button:has-text("Start Test")');
+  console.log('[startSignalTest] Clicked Start Test button');
+}
+
+// Export ziptest URL for tests
+export { ZIPTEST_UI_URL };
