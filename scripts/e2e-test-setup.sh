@@ -144,6 +144,10 @@ ADMIN_PORT=8888
 APP_PORT=8889
 GATEWAY_PORT=8000
 BOOTSTRAP_PORT=0  # 0 = auto-assign
+ZIPTEST_UI_PORT=8081
+
+# Ziptest UI directory
+ZIPTEST_UI_DIR="$PROJECT_DIR/../ziptest/ui"
 
 # Number of conductors to run (need 2 for full arc establishment)
 NUM_CONDUCTORS=2
@@ -552,6 +556,10 @@ start_gateway() {
     for i in {1..10}; do
         if curl -s "http://localhost:$GATEWAY_PORT/health" > /dev/null 2>&1; then
             log_info "Gateway started on port $GATEWAY_PORT"
+
+            # Note: kitsune readiness check removed - the gateway discovers peers
+            # only after browsers connect. For conductor-dht mode, DHT queries go
+            # through the conductor anyway, which is already ready.
             return 0
         fi
         sleep 1
@@ -566,6 +574,64 @@ start_gateway() {
     log_error "Gateway failed to start. Check gateway.log"
     cat gateway.log
     exit 1
+}
+
+# Start ziptest UI server (only for ziptest hApp)
+start_ziptest_ui() {
+    if [ "$HAPP_NAME" != "ziptest" ]; then
+        return 0
+    fi
+
+    log_info "Starting ziptest UI server..."
+
+    # Check if UI directory exists
+    if [ ! -d "$ZIPTEST_UI_DIR" ]; then
+        log_error "Ziptest UI directory not found: $ZIPTEST_UI_DIR"
+        exit 1
+    fi
+
+    # Check if dist directory exists
+    if [ ! -d "$ZIPTEST_UI_DIR/dist" ]; then
+        log_warn "Ziptest UI dist not found, building..."
+        (cd "$ZIPTEST_UI_DIR" && npm run build)
+    fi
+
+    # Check if already running
+    if pgrep -f "python3 -m http.server $ZIPTEST_UI_PORT" > /dev/null 2>&1; then
+        log_warn "Ziptest UI server already running on port $ZIPTEST_UI_PORT"
+        return 0
+    fi
+
+    cd "$ZIPTEST_UI_DIR"
+    python3 -m http.server "$ZIPTEST_UI_PORT" -d dist > "$SANDBOX_DIR/ziptest-ui.log" 2>&1 &
+    ZIPTEST_UI_PID=$!
+    echo "$ZIPTEST_UI_PID" > "$SANDBOX_DIR/ziptest-ui.pid"
+
+    # Wait for server to start
+    for i in {1..10}; do
+        if curl -s "http://localhost:$ZIPTEST_UI_PORT" > /dev/null 2>&1; then
+            log_info "Ziptest UI server started on port $ZIPTEST_UI_PORT"
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    log_error "Ziptest UI server failed to start. Check $SANDBOX_DIR/ziptest-ui.log"
+    exit 1
+}
+
+# Stop ziptest UI server
+stop_ziptest_ui() {
+    if [ -f "$SANDBOX_DIR/ziptest-ui.pid" ]; then
+        ZIPTEST_UI_PID=$(cat "$SANDBOX_DIR/ziptest-ui.pid")
+        if kill -0 "$ZIPTEST_UI_PID" 2>/dev/null; then
+            log_info "Stopping ziptest UI server (PID $ZIPTEST_UI_PID)..."
+            kill "$ZIPTEST_UI_PID" 2>/dev/null || true
+        fi
+        rm -f "$SANDBOX_DIR/ziptest-ui.pid"
+    fi
+    # Also check by process name
+    pkill -f "python3 -m http.server $ZIPTEST_UI_PORT" 2>/dev/null || true
 }
 
 # Stop only the gateway (pause)
@@ -646,6 +712,9 @@ stop_services() {
     log_info "Stopping services..."
 
     cd "$SANDBOX_DIR" 2>/dev/null || true
+
+    # Stop ziptest UI if running
+    stop_ziptest_ui 2>/dev/null || true
 
     # Stop gateway first
     pause_gateway 2>/dev/null || true
@@ -745,6 +814,13 @@ show_status() {
         echo -e "Gateway:   ${GREEN}RUNNING${NC} ($RUNNING_GATEWAY) on port $GATEWAY_PORT"
     else
         echo -e "Gateway:   ${RED}STOPPED${NC}"
+    fi
+
+    # Check ziptest UI (only relevant for ziptest hApp)
+    if [ -f "$SANDBOX_DIR/ziptest-ui.pid" ] && kill -0 "$(cat "$SANDBOX_DIR/ziptest-ui.pid" 2>/dev/null)" 2>/dev/null; then
+        echo -e "Ziptest UI: ${GREEN}RUNNING${NC} on port $ZIPTEST_UI_PORT"
+    elif pgrep -f "python3 -m http.server $ZIPTEST_UI_PORT" > /dev/null 2>&1; then
+        echo -e "Ziptest UI: ${GREEN}RUNNING${NC} on port $ZIPTEST_UI_PORT"
     fi
 
     echo ""
@@ -901,6 +977,8 @@ case "$COMMAND" in
         # Give conductors time to fully initialize after arc establishment
         sleep 2
         start_gateway
+        # Start ziptest UI if using ziptest hApp
+        start_ziptest_ui
         show_status
         echo ""
         # Initialize test entry (or just save DNA hash)
@@ -913,7 +991,7 @@ case "$COMMAND" in
         echo ""
         echo "To test, open in browser:"
         if [ "$HAPP_NAME" = "ziptest" ]; then
-            echo "  Navigate to your ziptest UI (served separately)"
+            echo "  Ziptest UI: http://localhost:$ZIPTEST_UI_PORT"
             echo "  Configure the extension with gateway URL: http://localhost:$GATEWAY_PORT"
             if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
                 echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"

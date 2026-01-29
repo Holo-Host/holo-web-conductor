@@ -10,7 +10,15 @@
 import { test, expect, connectAndConfigure, decodeHashFromB64, ensureHappInstalled } from './fixtures.js';
 
 test.describe('Network Cascade', () => {
+  // Skip this entire suite for ziptest - it has its own tests
+  // This suite is designed for fixture1 hApp with dht_util zome
   test.beforeEach(async ({ testPage, gatewayUrl, happPath, appId }) => {
+    // Skip if running with ziptest hApp
+    if (appId === 'ziptest') {
+      test.skip();
+      return;
+    }
+
     // Connect and configure gateway
     await connectAndConfigure(testPage, gatewayUrl);
 

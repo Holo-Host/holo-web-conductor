@@ -10,7 +10,15 @@
 import { test, expect, connectAndConfigure, encodeHashToB64, ensureHappInstalled } from './fixtures.js';
 
 test.describe('Remote Signals', () => {
+  // Skip this entire suite for ziptest - it has its own signal tests via UI
+  // This suite is designed for fixture1 hApp with coordinator1/ping zome
   test.beforeEach(async ({ testPage, gatewayUrl, happPath, appId }) => {
+    // Skip if running with ziptest hApp
+    if (appId === 'ziptest') {
+      test.skip();
+      return;
+    }
+
     // Connect and configure gateway
     await connectAndConfigure(testPage, gatewayUrl);
 

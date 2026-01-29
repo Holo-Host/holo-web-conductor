@@ -11,7 +11,14 @@
 import { test, expect, connectAndConfigure, callZome, decodeHashFromB64, encodeHashToB64, ensureHappInstalled } from './fixtures.js';
 
 test.describe('DHT Operations', () => {
+  // Skip this entire suite for ziptest - it has its own dedicated tests in ziptest.test.ts
+  // This suite is designed for fixture1 hApp with coordinator1/dht_util zomes
   test.beforeEach(async ({ testPage, gatewayUrl, happPath, appId }) => {
+    // Skip if running with ziptest hApp
+    if (appId === 'ziptest') {
+      test.skip();
+      return;
+    }
     // Connect and configure gateway
     await connectAndConfigure(testPage, gatewayUrl);
 
