@@ -34,7 +34,9 @@
   2. @holochain/client: `../holochain-client-js`
   3. Gateway: `../hc-http-gw-fork`
 
-- **Commit hygiene**: No claude co-authored messages. Use `npm` for builds. Run `nix develop` for dependencies.
+- **Commit hygiene**: No claude co-authored messages. Use `npm` for builds. 
+
+- **Dependencies** Run `nix develop -c` to get correct dependencies, i.e for all `cargo` build/test commands and for all `npm run` and all scripts.
 
 - **Communication style**: No emotional tags or exclamation points. Just code-related information.
 

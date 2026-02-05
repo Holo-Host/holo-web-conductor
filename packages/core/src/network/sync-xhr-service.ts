@@ -266,17 +266,33 @@ export class SyncXHRNetworkService implements NetworkService {
   /**
    * Parse links response from gateway
    *
+   * Gateway may return one of two formats:
+   * 1. Vec<Link> - array of Link objects (conductor-dht mode)
+   * 2. WireLinkOps - {creates: [...], deletes: [...]} (direct kitsune2 mode)
+   *
    * Gateway returns hashes as byte arrays (e.g., [132, 41, 36, ...]) not base64 strings.
    * We use normalizeByteArrays to convert these to Uint8Array.
+   *
+   * @param responseText - JSON response from gateway
+   * @param baseAddress - The base address from the query (needed for WireLinkOps format)
    */
-  private parseLinksResponse(responseText: string): NetworkLink[] {
+  private parseLinksResponse(responseText: string, baseAddress?: AnyDhtHash): NetworkLink[] {
     try {
       const data = JSON.parse(responseText);
+
+      // Check if this is WireLinkOps format (direct kitsune2 mode)
+      if (data && typeof data === 'object' && 'creates' in data && Array.isArray(data.creates)) {
+        log.info(`🔗 Parsing WireLinkOps format with ${data.creates.length} creates, ${data.deletes?.length || 0} deletes`);
+        return this.parseWireLinkOps(data, baseAddress);
+      }
+
+      // Otherwise expect Vec<Link> format (conductor mode)
       if (!Array.isArray(data)) {
+        log.warn(`🔗 Unexpected response format - not array or WireLinkOps:`, typeof data);
         return [];
       }
 
-      log.debug(` Parsing ${data.length} links from gateway`);
+      log.debug(` Parsing ${data.length} links from gateway (Link array format)`);
 
       return data.map((link: any, idx: number): NetworkLink => {
         const target = this.normalizeByteArrays(link.target);
@@ -309,6 +325,111 @@ export class SyncXHRNetworkService implements NetworkService {
       console.error('[ProxyNetwork] Failed to parse links response:', error);
       return [];
     }
+  }
+
+  /**
+   * Parse WireLinkOps format from direct kitsune2 response
+   *
+   * WireCreateLink has:
+   * - author, timestamp, action_seq, prev_action, target_address,
+   *   zome_index, link_type, tag, signature, validation_status, weight
+   *
+   * We need to construct NetworkLink which requires:
+   * - create_link_hash (computed from prev_action + action_seq)
+   * - base (from query parameter)
+   * - target, zome_index, link_type, tag, timestamp, author
+   */
+  private parseWireLinkOps(wireOps: { creates: any[]; deletes?: any[] }, baseAddress?: AnyDhtHash): NetworkLink[] {
+    if (!wireOps.creates || wireOps.creates.length === 0) {
+      return [];
+    }
+
+    // Filter out deleted links if we have delete information
+    const deletedLinkHashes = new Set<string>();
+    if (wireOps.deletes) {
+      for (const del of wireOps.deletes) {
+        // WireDeleteLink has link_add_address which is the hash of the create link action
+        if (del.link_add_address) {
+          const hash = this.normalizeByteArrays(del.link_add_address);
+          if (hash instanceof Uint8Array) {
+            deletedLinkHashes.add(this.hashToKey(hash));
+          }
+        }
+      }
+    }
+
+    return wireOps.creates.map((create: any, idx: number): NetworkLink => {
+      const author = this.normalizeByteArrays(create.author);
+      // WireCreateLink uses target_address, not target
+      const target = this.normalizeByteArrays(create.target_address);
+      const tag = create.tag ? this.normalizeByteArrays(create.tag) : new Uint8Array(0);
+
+      // Compute a create_link_hash from prev_action and action_seq
+      // This creates a unique identifier for the link action
+      const prevAction = this.normalizeByteArrays(create.prev_action);
+      const createLinkHash = this.computeCreateLinkHash(prevAction, create.action_seq);
+
+      // Use provided baseAddress or create empty placeholder
+      const base = baseAddress || new Uint8Array(39);
+
+      log.debug(`🔗 WireLinkOps create ${idx}:`, {
+        target_prefix: target instanceof Uint8Array ? Array.from(target.slice(0, 3)) : 'N/A',
+        author_prefix: author instanceof Uint8Array ? Array.from(author.slice(0, 3)) : 'N/A',
+        zome_index: create.zome_index,
+        link_type: create.link_type,
+        action_seq: create.action_seq,
+      });
+
+      return {
+        create_link_hash: createLinkHash,
+        base,
+        target,
+        zome_index: typeof create.zome_index === 'number' ? create.zome_index : create.zome_index?.value || 0,
+        link_type: typeof create.link_type === 'number' ? create.link_type : create.link_type?.value || 0,
+        tag,
+        timestamp: create.timestamp,
+        author,
+      };
+    });
+  }
+
+  /**
+   * Compute a unique hash for a create link action based on prev_action and action_seq
+   * This is used as a surrogate for the real ActionHash when we don't have it
+   */
+  private computeCreateLinkHash(prevAction: Uint8Array, actionSeq: number): Uint8Array {
+    // Create a 39-byte hash with ActionHash prefix (132, 41, 36)
+    // Use prev_action (32 bytes) XOR'd with action_seq for uniqueness
+    const hash = new Uint8Array(39);
+    // ActionHash prefix
+    hash[0] = 132;
+    hash[1] = 41;
+    hash[2] = 36;
+
+    // Copy core bytes from prev_action (skip its 3-byte prefix if present)
+    const coreStart = prevAction.length === 39 ? 3 : 0;
+    const coreBytes = prevAction.slice(coreStart, coreStart + 32);
+    hash.set(coreBytes, 3);
+
+    // XOR action_seq into first 4 bytes of core to make it unique
+    hash[3] ^= (actionSeq >> 24) & 0xff;
+    hash[4] ^= (actionSeq >> 16) & 0xff;
+    hash[5] ^= (actionSeq >> 8) & 0xff;
+    hash[6] ^= actionSeq & 0xff;
+
+    // DHT location (last 4 bytes) - just copy from prev_action or compute
+    if (prevAction.length >= 39) {
+      hash.set(prevAction.slice(35, 39), 35);
+    }
+
+    return hash;
+  }
+
+  /**
+   * Convert a hash to a string key for deduplication
+   */
+  private hashToKey(hash: Uint8Array): string {
+    return Array.from(hash).join(',');
   }
 
   // NetworkService implementation
@@ -375,7 +496,7 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         log.info(`🔗 Gateway returned status 200, response length: ${xhr.responseText.length}`);
-        const links = this.parseLinksResponse(xhr.responseText);
+        const links = this.parseLinksResponse(xhr.responseText, baseAddress);
         log.info(`🔗 Parsed ${links.length} links from gateway response`);
         return links;
       } else if (xhr.status === 404) {

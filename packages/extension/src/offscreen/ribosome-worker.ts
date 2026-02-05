@@ -1057,18 +1057,30 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Parse links response from gateway
    *
+   * Gateway may return one of two formats:
+   * 1. Vec<Link> - array of Link objects (conductor-dht mode)
+   * 2. WireLinkOps - {creates: [...], deletes: [...]} (direct kitsune2 mode)
+   *
    * Gateway returns hashes as JSON arrays (e.g., [132, 41, 36, ...])
    * NOT as base64 strings. Use normalizeByteArrays to convert.
    */
-  private parseLinksResponse(responseText: string): any[] {
+  private parseLinksResponse(responseText: string, baseAddress?: Uint8Array): any[] {
     try {
       const data = JSON.parse(responseText);
+
+      // Check if this is WireLinkOps format (direct kitsune2 mode)
+      if (data && typeof data === 'object' && 'creates' in data && Array.isArray(data.creates)) {
+        console.log(`[ProxyNetwork] Parsing WireLinkOps format with ${data.creates.length} creates, ${data.deletes?.length || 0} deletes`);
+        return this.parseWireLinkOps(data, baseAddress);
+      }
+
+      // Otherwise expect Vec<Link> format (conductor mode)
       if (!Array.isArray(data)) {
         console.log('[ProxyNetwork] Links response is not an array:', typeof data);
         return [];
       }
 
-      console.log(`[ProxyNetwork] Parsing ${data.length} links from gateway`);
+      console.log(`[ProxyNetwork] Parsing ${data.length} links from gateway (Link array format)`);
 
       return data.map((link: any) => ({
         create_link_hash: this.normalizeByteArrays(link.create_link_hash),
@@ -1084,6 +1096,80 @@ class ProxyNetworkService implements NetworkService {
       console.error('[ProxyNetwork] Failed to parse links response:', error);
       return [];
     }
+  }
+
+  /**
+   * Parse WireLinkOps format from direct kitsune2 response
+   *
+   * WireCreateLink has:
+   * - author, timestamp, action_seq, prev_action, target_address,
+   *   zome_index, link_type, tag, signature, validation_status, weight
+   */
+  private parseWireLinkOps(wireOps: { creates: any[]; deletes?: any[] }, baseAddress?: Uint8Array): any[] {
+    if (!wireOps.creates || wireOps.creates.length === 0) {
+      return [];
+    }
+
+    return wireOps.creates.map((create: any, idx: number) => {
+      const author = this.normalizeByteArrays(create.author);
+      // WireCreateLink uses target_address, not target
+      const target = this.normalizeByteArrays(create.target_address);
+      const tag = create.tag ? this.normalizeByteArrays(create.tag) : new Uint8Array(0);
+
+      // Compute a create_link_hash from prev_action and action_seq
+      const prevAction = this.normalizeByteArrays(create.prev_action);
+      const createLinkHash = this.computeCreateLinkHash(prevAction, create.action_seq);
+
+      // Use provided baseAddress or create empty placeholder
+      const base = baseAddress || new Uint8Array(39);
+
+      console.log(`[ProxyNetwork] WireLinkOps create ${idx}:`, {
+        target_prefix: target instanceof Uint8Array ? Array.from(target.slice(0, 3)) : 'N/A',
+        author_prefix: author instanceof Uint8Array ? Array.from(author.slice(0, 3)) : 'N/A',
+        zome_index: create.zome_index,
+        link_type: create.link_type,
+      });
+
+      return {
+        create_link_hash: createLinkHash,
+        base,
+        target,
+        zome_index: typeof create.zome_index === 'number' ? create.zome_index : create.zome_index?.value || 0,
+        link_type: typeof create.link_type === 'number' ? create.link_type : create.link_type?.value || 0,
+        tag,
+        timestamp: create.timestamp,
+        author,
+      };
+    });
+  }
+
+  /**
+   * Compute a unique hash for a create link action based on prev_action and action_seq
+   */
+  private computeCreateLinkHash(prevAction: Uint8Array, actionSeq: number): Uint8Array {
+    const hash = new Uint8Array(39);
+    // ActionHash prefix
+    hash[0] = 132;
+    hash[1] = 41;
+    hash[2] = 36;
+
+    // Copy core bytes from prev_action
+    const coreStart = prevAction.length === 39 ? 3 : 0;
+    const coreBytes = prevAction.slice(coreStart, coreStart + 32);
+    hash.set(coreBytes, 3);
+
+    // XOR action_seq into first 4 bytes of core to make it unique
+    hash[3] ^= (actionSeq >> 24) & 0xff;
+    hash[4] ^= (actionSeq >> 16) & 0xff;
+    hash[5] ^= (actionSeq >> 8) & 0xff;
+    hash[6] ^= actionSeq & 0xff;
+
+    // DHT location (last 4 bytes)
+    if (prevAction.length >= 39) {
+      hash.set(prevAction.slice(35, 39), 35);
+    }
+
+    return hash;
   }
 
   // NetworkService interface methods
@@ -1130,7 +1216,7 @@ class ProxyNetworkService implements NetworkService {
 
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
-        const links = this.parseLinksResponse(responseText);
+        const links = this.parseLinksResponse(responseText, baseAddress);
         console.log(`[ProxyNetwork] Fetched ${links.length} links`);
         return links;
       } else if (response.status === 404) {

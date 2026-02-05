@@ -52,6 +52,7 @@
 | 14.4 | ✅ | Extension API Enhancements |
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ⏳ | E2E Debugging Automation |
+| 17 | ⏳ | hc-membrane 0.6.1 Integration |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
@@ -103,6 +104,35 @@ Enable Claude to run e2e tests programmatically without manual intervention:
 - Structured JSON output for programmatic parsing
 
 See [16_PLAN.md](./16_PLAN.md)
+
+### Step 17: hc-membrane 0.6.1 Integration
+**Priority**: High (required for Holochain 0.6.1 compatibility)
+**Status**: In Progress - Partial Success
+**Depends On**: hc-membrane repo (separate)
+
+Integrate fishy extension with updated hc-membrane gateway using kitsune2 0.4.x + iroh transport:
+
+**What Works**:
+- Both browser agents register with gateway
+- Gateway exchanges preflights with conductors (kitsune2/iroh)
+- Profile data published to both conductors
+- get_links queries return correct data
+- One browser window shows the other agent's profile
+
+**What Doesn't Work Yet**:
+- Second browser window times out waiting for "active" agent
+- Likely timing or "active" status detection issue
+
+**Uncommitted Changes**:
+- `packages/core/src/network/sync-xhr-service.ts` - WireLinkOps dual-format parsing
+- `packages/extension/src/offscreen/ribosome-worker.ts` - Mirror WireLinkOps parsing
+- `packages/e2e/src/environment.ts` - Gateway config for membrane mode
+- `scripts/e2e-test-setup.sh` - Added --gateway option, quic transport, ziptest UI
+
+**Next Steps**:
+1. Diagnose why one browser window doesn't see "active" agents
+2. Check ping/signal flow between browser agents
+3. May need signal relay support for browser-to-browser pings
 
 ---
 

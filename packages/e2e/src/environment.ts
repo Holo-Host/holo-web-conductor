@@ -39,7 +39,7 @@ export class EnvironmentManager {
 
     console.log(`Starting environment with hApp: ${this.config.happ}`);
 
-    await this.runScript('start', [`--happ=${this.config.happ}`]);
+    await this.runScript('start', [`--happ=${this.config.happ}`, `--gateway=${this.config.gateway}`]);
 
     // Read state from sandbox files
     return this.getStatus();
@@ -74,7 +74,7 @@ export class EnvironmentManager {
    */
   async unpauseGateway(): Promise<void> {
     console.log('Unpausing gateway...');
-    await this.runScript('unpause', [`--happ=${this.config.happ}`]);
+    await this.runScript('unpause', [`--happ=${this.config.happ}`, `--gateway=${this.config.gateway}`]);
   }
 
   /**
@@ -237,7 +237,8 @@ export class EnvironmentManager {
    * Get the gateway URL for the current environment
    */
   getGatewayUrl(): string {
-    return `http://localhost:${this.config.gateway === 'gw-fork' ? 8000 : 8080}`;
+    // Both gateways use port 8000 (configured in e2e-test-setup.sh)
+    return 'http://localhost:8000';
   }
 }
 

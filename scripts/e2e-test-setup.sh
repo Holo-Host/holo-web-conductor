@@ -287,10 +287,9 @@ start_conductor_instance() {
     fi
 
     local BOOTSTRAP_URL="http://${BOOTSTRAP_ADDR}"
-    local SIGNAL_URL="ws://${BOOTSTRAP_ADDR}"
-    local WEBRTC_CONFIG="$SCRIPT_DIR/webrtc-config.json"
+    local RELAY_URL="http://${BOOTSTRAP_ADDR}"
 
-    log_info "Conductor $INDEX: bootstrap=$BOOTSTRAP_URL signal=$SIGNAL_URL"
+    log_info "Conductor $INDEX: bootstrap=$BOOTSTRAP_URL relay=$RELAY_URL"
 
     # Generate and run sandbox
     # Use a unique app ID suffix for conductor 2 to avoid conflicts
@@ -307,7 +306,7 @@ start_conductor_instance() {
         --app-id "$INSTANCE_APP_ID" \
         --root "$DATA_DIR" \
         "$HAPP_PATH" \
-        network -b "$BOOTSTRAP_URL" webrtc "$SIGNAL_URL" "$WEBRTC_CONFIG") \
+        network -b "$BOOTSTRAP_URL" quic "$RELAY_URL") \
         > "$LOG_FILE" 2>&1 &
 
     local CONDUCTOR_PID=$!
@@ -505,21 +504,21 @@ start_gateway() {
     # Start gateway with kitsune2 enabled for remote signal testing
     log_info "Starting gateway on port $GATEWAY_PORT (admin ws://localhost:$ACTUAL_ADMIN)..."
 
-    # Get bootstrap/signal URLs from saved bootstrap address (local server)
+    # Get bootstrap/relay URLs from saved bootstrap address (local server)
     local BOOTSTRAP_URL
-    local SIGNAL_URL
+    local RELAY_URL
     if [ -f "$SANDBOX_DIR/bootstrap_addr.txt" ]; then
         local BOOTSTRAP_ADDR
         BOOTSTRAP_ADDR=$(cat "$SANDBOX_DIR/bootstrap_addr.txt")
         BOOTSTRAP_URL="http://${BOOTSTRAP_ADDR}"
-        SIGNAL_URL="ws://${BOOTSTRAP_ADDR}"
+        RELAY_URL="http://${BOOTSTRAP_ADDR}"
     else
         # Fallback to public servers if local bootstrap not available
         BOOTSTRAP_URL="https://dev-test-bootstrap2.holochain.org/"
-        SIGNAL_URL="wss://dev-test-bootstrap2.holochain.org/"
+        RELAY_URL="https://dev-test-bootstrap2.holochain.org/"
     fi
     log_info "Kitsune2 bootstrap: $BOOTSTRAP_URL"
-    log_info "Kitsune2 signal: $SIGNAL_URL"
+    log_info "Kitsune2 relay: $RELAY_URL"
 
     # Save gateway type for unpause
     echo "$GATEWAY_TYPE" > gateway_type.txt
@@ -537,14 +536,14 @@ start_gateway() {
         HC_GW_ALLOWED_APP_IDS="$ALLOWED_APP_IDS" \
         HC_GW_KITSUNE2_ENABLED="true" \
         HC_GW_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
-        HC_GW_SIGNAL_URL="$SIGNAL_URL" \
+        HC_GW_SIGNAL_URL="$RELAY_URL" \
         RUST_LOG="info,holochain_http_gateway=debug" \
         "$GATEWAY_BINARY" > gateway.log 2>&1 &
     else
         # hc-membrane configuration (needs IP address, not hostname)
         HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
         HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
-        HC_MEMBRANE_SIGNAL_URL="$SIGNAL_URL" \
+        HC_MEMBRANE_RELAY_URL="$RELAY_URL" \
         RUST_LOG="info,hc_membrane=debug" \
         "$GATEWAY_BINARY" --port "$GATEWAY_PORT" > gateway.log 2>&1 &
     fi
