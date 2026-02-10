@@ -78,14 +78,24 @@ result = await callPromise; // propagate errors to this specific caller
 
 **Goal**: Verify that two concurrent zome calls execute sequentially without errors.
 
-**File**: New test in `packages/core/src/ribosome/` or `packages/extension/src/offscreen/`
+**Methodology**: The same concurrency bug exists with `SourceChainStorage` (fake-indexeddb in Node) — `beginTransaction()` throws "Transaction already in progress" when two concurrent `callZome()` calls interleave at `await` points. This means we can:
+
+1. **Prove the bug in vitest**: Launch two `callZome()` calls via `Promise.all()`. The second hits `beginTransaction()` while the first's transaction is active → throws. This demonstrates the real-world failure mode.
+
+2. **Prove the fix in vitest**: Wrap `callZome()` in a `serializedCallZome()` using the same promise-chain pattern as the worker. Run the same concurrent calls → both succeed.
+
+3. **Verify chain integrity**: After serialized concurrent calls, inspect chain head to confirm `action_seq` advanced correctly and the chain is internally consistent.
+
+No browser or worker environment needed. The test validates the behavioral pattern, and the worker applies the identical 3-line pattern.
+
+**File**: `packages/core/src/ribosome/concurrent-calls.test.ts` (new)
 
 Tests:
-- [ ] Two concurrent `create_entry` calls both succeed and produce sequential chain actions
-- [ ] A UI zome call and a signal-triggered `recv_remote_signal` (that commits) both succeed sequentially
-- [ ] A failing zome call does not block the next queued call
-- [ ] Chain head after two concurrent commits has `action_seq` incremented by 2
-- [ ] Non-CALL_ZOME messages (e.g., SET_LOG_FILTER) are not blocked by an in-progress zome call
+- [ ] Two concurrent `callZome(create_test_entry)` via `Promise.all()` without serialization → one fails with "Transaction already in progress"
+- [ ] Same two calls through `serializedCallZome()` wrapper → both succeed, return valid ActionHashes
+- [ ] Chain head `action_seq` after two serialized concurrent creates = genesis_seq + 2
+- [ ] A failing call (bad fn name) does not block the next queued call
+- [ ] Three+ concurrent calls all serialize correctly (stress variant)
 
 ### Phase 3: Timeout safety valve — DEFERRED
 
@@ -100,7 +110,7 @@ Tests:
 | File | Change |
 |------|--------|
 | `packages/extension/src/offscreen/ribosome-worker.ts` | Add promise-chain serialization for CALL_ZOME |
-| `packages/core/src/ribosome/zome-call-serialization.test.ts` (new) | Concurrent call tests |
+| `packages/core/src/ribosome/concurrent-calls.test.ts` (new) | Concurrent call tests (vitest, no browser needed) |
 
 ---
 
