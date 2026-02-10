@@ -848,5 +848,148 @@ export async function startSignalTest(
   console.log('[startSignalTest] Clicked Start Test button');
 }
 
-// Export ziptest URL for tests
+// Export URLs for tests
 export { ZIPTEST_UI_URL };
+export const MEWSFEED_UI_URL = 'http://localhost:8082';
+
+// ============================================================================
+// Mewsfeed Testing Helpers
+// ============================================================================
+
+/**
+ * Create a profile in the mewsfeed UI.
+ * Mewsfeed uses a custom profile creation dialog (BaseEditAgentProfileForm)
+ * with standard HTML inputs (not web components).
+ */
+export async function createMewsfeedProfile(page: Page, nickname: string): Promise<void> {
+  console.log(`[createMewsfeedProfile] Starting for nickname: ${nickname}`);
+
+  // Wait for the profile creation dialog to appear
+  // The dialog heading is "create profile" (lowercase)
+  try {
+    await page.waitForSelector('h2:has-text("create profile")', { timeout: 30000 });
+  } catch {
+    // Profile may already exist - check if we're on the main page
+    const onMainPage = await page.$('button:has-text("Mew")');
+    if (onMainPage) {
+      console.log(`[createMewsfeedProfile] Already past profile creation, skipping`);
+      return;
+    }
+    throw new Error('Could not find profile creation dialog or main page');
+  }
+
+  console.log(`[createMewsfeedProfile] Found profile creation dialog`);
+
+  // Give the form time to initialize
+  await page.waitForTimeout(1000);
+
+  // Fill the nickname field (first text input in the form)
+  const nicknameInput = page.locator('input[type="text"]').first();
+  await nicknameInput.waitFor({ state: 'visible', timeout: 10000 });
+  await nicknameInput.click();
+  await nicknameInput.fill(nickname);
+  console.log(`[createMewsfeedProfile] Filled nickname: ${nickname}`);
+
+  await page.waitForTimeout(500);
+
+  // Click the Save button
+  const saveButton = page.locator('button.btn.btn-primary:has-text("Save")');
+  await saveButton.waitFor({ state: 'visible', timeout: 5000 });
+  await saveButton.click();
+  console.log(`[createMewsfeedProfile] Clicked Save`);
+
+  // Wait for the main layout to load (Mew button indicates we're past profile creation)
+  await page.waitForSelector('button:has-text("Mew")', { timeout: 60000 });
+  console.log(`[createMewsfeedProfile] Profile created, main layout loaded`);
+}
+
+/**
+ * Create a mew (post) in the mewsfeed UI.
+ * Opens the create mew dialog, types the text, and sends it.
+ */
+export async function createMew(page: Page, text: string): Promise<void> {
+  console.log(`[createMew] Creating mew: "${text}"`);
+
+  // Click the Mew button to open the create dialog
+  const mewButton = page.locator('button:has-text("Mew")').first();
+  await mewButton.waitFor({ state: 'visible', timeout: 10000 });
+  await mewButton.click();
+  console.log(`[createMew] Clicked Mew button`);
+
+  // Wait for the contenteditable to appear
+  const mewInput = page.locator('[data-placeholder="What\'s mewing on?"]');
+  await mewInput.waitFor({ state: 'visible', timeout: 10000 });
+
+  // Focus and type the text
+  await mewInput.click();
+  await page.keyboard.type(text, { delay: 50 });
+  console.log(`[createMew] Typed mew text`);
+
+  await page.waitForTimeout(500);
+
+  // Click Send Mew button
+  const sendButton = page.locator('button:has-text("Send Mew")');
+  await sendButton.waitFor({ state: 'visible', timeout: 5000 });
+  await sendButton.click();
+  console.log(`[createMew] Clicked Send Mew`);
+
+  // Wait for the dialog to close (the send button should disappear)
+  await sendButton.waitFor({ state: 'hidden', timeout: 30000 });
+  console.log(`[createMew] Mew sent`);
+}
+
+/**
+ * Navigate to a hashtag page and wait for results to appear.
+ * Polls by refreshing until mew results are visible.
+ */
+export async function waitForHashtagResult(
+  page: Page,
+  hashtag: string,
+  timeout = 120000
+): Promise<void> {
+  // Navigate to hashtag route (strip # if present)
+  const tag = hashtag.startsWith('#') ? hashtag.substring(1) : hashtag;
+  const url = `${MEWSFEED_UI_URL}/hashtag/${tag}`;
+
+  console.log(`[waitForHashtagResult] Navigating to ${url}`);
+  await page.goto(url);
+
+  const startTime = Date.now();
+  const pollInterval = 5000;
+
+  while (Date.now() - startTime < timeout) {
+    // Check if any mew list items are present
+    // BaseMewListItem renders as a div with cursor-pointer class containing mew content
+    const hasMews = await page.evaluate(() => {
+      // Look for hr.border-base-300 (dividers between mews) or mew content
+      const dividers = document.querySelectorAll('hr.border-base-300');
+      // Also check for any mew text content
+      const mewTexts = document.querySelectorAll('.flex.flex-col.justify-start.items-start.cursor-pointer');
+      return dividers.length > 0 || mewTexts.length > 0;
+    });
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+    if (hasMews) {
+      console.log(`[waitForHashtagResult] Found mews for #${tag} after ${elapsed}s`);
+      return;
+    }
+
+    // Check for loading or empty state
+    const state = await page.evaluate(() => {
+      const loading = !!document.querySelector('.loading-spinner, sl-skeleton');
+      const empty = !!document.querySelector('text=Nothing found');
+      return { loading, empty };
+    });
+
+    console.log(`[waitForHashtagResult] ${elapsed}s: loading=${state.loading}, empty=${state.empty}, no mews yet`);
+
+    // Reload the page to trigger a fresh fetch
+    await page.waitForTimeout(pollInterval);
+    await page.reload();
+    // Wait for the page to load
+    await page.waitForSelector('h1:has-text("mews with")', { timeout: 10000 }).catch(() => {});
+  }
+
+  throw new Error(`Timeout waiting for hashtag #${tag} results after ${timeout}ms`);
+}

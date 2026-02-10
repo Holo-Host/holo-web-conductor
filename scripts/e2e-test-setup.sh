@@ -17,7 +17,7 @@
 #   clean     Clean up sandbox data
 #
 # Options:
-#   --happ=NAME      Specify which hApp to use (fixture1 or ziptest, default: fixture1)
+#   --happ=NAME      Specify which hApp to use (fixture1, ziptest, or mewsfeed, default: fixture1)
 #   --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)
 #
 # Examples:
@@ -126,8 +126,15 @@ configure_happ() {
             COORDINATOR_ZOME="ziptest"
             TEST_FN=""  # No test entry function for ziptest
             ;;
+        mewsfeed)
+            HAPP_PATH="$PROJECT_DIR/fixtures/mewsfeed.happ"
+            APP_ID="mewsfeed"
+            # Zome names for mewsfeed
+            COORDINATOR_ZOME="mews"
+            TEST_FN=""  # No test entry function for mewsfeed
+            ;;
         *)
-            log_error "Unknown hApp: $HAPP_NAME (supported: fixture1, ziptest)"
+            log_error "Unknown hApp: $HAPP_NAME (supported: fixture1, ziptest, mewsfeed)"
             exit 1
             ;;
     esac
@@ -145,9 +152,13 @@ APP_PORT=8889
 GATEWAY_PORT=8000
 BOOTSTRAP_PORT=0  # 0 = auto-assign
 ZIPTEST_UI_PORT=8081
+MEWSFEED_UI_PORT=8082
 
 # Ziptest UI directory
 ZIPTEST_UI_DIR="$PROJECT_DIR/../ziptest/ui"
+
+# Mewsfeed UI directory (fishy worktree)
+MEWSFEED_UI_DIR="$PROJECT_DIR/../mewsfeed-fishy/ui"
 
 # Number of conductors to run (need 2 for full arc establishment)
 NUM_CONDUCTORS=2
@@ -619,6 +630,64 @@ start_ziptest_ui() {
     exit 1
 }
 
+# Start mewsfeed UI server (only for mewsfeed hApp)
+start_mewsfeed_ui() {
+    if [ "$HAPP_NAME" != "mewsfeed" ]; then
+        return 0
+    fi
+
+    log_info "Starting mewsfeed UI server..."
+
+    # Check if UI directory exists
+    if [ ! -d "$MEWSFEED_UI_DIR" ]; then
+        log_error "Mewsfeed UI directory not found: $MEWSFEED_UI_DIR"
+        exit 1
+    fi
+
+    # Check if dist directory exists
+    if [ ! -d "$MEWSFEED_UI_DIR/dist" ]; then
+        log_error "Mewsfeed UI dist not found. Build it first: cd $MEWSFEED_UI_DIR && npm run build"
+        exit 1
+    fi
+
+    # Check if already running
+    if pgrep -f "python3 -m http.server $MEWSFEED_UI_PORT" > /dev/null 2>&1; then
+        log_warn "Mewsfeed UI server already running on port $MEWSFEED_UI_PORT"
+        return 0
+    fi
+
+    cd "$MEWSFEED_UI_DIR"
+    python3 -m http.server "$MEWSFEED_UI_PORT" -d dist > "$SANDBOX_DIR/mewsfeed-ui.log" 2>&1 &
+    MEWSFEED_UI_PID=$!
+    echo "$MEWSFEED_UI_PID" > "$SANDBOX_DIR/mewsfeed-ui.pid"
+
+    # Wait for server to start
+    for i in {1..10}; do
+        if curl -s "http://localhost:$MEWSFEED_UI_PORT" > /dev/null 2>&1; then
+            log_info "Mewsfeed UI server started on port $MEWSFEED_UI_PORT"
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    log_error "Mewsfeed UI server failed to start. Check $SANDBOX_DIR/mewsfeed-ui.log"
+    exit 1
+}
+
+# Stop mewsfeed UI server
+stop_mewsfeed_ui() {
+    if [ -f "$SANDBOX_DIR/mewsfeed-ui.pid" ]; then
+        MEWSFEED_UI_PID=$(cat "$SANDBOX_DIR/mewsfeed-ui.pid")
+        if kill -0 "$MEWSFEED_UI_PID" 2>/dev/null; then
+            log_info "Stopping mewsfeed UI server (PID $MEWSFEED_UI_PID)..."
+            kill "$MEWSFEED_UI_PID" 2>/dev/null || true
+        fi
+        rm -f "$SANDBOX_DIR/mewsfeed-ui.pid"
+    fi
+    # Also check by process name
+    pkill -f "python3 -m http.server $MEWSFEED_UI_PORT" 2>/dev/null || true
+}
+
 # Stop ziptest UI server
 stop_ziptest_ui() {
     if [ -f "$SANDBOX_DIR/ziptest-ui.pid" ]; then
@@ -712,8 +781,9 @@ stop_services() {
 
     cd "$SANDBOX_DIR" 2>/dev/null || true
 
-    # Stop ziptest UI if running
+    # Stop UI servers if running
     stop_ziptest_ui 2>/dev/null || true
+    stop_mewsfeed_ui 2>/dev/null || true
 
     # Stop gateway first
     pause_gateway 2>/dev/null || true
@@ -820,6 +890,13 @@ show_status() {
         echo -e "Ziptest UI: ${GREEN}RUNNING${NC} on port $ZIPTEST_UI_PORT"
     elif pgrep -f "python3 -m http.server $ZIPTEST_UI_PORT" > /dev/null 2>&1; then
         echo -e "Ziptest UI: ${GREEN}RUNNING${NC} on port $ZIPTEST_UI_PORT"
+    fi
+
+    # Check mewsfeed UI
+    if [ -f "$SANDBOX_DIR/mewsfeed-ui.pid" ] && kill -0 "$(cat "$SANDBOX_DIR/mewsfeed-ui.pid" 2>/dev/null)" 2>/dev/null; then
+        echo -e "Mewsfeed UI: ${GREEN}RUNNING${NC} on port $MEWSFEED_UI_PORT"
+    elif pgrep -f "python3 -m http.server $MEWSFEED_UI_PORT" > /dev/null 2>&1; then
+        echo -e "Mewsfeed UI: ${GREEN}RUNNING${NC} on port $MEWSFEED_UI_PORT"
     fi
 
     echo ""
@@ -976,8 +1053,9 @@ case "$COMMAND" in
         # Give conductors time to fully initialize after arc establishment
         sleep 2
         start_gateway
-        # Start ziptest UI if using ziptest hApp
+        # Start UI server for the selected hApp
         start_ziptest_ui
+        start_mewsfeed_ui
         show_status
         echo ""
         # Initialize test entry (or just save DNA hash)
@@ -995,6 +1073,12 @@ case "$COMMAND" in
             if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
                 echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"
                 echo "  (Extension should compute the same hash - no override needed)"
+            fi
+        elif [ "$HAPP_NAME" = "mewsfeed" ]; then
+            echo "  Mewsfeed UI: http://localhost:$MEWSFEED_UI_PORT"
+            echo "  Configure the extension with gateway URL: http://localhost:$GATEWAY_PORT"
+            if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
+                echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"
             fi
         else
             echo "  file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"
@@ -1032,7 +1116,7 @@ case "$COMMAND" in
         echo "  clean     Clean up sandbox data"
         echo ""
         echo "Options:"
-        echo "  --happ=NAME      Specify which hApp to use (fixture1 or ziptest, default: fixture1)"
+        echo "  --happ=NAME      Specify which hApp to use (fixture1, ziptest, or mewsfeed, default: fixture1)"
         echo "  --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)"
         echo ""
         echo "Examples:"
