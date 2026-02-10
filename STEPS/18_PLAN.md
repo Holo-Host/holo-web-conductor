@@ -87,16 +87,11 @@ Tests:
 - [ ] Chain head after two concurrent commits has `action_seq` incremented by 2
 - [ ] Non-CALL_ZOME messages (e.g., SET_LOG_FILTER) are not blocked by an in-progress zome call
 
-### Phase 3: Timeout safety valve
+### Phase 3: Timeout safety valve — DEFERRED
 
 **Goal**: Prevent a hung WASM call from blocking the queue forever.
 
-**File**: `packages/extension/src/offscreen/ribosome-worker.ts`
-
-Changes:
-- [ ] Wrap each queued call in a timeout (e.g., 60 seconds)
-- [ ] On timeout, rollback any active transaction and reject the call
-- [ ] Log a warning so the hung call is diagnosable
+**Status**: Deferred. `Atomics.wait()` blocks the worker thread entirely during WASM execution, which prevents `setTimeout` callbacks from firing. A timeout would only catch hangs in the async setup phase (compile, instantiate) but not the main risk (WASM infinite loops). Adding it also introduces a race condition where the caller gets a timeout error but the call may still commit. For now, the browser's own tab/worker kill mechanism handles truly hung WASM.
 
 ---
 
