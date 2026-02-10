@@ -1313,6 +1313,120 @@ const networkService = new ProxyNetworkService();
 /**
  * Handle messages from offscreen document
  */
+// Serialize zome calls via promise chain to prevent concurrent SQLite
+// transactions from interleaving at await points within callZome().
+// Without this, two concurrent CALL_ZOME messages (e.g., UI call + network
+// recv_remote_signal) can both reach beginTransaction(), causing SQLite to
+// throw "cannot start a transaction within a transaction".
+// Non-CALL_ZOME messages bypass the chain and execute immediately.
+let zomeCallChain: Promise<void> = Promise.resolve();
+
+/**
+ * Execute a CALL_ZOME request. Extracted from onmessage so it can be
+ * serialized via zomeCallChain.
+ */
+async function handleCallZome(payload: any): Promise<any> {
+  const workerCallStart = performance.now();
+  const { dnaWasm, cellId, zome, fn, payloadBytes, provenance, dnaManifest } = payload;
+
+  // Set cell context for storage
+  const cellIdBytes: [Uint8Array, Uint8Array] = [
+    new Uint8Array(cellId[0]),
+    new Uint8Array(cellId[1]),
+  ];
+  storage.setCellContext(cellIdBytes[0], cellIdBytes[1]);
+  const afterSetContext = performance.now();
+
+  // Use cached WASM if available, otherwise cache the incoming WASM
+  const dnaHashKey = getWasmCacheKey(cellId[0]);
+  let cachedWasm = wasmCache.get(dnaHashKey);
+  if (!cachedWasm && dnaWasm && dnaWasm.length > 0) {
+    // First time seeing this DNA - cache the WASM
+    cachedWasm = new Uint8Array(dnaWasm);
+    wasmCache.set(dnaHashKey, cachedWasm);
+    console.log(`[Ribosome Worker] Cached WASM for ${dnaHashKey.substring(0, 16)}... (${cachedWasm.length} bytes)`);
+  } else if (cachedWasm) {
+    console.log(`[Ribosome Worker] Using cached WASM for ${dnaHashKey.substring(0, 16)}...`);
+  }
+
+  if (!cachedWasm) {
+    throw new Error('No WASM available for DNA');
+  }
+
+  const request: ZomeCallRequest = {
+    dnaWasm: cachedWasm,
+    cellId: cellIdBytes,
+    zome,
+    fn,
+    payload: new Uint8Array(payloadBytes),
+    provenance: new Uint8Array(provenance),
+    dnaManifest,
+  };
+  const afterBuildRequest = performance.now();
+
+  const zomeResult = await callZome(request);
+  const afterZomeCall = performance.now();
+
+  // Convert pending records for transport (Uint8Array -> Array)
+  let pendingRecordsForTransport: any[] | undefined;
+  if (zomeResult.pendingRecords && zomeResult.pendingRecords.length > 0) {
+    pendingRecordsForTransport = zomeResult.pendingRecords.map(record => {
+      // Convert Entry for transport - Entry is internally tagged: { entry_type: "App", entry: bytes }
+      let entryForTransport: any = undefined;
+      if (record.entry && record.entry.Present) {
+        const presentEntry = record.entry.Present;
+        entryForTransport = {
+          Present: {
+            entry_type: presentEntry.entry_type,
+            entry: Array.from(presentEntry.entry),
+          }
+        };
+      } else if (record.entry && record.entry.NA !== undefined) {
+        entryForTransport = { NA: null };
+      }
+
+      return {
+        signed_action: {
+          hashed: {
+            content: record.signed_action.hashed.content,
+            hash: Array.from(record.signed_action.hashed.hash),
+          },
+          signature: Array.from(record.signed_action.signature),
+        },
+        entry: entryForTransport,
+      };
+    });
+    console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
+  }
+
+  // Send remote signals immediately via postMessage (fire-and-forget)
+  // This mirrors Holochain's tokio::spawn pattern for send_remote_signal
+  if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
+    console.log(`[Ribosome Worker] Sending ${zomeResult.remoteSignals.length} remote signals`);
+    // Send as separate message - offscreen will forward to WebSocket
+    // Include DNA hash so offscreen knows which gateway connection to use
+    self.postMessage({
+      type: 'SEND_REMOTE_SIGNALS',
+      dnaHash: Array.from(cellIdBytes[0]),
+      signals: zomeResult.remoteSignals,
+    });
+  }
+
+  console.log(`[Ribosome Worker] Returning ${(zomeResult.signals || []).length} emitted signals`);
+
+  console.log(`[PERF Worker] CALL_ZOME message handling:
+   ├─ setContext:     ${(afterSetContext - workerCallStart).toFixed(1)}ms
+   ├─ buildRequest:   ${(afterBuildRequest - afterSetContext).toFixed(1)}ms
+   ├─ callZome:       ${(afterZomeCall - afterBuildRequest).toFixed(1)}ms
+   └─ TOTAL:          ${(afterZomeCall - workerCallStart).toFixed(1)}ms`);
+
+  return {
+    result: zomeResult.result,
+    signals: zomeResult.signals || [],
+    pendingRecords: pendingRecordsForTransport,
+  };
+}
+
 self.onmessage = async (event: MessageEvent) => {
   const { id, type, payload } = event.data;
 
@@ -1366,107 +1480,14 @@ self.onmessage = async (event: MessageEvent) => {
         result = { success: true, filter: workerLogFilter };
         break;
 
-      case 'CALL_ZOME':
-        const workerCallStart = performance.now();
-        const { dnaWasm, cellId, zome, fn, payloadBytes, provenance, dnaManifest } = payload;
-
-        // Set cell context for storage
-        const cellIdBytes: [Uint8Array, Uint8Array] = [
-          new Uint8Array(cellId[0]),
-          new Uint8Array(cellId[1]),
-        ];
-        storage.setCellContext(cellIdBytes[0], cellIdBytes[1]);
-        const afterSetContext = performance.now();
-
-        // Use cached WASM if available, otherwise cache the incoming WASM
-        const dnaHashKey = getWasmCacheKey(cellId[0]);
-        let cachedWasm = wasmCache.get(dnaHashKey);
-        if (!cachedWasm && dnaWasm && dnaWasm.length > 0) {
-          // First time seeing this DNA - cache the WASM
-          cachedWasm = new Uint8Array(dnaWasm);
-          wasmCache.set(dnaHashKey, cachedWasm);
-          console.log(`[Ribosome Worker] Cached WASM for ${dnaHashKey.substring(0, 16)}... (${cachedWasm.length} bytes)`);
-        } else if (cachedWasm) {
-          console.log(`[Ribosome Worker] Using cached WASM for ${dnaHashKey.substring(0, 16)}...`);
-        }
-
-        if (!cachedWasm) {
-          throw new Error('No WASM available for DNA');
-        }
-
-        const request: ZomeCallRequest = {
-          dnaWasm: cachedWasm,
-          cellId: cellIdBytes,
-          zome,
-          fn,
-          payload: new Uint8Array(payloadBytes),
-          provenance: new Uint8Array(provenance),
-          dnaManifest,
-        };
-        const afterBuildRequest = performance.now();
-
-        const zomeResult = await callZome(request);
-        const afterZomeCall = performance.now();
-
-        // Convert pending records for transport (Uint8Array -> Array)
-        let pendingRecordsForTransport: any[] | undefined;
-        if (zomeResult.pendingRecords && zomeResult.pendingRecords.length > 0) {
-          pendingRecordsForTransport = zomeResult.pendingRecords.map(record => {
-            // Convert Entry for transport - Entry is internally tagged: { entry_type: "App", entry: bytes }
-            let entryForTransport: any = undefined;
-            if (record.entry && record.entry.Present) {
-              const presentEntry = record.entry.Present;
-              entryForTransport = {
-                Present: {
-                  entry_type: presentEntry.entry_type,
-                  entry: Array.from(presentEntry.entry),
-                }
-              };
-            } else if (record.entry && record.entry.NA !== undefined) {
-              entryForTransport = { NA: null };
-            }
-
-            return {
-              signed_action: {
-                hashed: {
-                  content: record.signed_action.hashed.content,
-                  hash: Array.from(record.signed_action.hashed.hash),
-                },
-                signature: Array.from(record.signed_action.signature),
-              },
-              entry: entryForTransport,
-            };
-          });
-          console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
-        }
-
-        // Send remote signals immediately via postMessage (fire-and-forget)
-        // This mirrors Holochain's tokio::spawn pattern for send_remote_signal
-        if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
-          console.log(`[Ribosome Worker] Sending ${zomeResult.remoteSignals.length} remote signals`);
-          // Send as separate message - offscreen will forward to WebSocket
-          // Include DNA hash so offscreen knows which gateway connection to use
-          self.postMessage({
-            type: 'SEND_REMOTE_SIGNALS',
-            dnaHash: Array.from(cellIdBytes[0]),
-            signals: zomeResult.remoteSignals,
-          });
-        }
-
-        result = {
-          result: zomeResult.result,
-          signals: zomeResult.signals || [],
-          pendingRecords: pendingRecordsForTransport,
-        };
-
-        console.log(`[Ribosome Worker] Returning ${(zomeResult.signals || []).length} emitted signals`);
-
-        console.log(`[PERF Worker] CALL_ZOME message handling:
-   ├─ setContext:     ${(afterSetContext - workerCallStart).toFixed(1)}ms
-   ├─ buildRequest:   ${(afterBuildRequest - afterSetContext).toFixed(1)}ms
-   ├─ callZome:       ${(afterZomeCall - afterBuildRequest).toFixed(1)}ms
-   └─ TOTAL:          ${(afterZomeCall - workerCallStart).toFixed(1)}ms`);
+      case 'CALL_ZOME': {
+        // Chain onto zomeCallChain so concurrent CALL_ZOME messages execute
+        // one at a time. Errors are isolated per-call (the chain always continues).
+        const callPromise = zomeCallChain.then(() => handleCallZome(payload));
+        zomeCallChain = callPromise.then(() => {}, () => {});
+        result = await callPromise;
         break;
+      }
 
       case 'NETWORK_RESPONSE':
         // Response from offscreen's sync XHR - signal is handled via Atomics
