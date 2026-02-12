@@ -312,6 +312,25 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
       }
     }
 
+    // Run inline validation on pending records (not genesis records)
+    // This matches Holochain's inline_validation in call_zome_workflow.rs
+    const zomeCallPendingRecords = context.pendingRecords || [];
+    if (zomeCallPendingRecords.length > 0 && dnaManifest) {
+      try {
+        const { invokeInlineValidation } = await import('./validate');
+        await invokeInlineValidation(zomeCallPendingRecords, context, dnaManifest);
+        log.debug(' Inline validation passed');
+      } catch (validationError) {
+        log.debug(' Inline validation failed, rolling back');
+        if (storage.isTransactionActive()) {
+          storage.rollbackTransaction();
+        }
+        throw new Error(
+          `Validation failed: ${validationError instanceof Error ? validationError.message : String(validationError)}`
+        );
+      }
+    }
+
     // Commit transaction - all chain updates succeed atomically
     // May be sync (SQLiteStorage) or async (SourceChainStorage)
     const commitStart = performance.now();

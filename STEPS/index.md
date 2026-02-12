@@ -53,6 +53,8 @@
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ⏳ | E2E Debugging Automation |
 | 17 | ⏳ | hc-membrane 0.6.1 Integration |
+| 18 | ⏳ | Zome Call Serialization |
+| 20 | ✅ | Validation Host Functions & Validate Callback |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
