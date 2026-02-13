@@ -1,86 +1,93 @@
 # Current Session
 
-**Last Updated**: 2026-02-05
-**Current Step**: Step 16 (E2E Debugging Automation) + Step 17 (hc-membrane 0.6.1 Integration)
+**Last Updated**: 2026-02-13
+**Current Step**: Step 19 (Mewsfeed E2E Integration)
 
 ---
 
 ## Active Work
 
-### Step 17: hc-membrane 0.6.1-rc.0 Integration (NEW)
+### Step 19: Mewsfeed E2E Integration
 
-**Goal**: Integrate fishy extension with updated hc-membrane using kitsune2 0.4.x + iroh transport.
+**Goal**: Multi-agent e2e test — Alice creates mew with #testmew hashtag, Bob searches for it via the mewsfeed app.
 
-**Status**: PARTIAL SUCCESS - Core data flow working, timing/active-status issue remaining
+**Status**: Blocked on kitsune2 query-response path (Step 19.3)
 
-**Depends On**: hc-membrane repo updates (see `/home/eric/code/metacurrency/holochain/hc-membrane/SESSION.md`)
+**Depends On**: hc-membrane `kitsune-dht-ops` branch at `/home/eric/code/metacurrency/holochain/hc-membrane-kitsune-dht-ops`
 
 #### What Works
 - Both browser agents register with gateway
-- Gateway exchanges preflights with both conductors (kitsune2/iroh)
-- Profile data published to both conductors
-- get_links queries return correct data (both profiles found)
-- One browser window shows the other agent's profile
+- Profiles created successfully for both agents
+- Alice creates mew, sees it on her own feed (local storage)
+- DhtOps published successfully to 2 conductors (12 ops including CreateLink for hashtags)
+- hc-membrane `get_details` and `count_links` kitsune endpoints implemented (Step 19.2)
 
-#### What Doesn't Work Yet
-- Second browser window times out waiting for "active" agent
-- Likely timing or "active" status detection issue in ziptest UI
+#### What Doesn't Work
+- **All DHT queries timeout at 30s** — conductors never respond to `GetLinksReq`/`GetReq` via kitsune2 wire protocol
+- Bob cannot find Alice's mew via hashtag search (queries return 0 results after 30s)
+- callZome diagnostics timeout because sync XHR worker is serialized behind 30s blocking queries
 
-#### Uncommitted Changes (fishy)
-| File | Change |
-|------|--------|
-| `packages/core/src/network/sync-xhr-service.ts` | WireLinkOps dual-format parsing (Vec<Link> or WireLinkOps) |
-| `packages/extension/src/offscreen/ribosome-worker.ts` | Mirror WireLinkOps parsing for ribosome worker |
-| `packages/e2e/src/environment.ts` | Gateway config updates for membrane mode |
-| `scripts/e2e-test-setup.sh` | Added `--gateway` option, quic transport, ziptest UI server |
-| `flake.lock` | Updated for holonix main-0.6 |
+#### Sub-steps (Parallelizable)
 
-#### Next Steps
-1. Diagnose why one browser window doesn't find "active" agents
-   - Check ping/signal flow between browser agents
-   - Check "active" status logic in ziptest UI
-2. May need to add signal relay support in gateway for browser-to-browser pings
+| Sub-step | Repo | Status | Blocker? |
+|----------|------|--------|----------|
+| [19.3](./STEPS/19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) | hc-membrane | Open | CRITICAL — blocks all queries |
+| [19.4](./STEPS/19.4_PUBLISHED_DATA_NOT_QUERYABLE.md) | hc-membrane | Open | Depends on 19.3 |
+| [19.5](./STEPS/19.5_SYNC_XHR_TIMEOUT_REDUCTION.md) | fishy | Open | Independent, non-blocking |
+| [19.6](./STEPS/19.6_GET_AGENT_ACTIVITY_HOST_FN.md) | fishy | Open | Independent, non-blocking |
+
+**Critical path**: 19.3 → 19.4 → re-test e2e
+**Independent**: 19.5 and 19.6 can be done in parallel
 
 ---
 
-### Step 16: E2E Debugging Automation
+### Previous Steps (completed this cycle)
 
-**Goal**: Enable Claude to run e2e tests programmatically without manual intervention.
-
-**Status**: In Progress (infrastructure complete, tests being validated)
-
-**Plan**: See [STEPS/16_PLAN.md](./STEPS/16_PLAN.md)
-
-**Completed Sub-tasks**:
-- [x] 16.1: Package Setup - Created packages/e2e with dependencies
-- [x] 16.2: Environment Manager - Wraps e2e-test-setup.sh
-- [x] 16.3: Log Collector - Multi-source log aggregation
-- [x] 16.4: Browser Context - Playwright with extension loading
-- [x] 16.5: Test Runner & CLI - Entry point and output formats
-- [x] 16.6: Test Migration - Ported existing tests to Playwright
-- [x] 16.7: Integration - Root package.json scripts
-
-**Remaining Work**: Validate e2e tests pass with hc-membrane gateway (Step 17)
+- **Step 19.2**: Implemented `get_details` and `count_links` kitsune endpoints in hc-membrane, plus fishy-side integration (URL paths, response format handling, cascade support in count_links host fn)
+- **Step 16**: E2E infrastructure complete (Playwright, environment manager, log collection)
+- **Step 17**: hc-membrane 0.6.1 integration — partial success, superseded by Step 19
 
 ---
 
 ## Environment Commands
 
 ```bash
-# Start e2e environment with ziptest + hc-membrane
-npm run e2e:env -- start --happ=ziptest --gateway=membrane
+# Start e2e environment with mewsfeed + hc-membrane kitsune-dht-ops
+HC_MEMBRANE_DIR=/home/eric/code/metacurrency/holochain/hc-membrane-kitsune-dht-ops \
+  nix develop -c npm run e2e:env -- start --happ=mewsfeed --gateway=membrane
 
-# Check status
-npm run e2e:env -- status
+# Run mewsfeed e2e test
+nix develop -c npx playwright test mewsfeed
 
-# View logs
-npm run e2e:logs
+# Check gateway logs for query timing
+grep "time.idle" /tmp/fishy-e2e/gateway.log
 
 # Stop environment
-npm run e2e:env -- stop
+nix develop -c npm run e2e:env -- stop
+```
 
-# Run tests (after environment is running)
-npm run e2e:test
+---
+
+## Key Build Steps (after mewsfeed-fishy changes)
+
+```bash
+# 1. Rebuild mewsfeed DNA + hApp (in mewsfeed-fishy worktree)
+cd /home/eric/code/metacurrency/holochain/mewsfeed-fishy
+nix develop -c bash -c "npm run build:zomes && hc app pack workdir --recursive"
+
+# 2. Copy hApp to UI directories
+cp workdir/mewsfeed.happ ui/public/mewsfeed.happ
+cp workdir/mewsfeed.happ ui/dist/mewsfeed.happ
+
+# 3. Rebuild UI
+nix develop -c bash -c "npm run package --workspace ui"
+
+# 4. Copy to fishy fixtures
+cp workdir/mewsfeed.happ /home/eric/code/metacurrency/holochain/fishy-step19/fixtures/mewsfeed.happ
+
+# 5. Build fishy extension
+cd /home/eric/code/metacurrency/holochain/fishy-step19
+nix develop -c bash -c "npm run build"
 ```
 
 ---
@@ -88,7 +95,7 @@ npm run e2e:test
 ## Quick Links
 
 - [Step Registry](./STEPS/index.md) - All step statuses
-- [Step 16 Plan](./STEPS/16_PLAN.md) - E2E automation details
+- [Step 19.2 Plan](./STEPS/19.2_HC_MEMBRANE_KITSUNE_DHT_OPS.md) - hc-membrane DHT ops
 - [Process Review Checklist](./STEPS/META_1_PROCESS_REVIEW.md)
 - [Failed Approaches](./LESSONS_LEARNED.md)
 
@@ -96,39 +103,15 @@ npm run e2e:test
 
 ## Coordination with hc-membrane
 
-The fishy extension depends on hc-membrane for gateway functionality. Current work requires both repos:
+The fishy extension depends on hc-membrane for gateway functionality.
 
-**hc-membrane status**: See `/home/eric/code/metacurrency/holochain/hc-membrane/SESSION.md`
+**hc-membrane worktrees**:
+- Main: `/home/eric/code/metacurrency/holochain/hc-membrane`
+- kitsune-dht-ops: `/home/eric/code/metacurrency/holochain/hc-membrane-kitsune-dht-ops`
 
-Key hc-membrane changes:
-- Upgraded to kitsune2 0.4.0-dev.2 (Holochain 0.6.1-rc.0 compatible)
-- Switched from tx5/webrtc to iroh transport
-- Added PreflightCache for agent info in preflight messages
-- Direct wire protocol (GetReq/GetLinksReq/GetRes/GetLinksRes) working
+Key hc-membrane changes on kitsune-dht-ops branch:
+- `get_details` kitsune endpoint (WireOps → Details JSON conversion)
+- `count_links` kitsune endpoint (CountLinksReq/CountLinksRes wire protocol)
+- recv_notify routing for CountLinksRes
 
----
-
-## How to Resume
-
-```bash
-# 1. Check current state
-cat SESSION.md
-cat STEPS/index.md
-
-# 2. Check hc-membrane state
-cat ../hc-membrane/SESSION.md
-
-# 3. Build hc-membrane (if needed)
-cd ../hc-membrane && nix develop -c cargo build --release
-
-# 4. Build fishy extension
-npm run build:extension
-
-# 5. Start e2e environment
-npm run e2e:env -- start --happ=ziptest --gateway=membrane
-
-# 6. Run tests or investigate
-npm run e2e:test
-# OR
-npm run e2e:logs
-```
+**Blocking issue**: Conductors don't respond to kitsune2 query wire messages (GetLinksReq, GetReq). See Step 19.3.

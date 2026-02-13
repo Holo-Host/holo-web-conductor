@@ -53,6 +53,13 @@
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ⏳ | E2E Debugging Automation |
 | 17 | ⏳ | hc-membrane 0.6.1 Integration |
+| 19 | ⏳ | Mewsfeed E2E Integration |
+| 19.1 | 📋 | get_joining_timestamp deserialization (non-blocking) |
+| 19.2 | ✅ | hc-membrane kitsune DHT ops (get_details, count_links) |
+| 19.3 | ❌ | Kitsune2 query-response timeout (hc-membrane) |
+| 19.4 | ❌ | Published DhtOps not queryable (depends on 19.3) |
+| 19.5 | 📋 | Sync XHR timeout reduction (fishy) |
+| 19.6 | 📋 | get_agent_activity host function (fishy) |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
@@ -110,29 +117,28 @@ See [16_PLAN.md](./16_PLAN.md)
 **Status**: In Progress - Partial Success
 **Depends On**: hc-membrane repo (separate)
 
-Integrate fishy extension with updated hc-membrane gateway using kitsune2 0.4.x + iroh transport:
+See Step 19 for current mewsfeed integration work that builds on Step 17.
 
-**What Works**:
-- Both browser agents register with gateway
-- Gateway exchanges preflights with conductors (kitsune2/iroh)
-- Profile data published to both conductors
-- get_links queries return correct data
-- One browser window shows the other agent's profile
+### Step 19: Mewsfeed E2E Integration
+**Priority**: High (validates full multi-agent data flow)
+**Status**: In Progress — query-response path broken
+**Depends On**: hc-membrane kitsune-dht-ops branch
 
-**What Doesn't Work Yet**:
-- Second browser window times out waiting for "active" agent
-- Likely timing or "active" status detection issue
+Multi-agent e2e test: Alice creates mew with hashtag, Bob searches for it.
 
-**Uncommitted Changes**:
-- `packages/core/src/network/sync-xhr-service.ts` - WireLinkOps dual-format parsing
-- `packages/extension/src/offscreen/ribosome-worker.ts` - Mirror WireLinkOps parsing
-- `packages/e2e/src/environment.ts` - Gateway config for membrane mode
-- `scripts/e2e-test-setup.sh` - Added --gateway option, quic transport, ziptest UI
+**Sub-steps** (can be worked in parallel where noted):
 
-**Next Steps**:
-1. Diagnose why one browser window doesn't see "active" agents
-2. Check ping/signal flow between browser agents
-3. May need signal relay support for browser-to-browser pings
+| Sub-step | Repo | Priority | Parallelizable | Doc |
+|----------|------|----------|----------------|-----|
+| 19.1 | fishy | Low | Yes | [19.1_ISSUE_GET_JOINING_TIMESTAMP.md](./19.1_ISSUE_GET_JOINING_TIMESTAMP.md) |
+| 19.2 | hc-membrane | Done | — | [19.2_HC_MEMBRANE_KITSUNE_DHT_OPS.md](./19.2_HC_MEMBRANE_KITSUNE_DHT_OPS.md) |
+| 19.3 | hc-membrane | Critical | No (blocks 19.4) | [19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) |
+| 19.4 | hc-membrane | High | No (after 19.3) | [19.4_PUBLISHED_DATA_NOT_QUERYABLE.md](./19.4_PUBLISHED_DATA_NOT_QUERYABLE.md) |
+| 19.5 | fishy | Medium | Yes | [19.5_SYNC_XHR_TIMEOUT_REDUCTION.md](./19.5_SYNC_XHR_TIMEOUT_REDUCTION.md) |
+| 19.6 | fishy | Medium | Yes | [19.6_GET_AGENT_ACTIVITY_HOST_FN.md](./19.6_GET_AGENT_ACTIVITY_HOST_FN.md) |
+
+**Critical path**: 19.3 → 19.4 → re-test e2e
+**Independent**: 19.1, 19.5, 19.6 can be done in parallel with each other and with the critical path
 
 ---
 
