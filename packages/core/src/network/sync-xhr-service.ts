@@ -23,6 +23,8 @@ const log = createLogger('SyncXHR');
 
 /**
  * Default timeout for network requests (30 seconds)
+ * Note: sync XHR timeout may not work reliably in all Worker contexts.
+ * The timeout is set as a best-effort guard against indefinite blocking.
  */
 const DEFAULT_TIMEOUT = 30000;
 
@@ -447,8 +449,10 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
-      // The request will block until complete or browser timeout
+      // In a Worker context (not Window), xhr.timeout works for sync XHR.
+      // Without this, a slow gateway DHT query blocks the entire worker thread
+      // and serialized zome call chain indefinitely.
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -489,7 +493,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -528,7 +532,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -567,7 +571,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -612,7 +616,9 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      // Note: xhr.timeout on sync XHR may cause hangs in some Worker contexts.
+      // Disabled for now - rely on gateway's own timeouts.
+      // try { xhr.timeout = this.defaultTimeout; } catch (_) {}
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send();
 
@@ -652,7 +658,9 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      // Note: xhr.timeout on sync XHR may cause hangs in some Worker contexts.
+      // Disabled for now - rely on gateway's own timeouts.
+      // try { xhr.timeout = this.defaultTimeout; } catch (_) {}
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify({
         agent_pub_key: agentPubKey,
