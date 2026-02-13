@@ -980,7 +980,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Build URL for counting links
    */
-  private buildCountLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number): string {
+  private buildCountLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
@@ -988,7 +988,10 @@ class ProxyNetworkService implements NetworkService {
     if (linkType !== undefined) {
       params.set('type', linkType.toString());
     }
-    return `${gatewayUrl}/dht/${dnaHashB64}/links/count?${params.toString()}`;
+    if (zomeIndex !== undefined) {
+      params.set('zome_index', zomeIndex.toString());
+    }
+    return `${gatewayUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
   }
 
   /**
@@ -1261,12 +1264,12 @@ class ProxyNetworkService implements NetworkService {
     }
   }
 
-  countLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, options?: any): number {
+  countLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number, options?: any): number {
     if (!gatewayUrl) {
       return 0;
     }
 
-    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType);
+    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
     console.log(`[ProxyNetwork] Counting links: ${url}`);
 
     try {
@@ -1275,7 +1278,11 @@ class ProxyNetworkService implements NetworkService {
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
         const count = JSON.parse(responseText);
-        console.log(`[ProxyNetwork] Link count: ${count}`);
+        console.log(`[ProxyNetwork] Link count:`, typeof count, Array.isArray(count) ? `array(${count.length})` : count);
+        // CountLinksResponse is Vec<ActionHash> (array) in kitsune mode, or number in conductor mode
+        if (Array.isArray(count)) {
+          return count.length;
+        }
         return typeof count === 'number' ? count : 0;
       } else if (response.status === 404) {
         console.log(`[ProxyNetwork] No links found (404)`);

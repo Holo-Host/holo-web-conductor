@@ -119,6 +119,7 @@ export interface NetworkService {
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,
+    zomeIndex?: number,
     options?: NetworkFetchOptions
   ): number;
 

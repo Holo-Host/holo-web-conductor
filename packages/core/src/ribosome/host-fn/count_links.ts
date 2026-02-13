@@ -1,22 +1,24 @@
 /**
  * count_links host function
  *
- * Counts links from a base address using storage.
+ * Counts links from a base address using cascade (local + network).
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
+import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { parseLinkTypeFilter } from "./get_links";
 
 /**
- * Count links input structure
+ * Count links input structure (HDK sends LinkQuery)
  */
 interface CountLinksInput {
   /** Base address to count links from */
   base: Uint8Array;
 
-  /** Link type filter */
-  link_type?: number | { App: { id: number; zome_id: number } };
+  /** Link type filter (LinkTypeFilter enum) */
+  link_type?: unknown;
 
   /** Tag filter prefix */
   tag_prefix?: Uint8Array;
@@ -25,7 +27,8 @@ interface CountLinksInput {
 /**
  * count_links host function implementation
  *
- * Counts links from storage (uses session cache for synchronous reads).
+ * Uses cascade pattern (local + network) so zero-arc nodes can count
+ * other agents' links via the gateway.
  */
 export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
@@ -36,17 +39,16 @@ export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
-  // Parse link type filter
-  const linkTypeFilter = input.link_type !== undefined
-    ? (typeof input.link_type === 'number' ? input.link_type : input.link_type.App?.id)
-    : undefined;
+  // Parse link type filter using the same parser as get_links
+  const linkTypeFilter = parseLinkTypeFilter(input.link_type);
 
-  // Get links from storage (always synchronous with StorageProvider)
-  let storedLinks = storage.getLinks(input.base, dnaHash, agentPubKey, linkTypeFilter);
+  // Use cascade for local + network data (same pattern as get_links)
+  const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
+  let links = cascade.fetchLinks(dnaHash, agentPubKey, input.base, linkTypeFilter);
 
   // Filter by tag prefix if specified
   if (input.tag_prefix && input.tag_prefix.length > 0) {
-    storedLinks = storedLinks.filter(link => {
+    links = links.filter(link => {
       if (link.tag.length < input.tag_prefix!.length) return false;
       for (let i = 0; i < input.tag_prefix!.length; i++) {
         if (link.tag[i] !== input.tag_prefix![i]) return false;
@@ -55,12 +57,9 @@ export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
     });
   }
 
-  // Filter out deleted links
-  storedLinks = storedLinks.filter(link => !link.deleted);
+  const count = links.length;
 
-  const count = storedLinks.length;
-
-  console.log('[count_links] Counted links:', count);
+  console.log('[count_links] Counted links (cascade):', count);
 
   return serializeResult(instance, count);
 };

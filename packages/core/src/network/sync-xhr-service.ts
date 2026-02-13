@@ -146,7 +146,8 @@ export class SyncXHRNetworkService implements NetworkService {
   private buildCountLinksUrl(
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
-    linkType?: number
+    linkType?: number,
+    zomeIndex?: number
   ): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
@@ -155,7 +156,10 @@ export class SyncXHRNetworkService implements NetworkService {
     if (linkType !== undefined) {
       params.set('type', linkType.toString());
     }
-    return `${this.gatewayUrl}/dht/${dnaHashB64}/links/count?${params.toString()}`;
+    if (zomeIndex !== undefined) {
+      params.set('zome_index', zomeIndex.toString());
+    }
+    return `${this.gatewayUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
   }
 
   /**
@@ -561,9 +565,10 @@ export class SyncXHRNetworkService implements NetworkService {
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,
+    zomeIndex?: number,
     options?: NetworkFetchOptions
   ): number {
-    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType);
+    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
     log.debug(` Counting links: ${url}`);
@@ -578,7 +583,11 @@ export class SyncXHRNetworkService implements NetworkService {
 
       if (xhr.status === 200) {
         const count = JSON.parse(xhr.responseText);
-        log.debug(` Link count: ${count}`);
+        log.debug(` Link count response:`, typeof count, Array.isArray(count) ? `array(${count.length})` : count);
+        // CountLinksResponse is Vec<ActionHash> (array) in kitsune mode, or number in conductor mode
+        if (Array.isArray(count)) {
+          return count.length;
+        }
         return typeof count === 'number' ? count : 0;
       } else if (xhr.status === 404) {
         log.debug(` No links found (404)`);
