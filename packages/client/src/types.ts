@@ -75,6 +75,8 @@ export interface FishyAppInfo {
   contextId: string;
   agentPubKey: Uint8Array | number[];
   cells: Array<[Uint8Array | number[], Uint8Array | number[]]>;
+  /** DNA properties keyed by DNA name (raw objects from manifest) */
+  dnaProperties?: Record<string, Record<string, unknown>>;
 }
 
 declare global {

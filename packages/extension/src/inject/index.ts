@@ -69,6 +69,23 @@ const pendingRequests = new Map<
   }
 >();
 
+// Deep-copy payload for postMessage: strips Vue/framework Proxy wrappers
+// and converts Uint8Arrays to plain Arrays (content script handles the reverse).
+function normalizeForPostMessage(data: any): any {
+  if (data === null || data === undefined) return data;
+  if (typeof data === "function") return undefined;
+  if (data instanceof Uint8Array) return Array.from(data);
+  if (Array.isArray(data)) return data.map(normalizeForPostMessage);
+  if (typeof data === "object") {
+    const result: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+      result[key] = normalizeForPostMessage(data[key]);
+    }
+    return result;
+  }
+  return data;
+}
+
 // Send message to content script via postMessage
 function sendToContentScript(type: string, payload: any): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -77,13 +94,17 @@ function sendToContentScript(type: string, payload: any): Promise<any> {
     // Store promise callbacks
     pendingRequests.set(id, { resolve, reject });
 
+    // Normalize payload to strip Proxy wrappers and convert Uint8Arrays
+    // to plain arrays for structured clone compatibility
+    const normalizedPayload = normalizeForPostMessage(payload);
+
     // Send message to content script
     window.postMessage(
       {
         source: "fishy-page",
         type,
         id,
-        payload,
+        payload: normalizedPayload,
       },
       "*"
     );

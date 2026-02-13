@@ -940,6 +940,12 @@ async function handleCallZome(
     // Chrome's message passing converts Uint8Arrays to objects like {0: byte0, 1: byte1, ...}
     const normalizedPayload = normalizeUint8Arrays(payload);
 
+    // DIAGNOSTIC: log raw and normalized payload for failing calls
+    if (fn_name === 'get_joining_timestamp_for_agent' || fn_name === 'get_batch_mews_with_context') {
+      console.log(`[DIAG handleCallZome] ${zome_name}::${fn_name} raw payload:`, JSON.stringify(payload));
+      console.log(`[DIAG handleCallZome] ${zome_name}::${fn_name} normalized payload:`, JSON.stringify(normalizedPayload));
+    }
+
     // Serialize payload to MessagePack
     const payloadBytes = new Uint8Array(encode(normalizedPayload));
     logZome.trace(`Payload serialized: ${payloadBytes.length} bytes`);
@@ -1019,10 +1025,14 @@ async function handleCallZome(
 
     return createSuccessResponse(message.id, transportSafeResult);
   } catch (error) {
-    logZome.error("Error in handleCallZome:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const rp = message.payload as any;
+    const zn = rp?.zome || rp?.zome_name || '?';
+    const fn = rp?.function || rp?.fn_name || '?';
+    logZome.error(`Error in handleCallZome ${zn}::${fn}:`, errMsg);
     return createErrorResponse(
       message.id,
-      error instanceof Error ? error.message : String(error)
+      `${zn}::${fn}: ${errMsg}`
     );
   }
 }
@@ -1061,6 +1071,14 @@ async function handleAppInfo(
     // Update last used timestamp
     await happContextManager.touchContext(context.id);
 
+    // Collect DNA properties for each DNA (apps need this for dna_modifiers)
+    const dnaProperties: Record<string, Record<string, unknown>> = {};
+    for (const dna of context.dnas) {
+      if (dna.name && dna.properties) {
+        dnaProperties[dna.name] = dna.properties;
+      }
+    }
+
     return createSuccessResponse(message.id, {
       contextId: context.id,
       domain: context.domain,
@@ -1070,6 +1088,7 @@ async function handleAppInfo(
       cells: happContextManager.getCellIds(context),
       installedAt: context.installedAt,
       enabled: context.enabled,
+      dnaProperties,
     });
   } catch (error) {
     return createErrorResponse(

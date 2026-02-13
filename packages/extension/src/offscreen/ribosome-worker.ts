@@ -1328,6 +1328,7 @@ let zomeCallChain: Promise<void> = Promise.resolve();
 async function handleCallZome(payload: any): Promise<any> {
   const workerCallStart = performance.now();
   const { dnaWasm, cellId, zome, fn, payloadBytes, provenance, dnaManifest } = payload;
+  console.log(`[Ribosome Worker] >>> handleCallZome START: ${zome}::${fn}`);
 
   // Set cell context for storage
   const cellIdBytes: [Uint8Array, Uint8Array] = [
@@ -1364,8 +1365,10 @@ async function handleCallZome(payload: any): Promise<any> {
   };
   const afterBuildRequest = performance.now();
 
+  console.log(`[Ribosome Worker] >>> calling WASM: ${zome}::${fn}`);
   const zomeResult = await callZome(request);
   const afterZomeCall = performance.now();
+  console.log(`[Ribosome Worker] <<< WASM returned: ${zome}::${fn} in ${(afterZomeCall - afterBuildRequest).toFixed(0)}ms`);
 
   // Convert pending records for transport (Uint8Array -> Array)
   let pendingRecordsForTransport: any[] | undefined;
