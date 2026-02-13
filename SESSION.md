@@ -31,13 +31,24 @@
 
 | Sub-step | Repo | Status | Blocker? |
 |----------|------|--------|----------|
-| [19.3](./STEPS/19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) | hc-membrane | Open | CRITICAL — blocks all queries |
+| [19.3](./STEPS/19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) | hc-membrane | In Progress | CRITICAL — blocks all queries |
 | [19.4](./STEPS/19.4_PUBLISHED_DATA_NOT_QUERYABLE.md) | hc-membrane | Open | Depends on 19.3 |
 | [19.5](./STEPS/19.5_SYNC_XHR_TIMEOUT_REDUCTION.md) | fishy | Open | Independent, non-blocking |
 | [19.6](./STEPS/19.6_GET_AGENT_ACTIVITY_HOST_FN.md) | fishy | Open | Independent, non-blocking |
 
 **Critical path**: 19.3 → 19.4 → re-test e2e
 **Independent**: 19.5 and 19.6 can be done in parallel
+
+---
+
+### Step 19.3 Progress (hc-membrane side)
+
+Investigation in hc-membrane-kitsune-dht-ops worktree. See `SESSION.md` there for full details.
+
+**Confirmed**: Wire encoding identical, message format correct, `send_notify` succeeds, response routing code is correct.
+**Unknown**: Whether conductor receives messages, whether reverse transport works.
+**Test scripts created** (not yet run): `scripts/test-dht-roundtrip.sh` + `scripts/test-ws-client.mjs`
+**Next step**: Run the round-trip test with TRACE logging to identify where responses are lost.
 
 ---
 
