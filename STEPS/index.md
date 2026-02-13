@@ -51,8 +51,13 @@
 | 14.3 | ✅ | Enhanced FishyAppClient |
 | 14.4 | ✅ | Extension API Enhancements |
 | 15 | 📋 | Robust Publish Verification |
-| 16 | ⏳ | E2E Debugging Automation |
-| 17 | ⏳ | hc-membrane 0.6.1 Integration |
+| 16 | ✅ | E2E Debugging Automation |
+| 17 | ✅ | hc-membrane 0.6.1 Integration |
+| 18 | ✅ | Zome Call Serialization |
+| 19 | ❌ | Mewsfeed E2E Test (blocked on 19.2) |
+| 19.1 | 📋 | Issue: get_joining_timestamp deserialization |
+| 19.2 | 📋 | hc-membrane: Kitsune DHT Ops (blocking 19) |
+| 21 | 📋 | Firefox Compatibility |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
@@ -93,46 +98,34 @@ Ensure publishing only proceeds when network connectivity is verified:
 
 **Background**: Currently auto-retry on reconnect uses a 2-second delay to hope agent registration propagates. This should verify actual peer connectivity instead.
 
-### Step 16: E2E Debugging Automation
-**Priority**: High (developer productivity)
-**Status**: In Progress
+### Step 19: Mewsfeed E2E Test
+**Priority**: High (proves complex hApp compatibility)
+**Status**: Blocked on 19.2
+**Depends On**: hc-membrane repo (step 19.2)
 
-Enable Claude to run e2e tests programmatically without manual intervention:
-- Playwright-based test runner with extension loading
-- Environment manager wrapping e2e-test-setup.sh
-- Log aggregation from gateway/conductor/extension
-- Structured JSON output for programmatic parsing
-
-See [16_PLAN.md](./16_PLAN.md)
-
-### Step 17: hc-membrane 0.6.1 Integration
-**Priority**: High (required for Holochain 0.6.1 compatibility)
-**Status**: In Progress - Partial Success
-**Depends On**: hc-membrane repo (separate)
-
-Integrate fishy extension with updated hc-membrane gateway using kitsune2 0.4.x + iroh transport:
+Prove fishy + hc-membrane kitsune mode works with mewsfeed DNA (5 integrity + 6 coordinator zomes).
 
 **What Works**:
-- Both browser agents register with gateway
-- Gateway exchanges preflights with conductors (kitsune2/iroh)
-- Profile data published to both conductors
-- get_links queries return correct data
-- One browser window shows the other agent's profile
+- Mewsfeed UI adapted for fishy (FishyAppClient, ZeroArcProfilesClient)
+- Both agents create profiles, Alice creates mew with hashtag
+- `search_tags` works (only uses `get_links` → kitsune path)
 
-**What Doesn't Work Yet**:
-- Second browser window times out waiting for "active" agent
-- Likely timing or "active" status detection issue
+**Blocked On**: hc-membrane `/dht/{dna}/details/{hash}` has no kitsune impl → returns 502
+- See [19.2_HC_MEMBRANE_KITSUNE_DHT_OPS.md](./19.2_HC_MEMBRANE_KITSUNE_DHT_OPS.md)
 
-**Uncommitted Changes**:
-- `packages/core/src/network/sync-xhr-service.ts` - WireLinkOps dual-format parsing
-- `packages/extension/src/offscreen/ribosome-worker.ts` - Mirror WireLinkOps parsing
-- `packages/e2e/src/environment.ts` - Gateway config for membrane mode
-- `scripts/e2e-test-setup.sh` - Added --gateway option, quic transport, ziptest UI
+**Known Issues**:
+- [19.1](./19.1_ISSUE_GET_JOINING_TIMESTAMP.md): get_joining_timestamp deserialization (cosmetic)
+- `count_links` host fn only queries local storage (secondary)
 
-**Next Steps**:
-1. Diagnose why one browser window doesn't see "active" agents
-2. Check ping/signal flow between browser agents
-3. May need signal relay support for browser-to-browser pings
+### Step 21: Firefox Compatibility
+**Priority**: Medium (expands browser support)
+**Status**: Planned
+
+Make the extension fully compatible with Firefox in addition to Chrome. Firefox lacks `chrome.offscreen`, `SharedArrayBuffer` (for regular extensions), and `chrome.runtime.getContexts()`. The solution uses direct sync XHR from the ribosome worker (Firefox Workers support sync XHR) and key preloading for signing, eliminating the need for offscreen documents and SharedArrayBuffer.
+
+8 phases: browser abstraction, dual manifest/build, executor interface, Firefox worker architecture, serialization audit, SQLite verification, E2E testing, WebSocket/signals.
+
+See [21_PLAN.md](./21_PLAN.md)
 
 ---
 
