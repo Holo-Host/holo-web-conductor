@@ -53,6 +53,7 @@
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ⏳ | E2E Debugging Automation |
 | 17 | ⏳ | hc-membrane 0.6.1 Integration |
+| 22 | 📋 | Migration to holo-host GitHub Org |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
@@ -133,6 +134,13 @@ Integrate fishy extension with updated hc-membrane gateway using kitsune2 0.4.x 
 1. Diagnose why one browser window doesn't see "active" agents
 2. Check ping/signal flow between browser agents
 3. May need signal relay support for browser-to-browser pings
+
+### Step 22: Migration to holo-host GitHub Org
+**Priority**: High (organizational)
+
+Migrate fishy and hc-membrane repos from `zippy` to `holo-host` GitHub org. Publish `@holo-host/fishy-client` as a real npm package. Evolve step-based solo workflow into team workflow with GitHub Projects/Issues for 2-3 contributors. Set up CI/CD.
+
+See [22_PLAN.md](./22_PLAN.md)
 
 ---
 
