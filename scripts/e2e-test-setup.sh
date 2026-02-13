@@ -87,15 +87,16 @@ if [ "$COMMAND" = "unpause" ]; then
 fi
 
 # Configure gateway paths based on type
+# Override defaults with env vars: HC_HTTP_GW_DIR, HC_MEMBRANE_DIR
 configure_gateway() {
     case "$GATEWAY_TYPE" in
         gw-fork)
-            GATEWAY_DIR="$PROJECT_DIR/../hc-http-gw-fork"
+            GATEWAY_DIR="${HC_HTTP_GW_DIR:-$PROJECT_DIR/../hc-http-gw-fork}"
             GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-http-gw"
             GATEWAY_PGREP_PATTERN="target/release/hc-http-gw"
             ;;
         membrane)
-            GATEWAY_DIR="$PROJECT_DIR/../hc-membrane"
+            GATEWAY_DIR="${HC_MEMBRANE_DIR:-$PROJECT_DIR/../hc-membrane}"
             GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-membrane"
             GATEWAY_PGREP_PATTERN="target/release/hc-membrane"
             ;;
@@ -1119,10 +1120,15 @@ case "$COMMAND" in
         echo "  --happ=NAME      Specify which hApp to use (fixture1, ziptest, or mewsfeed, default: fixture1)"
         echo "  --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)"
         echo ""
+        echo "Environment variables:"
+        echo "  HC_MEMBRANE_DIR  Path to hc-membrane repo (default: ../hc-membrane relative to project)"
+        echo "  HC_HTTP_GW_DIR   Path to hc-http-gw-fork repo (default: ../hc-http-gw-fork relative to project)"
+        echo ""
         echo "Examples:"
         echo "  $0 start                                    # Start with fixture1 + gw-fork"
         echo "  $0 start --happ=ziptest                     # Start with ziptest + gw-fork"
         echo "  $0 start --happ=ziptest --gateway=membrane  # Start with ziptest + hc-membrane"
+        echo "  HC_MEMBRANE_DIR=../hc-membrane-kitsune-dht-ops $0 start --gateway=membrane"
         echo "  $0 pause                                    # Stop gateway, keep conductors"
         echo "  $0 unpause                                  # Restart gateway"
         echo "  $0 stop"
