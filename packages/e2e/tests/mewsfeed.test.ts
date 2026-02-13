@@ -239,6 +239,14 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     console.log('[test] Creating profile for bob...');
     await createMewsfeedProfile(bob.page, 'bobcat');
 
+    // After profile creation, navigate back to /feed to ensure CreateMewInput is rendered
+    console.log('[test] Re-navigating alice to /feed after profile creation...');
+    await alice.page.evaluate(() => {
+      history.pushState({}, '', '/feed');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await alice.page.waitForTimeout(3000);
+
     // --- Alice creates a mew with a hashtag ---
     console.log('[test] Alice creating mew with hashtag...');
 
