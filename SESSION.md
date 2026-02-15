@@ -1,134 +1,70 @@
 # Current Session
 
-**Last Updated**: 2026-02-05
-**Current Step**: Step 16 (E2E Debugging Automation) + Step 17 (hc-membrane 0.6.1 Integration)
+**Last Updated**: 2026-02-15
+**Current Work**: Branch integration (steps 18/19/20/21 → hc-membrane)
 
 ---
 
-## Active Work
+## Branch Integration Plan
 
-### Step 17: hc-membrane 0.6.1-rc.0 Integration (NEW)
+Merge feature branches into hc-membrane in dependency order:
 
-**Goal**: Integrate fishy extension with updated hc-membrane using kitsune2 0.4.x + iroh transport.
+| Order | Branch | Commits | Description | Risk |
+|-------|--------|---------|-------------|------|
+| 1 | step-18-zome-call-serialization | 3 | Promise queue for concurrent zome calls | Low - clean, tested |
+| 2 | step-20-validation | 1 | Validation pipeline + host functions, 49 tests | Low - independent |
+| 3 | step-19-mewsfeed-e2e | 13 | Mewsfeed e2e, includes step-18 cherry-pick | Medium - file overlap with step-18 and step-20 |
+| 4 | step-21-firefox | 1 | Plan doc only, no code | None |
 
-**Status**: PARTIAL SUCCESS - Core data flow working, timing/active-status issue remaining
+**File overlap**:
+- step-18 & step-19: `ribosome-worker.ts` (step-19 already cherry-picked step-18)
+- step-19 & step-20: `host-fn/base.ts`, `host-fn/index.ts`, `host-fn/stubs.ts`
 
-**Depends On**: hc-membrane repo updates (see `/home/eric/code/metacurrency/holochain/hc-membrane/SESSION.md`)
-
-#### What Works
-- Both browser agents register with gateway
-- Gateway exchanges preflights with both conductors (kitsune2/iroh)
-- Profile data published to both conductors
-- get_links queries return correct data (both profiles found)
-- One browser window shows the other agent's profile
-
-#### What Doesn't Work Yet
-- Second browser window times out waiting for "active" agent
-- Likely timing or "active" status detection issue in ziptest UI
-
-#### Uncommitted Changes (fishy)
-| File | Change |
-|------|--------|
-| `packages/core/src/network/sync-xhr-service.ts` | WireLinkOps dual-format parsing (Vec<Link> or WireLinkOps) |
-| `packages/extension/src/offscreen/ribosome-worker.ts` | Mirror WireLinkOps parsing for ribosome worker |
-| `packages/e2e/src/environment.ts` | Gateway config updates for membrane mode |
-| `scripts/e2e-test-setup.sh` | Added `--gateway` option, quic transport, ziptest UI server |
-| `flake.lock` | Updated for holonix main-0.6 |
-
-#### Next Steps
-1. Diagnose why one browser window doesn't find "active" agents
-   - Check ping/signal flow between browser agents
-   - Check "active" status logic in ziptest UI
-2. May need to add signal relay support in gateway for browser-to-browser pings
+**After integration**: Run full test suite (`npm test`) to confirm no regressions.
 
 ---
 
-### Step 16: E2E Debugging Automation
+## Agent Teams Roadmap
 
-**Goal**: Enable Claude to run e2e tests programmatically without manual intervention.
+**Current phase**: Single-agent (branch merges are sequential, conflict-heavy)
 
-**Status**: In Progress (infrastructure complete, tests being validated)
+**Next phase**: Agent teams for new feature development (after merges complete)
 
-**Plan**: See [STEPS/16_PLAN.md](./STEPS/16_PLAN.md)
+### Why teams after merges
+- Branch merges are inherently sequential — each merge changes the baseline for the next
+- Conflict resolution requires full context of both sides
+- Agent coordination overhead would exceed the merge work itself
 
-**Completed Sub-tasks**:
-- [x] 16.1: Package Setup - Created packages/e2e with dependencies
-- [x] 16.2: Environment Manager - Wraps e2e-test-setup.sh
-- [x] 16.3: Log Collector - Multi-source log aggregation
-- [x] 16.4: Browser Context - Playwright with extension loading
-- [x] 16.5: Test Runner & CLI - Entry point and output formats
-- [x] 16.6: Test Migration - Ported existing tests to Playwright
-- [x] 16.7: Integration - Root package.json scripts
+### Planned team structure
+| Agent | Domain | File Ownership |
+|-------|--------|----------------|
+| Extension/browser | Content scripts, offscreen, messaging, Chrome/Firefox | `packages/extension/` |
+| Core/ribosome | Host functions, WASM, serialization, validation | `packages/core/src/ribosome/`, `packages/core/src/storage/` |
+| Network/gateway | HTTP/WS client, cascade, publish, kitsune2 | `packages/core/src/network/`, `packages/core/src/dht/` |
+| Testing/e2e | Playwright, integration tests, fixture hApps | `packages/e2e/`, `packages/core/src/integration/` |
 
-**Remaining Work**: Validate e2e tests pass with hc-membrane gateway (Step 17)
+### Prerequisites for teams
+1. Branch integration complete (this session)
+2. Agent definitions in `.claude/agents/*.md` with file ownership boundaries
+3. Shared contracts already in place: serialization rules in CLAUDE.md, host function guide and decision records in ARCHITECTURE.md
+
+### When to transition
+After step-18/19/20/21 are merged and tests pass, create agent definitions and test with a small task (e.g., step 12.2 DHT debug panel + step 12.3 test audit in parallel).
 
 ---
 
-## Environment Commands
+## Step Status (branches)
 
-```bash
-# Start e2e environment with ziptest + hc-membrane
-npm run e2e:env -- start --happ=ziptest --gateway=membrane
-
-# Check status
-npm run e2e:env -- status
-
-# View logs
-npm run e2e:logs
-
-# Stop environment
-npm run e2e:env -- stop
-
-# Run tests (after environment is running)
-npm run e2e:test
-```
+- **Step 18** (zome call serialization): Complete on branch, pending merge
+- **Step 19** (mewsfeed e2e): Partially working, blocked on kitsune2 timeout upstream
+- **Step 20** (validation pipeline): Complete on branch, pending merge
+- **Step 21** (Firefox plan): Plan doc only, pending merge
 
 ---
 
 ## Quick Links
 
 - [Step Registry](./STEPS/index.md) - All step statuses
-- [Step 16 Plan](./STEPS/16_PLAN.md) - E2E automation details
-- [Process Review Checklist](./STEPS/META_1_PROCESS_REVIEW.md)
+- [Architecture](./ARCHITECTURE.md) - System architecture and decisions
 - [Failed Approaches](./LESSONS_LEARNED.md)
-
----
-
-## Coordination with hc-membrane
-
-The fishy extension depends on hc-membrane for gateway functionality. Current work requires both repos:
-
-**hc-membrane status**: See `/home/eric/code/metacurrency/holochain/hc-membrane/SESSION.md`
-
-Key hc-membrane changes:
-- Upgraded to kitsune2 0.4.0-dev.2 (Holochain 0.6.1-rc.0 compatible)
-- Switched from tx5/webrtc to iroh transport
-- Added PreflightCache for agent info in preflight messages
-- Direct wire protocol (GetReq/GetLinksReq/GetRes/GetLinksRes) working
-
----
-
-## How to Resume
-
-```bash
-# 1. Check current state
-cat SESSION.md
-cat STEPS/index.md
-
-# 2. Check hc-membrane state
-cat ../hc-membrane/SESSION.md
-
-# 3. Build hc-membrane (if needed)
-cd ../hc-membrane && nix develop -c cargo build --release
-
-# 4. Build fishy extension
-npm run build:extension
-
-# 5. Start e2e environment
-npm run e2e:env -- start --happ=ziptest --gateway=membrane
-
-# 6. Run tests or investigate
-npm run e2e:test
-# OR
-npm run e2e:logs
-```
+- [Process Review Checklist](./STEPS/META_1_PROCESS_REVIEW.md)

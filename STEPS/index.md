@@ -53,10 +53,14 @@
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ⏳ | E2E Debugging Automation |
 | 17 | ⏳ | hc-membrane 0.6.1 Integration |
+| 18 | 🔀 | Zome Call Serialization (pending merge) |
+| 19 | 🔀 | Mewsfeed E2E (pending merge) |
+| 20 | 🔀 | Validation Pipeline (pending merge) |
+| 21 | 🔀 | Firefox Compatibility Plan (pending merge) |
 | 22 | 📋 | Migration to holo-host GitHub Org |
 | Meta-1 | 📋 | Process Review (periodic) |
 
-**Legend**: ✅ Complete | ⏳ In Progress | 📋 Recurring | ❌ Blocked | 📋 Planned
+**Legend**: ✅ Complete | ⏳ In Progress | 🔀 Pending Merge | 📋 Planned | ❌ Blocked
 
 ---
 
