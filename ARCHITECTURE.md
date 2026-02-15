@@ -180,6 +180,7 @@ let entry = get(entry_hash)?;  // Must return immediately, no async
 - hApp context management (install, enable, disable)
 - Authorization flow (popup approval)
 - Network configuration
+- Delegates WASM execution through `ZomeExecutor` interface
 
 **Why It Exists**:
 - Only context that survives tab navigation
@@ -187,6 +188,33 @@ let entry = get(entry_hash)?;  // Must return immediately, no async
 - Has access to all chrome.* APIs
 
 **Sync Model**: Async only (Promises)
+
+#### ZomeExecutor Interface
+
+The background service worker uses a `ZomeExecutor` interface (`packages/extension/src/lib/zome-executor.ts`) to abstract over the WASM execution environment. This decouples the background from Chrome-specific offscreen document management.
+
+```typescript
+interface ZomeExecutor {
+  initialize(): Promise<void>;
+  isReady(): boolean;
+  configureNetwork(config): Promise<void>;
+  updateSessionToken(token): Promise<void>;
+  registerAgent(dnaHashB64, agentPubKeyB64): Promise<void>;
+  executeZomeCall(contextId, request): Promise<ZomeCallResult>;
+  getAllRecords(dnaHash, agentPubKey): Promise<{ records: any[] }>;
+  processPublishQueue(dnaHashes): Promise<void>;
+  disconnectGateway(): Promise<void>;
+  reconnectGateway(): Promise<void>;
+  getWebSocketState(): Promise<WsStateInfo>;
+  onRemoteSignal(callback): void;
+  onSignRequest(callback): void;
+  onWebSocketStateChange(callback): void;
+}
+```
+
+**Chrome implementation**: `ChromeOffscreenExecutor` (`packages/extension/src/background/chrome-offscreen-executor.ts`) manages the offscreen document lifecycle and routes messages between background and offscreen via `chrome.runtime.sendMessage`.
+
+**Firefox implementation**: Planned. Firefox MV3 event pages have DOM access, so the executor can spawn workers directly without an offscreen document.
 
 ---
 
@@ -568,7 +596,13 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
 │   1. normalizeUint8Arrays(payload)                               │
 │   2. Look up hApp context (get WASM, DNA hash)                  │
 │   3. Prepare request { cellId, zomeName, fnName, payload }      │
-│   4. chrome.runtime.sendMessage → offscreen                      │
+│   4. executor.executeZomeCall(contextId, request)                │
+│                                                                  │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ ChromeOffscreenExecutor (implements ZomeExecutor)            │ │
+│ │   - Converts Uint8Array → number[] for Chrome messaging     │ │
+│ │   - chrome.runtime.sendMessage → offscreen                   │ │
+│ └──────────────────────────────────┬──────────────────────────┘ │
 └────────────────────────────────────┬────────────────────────────┘
                                      │
                                      ▼
@@ -931,6 +965,8 @@ This ensures the browser agent sees links created by other agents, not just its 
 | File | Purpose |
 |------|---------|
 | `packages/extension/src/background/index.ts` | Message router, Lair, authorization |
+| `packages/extension/src/background/chrome-offscreen-executor.ts` | Chrome ZomeExecutor (offscreen document management) |
+| `packages/extension/src/lib/zome-executor.ts` | ZomeExecutor interface + shared types |
 | `packages/extension/src/content/index.ts` | Page ↔ extension bridge |
 | `packages/extension/src/inject/index.ts` | window.holochain API |
 | `packages/extension/src/offscreen/index.ts` | Sync XHR, WebSocket, worker management |
@@ -971,13 +1007,15 @@ This section records *why* key decisions were made and *what's changing*. When t
 
 Chrome MV3 service workers cannot do synchronous XMLHttpRequest or spawn Workers. WASM host functions must be synchronous. The offscreen document is the only extension context with DOM access (sync XHR) and the ability to create a Web Worker.
 
-**Planned change (Step 21 - Firefox):** Firefox MV3 uses an event page (with DOM) instead of a service worker, so Workers can be spawned directly from background and sync XHR works in workers. The offscreen document layer will be replaced by a `ZomeExecutor` interface with Chrome and Firefox implementations. See `STEPS/21_PLAN.md`.
+**Current state:** The `ZomeExecutor` interface has been extracted. `ChromeOffscreenExecutor` implements it for Chrome. The background service worker is now browser-agnostic -- it interacts only with the `ZomeExecutor` interface, not with offscreen document APIs directly.
+
+**Next step (Step 21 - Firefox):** Firefox MV3 uses an event page (with DOM) instead of a service worker, so Workers can be spawned directly from background and sync XHR works in workers. A `FirefoxExecutor` implementation of `ZomeExecutor` will replace the offscreen document layer. See `STEPS/21_PLAN.md`.
 
 ### Why SharedArrayBuffer + Atomics
 
 The ribosome worker runs WASM synchronously. When a host function needs network data or a signature, it must block until the result arrives. SharedArrayBuffer with Atomics.wait/notify provides zero-CPU-cost blocking between the worker and offscreen document.
 
-**Planned change (Step 21 - Firefox):** Firefox workers can do sync XHR directly. The SharedArrayBuffer coordination is only needed on Chrome. The `ProxyNetworkService` will gain a direct-XHR mode.
+**Next step (Step 21 - Firefox):** Firefox workers can do sync XHR directly. The SharedArrayBuffer coordination is only needed on Chrome. The `ProxyNetworkService` will gain a direct-XHR mode. This is internal to the executor implementation and invisible to the background service worker.
 
 **Future (JSPI):** WebAssembly JavaScript Promise Integration would eliminate the sync constraint entirely by allowing WASM to suspend/resume on async calls. Chrome 137+, Firefox behind flag. Monitor for production readiness.
 
@@ -985,7 +1023,7 @@ The ribosome worker runs WASM synchronously. When a host function needs network 
 
 Chrome's message passing (chrome.runtime.sendMessage, chrome.tabs.sendMessage) uses a structured cloning algorithm that converts `Uint8Array` to plain objects `{0: 1, 1: 2, ...}`. Every message boundary between extension contexts must normalize these back.
 
-**Planned change (Step 21 - Firefox):** Firefox preserves Uint8Array via structured clone. The normalization functions become no-ops on Firefox but remain in place for Chrome.
+**Next step (Step 21 - Firefox):** Firefox preserves Uint8Array via structured clone. The normalization functions become no-ops on Firefox but remain in place for Chrome.
 
 **Rule:** All code receiving data across a Chrome message boundary MUST call `normalizeUint8Arrays()` before processing. This is a no-op when data is already Uint8Array, so it's safe to call unconditionally on both browsers.
 
@@ -994,6 +1032,23 @@ Chrome's message passing (chrome.runtime.sendMessage, chrome.tabs.sendMessage) u
 Currently, the browser extension builds DhtOps from Records using TypeScript ports of Holochain's Rust code (`produceOpsFromRecord`). This is fragile -- serialization must be byte-identical for hash compatibility.
 
 **Planned change (Gateway Architecture):** Delegate op construction to hc-membrane gateway, which uses Holochain's actual Rust code. Browser sends Records, gateway calls `produce_ops_from_record()`. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 6.
+
+### Why ZomeExecutor Was Extracted
+
+The background service worker previously contained ~500 lines of Chrome-specific offscreen document management interleaved with message handling, Lair operations, and hApp context management. This made the code:
+- Chrome-only with no path to Firefox support
+- Hard to test (offscreen lifecycle tightly coupled to business logic)
+- Hard to reason about (12+ call sites sending to offscreen, scattered state)
+
+The `ZomeExecutor` interface isolates everything the background needs from the execution environment behind a typed contract. The background service worker is now browser-agnostic.
+
+**Key design choices:**
+- Interface in `src/lib/` (shared types), Chrome implementation in `src/background/` (Chrome-specific)
+- Event callbacks (onRemoteSignal, onSignRequest, onWebSocketStateChange) flow executor → background
+- Background keeps its own `gatewayConfig` for status reporting; executor gets its copy via `configureNetwork()` -- no shared mutable state
+- Health checks stay in background (monitoring concern, not execution concern)
+
+**Test coverage:** `chrome-offscreen-executor.test.ts` validates lifecycle, message routing, event callbacks, and error handling with Chrome API mocks.
 
 ### Why Two Gateway Protocols (HTTP + WebSocket)
 

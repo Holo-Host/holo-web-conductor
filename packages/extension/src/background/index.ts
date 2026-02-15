@@ -56,6 +56,8 @@ import type { ZomeCallRequest } from "@fishy/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
+import type { ZomeExecutor } from "../lib/zome-executor";
+import { ChromeOffscreenExecutor } from "./chrome-offscreen-executor";
 
 // Expose filter control to globalThis for runtime debugging
 // Usage in service worker console: setFishyLogFilter('Signal,CallZome') or fishyLogFilter = 'Signal'
@@ -66,7 +68,6 @@ import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 const log = createLogger('Background');
 const logAuth = createLogger('Auth');
 const logZome = createLogger('CallZome');
-const logOffscreenMgr = createLogger('OffscreenMgr');
 const logGateway = createLogger('Gateway');
 const logSignal = createLogger('Signal');
 const logLair = createLogger('Lair');
@@ -75,17 +76,13 @@ const logHapp = createLogger('HappContext');
 log.info("Fishy background service worker loaded");
 
 // ============================================================================
-// Offscreen Document Management
+// ZomeExecutor - abstraction over offscreen document / WASM execution
 // ============================================================================
 
-const OFFSCREEN_DOCUMENT_PATH = "offscreen/offscreen.html";
-let creatingOffscreen: Promise<void> | null = null;
-let networkConfigured = false;
-let offscreenReady = false;
-let offscreenReadyResolvers: Array<() => void> = [];
+const executor: ZomeExecutor = new ChromeOffscreenExecutor();
 
-// Gateway configuration - can be set via popup settings or environment
-// Default to null (no network) until configured
+// Gateway configuration - tracked in background for status reporting and health checks.
+// Executor gets its own copy via configureNetwork().
 let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
 
 // Connection status tracking
@@ -147,10 +144,18 @@ async function checkGatewayHealth(): Promise<void> {
       lastError: response.ok ? undefined : `HTTP ${response.status}`,
     };
 
-    // Also sync WebSocket state from offscreen to ensure wsHealthy is accurate
+    // Also sync WebSocket state from executor to ensure wsHealthy is accurate
     // This catches cases where WS_STATE_CHANGE messages were missed
-    if (offscreenReady) {
-      syncWebSocketStateFromOffscreen();
+    if (executor.isReady()) {
+      executor.getWebSocketState().then((wsState) => {
+        const wasHealthy = connectionStatus.wsHealthy;
+        connectionStatus.wsHealthy = wsState.isConnected;
+        if (wasHealthy !== connectionStatus.wsHealthy) {
+          notifyConnectionStatusChange();
+        }
+      }).catch(() => {
+        // Ignore errors during health check sync
+      });
     }
   } catch (error) {
     connectionStatus = {
@@ -213,356 +218,46 @@ function stopHealthChecks(): void {
 }
 
 /**
- * Sync WebSocket connection state from offscreen document.
- * This ensures connectionStatus.wsHealthy is accurate after extension reload
- * or when offscreen reconnects without sending WS_STATE_CHANGE.
- */
-async function syncWebSocketStateFromOffscreen(): Promise<void> {
-  try {
-    const response = await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "GET_WS_STATE",
-    });
-
-    if (response?.success) {
-      const isConnected = response.isConnected || false;
-      const state = response.state || "disconnected";
-      const wasHealthy = connectionStatus.wsHealthy;
-      connectionStatus.wsHealthy = isConnected || state === "connected";
-
-      logGateway.debug(`Synced WebSocket state from offscreen: state=${state}, isConnected=${isConnected}, wsHealthy=${connectionStatus.wsHealthy}`);
-
-      if (wasHealthy !== connectionStatus.wsHealthy) {
-        notifyConnectionStatusChange();
-      }
-    }
-  } catch (error) {
-    // Offscreen might not be ready yet, ignore
-    logGateway.debug("Could not sync WebSocket state from offscreen:", error);
-  }
-}
-
-
-/**
- * Check if the offscreen document exists
- */
-async function hasOffscreenDocument(): Promise<boolean> {
-  const contexts = await chrome.runtime.getContexts({
-    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-    documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
-  });
-  return contexts.length > 0;
-}
-
-/**
- * Called when offscreen sends OFFSCREEN_READY message
- */
-function markOffscreenReady(): void {
-  offscreenReady = true;
-  // Resolve any waiting promises
-  for (const resolve of offscreenReadyResolvers) {
-    resolve();
-  }
-  offscreenReadyResolvers = [];
-
-  // Sync WebSocket state from offscreen to ensure connectionStatus.wsHealthy is accurate
-  // This handles cases where offscreen was already connected before background initialized
-  syncWebSocketStateFromOffscreen();
-}
-
-/**
- * Wait for offscreen to be ready (with timeout)
- */
-async function waitForOffscreenReady(timeoutMs: number = 5000): Promise<void> {
-  if (offscreenReady) return;
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      // Remove this resolver
-      offscreenReadyResolvers = offscreenReadyResolvers.filter(r => r !== resolve);
-      reject(new Error('Offscreen document ready timeout'));
-    }, timeoutMs);
-
-    offscreenReadyResolvers.push(() => {
-      clearTimeout(timeout);
-      resolve();
-    });
-  });
-}
-
-/**
- * Create the offscreen document if it doesn't exist
- */
-async function ensureOffscreenDocument(): Promise<void> {
-  const exists = await hasOffscreenDocument();
-
-  if (exists && offscreenReady) {
-    logOffscreenMgr.debug("Offscreen document already exists and ready");
-    return;
-  }
-
-  if (exists && !offscreenReady) {
-    // Document exists but we haven't received ready signal
-    // This can happen after extension reload - wait for ready or timeout
-    logOffscreenMgr.debug("Offscreen exists but not ready, waiting...");
-    try {
-      await waitForOffscreenReady(3000);
-      logOffscreenMgr.debug("Offscreen is now ready");
-      return;
-    } catch {
-      // Timeout - document might be stale, close and recreate
-      logOffscreenMgr.warn("Offscreen not ready after timeout, recreating...");
-      await chrome.offscreen.closeDocument();
-      offscreenReady = false;
-    }
-  }
-
-  // Avoid creating multiple offscreen documents
-  if (creatingOffscreen) {
-    await creatingOffscreen;
-    return;
-  }
-
-  logOffscreenMgr.info("Creating offscreen document...");
-  offscreenReady = false;
-  creatingOffscreen = chrome.offscreen.createDocument({
-    url: OFFSCREEN_DOCUMENT_PATH,
-    reasons: [chrome.offscreen.Reason.WORKERS],
-    justification: "Running WASM with synchronous network access for zome calls",
-  });
-
-  await creatingOffscreen;
-  creatingOffscreen = null;
-  logOffscreenMgr.info("Offscreen document created, waiting for ready...");
-
-  // Wait for offscreen to signal ready
-  try {
-    await waitForOffscreenReady(10000);
-    logOffscreenMgr.info("Offscreen document ready");
-  } catch {
-    logOffscreenMgr.error("Offscreen document failed to become ready");
-    throw new Error("Offscreen document initialization failed");
-  }
-
-  // Configure network if we have a gateway URL
-  if (gatewayConfig && !networkConfigured) {
-    await configureOffscreenNetwork(gatewayConfig);
-  }
-}
-
-/**
- * Configure the network service in the offscreen document
- */
-async function configureOffscreenNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void> {
-  logGateway.info(`Configuring offscreen network with gateway: ${config.gatewayUrl}`);
-
-  try {
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "CONFIGURE_NETWORK",
-      gatewayUrl: config.gatewayUrl,
-      sessionToken: config.sessionToken,
-    });
-    networkConfigured = true;
-    logGateway.info("Offscreen network configured");
-
-    // Sync WebSocket state after a short delay to allow connection to establish
-    // This ensures connectionStatus.wsHealthy is updated even if WS_STATE_CHANGE was missed
-    setTimeout(() => {
-      syncWebSocketStateFromOffscreen();
-    }, 1000);
-  } catch (error) {
-    logGateway.error("Failed to configure offscreen network:", error);
-  }
-}
-
-/**
  * Set the gateway configuration
- * Call this to enable network requests via hc-http-gw
+ * Call this to enable network requests via hc-membrane
  */
 function setGatewayConfig(url: string, sessionToken?: string): void {
   gatewayConfig = { gatewayUrl: url, sessionToken };
-  networkConfigured = false; // Will be configured on next offscreen use
-
   logGateway.info(`Gateway config set: ${url}`);
-
-  // Start health checks when gateway is configured
   startHealthChecks();
 }
 
 /**
- * Update the session token for the gateway
- */
-async function updateGatewaySessionToken(token: string | null): Promise<void> {
-  if (gatewayConfig) {
-    gatewayConfig.sessionToken = token || undefined;
-  }
-
-  // If offscreen is running, update it too
-  if (networkConfigured) {
-    try {
-      await chrome.runtime.sendMessage({
-        target: "offscreen",
-        type: "UPDATE_SESSION_TOKEN",
-        sessionToken: token,
-      });
-      logGateway.debug("Session token updated in offscreen");
-    } catch (error) {
-      logGateway.error("Failed to update session token:", error);
-    }
-  }
-}
-
-/**
- * Register an agent with the gateway for signal forwarding
- * This tells the gateway's WebSocket service to forward signals for this dna/agent to us
- */
-async function registerAgentWithGateway(dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void> {
-  if (!networkConfigured) {
-    logGateway.debug("Skipping agent registration - network not configured");
-    return;
-  }
-
-  // Debug: log the raw bytes
-  logGateway.trace(`registerAgentWithGateway - dnaHash bytes (first 10):`, Array.from(dnaHash.slice(0, 10)));
-  logGateway.trace(`registerAgentWithGateway - agentPubKey bytes (first 10):`, Array.from(agentPubKey.slice(0, 10)));
-  logGateway.trace(`registerAgentWithGateway - dnaHash length: ${dnaHash.length}, agentPubKey length: ${agentPubKey.length}`);
-  // Log Ed25519 key that would be used for signing (bytes 3-35 of AgentPubKey)
-  if (agentPubKey.length === 39) {
-    const ed25519Key = agentPubKey.slice(3, 35);
-    logGateway.trace(`registerAgentWithGateway - Ed25519 key (first 8 bytes): ${Array.from(ed25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
-  }
-
-  const dnaHashB64 = encodeHashToBase64(dnaHash);
-  const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
-  logGateway.info(`Registering agent with gateway: dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`);
-
-  try {
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "REGISTER_AGENT",
-      dna_hash: dnaHashB64,
-      agent_pubkey: agentPubKeyB64,
-    });
-    logGateway.debug("Agent registered with gateway");
-  } catch (error) {
-    logGateway.error("Failed to register agent with gateway:", error);
-  }
-}
-
-/**
- * Register all agents from a hApp context with the gateway
- * If a DNA hash override is configured, register with that instead of the context's DNA hash
+ * Register all agents from a hApp context with the gateway via the executor
  */
 async function registerContextAgentsWithGateway(context: HappContext): Promise<void> {
-  logGateway.trace(`registerContextAgentsWithGateway - context.agentPubKey type:`, typeof context.agentPubKey, context.agentPubKey?.constructor?.name);
-
   const agentPubKey = toUint8Array(context.agentPubKey);
-  logGateway.trace(`registerContextAgentsWithGateway - after toUint8Array, length: ${agentPubKey.length}`);
+  const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
 
   for (const dna of context.dnas) {
     const dnaHash = toUint8Array(dna.hash);
-    await registerAgentWithGateway(dnaHash, agentPubKey);
+    const dnaHashB64 = encodeHashToBase64(dnaHash);
+    await executor.registerAgent(dnaHashB64, agentPubKeyB64);
   }
 }
 
-/**
- * Register an agent with the gateway using a base64 DNA hash string
- */
-async function registerAgentWithGatewayByB64(dnaHashB64: string, agentPubKey: Uint8Array): Promise<void> {
-  if (!networkConfigured) {
-    logGateway.debug("Skipping agent registration - network not configured");
-    return;
+// Wire executor event callbacks
+executor.onWebSocketStateChange((state) => {
+  logGateway.debug(`WebSocket state changed: ${state}`);
+  const wasHealthy = connectionStatus.wsHealthy;
+  connectionStatus.wsHealthy = state === "connected";
+  if (wasHealthy !== connectionStatus.wsHealthy) {
+    notifyConnectionStatusChange();
   }
+});
 
-  const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
-  logGateway.info(`Registering agent with gateway (override): dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`);
+executor.onRemoteSignal((data) => {
+  handleRemoteSignal(data);
+});
 
-  try {
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "REGISTER_AGENT",
-      dna_hash: dnaHashB64,
-      agent_pubkey: agentPubKeyB64,
-    });
-    logGateway.debug("Agent registered with gateway");
-  } catch (error) {
-    logGateway.error("Failed to register agent with gateway:", error);
-  }
-}
-
-/**
- * Minimal zome call request - only includes data needed by offscreen
- * WASM and manifest are fetched from shared IndexedDB by the offscreen document
- */
-interface MinimalZomeCallRequest {
-  contextId: string;
-  dnaHashBase64: string;
-  cellId: [number[], number[]]; // [dnaHash, agentPubKey] as arrays
-  zome: string;
-  fn: string;
-  payload: number[];
-  provenance: number[];
-}
-
-/**
- * Execute a zome call via the offscreen document
- * The offscreen document can make synchronous XHR calls that host functions need
- *
- * IMPORTANT: We only send minimal data through message passing.
- * The offscreen document fetches WASM and manifest from shared IndexedDB.
- */
-async function executeZomeCallViaOffscreen(
-  contextId: string,
-  zomeCallRequest: ZomeCallRequest
-): Promise<{ result: unknown; signals: any[] }> {
-  const perfStart = performance.now();
-
-  await ensureOffscreenDocument();
-  const afterOffscreen = performance.now();
-
-  const requestId = crypto.randomUUID();
-  const dnaHashBase64 = btoa(String.fromCharCode(...zomeCallRequest.cellId[0]));
-
-  // Build minimal request - no WASM or manifest, just references
-  // Pre-conversion pattern: Convert Uint8Arrays to number[] before Chrome message passing.
-  // Chrome's structured cloning converts Uint8Array to {0:x, 1:y} objects which is harder
-  // to work with. Using Array.from() produces clean number[] that toUint8Array() can restore.
-  const minimalRequest: MinimalZomeCallRequest = {
-    contextId,
-    dnaHashBase64,
-    cellId: [
-      Array.from(zomeCallRequest.cellId[0]),
-      Array.from(zomeCallRequest.cellId[1]),
-    ],
-    zome: zomeCallRequest.zome,
-    fn: zomeCallRequest.fn,
-    payload: Array.from(zomeCallRequest.payload),
-    provenance: Array.from(zomeCallRequest.provenance),
-  };
-
-  const afterBuild = performance.now();
-  logZome.info(`Sending zome call to offscreen: ${zomeCallRequest.zome}::${zomeCallRequest.fn} (context: ${contextId})`);
-
-  const response = await chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "EXECUTE_ZOME_CALL",
-    requestId,
-    zomeCallRequest: minimalRequest,
-  });
-  const afterMessage = performance.now();
-
-  log.perf(`executeZomeCallViaOffscreen breakdown: ensureOffscreen=${(afterOffscreen - perfStart).toFixed(1)}ms, buildRequest=${(afterBuild - afterOffscreen).toFixed(1)}ms, sendMessage=${(afterMessage - afterBuild).toFixed(1)}ms, TOTAL=${(afterMessage - perfStart).toFixed(1)}ms`);
-
-  if (!response.success) {
-    throw new Error(response.error || "Offscreen zome call failed");
-  }
-
-  return {
-    result: response.result,
-    signals: response.signals || [],
-  };
-}
+executor.onSignRequest((data) => {
+  return handleSignRequest(data);
+});
 
 // Singleton instances
 const lairLock = getLairLock();
@@ -962,7 +657,7 @@ async function handleCallZome(
 
     // Execute via offscreen document (which can make sync XHR calls)
     // The offscreen document fetches WASM/manifest from IndexedDB
-    const { result: transportSafeResult, signals } = await executeZomeCallViaOffscreen(context.id, zomeCallRequest);
+    const { result: transportSafeResult, signals } = await executor.executeZomeCall(context.id, zomeCallRequest);
     const afterOffscreen = performance.now();
     logZome.trace(`Result from offscreen:`, typeof transportSafeResult);
 
@@ -1762,12 +1457,10 @@ async function handleGatewayConfigure(
 
     setGatewayConfig(gatewayUrl);
 
-    // Create offscreen document if needed (so WebSocket service can connect)
-    // and configure network
-    await ensureOffscreenDocument();
-    logGateway.debug(`networkConfigured = ${networkConfigured}`);
-    if (!networkConfigured) {
-      await configureOffscreenNetwork({ gatewayUrl });
+    // Initialize executor and configure network
+    await executor.initialize();
+    if (!executor.networkConfigured) {
+      await executor.configureNetwork({ gatewayUrl });
     } else {
       logGateway.debug("Network already configured, skipping");
     }
@@ -1801,7 +1494,7 @@ async function handleGatewayGetStatus(
     configured: gatewayConfig !== null,
     gatewayUrl: gatewayConfig?.gatewayUrl || null,
     hasSession: !!gatewayConfig?.sessionToken,
-    networkConfigured,
+    networkConfigured: executor.networkConfigured,
   });
 }
 
@@ -1814,11 +1507,7 @@ async function handleGatewayDisconnect(
   log.info("[Gateway] Disconnecting WebSocket...");
 
   try {
-    await ensureOffscreenDocument();
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "GATEWAY_DISCONNECT",
-    });
+    await executor.disconnectGateway();
   } catch (error) {
     log.warn("Failed to disconnect gateway:", error);
     return createErrorResponse(message.id, error instanceof Error ? error.message : "Failed to disconnect");
@@ -1836,11 +1525,7 @@ async function handleGatewayReconnect(
   log.info("[Gateway] Reconnecting WebSocket...");
 
   try {
-    await ensureOffscreenDocument();
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "GATEWAY_RECONNECT",
-    });
+    await executor.reconnectGateway();
   } catch (error) {
     log.warn("Failed to reconnect gateway:", error);
     return createErrorResponse(message.id, error instanceof Error ? error.message : "Failed to reconnect");
@@ -1963,14 +1648,9 @@ async function handlePublishRetryFailed(
     const tracker = PublishTracker.getInstance();
     const resetCount = await tracker.resetFailedForDnas(dnaHashes);
 
-    // Trigger publish queue processing in offscreen
+    // Trigger publish queue processing via executor
     if (resetCount > 0) {
-      await ensureOffscreenDocument();
-      chrome.runtime.sendMessage({
-        target: "offscreen",
-        type: "PROCESS_PUBLISH_QUEUE",
-        dnaHashes: dnaHashes.map((h) => Array.from(h)),
-      }).catch((err) => {
+      executor.processPublishQueue(dnaHashes.map((h) => Array.from(h))).catch((err) => {
         log.error("Failed to trigger publish queue processing:", err);
       });
     }
@@ -2002,8 +1682,8 @@ async function handlePublishAllRecords(
 
     log.info(`[PUBLISH_ALL_RECORDS] Starting republish for context: ${contextId}`);
 
-    // Ensure offscreen is ready
-    await ensureOffscreenDocument();
+    // Ensure executor is ready
+    await executor.initialize();
 
     const tracker = PublishTracker.getInstance();
     let cellsProcessed = 0;
@@ -2017,22 +1697,18 @@ async function handlePublishAllRecords(
 
       log.debug(`[PUBLISH_ALL_RECORDS] Getting records for DNA: ${encodeHashToBase64(dnaHash).substring(0, 15)}...`);
 
-      // Send GET_ALL_RECORDS to offscreen
-      const response = await chrome.runtime.sendMessage({
-        target: "offscreen",
-        type: "GET_ALL_RECORDS",
-        dnaHash: Array.from(dnaHash),
-        agentPubKey: Array.from(agentPubKey),
-      });
-
-      if (!response.success) {
-        log.error(`[PUBLISH_ALL_RECORDS] Failed to get records: ${response.error}`);
-        errors.push(`DNA ${encodeHashToBase64(dnaHash).substring(0, 8)}...: ${response.error}`);
+      let transportRecords: any[];
+      try {
+        const result = await executor.getAllRecords(Array.from(dnaHash), Array.from(agentPubKey));
+        transportRecords = result.records;
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        log.error(`[PUBLISH_ALL_RECORDS] Failed to get records: ${errMsg}`);
+        errors.push(`DNA ${encodeHashToBase64(dnaHash).substring(0, 8)}...: ${errMsg}`);
         continue;
       }
 
       cellsProcessed++;
-      const transportRecords = response.records || [];
       log.info(`[PUBLISH_ALL_RECORDS] Got ${transportRecords.length} records from worker`);
 
       if (transportRecords.length === 0) {
@@ -2072,18 +1748,12 @@ async function handlePublishAllRecords(
       // before it can accept publish requests on their behalf
       log.info(`[PUBLISH_ALL_RECORDS] Registering agents with gateway WebSocket...`);
 
+      const agentPubKeyB64 = encodeHashToBase64(toUint8Array(context.agentPubKey));
       for (const dna of context.dnas) {
-        const dnaHash = toUint8Array(dna.hash);
-        const agentPubKey = toUint8Array(context.agentPubKey);
-
+        const dnaHashB64 = encodeHashToBase64(toUint8Array(dna.hash));
         try {
-          await chrome.runtime.sendMessage({
-            target: "offscreen",
-            type: "REGISTER_AGENT",
-            dna_hash: encodeHashToBase64(dnaHash),
-            agent_pubkey: encodeHashToBase64(agentPubKey),
-          });
-          log.debug(`[PUBLISH_ALL_RECORDS] Registered agent for DNA: ${encodeHashToBase64(dnaHash).substring(0, 15)}...`);
+          await executor.registerAgent(dnaHashB64, agentPubKeyB64);
+          log.debug(`[PUBLISH_ALL_RECORDS] Registered agent for DNA: ${dnaHashB64.substring(0, 15)}...`);
         } catch (err) {
           log.warn(`[PUBLISH_ALL_RECORDS] Failed to register agent, continuing anyway:`, err);
         }
@@ -2095,11 +1765,7 @@ async function handlePublishAllRecords(
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Now trigger publish
-      chrome.runtime.sendMessage({
-        target: "offscreen",
-        type: "PROCESS_PUBLISH_QUEUE",
-        dnaHashes,
-      }).catch((err) => {
+      executor.processPublishQueue(dnaHashes).catch((err) => {
         log.error("Failed to trigger publish queue processing:", err);
       });
     }
@@ -2256,7 +1922,7 @@ async function handleRemoteSignal(signalData: {
 
     // Execute the zome call (fire-and-forget for the signal delivery itself)
     // If WASM calls emit_signal(), we'll deliver those to tabs
-    const { result: _, signals } = await executeZomeCallViaOffscreen(
+    const { result: _, signals } = await executor.executeZomeCall(
       context.id,
       zomeCallRequest
     );
@@ -2398,54 +2064,17 @@ chrome.runtime.onMessage.addListener(
   ) => {
     log.trace("Received raw message:", rawMessage?.type, "from:", sender?.tab?.id);
 
-    // Handle internal messages from offscreen document
+    // Internal offscreen→background messages (OFFSCREEN_READY, REMOTE_SIGNAL,
+    // WS_STATE_CHANGE, SIGN_REQUEST) are handled by the ChromeOffscreenExecutor's
+    // own message listener. Skip them here.
     if (rawMessage.target === "background") {
-      if (rawMessage.type === "OFFSCREEN_READY") {
-        markOffscreenReady();
-        return false;
-      }
-
-      if (rawMessage.type === "REMOTE_SIGNAL") {
-        handleRemoteSignal(rawMessage).then(() => {
-          sendResponse({ success: true });
-        }).catch((error) => {
-          logSignal.error("Error handling remote signal:", error);
-          sendResponse({ success: false, error: String(error) });
-        });
-        return true; // Async response
-      }
-
-      if (rawMessage.type === "WS_STATE_CHANGE") {
-        logGateway.debug(`WebSocket state changed: ${rawMessage.state}`);
-        // Update wsHealthy based on WebSocket connection state
-        const wasHealthy = connectionStatus.wsHealthy;
-        connectionStatus.wsHealthy = rawMessage.state === "connected";
-        // Notify subscribers if status changed
-        if (wasHealthy !== connectionStatus.wsHealthy) {
-          notifyConnectionStatusChange();
-        }
-        return false;
-      }
-
-      if (rawMessage.type === "SIGN_REQUEST") {
-        // Forward sign request to Lair
-        handleSignRequest(rawMessage).then((result) => {
-          sendResponse(result);
-        }).catch((error) => {
-          logLair.error("Sign request error:", error);
-          sendResponse({ success: false, error: String(error) });
-        });
-        return true; // Async response
-      }
-
-      // Unknown internal message
       return false;
     }
 
-    // Forward messages targeted to offscreen
+    // Forward messages targeted to offscreen (e.g., from popup)
     if (rawMessage.target === "offscreen") {
       log.trace("Forwarding message to offscreen:", rawMessage.type);
-      ensureOffscreenDocument().then(() => {
+      executor.initialize().then(() => {
         chrome.runtime.sendMessage(rawMessage).then((response) => {
           sendResponse(response);
         }).catch((error) => {
@@ -2453,7 +2082,7 @@ chrome.runtime.onMessage.addListener(
           sendResponse({ success: false, error: String(error) });
         });
       }).catch((error) => {
-        log.error("Error ensuring offscreen document:", error);
+        log.error("Error ensuring executor ready:", error);
         sendResponse({ success: false, error: String(error) });
       });
       return true; // Async response
