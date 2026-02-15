@@ -100,6 +100,15 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 - Extension must normalize back to Uint8Array before processing
 - WASM expects msgpack format matching `holochain_serialized_bytes`
 
+**Serialization Rules** (checklist when touching data boundaries):
+1. Receiving data from Chrome message port: call `normalizeUint8Arrays()` (no-op if already Uint8Array)
+2. Sending data across Chrome message port: call `serializeForTransport()` to convert Uint8Array to Array
+3. Reading from WASM memory: use `deserializeTypedFromWasm()` with a TypeValidator
+4. Writing results to WASM: use `serializeResult()` -- it wraps in `{Ok: data}` automatically
+5. Gateway HTTP responses: call `normalizeByteArraysFromJson()` to convert number arrays to Uint8Array
+6. Gateway HTTP requests: use `encodeHashToBase64()` for hashes in URLs (adds `u` prefix)
+7. See `ARCHITECTURE.md` "Encoding/Decoding Boundaries" table for the full map
+
 ---
 
 ## Documentation Structure
@@ -107,8 +116,12 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | This file - core rules and quick context |
+| `ARCHITECTURE.md` | System architecture, data flows, encoding boundaries, decision records, host function guide |
+| `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` | Gateway evolution plan (hc-membrane), protocol unification, holochain_p2p integration |
+| `LESSONS_LEARNED.md` | Failed approaches archive (serialization debugging) |
+| `DEVELOPMENT.md` | Build, test, and development workflow |
+| `TESTING.md` | Testing guide (unit, integration, e2e with gateway) |
 | `SESSION.md` | Current step focus |
-| `LESSONS_LEARNED.md` | Failed approaches archive |
 | `STEPS/index.md` | Step status registry |
 | `STEPS/X_PLAN.md` | Detailed plan for step X |
 | `STEPS/X_COMPLETION.md` | Completion notes for step X |

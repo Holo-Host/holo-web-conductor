@@ -970,6 +970,109 @@ This ensures the browser agent sees links created by other agents, not just its 
 
 ---
 
+## Architectural Decisions and Evolution
+
+This section records *why* key decisions were made and *what's changing*. When the architecture changes, update this section -- it's cheaper than rewriting data flow diagrams.
+
+### Why the Offscreen Document Exists
+
+Chrome MV3 service workers cannot do synchronous XMLHttpRequest or spawn Workers. WASM host functions must be synchronous. The offscreen document is the only extension context with DOM access (sync XHR) and the ability to create a Web Worker.
+
+**Planned change (Step 21 - Firefox):** Firefox MV3 uses an event page (with DOM) instead of a service worker, so Workers can be spawned directly from background and sync XHR works in workers. The offscreen document layer will be replaced by a `ZomeExecutor` interface with Chrome and Firefox implementations. See `STEPS/21_PLAN.md`.
+
+### Why SharedArrayBuffer + Atomics
+
+The ribosome worker runs WASM synchronously. When a host function needs network data or a signature, it must block until the result arrives. SharedArrayBuffer with Atomics.wait/notify provides zero-CPU-cost blocking between the worker and offscreen document.
+
+**Planned change (Step 21 - Firefox):** Firefox workers can do sync XHR directly. The SharedArrayBuffer coordination is only needed on Chrome. The `ProxyNetworkService` will gain a direct-XHR mode.
+
+**Future (JSPI):** WebAssembly JavaScript Promise Integration would eliminate the sync constraint entirely by allowing WASM to suspend/resume on async calls. Chrome 137+, Firefox behind flag. Monitor for production readiness.
+
+### Why Uint8Array Normalization Exists
+
+Chrome's message passing (chrome.runtime.sendMessage, chrome.tabs.sendMessage) uses a structured cloning algorithm that converts `Uint8Array` to plain objects `{0: 1, 1: 2, ...}`. Every message boundary between extension contexts must normalize these back.
+
+**Planned change (Step 21 - Firefox):** Firefox preserves Uint8Array via structured clone. The normalization functions become no-ops on Firefox but remain in place for Chrome.
+
+**Rule:** All code receiving data across a Chrome message boundary MUST call `normalizeUint8Arrays()` before processing. This is a no-op when data is already Uint8Array, so it's safe to call unconditionally on both browsers.
+
+### Why Op Construction Happens in the Browser (and Why It Should Move)
+
+Currently, the browser extension builds DhtOps from Records using TypeScript ports of Holochain's Rust code (`produceOpsFromRecord`). This is fragile -- serialization must be byte-identical for hash compatibility.
+
+**Planned change (Gateway Architecture):** Delegate op construction to hc-membrane gateway, which uses Holochain's actual Rust code. Browser sends Records, gateway calls `produce_ops_from_record()`. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 6.
+
+### Why Two Gateway Protocols (HTTP + WebSocket)
+
+HTTP with sync XHR handles DHT queries (get, get_links) -- required by the synchronous WASM constraint. WebSocket handles async operations (signals, remote signing) that need bidirectional push.
+
+**Planned change (Gateway Architecture):** Unify async operations under a single RPC protocol (Cap'n Web or msgpack-rpc). Keep sync XHR for DHT queries. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 2.
+
+---
+
+## Implementing Host Functions
+
+Host functions bridge WASM zome code to the TypeScript conductor. All follow the same pattern.
+
+### Anatomy
+
+```
+Input:  WASM passes (ptr, len) pointing to MessagePack-encoded arguments
+Output: Host function returns i64 with (ptr, len) of MessagePack-encoded Result<T, WasmError>
+```
+
+### Template
+
+Every host function follows this structure (using `get.ts` as a simpler example than `create.ts`):
+
+```typescript
+import { HostFunctionImpl } from "./base";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
+import { validateMyInput, type MyInput } from "../wasm-io-types";
+
+export const my_function: HostFunctionImpl = (context, inputPtr, inputLen) => {
+  const { instance, callContext } = context;
+
+  // 1. DESERIALIZE: Read msgpack from WASM memory, validate structure
+  const input = deserializeTypedFromWasm(
+    instance, inputPtr, inputLen,
+    validateMyInput, 'MyInput'      // TypeValidator + name for errors
+  );
+
+  // 2. EXECUTE: Do the work (storage, network, etc.)
+  const result = doSomething(input, callContext);
+
+  // 3. SERIALIZE: Wrap in {Ok: data} and write back to WASM memory
+  //    CRITICAL: HDK expects Result<T, WasmError>. Never skip the Ok wrapper.
+  return serializeResult(instance, result);
+};
+```
+
+### Key contracts
+
+1. **Always wrap in `{Ok: data}`** -- `serializeResult()` does this. The HDK deserializes the return as `Result<T, WasmError>`. Returning unwrapped data causes a deserialization panic in WASM.
+
+2. **TypeValidators are runtime guards** -- They check that msgpack-decoded data matches the expected TypeScript structure. Define them in `wasm-io-types.ts`. They run when `WASM_INPUT_VALIDATION_ENABLED` is true (development).
+
+3. **Storage access is synchronous** -- `getStorageProvider()` returns a `StorageProvider` with sync methods. All reads/writes buffer in the active transaction and commit after the zome call completes.
+
+4. **Network access blocks** -- Host functions that need network data (e.g., `get()` with cascade) call `networkService.getRecordSync()` which blocks via Atomics until the offscreen document completes a sync XHR.
+
+5. **Signing blocks** -- `signAction()` blocks via the Lair proxy until the background script signs asynchronously.
+
+6. **Register new host functions** in `host-fn/index.ts` -- Map the function name (e.g., `__hc__get_1`) to the implementation.
+
+### Files to modify when adding a host function
+
+| File | What to add |
+|------|-------------|
+| `host-fn/my_function.ts` | Implementation (new file) |
+| `host-fn/index.ts` | Register: `__hc__my_function_1: wrapHostFunction('my_function', my_function)` |
+| `wasm-io-types.ts` | Input TypeValidator if the function takes structured input |
+| `host-fn/stubs.ts` | Remove from stubs if it was previously stubbed |
+
+---
+
 ## Summary
 
 The fishy architecture solves a fundamental impedance mismatch:
