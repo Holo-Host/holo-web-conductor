@@ -2,50 +2,122 @@
  * must_get_valid_record host function
  *
  * Gets a validated record from the DHT. This is a network operation that MUST succeed.
+ * Uses Cascade pattern: local storage → network cache → network.
  *
- * **STUB IMPLEMENTATION**: This is a Priority 2 function deferred to Step 8.
- * Returns mock data for Step 5.5 testing purposes.
+ * Input: MustGetValidRecordInput (newtype wrapper around ActionHash - transparent in serde)
+ * Output: Record = { signed_action: SignedActionHashed, entry: RecordEntry }
+ *
+ * For fishy (zero-arc), locally-authored data is treated as valid.
+ * Data from network is trusted (the gateway's peers validated it).
+ *
+ * In validation context, throws UnresolvedDependenciesError if not found.
+ * In normal context, throws a host function error.
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { getStorageProvider } from "../../storage/storage-provider";
+import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { UnresolvedDependenciesError } from "../error";
+import { toHolochainAction } from "./action-serialization";
+import { toUint8Array } from "../../utils/bytes";
+import type { StoredAction } from "../../storage/types";
 
 /**
- * Must get valid record input structure
+ * Normalize entry bytes from gateway JSON format to Uint8Array.
  */
-interface MustGetValidRecordInput {
-  /** Action hash to retrieve */
-  action_hash: Uint8Array;
+function normalizeEntryBytes(entry: unknown): unknown {
+  if (!entry || typeof entry !== "object") return entry;
+  const e = entry as Record<string, unknown>;
+  const entryType = e.entry_type;
+  const entryData = e.entry;
+  if (!entryType) return entry;
+  const normalizedData =
+    Array.isArray(entryData) ||
+    (typeof entryData === "object" &&
+      entryData !== null &&
+      !(entryData instanceof Uint8Array))
+      ? toUint8Array(entryData)
+      : entryData;
+  return { entry_type: entryType, entry: normalizedData };
 }
 
 /**
  * must_get_valid_record host function implementation
  *
- * **STUB**: Returns null (record not found) for all requests.
- * Real implementation in Step 8 will perform DHT network operations with validation.
+ * Retrieves a full record by ActionHash using Cascade (local → cache → network).
+ * Returns Record = { signed_action: SignedActionHashed, entry: RecordEntry }.
  */
-export const mustGetValidRecord: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+export const mustGetValidRecord: HostFunctionImpl = (
+  context,
+  inputPtr,
+  inputLen
+) => {
+  const { callContext, instance } = context;
+  const storage = getStorageProvider();
+  const [dnaHash] = callContext.cellId;
 
-  console.warn(
-    "[HostFn] must_get_valid_record called (STUB - returns null, implement in Step 8)"
-  );
-
-  // Deserialize input
-  const input = deserializeFromWasm(
+  // Deserialize input - MustGetValidRecordInput is a serde-transparent newtype
+  const actionHash = deserializeFromWasm(
     instance,
     inputPtr,
-    0
-  ) as MustGetValidRecordInput;
+    inputLen
+  ) as Uint8Array;
 
-  const hashHex = Array.from(input.action_hash.slice(0, 8))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  console.log(`[HostFn] must_get_valid_record: action_hash=${hashHex}...`);
+  console.log(
+    `[HostFn] must_get_valid_record: hash=${Array.from(actionHash.slice(0, 4))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")}...`
+  );
 
-  // STUB: Return null (record not found)
-  // Real implementation will perform DHT get + validation
-  const result = null;
+  // Cascade lookup: local → cache → network
+  const cascade = new Cascade(
+    storage,
+    getNetworkCache(),
+    getNetworkService()
+  );
+  const record = cascade.fetchRecord(dnaHash, actionHash);
+
+  if (!record) {
+    if (callContext.isValidationContext) {
+      throw new UnresolvedDependenciesError({ Hashes: [actionHash] });
+    }
+    throw new Error("must_get_valid_record: Record not found");
+  }
+
+  // Convert action to Holochain wire format if from local storage
+  const action = record.signed_action.hashed.content;
+  const localActionType = (action as unknown as StoredAction).actionType;
+  const wireAction =
+    typeof localActionType === "string"
+      ? toHolochainAction(action as unknown as StoredAction)
+      : action;
+
+  // Normalize entry bytes (gateway returns arrays instead of Uint8Array)
+  let entry: unknown = { NotApplicable: undefined as unknown as void };
+  const recordEntry = record.entry;
+  if (
+    recordEntry &&
+    typeof recordEntry === "object" &&
+    "Present" in recordEntry
+  ) {
+    const presentEntry = (recordEntry as { Present: unknown }).Present;
+    if (presentEntry) {
+      entry = { Present: normalizeEntryBytes(presentEntry) };
+    }
+  }
+
+  // Return Record = { signed_action, entry }
+  const result = {
+    signed_action: {
+      hashed: {
+        content: wireAction,
+        hash: record.signed_action.hashed.hash,
+      },
+      signature: record.signed_action.signature,
+    },
+    entry,
+  };
 
   return serializeResult(instance, result);
 };

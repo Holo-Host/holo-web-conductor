@@ -55,7 +55,7 @@
 | 17 | ⏳ | hc-membrane 0.6.1 Integration |
 | 18 | ✅ | Zome Call Serialization |
 | 19 | 🔀 | Mewsfeed E2E (pending merge) |
-| 20 | 🔀 | Validation Pipeline (pending merge) |
+| 20 | ✅ | Validation Host Functions & Validate Callback |
 | 21 | 🔀 | Firefox Compatibility Plan (pending merge) |
 | 22 | 📋 | Migration to holo-host GitHub Org |
 | Meta-1 | 📋 | Process Review (periodic) |

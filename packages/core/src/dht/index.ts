@@ -84,3 +84,30 @@ export {
   convertToExternallyTagged,
   serializeOpForGateway,
 } from "./op-serialization";
+
+// Validation types
+export {
+  type ValidateCallbackResult,
+  type UnresolvedDependencies,
+  type ChainFilter,
+  type ChainFilters,
+} from "./validate-types";
+
+// Validation Op types and construction
+export {
+  type Op,
+  type SignedHashed,
+  type EntryCreationAction,
+  type StoreRecordData,
+  type StoreEntryData,
+  type RegisterUpdateData,
+  type RegisterDeleteData,
+  type RegisterAgentActivityData,
+  type RegisterCreateLinkData,
+  type RegisterDeleteLinkData,
+  type CreateLinkResolver,
+  buildOpFromRecord,
+  recordToOps,
+  pendingRecordToOps,
+  getOpVariant,
+} from "./validation-op";

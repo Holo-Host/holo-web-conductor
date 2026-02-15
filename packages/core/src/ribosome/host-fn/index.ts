@@ -34,6 +34,7 @@ import { countLinks } from "./count_links";
 import { mustGetEntry } from "./must_get_entry";
 import { mustGetAction } from "./must_get_action";
 import { mustGetValidRecord } from "./must_get_valid_record";
+import { mustGetAgentActivity } from "./must_get_agent_activity";
 import { allocate } from "./allocate";
 import { deallocate } from "./deallocate";
 import { emit_signal } from "./emit_signal";
@@ -152,7 +153,7 @@ function initializeRegistry(): HostFunctionRegistry {
   registry.registerHostFunction("__hc__delete_link_1", deleteLink);
   registry.registerHostFunction("__hc__count_links_1", countLinks);
 
-  // Register Priority 2 host functions (STUBS for Step 5.5 testing)
+  // Register must_get_* host functions (Cascade-based implementations)
   registry.registerHostFunction("__hc__must_get_entry_1", mustGetEntry);
   registry.registerHostFunction("__hc__must_get_action_1", mustGetAction);
   registry.registerHostFunction(
@@ -168,7 +169,7 @@ function initializeRegistry(): HostFunctionRegistry {
   );
   registry.registerHostFunction(
     "__hc__must_get_agent_activity_1",
-    stubs.mustGetAgentActivity
+    mustGetAgentActivity
   );
   registry.registerHostFunction("__hc__get_details_1", getDetails);
   registry.registerHostFunction(

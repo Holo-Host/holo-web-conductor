@@ -2,50 +2,82 @@
  * must_get_action host function
  *
  * Gets an action from the DHT. This is a network operation that MUST succeed.
+ * Uses Cascade pattern: local storage → network cache → network.
  *
- * **STUB IMPLEMENTATION**: This is a Priority 2 function deferred to Step 8.
- * Returns mock data for Step 5.5 testing purposes.
+ * Input: MustGetActionInput (newtype wrapper around ActionHash - transparent in serde)
+ * Output: SignedActionHashed = { hashed: { content: Action, hash: ActionHash }, signature: Signature }
+ *
+ * In validation context, throws UnresolvedDependenciesError if not found.
+ * In normal context, throws a host function error.
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
-
-/**
- * Must get action input structure
- */
-interface MustGetActionInput {
-  /** Action hash to retrieve */
-  action_hash: Uint8Array;
-}
+import { getStorageProvider } from "../../storage/storage-provider";
+import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { UnresolvedDependenciesError } from "../error";
+import { toHolochainAction } from "./action-serialization";
+import type { StoredAction } from "../../storage/types";
 
 /**
  * must_get_action host function implementation
  *
- * **STUB**: Returns null (action not found) for all requests.
- * Real implementation in Step 8 will perform DHT network operations.
+ * Retrieves a signed action by ActionHash using Cascade (local → cache → network).
+ * Returns SignedActionHashed.
  */
-export const mustGetAction: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+export const mustGetAction: HostFunctionImpl = (
+  context,
+  inputPtr,
+  inputLen
+) => {
+  const { callContext, instance } = context;
+  const storage = getStorageProvider();
+  const [dnaHash] = callContext.cellId;
 
-  console.warn(
-    "[HostFn] must_get_action called (STUB - returns null, implement in Step 8)"
-  );
-
-  // Deserialize input
-  const input = deserializeFromWasm(
+  // Deserialize input - MustGetActionInput is a serde-transparent newtype
+  const actionHash = deserializeFromWasm(
     instance,
     inputPtr,
-    0
-  ) as MustGetActionInput;
+    inputLen
+  ) as Uint8Array;
 
-  const hashHex = Array.from(input.action_hash.slice(0, 8))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  console.log(`[HostFn] must_get_action: action_hash=${hashHex}...`);
+  console.log(
+    `[HostFn] must_get_action: hash=${Array.from(actionHash.slice(0, 4))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")}...`
+  );
 
-  // STUB: Return null (action not found)
-  // Real implementation will perform DHT get operation
-  const result = null;
+  // Cascade lookup: local → cache → network
+  const cascade = new Cascade(
+    storage,
+    getNetworkCache(),
+    getNetworkService()
+  );
+  const record = cascade.fetchRecord(dnaHash, actionHash);
 
-  return serializeResult(instance, result);
+  if (!record) {
+    if (callContext.isValidationContext) {
+      throw new UnresolvedDependenciesError({ Hashes: [actionHash] });
+    }
+    throw new Error("must_get_action: Action not found");
+  }
+
+  // Convert action to Holochain wire format if from local storage
+  const action = record.signed_action.hashed.content;
+  const localActionType = (action as unknown as StoredAction).actionType;
+  const wireAction =
+    typeof localActionType === "string"
+      ? toHolochainAction(action as unknown as StoredAction)
+      : action;
+
+  // Return SignedActionHashed = { hashed: { content, hash }, signature }
+  const signedActionHashed = {
+    hashed: {
+      content: wireAction,
+      hash: record.signed_action.hashed.hash,
+    },
+    signature: record.signed_action.signature,
+  };
+
+  return serializeResult(instance, signedActionHashed);
 };

@@ -2,50 +2,98 @@
  * must_get_entry host function
  *
  * Gets an entry from the DHT. This is a network operation that MUST succeed.
+ * Uses Cascade pattern: local storage → network cache → network.
  *
- * **STUB IMPLEMENTATION**: This is a Priority 2 function deferred to Step 8.
- * Returns mock data for Step 5.5 testing purposes.
+ * Input: MustGetEntryInput (newtype wrapper around EntryHash - transparent in serde)
+ * Output: EntryHashed = { content: Entry, hash: EntryHash }
+ *
+ * In validation context, throws UnresolvedDependenciesError if not found.
+ * In normal context, throws a host function error.
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
+import { getStorageProvider } from "../../storage/storage-provider";
+import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { UnresolvedDependenciesError } from "../error";
+import { toUint8Array } from "../../utils/bytes";
 
 /**
- * Must get entry input structure
+ * Normalize entry bytes from gateway JSON format to Uint8Array.
+ * Gateway returns Entry bytes as arrays of numbers.
  */
-interface MustGetEntryInput {
-  /** Entry hash to retrieve */
-  entry_hash: Uint8Array;
+function normalizeEntryBytes(entry: unknown): unknown {
+  if (!entry || typeof entry !== "object") return entry;
+  const e = entry as Record<string, unknown>;
+  const entryType = e.entry_type;
+  const entryData = e.entry;
+  if (!entryType) return entry;
+  const normalizedData =
+    Array.isArray(entryData) ||
+    (typeof entryData === "object" &&
+      entryData !== null &&
+      !(entryData instanceof Uint8Array))
+      ? toUint8Array(entryData)
+      : entryData;
+  return { entry_type: entryType, entry: normalizedData };
 }
 
 /**
  * must_get_entry host function implementation
  *
- * **STUB**: Returns null (entry not found) for all requests.
- * Real implementation in Step 8 will perform DHT network operations.
+ * Retrieves an entry by EntryHash using Cascade (local → cache → network).
+ * Returns EntryHashed = { content: Entry, hash: EntryHash }.
  */
 export const mustGetEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
-  const { instance } = context;
+  const { callContext, instance } = context;
+  const storage = getStorageProvider();
+  const [dnaHash] = callContext.cellId;
 
-  console.warn(
-    "[HostFn] must_get_entry called (STUB - returns null, implement in Step 8)"
-  );
-
-  // Deserialize input
-  const input = deserializeFromWasm(
+  // Deserialize input - MustGetEntryInput is a serde-transparent newtype
+  const entryHash = deserializeFromWasm(
     instance,
     inputPtr,
-    0
-  ) as MustGetEntryInput;
+    inputLen
+  ) as Uint8Array;
 
-  const hashHex = Array.from(input.entry_hash.slice(0, 8))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  console.log(`[HostFn] must_get_entry: entry_hash=${hashHex}...`);
+  console.log(
+    `[HostFn] must_get_entry: hash=${Array.from(entryHash.slice(0, 4))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")}...`
+  );
 
-  // STUB: Return null (entry not found)
-  // Real implementation will perform DHT get operation
-  const result = null;
+  // Cascade lookup: local → cache → network
+  const cascade = new Cascade(
+    storage,
+    getNetworkCache(),
+    getNetworkService()
+  );
+  const record = cascade.fetchRecord(dnaHash, entryHash);
 
-  return serializeResult(instance, result);
+  if (!record) {
+    if (callContext.isValidationContext) {
+      throw new UnresolvedDependenciesError({ Hashes: [entryHash] });
+    }
+    throw new Error("must_get_entry: Entry not found");
+  }
+
+  // Extract entry from record
+  const recordEntry = record.entry;
+  if (
+    !recordEntry ||
+    typeof recordEntry === "string" ||
+    !("Present" in recordEntry) ||
+    !recordEntry.Present
+  ) {
+    if (callContext.isValidationContext) {
+      throw new UnresolvedDependenciesError({ Hashes: [entryHash] });
+    }
+    throw new Error("must_get_entry: Record has no entry");
+  }
+
+  const entry = normalizeEntryBytes(recordEntry.Present);
+
+  // Return EntryHashed = { content: Entry, hash: EntryHash }
+  const entryHashed = { content: entry, hash: entryHash };
+  return serializeResult(instance, entryHashed);
 };

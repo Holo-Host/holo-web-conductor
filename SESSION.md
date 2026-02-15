@@ -53,11 +53,19 @@ After step-18/19/20/21 are merged and tests pass, create agent definitions and t
 
 ---
 
+## Completed: Step 20 - Validation Host Functions & Validate Callback
+
+**Status**: Complete (merged)
+
+See [STEPS/20_COMPLETION.md](./STEPS/20_COMPLETION.md) for details.
+
+---
+
 ## Step Status (branches)
 
-- **Step 18** (zome call serialization): Complete on branch, pending merge
+- **Step 18** (zome call serialization): Merged
 - **Step 19** (mewsfeed e2e): Partially working, blocked on kitsune2 timeout upstream
-- **Step 20** (validation pipeline): Complete on branch, pending merge
+- **Step 20** (validation pipeline): Merged
 - **Step 21** (Firefox plan): Plan doc only, pending merge
 
 ---
@@ -65,6 +73,7 @@ After step-18/19/20/21 are merged and tests pass, create agent definitions and t
 ## Quick Links
 
 - [Step Registry](./STEPS/index.md) - All step statuses
+- [Step 20 Completion](./STEPS/20_COMPLETION.md)
 - [Architecture](./ARCHITECTURE.md) - System architecture and decisions
 - [Failed Approaches](./LESSONS_LEARNED.md)
 - [Process Review Checklist](./STEPS/META_1_PROCESS_REVIEW.md)

@@ -84,6 +84,10 @@ export function wrapHostFunction(
         if (error instanceof Error && error.name === "RibosomeError") {
           throw error;
         }
+        // Re-throw UnresolvedDependenciesError for validation short-circuit
+        if (error instanceof Error && error.name === "UnresolvedDependenciesError") {
+          throw error;
+        }
         // Wrap other errors
         throw hostFunctionError(name, error);
       } finally {

@@ -81,6 +81,9 @@ export interface CallContext {
 
   /** Records created during this call (populated by create, update, delete, etc.) */
   pendingRecords?: PendingRecord[];
+
+  /** Whether this context is running inside a validate callback */
+  isValidationContext?: boolean;
 }
 
 /**

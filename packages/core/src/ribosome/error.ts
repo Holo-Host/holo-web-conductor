@@ -105,3 +105,17 @@ export function memoryAllocationError(): RibosomeError {
     "WASM memory allocation failed"
   );
 }
+
+/**
+ * Error thrown by must_get_* host functions when data is not found
+ * during a validation context. This short-circuits the validate callback
+ * and converts to ValidateCallbackResult::UnresolvedDependencies.
+ *
+ * Equivalent to Holochain's WasmErrorInner::HostShortCircuit mechanism.
+ */
+export class UnresolvedDependenciesError extends Error {
+  constructor(public dependencies: import("../dht/validate-types").UnresolvedDependencies) {
+    super("Unresolved dependencies during validation");
+    this.name = "UnresolvedDependenciesError";
+  }
+}
