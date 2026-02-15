@@ -12,12 +12,13 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import { UnresolvedDependenciesError } from "../error";
 import { toHolochainAction } from "./action-serialization";
 import type { StoredAction } from "../../storage/types";
+import { validateWasmHashInput } from "../wasm-io-types";
 
 /**
  * must_get_action host function implementation
@@ -35,11 +36,13 @@ export const mustGetAction: HostFunctionImpl = (
   const [dnaHash] = callContext.cellId;
 
   // Deserialize input - MustGetActionInput is a serde-transparent newtype
-  const actionHash = deserializeFromWasm(
+  const actionHash = deserializeTypedFromWasm(
     instance,
     inputPtr,
-    inputLen
-  ) as Uint8Array;
+    inputLen,
+    validateWasmHashInput,
+    "MustGetActionInput (ActionHash)"
+  );
 
   console.log(
     `[HostFn] must_get_action: hash=${Array.from(actionHash.slice(0, 4))

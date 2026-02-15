@@ -12,31 +12,12 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import { UnresolvedDependenciesError } from "../error";
-import { toUint8Array } from "../../utils/bytes";
-
-/**
- * Normalize entry bytes from gateway JSON format to Uint8Array.
- * Gateway returns Entry bytes as arrays of numbers.
- */
-function normalizeEntryBytes(entry: unknown): unknown {
-  if (!entry || typeof entry !== "object") return entry;
-  const e = entry as Record<string, unknown>;
-  const entryType = e.entry_type;
-  const entryData = e.entry;
-  if (!entryType) return entry;
-  const normalizedData =
-    Array.isArray(entryData) ||
-    (typeof entryData === "object" &&
-      entryData !== null &&
-      !(entryData instanceof Uint8Array))
-      ? toUint8Array(entryData)
-      : entryData;
-  return { entry_type: entryType, entry: normalizedData };
-}
+import { normalizeEntryBytes } from "./entry-utils";
+import { validateWasmHashInput } from "../wasm-io-types";
 
 /**
  * must_get_entry host function implementation
@@ -50,11 +31,13 @@ export const mustGetEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const [dnaHash] = callContext.cellId;
 
   // Deserialize input - MustGetEntryInput is a serde-transparent newtype
-  const entryHash = deserializeFromWasm(
+  const entryHash = deserializeTypedFromWasm(
     instance,
     inputPtr,
-    inputLen
-  ) as Uint8Array;
+    inputLen,
+    validateWasmHashInput,
+    "MustGetEntryInput (EntryHash)"
+  );
 
   console.log(
     `[HostFn] must_get_entry: hash=${Array.from(entryHash.slice(0, 4))

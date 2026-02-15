@@ -848,5 +848,205 @@ export async function startSignalTest(
   console.log('[startSignalTest] Clicked Start Test button');
 }
 
-// Export ziptest URL for tests
+// Export URLs for tests
 export { ZIPTEST_UI_URL };
+export const MEWSFEED_UI_URL = 'http://localhost:8082';
+
+// ============================================================================
+// Mewsfeed Testing Helpers
+// ============================================================================
+
+/**
+ * Create a profile in the mewsfeed UI.
+ *
+ * Mewsfeed does NOT show a profile creation dialog on page load. The dialog
+ * only appears when the user tries to perform an action (e.g., send a mew).
+ * This helper triggers the profile dialog by clicking "Send Mew" on the inline
+ * CreateMewInput on the feed page, then fills in and saves the profile.
+ *
+ * Note: The "Send Mew" button has DaisyUI's btn-disabled class (pointer-events: none)
+ * when the mew input is empty, so we use programmatic button.click() via evaluate
+ * to bypass the CSS pointer-events restriction.
+ */
+export async function createMewsfeedProfile(page: Page, nickname: string): Promise<void> {
+  console.log(`[createMewsfeedProfile] Starting for nickname: ${nickname}`);
+
+  // Wait for the Mew button to appear (visible on all pages)
+  await page.locator('button').filter({ hasText: 'Mew' }).first()
+    .waitFor({ state: 'visible', timeout: 30000 });
+  console.log(`[createMewsfeedProfile] Found mew button on feed page`);
+
+  // Click the button programmatically to bypass DaisyUI btn-disabled pointer-events:none.
+  // When the mew input is empty, the button gets pointer-events:none via CSS,
+  // but HTMLElement.click() dispatches the event regardless.
+  const clicked = await page.evaluate(() => {
+    const buttons = document.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = btn.textContent || '';
+      if (text.includes('Send') && text.includes('Mew')) {
+        btn.click();
+        return 'send-mew';
+      }
+    }
+    // Fallback: any button containing "Mew"
+    for (const btn of buttons) {
+      if (btn.textContent?.includes('Mew')) {
+        btn.click();
+        return 'mew';
+      }
+    }
+    return null;
+  });
+  console.log(`[createMewsfeedProfile] Triggered publishMew via ${clicked} button.click()`);
+
+  // Wait for the profile creation dialog to appear
+  // The h2 "create profile" is in light DOM inside a HeadlessUI Dialog
+  const profileHeading = page.locator('h2').filter({ hasText: 'create profile' });
+  try {
+    await profileHeading.waitFor({ state: 'visible', timeout: 30000 });
+  } catch {
+    // Profile may already exist (no dialog appeared)
+    console.log(`[createMewsfeedProfile] No profile dialog appeared, profile may already exist`);
+    // Debug: take screenshot
+    await page.screenshot({ path: '/tmp/mewsfeed-no-profile-dialog.png', fullPage: true });
+    return;
+  }
+
+  console.log(`[createMewsfeedProfile] Profile creation dialog appeared`);
+  await page.waitForTimeout(1000);
+
+  // Fill the nickname field (first input[type="text"] in the dialog, which is the input-lg nickname field)
+  const nicknameInput = page.locator('[role="dialog"] input[type="text"]').first();
+  await nicknameInput.waitFor({ state: 'visible', timeout: 10000 });
+  await nicknameInput.click();
+  await nicknameInput.fill(nickname);
+  console.log(`[createMewsfeedProfile] Filled nickname: ${nickname}`);
+
+  await page.waitForTimeout(500);
+
+  // Click the Save button inside the dialog
+  const saveButton = page.locator('[role="dialog"] button').filter({ hasText: 'Save' });
+  await saveButton.waitFor({ state: 'visible', timeout: 5000 });
+  await saveButton.click();
+  console.log(`[createMewsfeedProfile] Clicked Save`);
+
+  // Wait for the profile dialog to close (h2 becomes hidden)
+  await profileHeading.waitFor({ state: 'hidden', timeout: 60000 });
+  console.log(`[createMewsfeedProfile] Profile created successfully`);
+}
+
+/**
+ * Create a mew (post) in the mewsfeed UI.
+ *
+ * Uses the inline CreateMewInput on the feed page (desktop layout).
+ * The contenteditable has data-placeholder="What's mewing on?".
+ * Typing and clicking "Send Mew" publishes the mew.
+ */
+export async function createMew(page: Page, text: string): Promise<void> {
+  console.log(`[createMew] Creating mew: "${text}"`);
+
+  // Try inline CreateMewInput first (feed page), then fall back to + MEW dialog
+  const mewInput = page.locator('[data-placeholder="What\'s mewing on?"]').first();
+  try {
+    await mewInput.waitFor({ state: 'visible', timeout: 30000 });
+  } catch (e) {
+    // Fallback: click "+ MEW" button to open the CreateMewDialog
+    console.log('[createMew] Inline input not visible, trying + MEW dialog...');
+    const mewButton = page.locator('button:has-text("Mew")').first();
+    try {
+      await mewButton.waitFor({ state: 'visible', timeout: 5000 });
+      await mewButton.click();
+      await page.waitForTimeout(1000);
+      // Dialog should now show the CreateMewInput
+      await mewInput.waitFor({ state: 'visible', timeout: 10000 });
+    } catch (e2) {
+      await page.screenshot({ path: '/tmp/mewsfeed-createMew-debug.png', fullPage: true });
+      console.log('[createMew] Screenshot saved to /tmp/mewsfeed-createMew-debug.png');
+      console.log('[createMew] Page body (first 1000):', (await page.textContent('body'))?.substring(0, 1000));
+      throw e2;
+    }
+  }
+
+  // Focus and type the text
+  await mewInput.click();
+  await page.keyboard.type(text, { delay: 50 });
+  console.log(`[createMew] Typed mew text`);
+
+  await page.waitForTimeout(500);
+
+  // Click Send Mew button
+  const sendButton = page.locator('button:has-text("Send Mew")').first();
+  try {
+    await sendButton.waitFor({ state: 'visible', timeout: 5000 });
+    await sendButton.click();
+  } catch {
+    // Fallback to any Mew button
+    const anyMewBtn = page.locator('button:has-text("Mew")').first();
+    await anyMewBtn.click();
+  }
+  console.log(`[createMew] Clicked send button`);
+
+  // Wait for the mew to be sent
+  await page.waitForTimeout(5000);
+  console.log(`[createMew] Mew sent`);
+}
+
+/**
+ * Navigate to a hashtag page and wait for a specific mew text to appear.
+ * Uses client-side Vue Router navigation (static server only serves files).
+ * Polls by navigating away and back to trigger fresh data fetches.
+ *
+ * @param mewTextFragment - A substring to look for in the mew content (e.g. "fishy extension")
+ */
+export async function waitForHashtagResult(
+  page: Page,
+  hashtag: string,
+  mewTextFragment: string,
+  timeout = 120000
+): Promise<void> {
+  const tag = hashtag.startsWith('#') ? hashtag.substring(1) : hashtag;
+  const hashtagPath = `/hashtag/${tag}`;
+
+  console.log(`[waitForHashtagResult] Navigating to ${hashtagPath}, looking for "${mewTextFragment}"`);
+
+  // Navigate to the hashtag route within the SPA
+  await page.evaluate((path) => {
+    history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, hashtagPath);
+
+  // Wait for Vue Router to process the route change
+  await page.waitForTimeout(3000);
+
+  const startTime = Date.now();
+  const pollInterval = 5000;
+
+  while (Date.now() - startTime < timeout) {
+    const bodyText = (await page.textContent('body')) || '';
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+    if (bodyText.includes(mewTextFragment)) {
+      console.log(`[waitForHashtagResult] Found mew with "${mewTextFragment}" for #${tag} after ${elapsed}s`);
+      return;
+    }
+
+    const isEmpty = bodyText.includes('nothing here') || bodyText.includes('Nothing found');
+    console.log(`[waitForHashtagResult] ${elapsed}s: empty=${isEmpty}, no match yet. body(200): ${bodyText.substring(0, 200)}`);
+
+    await page.waitForTimeout(pollInterval);
+
+    // Navigate away and back to trigger a fresh data fetch from the zome
+    await page.evaluate(() => {
+      history.pushState({}, '', '/feed');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate((path) => {
+      history.pushState({}, '', path);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, hashtagPath);
+    await page.waitForTimeout(2000);
+  }
+
+  throw new Error(`Timeout waiting for "${mewTextFragment}" on #${tag} after ${timeout}ms`);
+}

@@ -6,6 +6,7 @@
 
 import type { Entry } from "../holochain-types";
 import type { AppEntryType } from "../../storage/types";
+import { toUint8Array } from "../../utils/bytes";
 
 /**
  * Build Entry enum variant based on entry type
@@ -29,4 +30,28 @@ export function buildEntry(
     // App entry - just use the raw bytes (AppEntryBytes is a newtype wrapper)
     return { entry_type: "App", entry: entryContent };
   }
+}
+
+/**
+ * Normalize entry bytes from storage/network to proper Uint8Array format.
+ *
+ * Entries from storage or Cascade may have their `entry` field as a plain
+ * object (Chrome message passing) or number array instead of Uint8Array.
+ * This ensures the entry data is always a proper Uint8Array for WASM
+ * serialization.
+ */
+export function normalizeEntryBytes(entry: unknown): unknown {
+  if (!entry || typeof entry !== "object") return entry;
+  const e = entry as Record<string, unknown>;
+  const entryType = e.entry_type;
+  const entryData = e.entry;
+  if (!entryType) return entry;
+  const normalizedData =
+    Array.isArray(entryData) ||
+    (typeof entryData === "object" &&
+      entryData !== null &&
+      !(entryData instanceof Uint8Array))
+      ? toUint8Array(entryData)
+      : entryData;
+  return { entry_type: entryType, entry: normalizedData };
 }

@@ -7,8 +7,11 @@
 
 import {
   ActionType,
+  HoloHashType,
+  hashFrom32AndType,
   type Action,
   type ActionHash,
+  type AgentPubKey,
   type Create,
   type Update,
   type Delete,
@@ -39,6 +42,15 @@ import type {
 } from "../storage/types";
 
 /**
+ * Ensure a hash is 39 bytes (3 prefix + 32 core + 4 location).
+ * Storage may hold 32-byte raw keys; HoloHash deserialization requires 39.
+ */
+function ensureAgentPubKey(raw: Uint8Array): AgentPubKey {
+  if (raw.length === 39) return raw as AgentPubKey;
+  return hashFrom32AndType(raw.slice(0, 32), HoloHashType.Agent) as AgentPubKey;
+}
+
+/**
  * Convert a stored action to @holochain/client Action format
  *
  * This handles the transformation from storage format (actionType: "Create")
@@ -50,10 +62,13 @@ export function storedActionToClientAction(stored: StoredAction): Action {
     ? Number(stored.timestamp)
     : stored.timestamp;
 
+  // Ensure author is 39-byte AgentPubKey (storage may have 32-byte raw keys)
+  const author = ensureAgentPubKey(stored.author);
+
   // prev_action is non-null for all action types we handle here
   // (Dna action doesn't have prev_action and isn't handled by this function)
   const baseFields = {
-    author: stored.author,
+    author,
     timestamp,
     action_seq: stored.actionSeq,
     prev_action: stored.prevActionHash!,  // Assert non-null for these action types
@@ -153,7 +168,7 @@ export function storedActionToClientAction(stored: StoredAction): Action {
       // Dna action doesn't have action_seq or prev_action
       const dna: Dna = {
         type: ActionType.Dna,
-        author: dnaStored.author,
+        author: ensureAgentPubKey(dnaStored.author),
         timestamp,
         hash: dnaStored.dnaHash,
       };
@@ -164,7 +179,7 @@ export function storedActionToClientAction(stored: StoredAction): Action {
       const avpStored = stored as AgentValidationPkgAction;
       const avp: AgentValidationPkg = {
         type: ActionType.AgentValidationPkg,
-        author: avpStored.author,
+        author,
         timestamp,
         action_seq: avpStored.actionSeq,
         prev_action: avpStored.prevActionHash!,
@@ -177,7 +192,7 @@ export function storedActionToClientAction(stored: StoredAction): Action {
       const izcStored = stored as InitZomesCompleteAction;
       const izc: InitZomesComplete = {
         type: ActionType.InitZomesComplete,
-        author: izcStored.author,
+        author,
         timestamp,
         action_seq: izcStored.actionSeq,
         prev_action: izcStored.prevActionHash!,

@@ -401,14 +401,13 @@ async function callValidateExport(
   }
 
   try {
-    // Serialize Op to WASM memory
-    // The HDK's validate function receives ExternIO bytes containing the Op
-    // ExternIO = msgpack-encoded bytes wrapped in another msgpack layer
+    // Serialize Op to WASM memory via ExternIO format.
+    // The HDK's host_args::<ExternIO> expects binary-wrapped msgpack:
+    //   1. encode(op) → opBytes (raw msgpack of Op)
+    //   2. serializeToWasm(opBytes) → encode(Uint8Array) → binary-wrapped opBytes
+    // The guest then: ExternIO.decode::<Op>() → rmp_serde::from_slice::<Op>(opBytes)
     const opBytes = new Uint8Array(encode(op));
-    const { ptr: inputPtr, len: inputLen } = serializeToWasm(
-      instance,
-      opBytes
-    );
+    const { ptr: inputPtr, len: inputLen } = serializeToWasm(instance, opBytes);
 
     // Call validate
     const resultI64 = validateFn(inputPtr, inputLen);

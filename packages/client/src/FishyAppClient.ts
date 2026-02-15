@@ -57,6 +57,7 @@ import {
   type ConnectionEventMap,
 } from './connection';
 import { toUint8Array, deepConvertByteArrays } from './utils/byte-arrays';
+import { encode as msgpackEncode } from '@msgpack/msgpack';
 import type { FishyHolochainAPI, FishyAppInfo } from './types';
 
 /**
@@ -474,6 +475,11 @@ export class FishyAppClient implements AppClient {
     const agentPubKey = toUint8Array(info.agentPubKey);
     const cellId: CellId = [toUint8Array(info.cells[0][0]), toUint8Array(info.cells[0][1])];
 
+    // Get DNA properties from the extension response (stored during hApp installation)
+    // Encode as msgpack bytes since @holochain/client expects SerializedBytes
+    const rawProperties = info.dnaProperties?.[this._roleName] ?? null;
+    const propertiesBytes = new Uint8Array(msgpackEncode(rawProperties));
+
     // Construct AppInfo in @holochain/client format
     // Use type assertions for fields that may vary between client versions
     const appInfo: AppInfo = {
@@ -487,7 +493,7 @@ export class FishyAppClient implements AppClient {
               cell_id: cellId,
               dna_modifiers: {
                 network_seed: '',
-                properties: {},
+                properties: propertiesBytes,
                 origin_time: 0,
                 quantum_time: { secs: 0, nanos: 0 },
               } as any,

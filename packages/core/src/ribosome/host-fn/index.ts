@@ -11,6 +11,7 @@ import { createLogger } from "@fishy/shared";
 const log = createLogger('HostFn');
 
 // Import all host functions
+import { call as callImpl } from "./call";
 import { agentInfo } from "./agent_info";
 import { dnaInfo } from "./dna_info";
 import { zomeInfo } from "./zome_info";
@@ -39,6 +40,7 @@ import { allocate } from "./allocate";
 import { deallocate } from "./deallocate";
 import { emit_signal } from "./emit_signal";
 import { getDetails } from "./get_details";
+import { getLinksDetails } from "./get_links_details";
 import { sendRemoteSignal } from "./send_remote_signal";
 import * as stubs from "./stubs";
 
@@ -174,7 +176,7 @@ function initializeRegistry(): HostFunctionRegistry {
   registry.registerHostFunction("__hc__get_details_1", getDetails);
   registry.registerHostFunction(
     "__hc__get_links_details_1",
-    stubs.getLinksDetails
+    getLinksDetails
   );
   registry.registerHostFunction(
     "__hc__get_validation_receipts_1",
@@ -182,7 +184,7 @@ function initializeRegistry(): HostFunctionRegistry {
   );
 
   // Cross-zome/cell calls
-  registry.registerHostFunction("__hc__call_1", stubs.call);
+  registry.registerHostFunction("__hc__call_1", callImpl);
 
   // Signals
   registry.registerHostFunction("__hc__emit_signal_1", emit_signal);

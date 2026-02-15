@@ -12,11 +12,12 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { UnresolvedDependenciesError } from "../error";
 import { toHolochainAction } from "./action-serialization";
 import type { StoredAction } from "../../storage/types";
+import { validateWasmMustGetAgentActivityInput } from "../wasm-io-types";
 
 /**
  * must_get_agent_activity host function implementation
@@ -34,11 +35,13 @@ export const mustGetAgentActivity: HostFunctionImpl = (
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Deserialize input
-  const input = deserializeFromWasm(
+  const input = deserializeTypedFromWasm(
     instance,
     inputPtr,
-    inputLen
-  ) as { author: Uint8Array; chain_filter: unknown };
+    inputLen,
+    validateWasmMustGetAgentActivityInput,
+    "MustGetAgentActivityInput"
+  );
 
   const authorHash = input.author;
   console.log(

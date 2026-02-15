@@ -15,32 +15,14 @@
  */
 
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import { UnresolvedDependenciesError } from "../error";
 import { toHolochainAction } from "./action-serialization";
-import { toUint8Array } from "../../utils/bytes";
 import type { StoredAction } from "../../storage/types";
-
-/**
- * Normalize entry bytes from gateway JSON format to Uint8Array.
- */
-function normalizeEntryBytes(entry: unknown): unknown {
-  if (!entry || typeof entry !== "object") return entry;
-  const e = entry as Record<string, unknown>;
-  const entryType = e.entry_type;
-  const entryData = e.entry;
-  if (!entryType) return entry;
-  const normalizedData =
-    Array.isArray(entryData) ||
-    (typeof entryData === "object" &&
-      entryData !== null &&
-      !(entryData instanceof Uint8Array))
-      ? toUint8Array(entryData)
-      : entryData;
-  return { entry_type: entryType, entry: normalizedData };
-}
+import { normalizeEntryBytes } from "./entry-utils";
+import { validateWasmHashInput } from "../wasm-io-types";
 
 /**
  * must_get_valid_record host function implementation
@@ -58,11 +40,13 @@ export const mustGetValidRecord: HostFunctionImpl = (
   const [dnaHash] = callContext.cellId;
 
   // Deserialize input - MustGetValidRecordInput is a serde-transparent newtype
-  const actionHash = deserializeFromWasm(
+  const actionHash = deserializeTypedFromWasm(
     instance,
     inputPtr,
-    inputLen
-  ) as Uint8Array;
+    inputLen,
+    validateWasmHashInput,
+    "MustGetValidRecordInput (ActionHash)"
+  );
 
   console.log(
     `[HostFn] must_get_valid_record: hash=${Array.from(actionHash.slice(0, 4))

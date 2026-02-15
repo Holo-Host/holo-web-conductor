@@ -14,34 +14,7 @@ import type { Record as HolochainRecord } from "../holochain-types";
 import { isStoredDeleteAction, type StoredAction } from "../../storage/types";
 import type { WireAction, RecordEntry } from "../../types/holochain-types";
 import { validateWasmGetInputArray } from "../wasm-io-types";
-import { toUint8Array } from "../../utils/bytes";
-
-/**
- * Normalize entry bytes from gateway JSON format to Uint8Array
- *
- * Gateway returns Entry as JSON where bytes are represented as arrays of numbers.
- * For msgpack encoding to work correctly, we need to convert these to Uint8Array.
- *
- * Entry format: { entry_type: "App"|"Agent"|etc, entry: bytes }
- */
-function normalizeEntryBytes(entry: any): any {
-  if (!entry || typeof entry !== 'object') return entry;
-
-  const entryType = entry.entry_type;
-  const entryData = entry.entry;
-
-  if (!entryType) return entry;
-
-  // Convert entry bytes to Uint8Array if it's an array
-  const normalizedData = (Array.isArray(entryData) || (typeof entryData === 'object' && entryData !== null && !(entryData instanceof Uint8Array)))
-    ? toUint8Array(entryData)
-    : entryData;
-
-  return {
-    entry_type: entryType,
-    entry: normalizedData,
-  };
-}
+import { normalizeEntryBytes } from "./entry-utils";
 
 
 /**
@@ -111,7 +84,7 @@ function processGetInput(
     const presentEntry = recordEntry.Present;
     if (presentEntry) {
       const normalizedEntry = normalizeEntryBytes(presentEntry);
-      entry = { Present: normalizedEntry };
+      entry = { Present: normalizedEntry } as RecordEntry;
     }
   }
 

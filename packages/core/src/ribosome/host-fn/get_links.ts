@@ -59,7 +59,7 @@ export interface ParsedLinkTypeFilter {
  *
  * Returns separate zomeIndex and linkType for gateway query parameters
  */
-function parseLinkTypeFilter(linkType: unknown): ParsedLinkTypeFilter {
+export function parseLinkTypeFilter(linkType: unknown): ParsedLinkTypeFilter {
   if (typeof linkType === 'number') {
     // Legacy format - just a link type number without zome context
     return { linkType };

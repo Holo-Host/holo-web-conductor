@@ -47,7 +47,7 @@ export const getAgentActivity = createEmptyArrayStub("get_agent_activity");
 // NOTE: get_details is implemented in ./get_details.ts, not here
 // The real implementation is registered in index.ts
 
-export const getLinksDetails = createEmptyArrayStub("get_links_details");
+// NOTE: getLinksDetails moved to ./get_links_details.ts (real implementation)
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");
 
 // Cross-zome/cell calls

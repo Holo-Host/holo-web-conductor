@@ -427,3 +427,39 @@ export function validateWasmDeleteLinkInput(input: unknown): input is WasmDelete
 
   return true;
 }
+
+// ============================================================================
+// Hash Input (for must_get_entry, must_get_action, must_get_valid_record)
+// ============================================================================
+
+/**
+ * Validates a transparent newtype hash input (MustGetEntryInput, etc.).
+ * These are #[serde(transparent)] newtypes around a hash, so they
+ * deserialize as plain Uint8Array(39).
+ */
+export function validateWasmHashInput(input: unknown): input is Uint8Array {
+  return input instanceof Uint8Array && input.length === 39;
+}
+
+// ============================================================================
+// MustGetAgentActivity Input
+// ============================================================================
+
+/**
+ * WASM MustGetAgentActivityInput structure
+ * Based on holochain_zome_types MustGetAgentActivityInput
+ */
+export interface WasmMustGetAgentActivityInput {
+  author: Uint8Array;
+  chain_filter: unknown;
+}
+
+export function validateWasmMustGetAgentActivityInput(
+  input: unknown
+): input is WasmMustGetAgentActivityInput {
+  if (!input || typeof input !== "object") return false;
+  const i = input as Record<string, unknown>;
+  if (!(i.author instanceof Uint8Array)) return false;
+  if (!("chain_filter" in i)) return false;
+  return true;
+}

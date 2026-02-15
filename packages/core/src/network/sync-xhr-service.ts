@@ -23,6 +23,8 @@ const log = createLogger('SyncXHR');
 
 /**
  * Default timeout for network requests (30 seconds)
+ * Note: sync XHR timeout may not work reliably in all Worker contexts.
+ * The timeout is set as a best-effort guard against indefinite blocking.
  */
 const DEFAULT_TIMEOUT = 30000;
 
@@ -144,7 +146,8 @@ export class SyncXHRNetworkService implements NetworkService {
   private buildCountLinksUrl(
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
-    linkType?: number
+    linkType?: number,
+    zomeIndex?: number
   ): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
@@ -153,7 +156,10 @@ export class SyncXHRNetworkService implements NetworkService {
     if (linkType !== undefined) {
       params.set('type', linkType.toString());
     }
-    return `${this.gatewayUrl}/dht/${dnaHashB64}/links/count?${params.toString()}`;
+    if (zomeIndex !== undefined) {
+      params.set('zome_index', zomeIndex.toString());
+    }
+    return `${this.gatewayUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
   }
 
   /**
@@ -447,8 +453,10 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
-      // The request will block until complete or browser timeout
+      // In a Worker context (not Window), xhr.timeout works for sync XHR.
+      // Without this, a slow gateway DHT query blocks the entire worker thread
+      // and serialized zome call chain indefinitely.
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -489,7 +497,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -528,7 +536,7 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
@@ -557,9 +565,10 @@ export class SyncXHRNetworkService implements NetworkService {
     dnaHash: DnaHash,
     baseAddress: AnyDhtHash,
     linkType?: number,
+    zomeIndex?: number,
     options?: NetworkFetchOptions
   ): number {
-    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType);
+    const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
     log.debug(` Counting links: ${url}`);
@@ -567,14 +576,18 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
       this.addAuthHeaders(xhr);
       xhr.send();
 
       if (xhr.status === 200) {
         const count = JSON.parse(xhr.responseText);
-        log.debug(` Link count: ${count}`);
+        log.debug(` Link count response:`, typeof count, Array.isArray(count) ? `array(${count.length})` : count);
+        // CountLinksResponse is Vec<ActionHash> (array) in kitsune mode, or number in conductor mode
+        if (Array.isArray(count)) {
+          return count.length;
+        }
         return typeof count === 'number' ? count : 0;
       } else if (xhr.status === 404) {
         log.debug(` No links found (404)`);
@@ -612,7 +625,9 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      // Note: xhr.timeout on sync XHR may cause hangs in some Worker contexts.
+      // Disabled for now - rely on gateway's own timeouts.
+      // try { xhr.timeout = this.defaultTimeout; } catch (_) {}
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send();
 
@@ -652,7 +667,9 @@ export class SyncXHRNetworkService implements NetworkService {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
-      // Note: timeout cannot be set for synchronous requests from a document
+      // Note: xhr.timeout on sync XHR may cause hangs in some Worker contexts.
+      // Disabled for now - rely on gateway's own timeouts.
+      // try { xhr.timeout = this.defaultTimeout; } catch (_) {}
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify({
         agent_pub_key: agentPubKey,

@@ -17,7 +17,7 @@ import type {
 } from './types';
 import type { NetworkCache } from './cache';
 import type { StorageProvider } from '../storage/storage-provider';
-import type { StoredRecord, Link as StoredLink } from '../storage/types';
+import type { Link as StoredLink } from '../storage/types';
 import {
   isEntryHash,
   isActionHash,
@@ -29,6 +29,13 @@ import {
 import { createLogger } from '@fishy/shared';
 
 const log = createLogger('Cascade');
+
+// NOTE: Circuit breaker was removed. Zero-arc nodes MUST always reach the
+// network — they have no local data for other agents. A global breaker that
+// silenced all network calls after a single slow response caused hashtag
+// search (and any multi-hop path traversal) to return empty results.
+// If slow-network protection is needed in the future, it should be scoped
+// per-base-address or per-zome-call, not global.
 
 /**
  * Cascade options
@@ -83,41 +90,6 @@ export class Cascade {
     this.cache = cache;
     this.network = network;
     this.options = { ...DEFAULT_OPTIONS, ...options };
-  }
-
-  /**
-   * Convert a stored record to network record format
-   */
-  private storedToNetworkRecord(stored: StoredRecord): NetworkRecord {
-    // StoredRecord has: action (our internal Action type), entry (StoredEntry)
-    // Build a minimal SignedActionHashed structure
-    const signedAction: SignedActionHashed = {
-      hashed: {
-        content: stored.action as any,
-        hash: stored.actionHash,
-      },
-      signature: stored.action?.signature || new Uint8Array(64),
-    };
-
-    let entry: NetworkEntry = 'NotApplicable';
-    if (stored.entry) {
-      // StoredEntry has entryContent (Uint8Array), entryType
-      // Convert to Entry format that WASM expects: { entry_type: "App", entry: content }
-      const entryType = stored.entry.entryType;
-      let entryValue: Entry;
-      if (entryType === 'Agent') {
-        entryValue = { entry_type: 'Agent', entry: stored.entry.entryContent };
-      } else {
-        // AppEntryType or other - treat as App entry
-        entryValue = { entry_type: 'App', entry: stored.entry.entryContent };
-      }
-      entry = { Present: entryValue };
-    }
-
-    return {
-      signed_action: signedAction,
-      entry,
-    };
   }
 
   /**
@@ -196,7 +168,6 @@ export class Cascade {
         console.warn(`[Cascade] Network fetch failed:`, error);
       }
     } else if (opts.useNetwork) {
-      // Log why network wasn't tried
       if (!this.network) {
         log.debug(` Network not configured - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
@@ -230,7 +201,7 @@ export class Cascade {
       return cached;
     }
 
-    // 3. Try network (if enabled) - network service needs to handle entry hash lookups
+    // 3. Try network (if enabled)
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
       log.debug(`🌐 Fetching by entry hash from NETWORK`);
       try {
@@ -246,7 +217,6 @@ export class Cascade {
         console.warn(`[Cascade] Network fetch by entry hash failed:`, error);
       }
     } else if (opts.useNetwork) {
-      // Log why network wasn't tried
       if (!this.network) {
         log.debug(` Network not configured - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
@@ -406,17 +376,14 @@ export class Cascade {
     }
 
     // 3. Try network (if enabled) - ALWAYS fetch to get other agents' links
-    // Pass both linkType and zomeIndex for gateway query
+    // Links are non-deterministic: we can't know we have them all without querying.
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
       log.info(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, zomeIndex=${zomeIndex}, linkType=${linkType}`);
       try {
         const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType, zomeIndex);
         log.info(`🌐 Network returned ${networkLinks.length} links`);
+
         if (networkLinks.length > 0) {
-          // Log each link for debugging
-          networkLinks.forEach((link, i) => {
-            log.info(`🌐 Network link ${i}: target=${this.hashToBase64(link.target)}, author=${this.hashToBase64(link.author)}`);
-          });
           if (opts.cacheNetworkResults) {
             this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
           }
@@ -426,11 +393,8 @@ export class Cascade {
               allLinks.push(link);
             }
           }
-        } else {
-          log.info(`🌐 No links found in network for this base`);
         }
       } catch (error) {
-        console.warn(`[Cascade] Network link fetch failed:`, error);
         log.error(`🌐 Network fetch error: ${error}`);
       }
     } else if (opts.useNetwork) {
@@ -576,7 +540,6 @@ export class Cascade {
         const networkDetails = this.network.getDetailsSync(dnaHash, entryHash);
         if (networkDetails) {
           log.debug(`🌐 Found entry details in NETWORK`);
-          // Normalize byte arrays from JSON
           return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
         }
       } catch (error) {
@@ -615,15 +578,12 @@ export class Cascade {
     }
 
     // 2. Try network (if enabled)
-    const shouldTryNetwork = opts.useNetwork && this.network?.isAvailable();
-
-    if (shouldTryNetwork && this.network) {
+    if (opts.useNetwork && this.network?.isAvailable()) {
       log.debug(`🌐 Fetching record details from NETWORK`);
       try {
         const networkDetails = this.network.getDetailsSync(dnaHash, actionHash);
         if (networkDetails) {
           log.debug(`🌐 Found record details in NETWORK`);
-          // Normalize byte arrays from JSON
           return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
         }
       } catch (error) {

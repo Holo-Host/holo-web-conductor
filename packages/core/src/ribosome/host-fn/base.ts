@@ -88,8 +88,9 @@ export function wrapHostFunction(
         if (error instanceof Error && error.name === "UnresolvedDependenciesError") {
           throw error;
         }
-        // Wrap other errors
-        throw hostFunctionError(name, error);
+        // Wrap other errors, including the cause message for debuggability
+        const causeMsg = error instanceof Error ? error.message : String(error);
+        throw hostFunctionError(`${name}: ${causeMsg}`, error);
       } finally {
         recordHostFunction(name, performance.now() - start);
       }
