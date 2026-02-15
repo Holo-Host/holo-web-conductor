@@ -54,7 +54,7 @@ A browser extension implementation of the Holochain conductor, enabling hApps to
                               │                                  │           │
                               ▼                                  ▼           │
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           HC-HTTP-GW (Gateway)                              │
+│                        hc-membrane (Gateway)                                │
 │                                                                             │
 │  ┌──────────────────────┐  ┌───────────────────┐  ┌─────────────────────┐  │
 │  │     HTTP Routes      │  │     WebSocket     │  │   AgentProxyManager │  │
@@ -65,8 +65,6 @@ A browser extension implementation of the Holochain conductor, enabling hApps to
 │  │     links?base=...   │  │ - Remote signals  │  │   WebSocket         │  │
 │  │ POST /dht/{dna}/     │  │ - Sign requests   │  │ - Manage sign req/  │  │
 │  │      publish         │  │                   │  │   response flow     │  │
-│  │ GET /{dna}/{coord}/  │  │                   │  │                     │  │
-│  │     {zome}/{fn}      │  │                   │  │                     │  │
 │  └──────────┬───────────┘  └─────────┬─────────┘  └──────────┬──────────┘  │
 │             │                        │                       │             │
 │             │                        └───────────┬───────────┘             │
@@ -322,11 +320,10 @@ window.holochain = {
 | `/auth/verify` | POST | Verify auth token |
 | `/dht/{dna}/record/{hash}` | GET | Fetch DHT record |
 | `/dht/{dna}/details/{hash}` | GET | Fetch entry with action history |
-| `/dht/{dna}/links` | GET | Get links from base address |
-| `/dht/{dna}/links/count` | GET | Count links |
+| `/dht/{dna}/links?base=&type=&zome_index=` | GET | Get links (optional type/zome filter) |
+| `/dht/{dna}/links/count?base=&type=` | GET | Count links |
 | `/dht/{dna}/publish` | POST | Publish browser agent's DHT ops |
 | `/ws` | GET | WebSocket upgrade |
-| `/{dna}/{coord}/{zome}/{fn}` | GET | Execute zome function |
 
 ---
 
@@ -638,7 +635,7 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
                    │ kitsune2 protocol
                    ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ HC-HTTP-GW                                                      │
+│ hc-membrane                                                      │
 │                                                                 │
 │ ProxySpaceHandler.recv_notify():                               │
 │   1. Decode WireMessage batch                                   │
@@ -713,7 +710,7 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
                               │ HTTP
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ HC-HTTP-GW                                                      │
+│ hc-membrane                                                      │
 │                                                                 │
 │ POST /dht/{dna}/publish handler:                               │
 │   1. Decode SignedDhtOps                                        │
@@ -855,23 +852,15 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
                               │ HTTP GET
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ HC-HTTP-GW                                                      │
+│ hc-membrane                                                     │
 │                                                                 │
 │ GET /dht/{dna_hash}/record/{hash}                              │
 │   1. Parse hash from URL (Holochain base64 format)             │
-│   2. Build GetRecordInput                                       │
-│   3. Call conductor via admin WebSocket                        │
-│   4. Transcode ExternIO → JSON                                 │
-│   5. Return { signed_action, entry }                           │
-└─────────────────────────────┬──────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────┐
-│ Holochain Conductor                                             │
+│   2. Query kitsune2 network directly (no conductor needed)     │
+│   3. Return { signed_action, entry } as JSON                   │
 │                                                                 │
-│ dht_util zome → get_record():                                  │
-│   Query DHT for record at hash                                 │
-│   Return signed action + entry                                 │
+│ Response format: hashes as number arrays, normalized by        │
+│ extension via normalizeByteArraysFromJson() to Uint8Array      │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -880,11 +869,13 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 | Host Function | Gateway Endpoint | Response | Uses Cascade |
 |---------------|-----------------|----------|--------------|
 | `get()` | `GET /dht/{dna}/record/{hash}` | `{ signed_action, entry }` | Yes |
-| `get_links()` | `GET /dht/{dna}/links?base={base}&type={type}` | `[{ target, tag, ... }]` | Yes (always network) |
+| `get_links()` | `GET /dht/{dna}/links?base=&type=&zome_index=` | `Vec<Link>` or `WireLinkOps` (dual-format) | Yes (always network) |
 | `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` | **No** (local only)* |
-| `count_links()` | `GET /dht/{dna}/links/count?base={base}` | `number` | Yes |
+| `count_links()` | `GET /dht/{dna}/links/count?base=&type=` | `number` | Yes |
 
 *`get_details` currently only queries local storage. See `STEPS/12.2_GET_DETAILS_CASCADE.md` for planned fix.
+
+**Link response dual-format**: hc-membrane can return links as either a flat `Vec<Link>` array (conductor mode) or `WireLinkOps { creates, deletes }` (direct kitsune2 mode). The extension parses both formats -- see `sync-xhr-service.ts` and `ribosome-worker.ts` for the dual-format parsing logic.
 
 #### Hash Encoding in URLs
 
@@ -958,7 +949,7 @@ This ensures the browser agent sees links created by other agents, not just its 
 | `packages/core/src/network/websocket-service.ts` | Gateway WebSocket client |
 | `packages/core/src/utils/bytes.ts` | Uint8Array conversion utilities |
 
-### Gateway (hc-http-gw-fork)
+### Gateway (hc-membrane, separate repo)
 | File | Purpose |
 |------|---------|
 | `src/routes.rs` | HTTP route definitions |
@@ -967,6 +958,8 @@ This ensures the browser agent sees links created by other agents, not just its 
 | `src/kitsune_proxy.rs` | KitsuneProxy, ProxySpaceHandler |
 | `src/proxy_agent.rs` | ProxyAgent (browser agent in kitsune2) |
 | `src/temp_op_store.rs` | TempOpStore for publish flow |
+
+Note: The gateway queries kitsune2 directly for DHT operations. There is no conductor or dht_util zome passthrough -- hc-membrane is itself a kitsune2 peer.
 
 ---
 
