@@ -53,7 +53,7 @@
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ⏳ | E2E Debugging Automation |
 | 17 | ⏳ | hc-membrane 0.6.1 Integration |
-| 18 | 🔀 | Zome Call Serialization (pending merge) |
+| 18 | ✅ | Zome Call Serialization |
 | 19 | 🔀 | Mewsfeed E2E (pending merge) |
 | 20 | 🔀 | Validation Pipeline (pending merge) |
 | 21 | 🔀 | Firefox Compatibility Plan (pending merge) |
@@ -138,6 +138,14 @@ Integrate fishy extension with updated hc-membrane gateway using kitsune2 0.4.x 
 1. Diagnose why one browser window doesn't see "active" agents
 2. Check ping/signal flow between browser agents
 3. May need signal relay support for browser-to-browser pings
+
+### Step 18: Zome Call Serialization
+**Priority**: High (data integrity)
+**Status**: Complete (merged)
+
+Prevent concurrent zome calls from corrupting the source chain. The worker's async `onmessage` handler can interleave two `CALL_ZOME` messages at `await` points within the transaction window, causing SQLite errors or silent data corruption. Fix: promise-chain serialization in the worker for `CALL_ZOME` messages.
+
+See [18_PLAN.md](./18_PLAN.md)
 
 ### Step 22: Migration to holo-host GitHub Org
 **Priority**: High (organizational)
