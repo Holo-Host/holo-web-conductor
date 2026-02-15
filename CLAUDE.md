@@ -12,10 +12,26 @@
 3. Chrome message passing converts Uint8Array to objects - always convert at boundaries
 4. Use @holochain/client types, not custom equivalents
 
+**WASM Boundary Invariants (DO NOT BYPASS)**:
+1. All data INTO WASM → `serializeToWasm()`. Never bypass with `wasmAllocate`+`writeToWasmMemory`. The "double encoding" IS the ExternIO contract -- it wraps msgpack bytes as binary, which WASM's `host_args::<ExternIO>` requires.
+2. All data FROM WASM → `deserializeFromWasm()`.
+3. All host function returns → `serializeResult()` (wraps in `{Ok: data}` automatically).
+4. These apply to ALL WASM calls: zome functions, validation callbacks, host functions. No exceptions.
+
+**Error Diagnostic Table** (when you see these errors, the cause is known):
+
+| Error message | Cause | Fix |
+|---|---|---|
+| `"expected byte array, got map"` | Missing ExternIO binary wrapper | Use `serializeToWasm()`, not raw memory write |
+| `"expected Ok or Err"` | Missing Result wrapper | Use `serializeResult()`, not `serializeToWasm()` |
+| `"Offset outside DataView bounds"` | Wrong encoding format entirely | You're double-encoding when single is needed, or vice versa |
+| `"BadSize"` / hash length mismatch | 32-byte raw key vs 39-byte HoloHash | Use `hashFrom32AndType()` or `ensureAgentPubKey()` |
+
 **Before Coding**:
 1. Check [LESSONS_LEARNED.md](./LESSONS_LEARNED.md) for failed approaches on this topic
 2. Research in `../holochain/` first (not web searches)
 3. Write test before implementation
+4. If touching ANY code that imports from `serialization.ts`, calls encode/decode, or modifies how data enters/exits WASM memory (including validation, host functions, zome calls): verify against WASM Boundary Invariants above
 
 ---
 
@@ -45,7 +61,7 @@
 ## Development Strategy
 
 - **Trace full data flow** before deep-diving (Input → Encode → WASM → Decode → Transport → UI)
-- **Check LESSONS_LEARNED.md** before serialization work
+- **Check LESSONS_LEARNED.md** before any work touching WASM boundaries, encode/decode, serialization, hash formatting, or Chrome message passing -- not just "serialization work." Merge-induced test failures at these boundaries count.
 - **Measure first, code second** - capture byte-level output before making changes
 - **Automated tests first**, manual browser testing only for final verification
 - **Chrome message passing** loses Uint8Array types - convert to/from Array at boundaries

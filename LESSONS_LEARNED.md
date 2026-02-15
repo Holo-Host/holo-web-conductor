@@ -789,3 +789,71 @@ Before any significant debugging:
 - [ ] Check each boundary, not just the one you suspect
 - [ ] Look for simple missing steps (decode not called, etc.)
 - [ ] Reference ../holochain/ not web searches
+
+---
+
+## Documentation Design: Human Lessons vs. Agent Guardrails
+
+> **Purpose**: This section captures what we learned about writing documentation that actually prevents AI agent mistakes, vs. documentation that only explains mistakes after the fact.
+
+### The Problem (2026-02-15)
+
+This document is 792 lines of excellent serialization lessons. It documents 6 failed solutions with exact error messages, root cause analysis, and prevention checklists. It was explicitly referenced in CLAUDE.md: "Check LESSONS_LEARNED.md before serialization work."
+
+Despite all of this, on 2026-02-15 an agent **repeated Failed Solution #2** (removing double-encoding) during a branch integration. It replaced `serializeToWasm()` with raw `wasmAllocate()` + `writeToWasmMemory()` in `validate.ts`, then had to revert after re-deriving the ExternIO contract from first principles by reading `guest.rs`.
+
+The documentation was correct, comprehensive, and available. It failed to prevent the mistake.
+
+### Why It Failed
+
+**1. Trigger condition was too narrow.** CLAUDE.md said "before serialization work." The agent was doing a branch merge. It didn't categorize merge-induced test failures as "serialization work," so it never consulted this document.
+
+**2. Knowledge was story-indexed, not symptom-indexed.** This document organizes by *what was tried* ("Removing Double-Encoding"). The agent needed indexing by *what was observed* (`"expected byte array"` → you broke ExternIO). To use this document, you must already suspect your fix matches a documented failure. But agents don't think "I'm about to try Failed Solution #2" -- they think "I found a bug."
+
+**3. Narratives don't create decision boundaries.** A 200-line narrative explaining why ExternIO double-encoding is intentional teaches understanding. A 1-line invariant ("All data INTO WASM → serializeToWasm(). Never bypass.") prevents action. The document had the narrative but not the invariant.
+
+**4. Lessons were context-bound.** Failures were documented as happening in `serialization.ts`, `background/index.ts`, host function files. When the identical pattern appeared in `validate.ts`, the agent treated it as novel. The lessons described incidents, not transferable principles.
+
+### Human Documentation vs. Agent Documentation
+
+| Aspect | Human-optimized | Agent-optimized |
+|--------|----------------|-----------------|
+| Format | Narratives explaining *why* | Invariants stating *what never to do* |
+| Organization | By solution attempted | By symptom observed |
+| Length | Comprehensive context | Short, checkable rules |
+| Trigger | Broad categories ("serialization work") | Precise conditions ("any code touching encode/decode/WASM memory") |
+| Placement | Separate reference doc | Inline in rules file (CLAUDE.md) where always in context |
+| Mechanism | Passive ("check before...") | Active (invariants agents can verify mechanically) |
+
+### What Actually Works for Agents
+
+**Invariants** (placed in CLAUDE.md, always loaded):
+```
+All data INTO WASM → serializeToWasm(). Never bypass with wasmAllocate+writeToWasmMemory.
+All data FROM WASM → deserializeFromWasm().
+All host function returns → serializeResult() (wraps in {Ok:}).
+```
+
+**Symptom tables** (placed in CLAUDE.md):
+```
+"expected byte array, got map" → Missing ExternIO binary wrapper → use serializeToWasm()
+"expected Ok or Err"           → Missing Result wrapper          → use serializeResult()
+```
+
+**Broad triggers** (in CLAUDE.md):
+"Before ANY change that modifies how data enters or exits WASM memory -- including validation, host functions, zome calls, and any file that imports from serialization.ts -- check the WASM boundary invariants."
+
+### The Role of This Document Going Forward
+
+This document (LESSONS_LEARNED.md) remains valuable as **deep reference**. When an agent needs to understand *why* an invariant exists, it can read the narrative here. But the invariants themselves belong in CLAUDE.md where they're always in context and can be checked mechanically.
+
+Think of it as: CLAUDE.md has the traffic laws. LESSONS_LEARNED.md has the accident reports that explain why those laws exist.
+
+### For Agent Teams
+
+When defining team boundaries (`.claude/agents/*.md`), each team's instructions must include:
+1. The WASM boundary invariants (cross-cutting, all teams)
+2. The symptom-diagnostic table relevant to their domain
+3. Integration-specific checklists (bugs emerge when features combine)
+
+Teams will produce MORE integration moments than a single agent. The highest-risk time is merge/integration, not initial development. See `STEPS/META_2_PROCESS_REVIEW.md` for the full analysis.

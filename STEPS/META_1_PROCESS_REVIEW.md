@@ -74,6 +74,7 @@ After review, update:
 | Date | Reviewer | Key Findings | Actions Taken |
 |------|----------|--------------|---------------|
 | 2026-01-15 | Claude | Initial process review - see meta-analysis | Created index.md, trimmed CLAUDE.md, added this meta-step |
+| 2026-02-15 | Claude + Eric | Documentation failed as agent guardrail; narrative docs don't prevent agent mistakes; need invariants + symptom tables | META_2 created, CLAUDE.md updated with invariants and diagnostic table, LESSONS_LEARNED.md updated with human-vs-agent lesson |
 
 ## Common Issues to Watch For
 
