@@ -45,18 +45,14 @@ Run one package: `npx vitest run` from package directory
 
 **Location**: `packages/e2e/`
 
-**Three test hApps supported**:
+**Two test hApps supported**:
 
 | hApp | App ID | Source | UI Server |
 |------|--------|--------|-----------|
-| fixture1 | `fixture1` | `../hc-http-gw-fork/fixture/package/happ1/fixture1.happ` | `http://localhost:3333` (extension test page) |
 | ziptest | `ziptest` | `fixtures/ziptest.happ` (committed binary) | `http://localhost:8081` (from `../ziptest/ui/dist`) |
 | mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `http://localhost:8082` (from `../mewsfeed-fishy/ui/dist`) |
 
 **Test files**:
-- `dht-ops.test.ts` - Single-agent DHT operations (fixture1 only, skipped for ziptest)
-- `cascade.test.ts` - Network cascade (fixture1 only, uses pre-seeded known_entry.json)
-- `signals.test.ts` - Remote signal forwarding (fixture1 only)
 - `ziptest.test.ts` - Multi-agent: profiles, signal exchange (10 signals), entry sync (10 entries)
 - `mewsfeed.test.ts` - Multi-agent: profiles, mew posting, hashtag search
 - `fixtures.ts` - Shared Playwright fixture definitions, `readSandboxState()`
@@ -76,13 +72,6 @@ RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm
 
 **Key zome functions**: `create_test_entry`, `get_test_entry`, `update_test_entry`, `delete_test_entry`, `create_test_link`, `get_test_links`, `emit_signal_test`, `query_test`, `test_signing`, `get_random_bytes`, `validate` (returns Valid for all ops)
 
-### fixture1 (external, auto-built)
-
-**Location**: `../hc-http-gw-fork/fixture/`
-**Build**: `cargo build --release --target wasm32-unknown-unknown && ./package.sh`
-**Auto-built** by `e2e-test-setup.sh` if `.happ` missing
-**Zomes**: `coordinator1` (create_known_entry, create_1, get_all_1), `dht_util` (dht_get_record, dht_get_links, dht_get_details)
-
 ### ziptest / mewsfeed (external, pre-built binaries)
 
 **ziptest**: Built from `../ziptest/` repo, binary committed to `fixtures/ziptest.happ`
@@ -101,20 +90,19 @@ cp ../mewsfeed-fishy/*.happ fixtures/mewsfeed.happ
 
 ## E2E Environment Setup (`scripts/e2e-test-setup.sh`)
 
-**Commands**: `start [--happ=NAME] [--gateway=TYPE]`, `stop`, `pause`, `unpause`, `status`, `clean`
+**Commands**: `start [--happ=NAME]`, `stop`, `pause`, `unpause`, `status`, `clean`
 
 **Start sequence**:
 1. Start kitsune2-bootstrap-srv (saves port to `/tmp/fishy-e2e/bootstrap_addr.txt`)
 2. Start 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
 3. Wait for arc establishment (up to 90s, minimum 30s)
-4. Start gateway (gw-fork on port 8000 or hc-membrane on port 8000)
+4. Start hc-membrane gateway on port 8000
 5. Start UI server (ziptest: port 8081, mewsfeed: port 8082)
-6. Initialize test data (fixture1: seed known_entry; ziptest/mewsfeed: save dna_hash)
+6. Initialize test data (save dna_hash)
 
-**State files** (`/tmp/fishy-e2e/`): `bootstrap_addr.txt`, `admin_port.txt`, `admin_port_2.txt`, `app_id.txt`, `happ_path.txt`, `dna_hash.txt`, `known_entry.json`, `gateway_type.txt`, PIDs, logs
+**State files** (`/tmp/fishy-e2e/`): `bootstrap_addr.txt`, `admin_port.txt`, `admin_port_2.txt`, `app_id.txt`, `happ_path.txt`, `dna_hash.txt`, PIDs, logs
 
-**Gateway modes**:
-- `gw-fork`: `../hc-http-gw-fork/target/release/hc-http-gw` with `HC_GW_*` env vars
+**Gateway**:
 - `membrane`: `../hc-membrane/target/release/hc-membrane` with `HC_MEMBRANE_*` env vars (uses `127.0.0.1:PORT`, not `localhost`)
 
 **Prerequisites**: `nix develop -c` shell for `holochain`, `hc`, `kitsune2-bootstrap-srv`. Extension must be built (`npm run build` in `packages/extension/`).

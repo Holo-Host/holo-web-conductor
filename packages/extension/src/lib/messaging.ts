@@ -62,7 +62,7 @@ export enum MessageType {
   ENABLE_HAPP = "enable_happ",
   DISABLE_HAPP = "disable_happ",
 
-  // Gateway Configuration (for network requests via hc-http-gw)
+  // Gateway Configuration (for network requests via hc-membrane)
   GATEWAY_CONFIGURE = "gateway_configure",
   GATEWAY_GET_STATUS = "gateway_get_status",
   GATEWAY_DISCONNECT = "gateway_disconnect",

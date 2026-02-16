@@ -40,7 +40,7 @@ export interface ConnectionState {
  * Configuration for gateway connection.
  */
 export interface ConnectionConfig {
-  /** URL of the hc-http-gw gateway */
+  /** URL of the hc-membrane gateway */
   gatewayUrl: string;
   /** Enable automatic reconnection (default: true) */
   autoReconnect?: boolean;

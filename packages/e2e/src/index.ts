@@ -31,8 +31,7 @@ program
   .description('Run e2e tests')
   .option('--clean', 'Clean environment before starting')
   .option('--pattern <pattern>', 'Test file pattern to match')
-  .option('--happ <name>', 'hApp to use (fixture1 or ziptest)', 'fixture1')
-  .option('--gateway <type>', 'Gateway type (gw-fork or hc-membrane)', 'gw-fork')
+  .option('--happ <name>', 'hApp to use (ziptest or mewsfeed)', 'ziptest')
   .option('--json', 'Output results as JSON')
   .option('--headed', 'Run with visible browser')
   .option('--no-logs', 'Skip log collection')
@@ -41,7 +40,6 @@ program
 
     const envConfig: Partial<EnvConfig> = {
       happ: options.happ as EnvConfig['happ'],
-      gateway: options.gateway as EnvConfig['gateway'],
     };
 
     const results = await runner.run({
@@ -69,12 +67,10 @@ const envCommand = program.command('env').description('Manage test environment')
 envCommand
   .command('start')
   .description('Start the test environment')
-  .option('--happ <name>', 'hApp to use (fixture1 or ziptest)', 'fixture1')
-  .option('--gateway <type>', 'Gateway type (gw-fork or hc-membrane)', 'gw-fork')
+  .option('--happ <name>', 'hApp to use (ziptest or mewsfeed)', 'ziptest')
   .action(async (options) => {
     const env = new EnvironmentManager({
       happ: options.happ,
-      gateway: options.gateway,
     });
 
     try {
@@ -159,7 +155,7 @@ envCommand
 envCommand
   .command('unpause')
   .description('Unpause the gateway')
-  .option('--happ <name>', 'hApp to use', 'fixture1')
+  .option('--happ <name>', 'hApp to use', 'ziptest')
   .action(async (options) => {
     const env = new EnvironmentManager({ happ: options.happ });
     try {

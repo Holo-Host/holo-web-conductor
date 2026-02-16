@@ -3,10 +3,8 @@
  */
 
 export interface EnvConfig {
-  /** hApp to use (fixture1 or ziptest) */
-  happ: 'fixture1' | 'ziptest';
-  /** Gateway type */
-  gateway: 'gw-fork' | 'hc-membrane';
+  /** hApp to use (ziptest or mewsfeed) */
+  happ: 'ziptest' | 'mewsfeed';
 }
 
 export interface EnvState {
@@ -22,8 +20,6 @@ export interface EnvState {
   dnaHash?: string;
   /** App ID currently running */
   appId?: string;
-  /** Known entry hash (for fixture1) */
-  knownEntryHash?: string;
 }
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -69,7 +65,6 @@ export interface E2EResults {
   /** Environment configuration */
   environment: {
     happ: string;
-    gateway: string;
     dnaHash?: string;
     gatewayUrl: string;
   };

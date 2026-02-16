@@ -1,4 +1,14 @@
 <!DOCTYPE html>
+<!--
+  DEVELOPER TOOL - Interactive Host Function Test Page
+
+  Tests 20+ host functions through the full browser extension pipeline
+  (inject -> content -> background -> offscreen -> worker -> WASM).
+  No gateway required - all operations are local.
+
+  Serve: cd packages/extension/test && python3 -m http.server 8080
+  Open:  http://localhost:8080/wasm-test.html
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">

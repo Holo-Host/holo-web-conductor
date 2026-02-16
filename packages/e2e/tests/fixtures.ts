@@ -34,8 +34,6 @@ export interface FishyFixtures {
   gatewayUrl: string;
   /** DNA hash from sandbox */
   dnaHash: string | null;
-  /** Known entry hash from sandbox (for fixture1) */
-  knownEntryHash: string | null;
   /** App ID from sandbox */
   appId: string | null;
   /** Path to hApp file */
@@ -84,23 +82,15 @@ async function getExtensionId(context: BrowserContext): Promise<string> {
  */
 async function readSandboxState(): Promise<{
   dnaHash: string | null;
-  knownEntryHash: string | null;
   appId: string | null;
   happPath: string | null;
 }> {
   let dnaHash: string | null = null;
-  let knownEntryHash: string | null = null;
   let appId: string | null = null;
   let happPath: string | null = null;
 
   try {
     dnaHash = (await readFile(join(SANDBOX_DIR, 'dna_hash.txt'), 'utf-8')).trim();
-  } catch {}
-
-  try {
-    const knownEntry = await readFile(join(SANDBOX_DIR, 'known_entry.json'), 'utf-8');
-    const parsed = JSON.parse(knownEntry);
-    knownEntryHash = parsed.entry_hash;
   } catch {}
 
   try {
@@ -111,7 +101,7 @@ async function readSandboxState(): Promise<{
     happPath = (await readFile(join(SANDBOX_DIR, 'happ_path.txt'), 'utf-8')).trim();
   } catch {}
 
-  return { dnaHash, knownEntryHash, appId, happPath };
+  return { dnaHash, appId, happPath };
 }
 
 /**
@@ -184,11 +174,6 @@ export const test = base.extend<FishyFixtures>({
     await use(dnaHash);
   },
 
-  knownEntryHash: async ({}, use) => {
-    const { knownEntryHash } = await readSandboxState();
-    await use(knownEntryHash);
-  },
-
   appId: async ({}, use) => {
     const { appId } = await readSandboxState();
     await use(appId);
@@ -224,7 +209,7 @@ export async function connectAndConfigure(
 export async function installHapp(
   page: Page,
   happPath: string,
-  appId: string = 'fixture1'
+  appId: string = 'ziptest'
 ): Promise<any> {
   const happBytes = await readFile(happPath);
   const happArray = Array.from(happBytes);
@@ -244,7 +229,7 @@ export async function installHapp(
 export async function ensureHappInstalled(
   page: Page,
   happPath: string | null,
-  appId: string = 'fixture1'
+  appId: string = 'ziptest'
 ): Promise<boolean> {
   // Check if already installed
   const hasApp = await page.evaluate(async (appId) => {
@@ -291,7 +276,7 @@ export async function callZome(
     appId?: string;
   }
 ): Promise<any> {
-  const { zomeName, fnName, payload, appId = 'fixture1' } = params;
+  const { zomeName, fnName, payload, appId = 'ziptest' } = params;
 
   return page.evaluate(
     async ({ zomeName, fnName, payload, appId }) => {
@@ -415,6 +400,15 @@ export async function createAgentContext(agentName: string): Promise<AgentContex
 
   const page = await context.newPage();
 
+  // Capture browser console output for debugging
+  page.on('console', (msg) => {
+    const type = msg.type();
+    const text = msg.text();
+    // Filter out noisy messages
+    if (text.includes('[HMR]') || text.includes('[vite]')) return;
+    console.log(`[${agentName}:${type}] ${text}`);
+  });
+
   return {
     name: agentName,
     context,
@@ -461,8 +455,13 @@ export async function createProfile(page: Page, nickname: string): Promise<void>
 
   // Wait for either create-profile component OR the controller (if profile exists)
   try {
-    await page.waitForSelector('create-profile, .test-type', { timeout: 30000 });
+    await page.waitForSelector('create-profile, .test-type', { timeout: 60000 });
   } catch {
+    // Diagnostic: check what the page shows
+    const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || 'empty');
+    const bodyHTML = await page.evaluate(() => document.body?.innerHTML?.substring(0, 1000) || 'empty');
+    console.log(`[createProfile] Page text: ${bodyText}`);
+    console.log(`[createProfile] Page HTML: ${bodyHTML}`);
     console.log(`[createProfile] Neither create-profile nor controller found`);
     throw new Error('Could not find create-profile component or controller');
   }

@@ -1,14 +1,17 @@
 # Fishy Testing Guide
 
-This document covers testing procedures for the Fishy browser extension, including unit tests, integration tests, and end-to-end tests that require manual setup.
+This document covers testing procedures for the Fishy browser extension, including unit tests, integration tests, automated end-to-end tests, and manual test pages.
 
 ## Quick Reference
 
 | Test Type | Command | Requirements |
 |-----------|---------|--------------|
-| Unit tests | `npm test` | None |
+| Unit tests (vitest) | `npm test` | None |
 | Build validation | `npm run build` | None |
-| E2E with gateway | See below | nix, Holochain conductor, gateway |
+| Type checking | `npm run build --workspace=@fishy/core` | None (uses tsc) |
+| Integration tests | `npm run test:integration` | None |
+| E2E (Playwright) | See "E2E with Gateway" section | nix shell, conductor, gateway |
+| Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
 
 ---
 
@@ -21,139 +24,188 @@ npm test
 ```
 
 This runs Vitest tests across all packages:
-- `packages/core` - Ribosome, storage, network layer tests
-- `packages/lair` - Key management tests
-- `packages/extension` - Messaging, permissions tests
+- `packages/core` - 18 test files (~209 tests): Ribosome, storage, network layer
+- `packages/extension` - 9 test files (~96 tests): Messaging, permissions, service worker
+- `packages/client` - 5 test files (~97 tests): FishyAppClient, connection monitoring
+- `packages/lair` - 1 test file (~25 tests): Key management
+- `packages/shared` - 1 test file: Shared utilities
+
+**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are NOT caught by `npm test`. Run `tsc` separately via `npm run build --workspace=@fishy/core` to check types.
+
+**Known issues**:
+- Some tests need libsodium; may fail with "No secure random number generator found" when run in isolation
+- e2e package has pre-existing build errors (missing @types/node) - not blocking unit tests
 
 ---
 
 ## Integration Tests
 
-### Automated Integration Tests
-
-The automated integration tests simulate the web-page → extension → WASM flow without requiring a browser:
+Run integration tests that simulate web-page → extension → WASM flow without a browser:
 
 ```bash
 npm run test:integration
 ```
 
-See `packages/core/src/integration/` for test files.
+Test files in `packages/core/src/integration/`:
+- `profiles-integration.test.ts` - Profile CRUD operations
+- `serialization-fixtures.test.ts` - Cross-version serialization compatibility
+- `publish-integration.test.ts` - DhtOp generation and publishing
 
 ---
 
-## End-to-End Tests with Gateway
+## E2E Tests with Gateway
 
-These tests verify the full flow: browser extension → hc-http-gw → Holochain conductor.
+These tests verify the full flow: web page → browser extension → gateway → Holochain conductor network.
 
 ### Prerequisites
 
-The `holochain` and `hc` binaries must be available. Use the nix shell from hc-http-gw-fork:
+The `holochain`, `hc`, and `kitsune2-bootstrap-srv` binaries must be available. Run all commands in a nix shell:
 
 ```bash
-cd ../hc-http-gw-fork
-nix develop  # This provides holochain 0.6 and hc tools
+nix develop -c bash
 ```
 
-### Setup Steps
+### Gateway
 
-1. **Build extension and fixture hApp** (in nix shell):
-   ```bash
-   # In fishy directory
-   npm run build
+The project uses hc-membrane gateway which integrates directly with the kitsune2 network:
 
-   # In hc-http-gw-fork/fixture directory
-   cd ../hc-http-gw-fork/fixture
-   RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown
-   ./package.sh
-   ```
+| Gateway | Repo | Mode |
+|---------|------|------|
+| `membrane` | `../hc-membrane` | Kitsune mode |
 
-2. **Start conductor with fixture hApp** (in nix shell):
-   ```bash
-   # Create a temp directory for sandbox
-   mkdir -p /tmp/fishy-e2e && cd /tmp/fishy-e2e
+Set repo path with environment variable:
+- `HC_MEMBRANE_DIR` - Path to hc-membrane repo (default: `../hc-membrane`)
 
-   # Generate and run sandbox with fixture
-   hc sandbox generate \
-     --in-process-lair \
-     --run 0 \
-     --app-id fixture1 \
-     ~/code/metacurrency/holochain/hc-http-gw-fork/fixture/package/happ1/fixture1.happ
+### Test hApps
 
-   # Note the admin port from the output (look for "Admin port set to: XXXX")
-   ```
+Two hApp fixtures are supported:
 
-3. **Start gateway** (in another terminal, also in nix shell):
-   ```bash
-   cd ~/code/metacurrency/holochain/hc-http-gw-fork
-   nix develop
+| hApp | App ID | Source | UI Server | Tests |
+|------|--------|--------|-----------|-------|
+| ziptest | `ziptest` | `fixtures/ziptest.happ` (committed binary) | `../ziptest/ui/dist` (port 8081) | Multi-agent sync |
+| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `../mewsfeed-fishy/ui/dist` (port 8082) | Real-world hApp |
 
-   # Replace ADMIN_PORT with the port from step 2
-   HC_GW_ADMIN_WS_URL="ws://localhost:ADMIN_PORT" \
-   HC_GW_PORT=8090 \
-   HC_GW_ALLOWED_APP_IDS="fixture1" \
-   HC_GW_ALLOWED_FNS_fixture1="*" \
-   cargo run --release
-   ```
+### Using e2e-test-setup.sh
 
-4. **Load extension in Chrome**:
-   - Open `chrome://extensions`
-   - Enable Developer mode
-   - Click "Load unpacked"
-   - Select `packages/extension/dist`
+The primary way to set up the E2E environment:
 
-5. **Open test page**:
-   ```
-   file:///path/to/fishy/packages/extension/test/e2e-gateway-test.html
-   ```
+```bash
+# Start with default hApp (ziptest)
+./scripts/e2e-test-setup.sh start
 
-6. **Run tests**:
-   - Click "Configure Extension" with gateway URL (default: http://localhost:8090)
-   - Click "Connect to Extension"
-   - If hApp not installed, select fixture1.happ and click "Install hApp"
-   - Test operations:
-     - **Create Entry** - Creates an entry via coordinator1::create_1
-     - **Get Links** - Fetches links showing action hashes (copy these for Get Record)
-     - **Get Record** - Fetches a record by hash via dht_util::dht_get_record
-     - **Get All** - Fetches all entries via coordinator1::get_all_1
+# Start with specific hApp
+./scripts/e2e-test-setup.sh start --happ=ziptest
+./scripts/e2e-test-setup.sh start --happ=mewsfeed
 
-### Test Page Features
+# Other commands
+./scripts/e2e-test-setup.sh stop     # Stop all services
+./scripts/e2e-test-setup.sh pause    # Stop gateway only (for gateway development)
+./scripts/e2e-test-setup.sh unpause  # Restart gateway
+./scripts/e2e-test-setup.sh status   # Check what's running
+./scripts/e2e-test-setup.sh clean    # Remove state files
+```
 
-- **Auto-detect**: Automatically detects existing hApp installation after connect
-- **Timing**: Shows millisecond timing for all operations
-- **Hash encoding**: Displays hashes as base64 strings (uhCkk...) for readability
-- **Copy-paste**: Get Links results include `_targetHash_copyForGetRecord` for easy testing
+**What it does**:
+1. Starts local kitsune2-bootstrap-srv (saves port to `/tmp/fishy-e2e/bootstrap_addr.txt`)
+2. Starts 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
+3. Waits for arc establishment (up to 90s, minimum 30s)
+4. Starts hc-membrane gateway on port 8000
+5. Starts UI server (ziptest: port 8081, mewsfeed: port 8082)
+6. Initializes test data (saves dna_hash for selected hApp)
 
-### Troubleshooting
+**State files** in `/tmp/fishy-e2e/`:
+- `bootstrap_addr.txt` - Bootstrap server address
+- `admin_port.txt`, `admin_port_2.txt` - Conductor admin ports
+- `app_id.txt`, `happ_path.txt`, `dna_hash.txt` - hApp configuration
+- PIDs and logs for all services
 
-**"holochain not found"**: Make sure you're in the nix shell (`nix develop` in hc-http-gw-fork)
+### Running Playwright Tests
 
-**"Admin port set to: 0"**: The actual port is assigned dynamically. Look for "Admin Interfaces: XXXX" in the output.
+The Playwright tests are in `packages/e2e/`:
 
-**"cellId[0].slice is not a function"**: This was fixed - hashes are now properly converted from Chrome's serialized format.
+| Test File | Description | Fixture |
+|-----------|-------------|---------|
+| `ziptest.test.ts` | Multi-agent: profiles, signal exchange, entry sync | ziptest |
+| `mewsfeed.test.ts` | Multi-agent: profiles, mew posting, hashtag search | mewsfeed |
 
-**Deserialization errors**: Make sure payloads with hashes pass decoded bytes, not base64 strings.
+**To run tests**:
+
+```bash
+# 1. Start E2E environment (in nix shell)
+nix develop -c bash
+./scripts/e2e-test-setup.sh start --happ=ziptest
+
+# 2. Build extension
+npm run build
+
+# 3. Run Playwright tests (from packages/e2e/)
+cd packages/e2e
+npx playwright test
+
+# Or run specific test
+npx playwright test ziptest.test.ts
+
+# With UI (for debugging)
+npx playwright test --ui
+```
+
+**Multi-agent architecture**:
+- Each agent gets a separate Chromium context with its own user data directory
+- Each context loads the extension independently (separate keypairs in IndexedDB)
+- `setupAutoApproval()` intercepts authorization popups and auto-clicks approve
+- Extension readiness detected via `window.holochain?.isFishy === true`
 
 ---
 
-## Running Gateway Integration Tests
+## Manual Test Pages
 
-The hc-http-gw-fork has its own integration tests for the DHT endpoints:
+Interactive HTML test pages for developer debugging (not automated CI). Located in `packages/extension/test/`:
+
+| File | Purpose | Gateway Required? | Key Features |
+|------|---------|-------------------|--------------|
+| `wasm-test.html` | 20+ host function tests: CRUD, links, signing, rollback | No | Self-contained, no network |
+| `test-page.html` | Basic extension API: detect, connect, install, callZome, signals | No | Extension detection flow |
+| `authorization-test.html` | Authorization flow and permission management | No | Permission revocation |
+| `profiles-test.html` | Real hApp integration via FishyAppClient | Optional | Client library testing |
+
+**How to use**:
 
 ```bash
-cd ../hc-http-gw-fork
+# 1. Start E2E environment (for tests that need gateway)
+nix develop -c bash
+./scripts/e2e-test-setup.sh start
 
-# Build fixture WASMs first
-cd fixture
-RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown
-./package.sh
-cd ..
+# 2. Build and load extension in Chrome
+npm run build
+# Open chrome://extensions, enable Developer mode, Load unpacked from packages/extension/dist
 
-# Run tests (must be serial due to init() conflicts)
-cargo test --test dht -- --test-threads=1
+# 3. Serve test pages (need HTTP server for module imports)
+cd packages/extension/test
+python3 -m http.server 8080
+
+# 4. Open test page
+# http://localhost:8080/wasm-test.html
+# http://localhost:8080/test-page.html
+# http://localhost:8080/profiles-test.html
+# etc.
 ```
 
-These tests verify:
-- `dht_get_record_found` - Creates entry and fetches it
-- `dht_get_record_not_found` - Verifies null for non-existent hash
-- `dht_get_links_empty` - Verifies empty array response
-- `dht_count_links_zero` - Verifies zero count
+---
+
+## Troubleshooting
+
+**"holochain not found"**: Make sure you're in the nix shell (`nix develop -c bash`)
+
+**"Admin port set to: 0"**: The actual port is assigned dynamically. Look for "Admin Interfaces: XXXX" in conductor output, or check `/tmp/fishy-e2e/admin_port.txt`
+
+**"No secure random number generator found"**: Some tests need libsodium. Run `npm test` from repo root, not individual test files.
+
+**Playwright extension not loading**: Check that extension is built (`npm run build`) and path is correct in test fixture. Check `.playwright-user-data-*/` directories for IndexedDB state.
+
+**Gateway connection refused**: Check that gateway is running (`./scripts/e2e-test-setup.sh status`). Check that `HC_MEMBRANE_DIR` points to correct repo and gateway is built (`cargo build --release` in hc-membrane).
+
+**Arc not established**: Conductors need time to establish DHT arcs. `e2e-test-setup.sh` waits up to 90s (minimum 30s). Check conductor logs in `/tmp/fishy-e2e/*.log` for arc establishment messages.
+
+**Deserialization errors**: Verify that WASM boundary invariants are followed (see CLAUDE.md). Check that payloads with hashes use Uint8Array (39 bytes), not base64 strings or 32-byte raw keys.
+
+**Test hApp build failures**: For ziptest/mewsfeed, rebuild in respective repos and copy to `fixtures/`.

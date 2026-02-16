@@ -43,7 +43,7 @@ export interface SyncXHRConfig {
 /**
  * Synchronous XHR network service for offscreen document context
  *
- * Note: This service is designed for use with hc-http-gw or similar gateway.
+ * Note: This service is designed for use with hc-membrane or similar gateway.
  *
  * Gateway endpoints:
  * - GET /dht/{dna_hash}/record/{hash} - Fetch a record by hash

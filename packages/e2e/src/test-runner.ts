@@ -48,8 +48,7 @@ export class TestRunner {
     const results: E2EResults = {
       timestamp: startTime.toISOString(),
       environment: {
-        happ: options.envConfig?.happ ?? 'fixture1',
-        gateway: options.envConfig?.gateway ?? 'gw-fork',
+        happ: options.envConfig?.happ ?? 'ziptest',
         gatewayUrl: 'http://localhost:8000',
       },
       results: {
@@ -258,7 +257,7 @@ export class TestRunner {
       '',
       'Fishy E2E Test Runner',
       '=====================',
-      `Environment: ${results.environment.happ} + ${results.environment.gateway} | Gateway: ${results.environment.gatewayUrl}`,
+      `Environment: ${results.environment.happ} | Gateway: ${results.environment.gatewayUrl}`,
       '',
     ];
 

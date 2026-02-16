@@ -95,7 +95,6 @@ describe("WebSocketNetworkService", () => {
 
     options = {
       gatewayWsUrl: "ws://localhost:8090/ws",
-      sessionToken: "test-token",
       heartbeatInterval: 30000, // Long enough to not interfere
       heartbeatTimeout: 5000,
       reconnectBaseDelay: 1000,
@@ -110,20 +109,14 @@ describe("WebSocketNetworkService", () => {
   describe("connection", () => {
     it("should connect to the gateway", () => {
       const service = new WebSocketNetworkService(options);
-      const stateCallback = vi.fn();
-      service.onStateChange(stateCallback);
-
       service.connect();
       expect(service.getState()).toBe("connecting");
       expect(mockWs.url).toBe("ws://localhost:8090/ws");
-
-      // Simulate connection open
-      mockWs.simulateOpen();
-      expect(stateCallback).toHaveBeenCalledWith("authenticating");
     });
 
     it("should disconnect gracefully", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
 
@@ -139,14 +132,48 @@ describe("WebSocketNetworkService", () => {
   });
 
   describe("authentication", () => {
-    it("should send auth message after connecting", () => {
+    it("should send auth with agent pubkey on open when pending registrations exist", () => {
+      const service = new WebSocketNetworkService(options);
+      const stateCallback = vi.fn();
+      service.onStateChange(stateCallback);
+
+      service.registerAgent("dna123", "agent456");
+      service.connect();
+      mockWs.simulateOpen();
+
+      expect(stateCallback).toHaveBeenCalledWith("authenticating");
+      expect(mockWs.sentMessages).toContainEqual(
+        JSON.stringify({ type: "auth", agent_pubkey: "agent456" })
+      );
+    });
+
+    it("should defer auth when no pending registrations", () => {
       const service = new WebSocketNetworkService(options);
       service.connect();
       mockWs.simulateOpen();
 
-      expect(mockWs.sentMessages).toContainEqual(
-        JSON.stringify({ type: "auth", session_token: "test-token" })
+      // No auth message sent - waiting for registerAgent()
+      const authMessages = mockWs.sentMessages.filter(
+        (m) => JSON.parse(m).type === "auth"
       );
+      expect(authMessages).toHaveLength(0);
+    });
+
+    it("should trigger auth when registerAgent called on open unauthenticated connection", () => {
+      const service = new WebSocketNetworkService(options);
+      service.connect();
+      mockWs.simulateOpen();
+
+      // No auth yet
+      expect(mockWs.sentMessages.filter(m => JSON.parse(m).type === "auth")).toHaveLength(0);
+
+      // registerAgent triggers auth
+      service.registerAgent("dna123", "agent456");
+
+      expect(mockWs.sentMessages).toContainEqual(
+        JSON.stringify({ type: "auth", agent_pubkey: "agent456" })
+      );
+      expect(service.getState()).toBe("authenticating");
     });
 
     it("should handle auth_ok", () => {
@@ -154,9 +181,10 @@ describe("WebSocketNetworkService", () => {
       const stateCallback = vi.fn();
       service.onStateChange(stateCallback);
 
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       expect(service.isConnected()).toBe(true);
       expect(stateCallback).toHaveBeenCalledWith("connected");
@@ -164,40 +192,26 @@ describe("WebSocketNetworkService", () => {
 
     it("should handle auth_error", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
 
-      mockWs.simulateMessage({ type: "auth_error", message: "Invalid token" });
+      mockWs.simulateMessage({ type: "auth_error", message: "Invalid agent" });
 
       expect(service.isConnected()).toBe(false);
       expect(service.getState()).toBe("connected"); // Still connected, just not authenticated
-    });
-
-    it("should send empty auth if no token provided", () => {
-      const service = new WebSocketNetworkService({
-        ...options,
-        sessionToken: undefined,
-      });
-
-      service.connect();
-      mockWs.simulateOpen();
-
-      // Should send auth with empty token (gateway accepts this when no authenticator configured)
-      expect(mockWs.sentMessages).toContainEqual(
-        JSON.stringify({ type: "auth", session_token: "" })
-      );
     });
   });
 
   describe("agent registration", () => {
     it("should register agent after authentication", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
-      service.registerAgent("dna123", "agent456");
-
+      // Pending registration should have been sent after auth_ok
       expect(mockWs.sentMessages).toContainEqual(
         JSON.stringify({
           type: "register",
@@ -216,17 +230,17 @@ describe("WebSocketNetworkService", () => {
       service.connect();
       mockWs.simulateOpen();
 
-      // Should not have sent yet (not authenticated)
+      // Should have sent auth but not register yet
       expect(
         mockWs.sentMessages.find(
-          (m) => m.includes("register") && !m.includes("auth")
+          (m) => JSON.parse(m).type === "register"
         )
       ).toBeUndefined();
 
       // Authenticate
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
-      // Now should have sent
+      // Now should have sent registration
       expect(mockWs.sentMessages).toContainEqual(
         JSON.stringify({
           type: "register",
@@ -238,9 +252,10 @@ describe("WebSocketNetworkService", () => {
 
     it("should unregister agent", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       service.registerAgent("dna123", "agent456");
       service.unregisterAgent("dna123", "agent456");
@@ -256,16 +271,17 @@ describe("WebSocketNetworkService", () => {
 
     it("should always send registration (for gateway sync) but not duplicate internal tracking", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
+      // First registration came from pending, now send a duplicate
       service.registerAgent("dna123", "agent456");
-      service.registerAgent("dna123", "agent456"); // Duplicate call
 
       // Messages are always sent - gateway may have lost state
       const registerMessages = mockWs.sentMessages.filter(
-        (m) => m.includes('"type":"register"')
+        (m) => JSON.parse(m).type === "register"
       );
       expect(registerMessages).toHaveLength(2);
 
@@ -279,11 +295,11 @@ describe("WebSocketNetworkService", () => {
 
     it("should track registrations", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna1", "agent1");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
-      service.registerAgent("dna1", "agent1");
       service.registerAgent("dna2", "agent2");
 
       expect(service.getRegistrations()).toHaveLength(2);
@@ -299,15 +315,17 @@ describe("WebSocketNetworkService", () => {
       const signalCallback = vi.fn();
       service.onSignal(signalCallback);
 
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Simulate signal from gateway (signal is base64 encoded)
       const signalData = btoa("test signal data");
       mockWs.simulateMessage({
         type: "signal",
         dna_hash: "dna123",
+        to_agent: "agent456",
         from_agent: "agent789",
         zome_name: "test_zome",
         signal: signalData,
@@ -315,6 +333,7 @@ describe("WebSocketNetworkService", () => {
 
       expect(signalCallback).toHaveBeenCalledWith({
         dna_hash: "dna123",
+        to_agent: "agent456",
         from_agent: "agent789",
         zome_name: "test_zome",
         signal: expect.any(Uint8Array),
@@ -330,14 +349,16 @@ describe("WebSocketNetworkService", () => {
       const service = new WebSocketNetworkService(options);
       // No signal callback set
 
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Should not throw
       mockWs.simulateMessage({
         type: "signal",
         dna_hash: "dna123",
+        to_agent: "agent456",
         from_agent: "agent789",
         zome_name: "test_zome",
         signal: btoa("test"),
@@ -353,9 +374,10 @@ describe("WebSocketNetworkService", () => {
         ...options,
         maxReconnectAttempts: 1,
       });
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Simulate connection loss
       mockWs.simulateClose(1006);
@@ -367,9 +389,10 @@ describe("WebSocketNetworkService", () => {
 
     it("should not reconnect after intentional disconnect", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Intentional disconnect
       service.disconnect();
@@ -383,9 +406,10 @@ describe("WebSocketNetworkService", () => {
   describe("messages", () => {
     it("should handle registered message", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Should not throw
       mockWs.simulateMessage({
@@ -397,9 +421,10 @@ describe("WebSocketNetworkService", () => {
 
     it("should handle unregistered message", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Should not throw
       mockWs.simulateMessage({
@@ -411,9 +436,10 @@ describe("WebSocketNetworkService", () => {
 
     it("should handle error message", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Should not throw
       mockWs.simulateMessage({
@@ -424,9 +450,10 @@ describe("WebSocketNetworkService", () => {
 
     it("should handle pong message", () => {
       const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
       service.connect();
       mockWs.simulateOpen();
-      mockWs.simulateMessage({ type: "auth_ok" });
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
       // Should not throw
       mockWs.simulateMessage({ type: "pong" });

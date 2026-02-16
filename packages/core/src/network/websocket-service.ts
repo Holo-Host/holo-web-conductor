@@ -1,13 +1,13 @@
 /**
  * WebSocket Network Service
  *
- * Manages a WebSocket connection to the hc-http-gw for receiving remote signals.
+ * Manages a WebSocket connection to the gateway for receiving remote signals.
  * This service is designed to run in the offscreen document where persistent
  * connections are supported.
  *
- * Protocol (see hc-http-gw-fork gateway):
- * - Browser → Gateway: auth, register, unregister, ping
- * - Gateway → Browser: auth_ok, auth_error, registered, unregistered, signal, pong, error
+ * Protocol (see hc-membrane gateway):
+ * - Browser → Gateway: auth, auth_challenge_response, register, unregister, ping
+ * - Gateway → Browser: auth_ok, auth_challenge, auth_error, registered, unregistered, signal, pong, error
  */
 
 import { decodeHashFromBase64 } from "../types/holochain-types";
@@ -31,7 +31,8 @@ export interface SignedRemoteSignalTransport {
 }
 
 export type ClientMessage =
-  | { type: "auth"; session_token: string }
+  | { type: "auth"; agent_pubkey: string }
+  | { type: "auth_challenge_response"; signature: string }
   | { type: "register"; dna_hash: string; agent_pubkey: string }
   | { type: "unregister"; dna_hash: string; agent_pubkey: string }
   | { type: "ping" }
@@ -51,7 +52,8 @@ export type ClientMessage =
  * Messages from gateway to browser
  */
 export type ServerMessage =
-  | { type: "auth_ok" }
+  | { type: "auth_ok"; session_token?: string }
+  | { type: "auth_challenge"; challenge: string }
   | { type: "auth_error"; message: string }
   | { type: "registered"; dna_hash: string; agent_pubkey: string }
   | { type: "unregistered"; dna_hash: string; agent_pubkey: string }
@@ -207,15 +209,11 @@ export class WebSocketNetworkService {
   }
 
   /**
-   * Update session token (can be called before or after connection)
+   * Update session token (kept for backward compatibility).
+   * Auth is now agent-pubkey-based via WebSocket protocol.
    */
   setSessionToken(token: string | null): void {
     this.options.sessionToken = token || "";
-
-    // If connected but not authenticated, try to authenticate now
-    if (this.state === "connected" && !this.authenticated && token) {
-      this.authenticate();
-    }
   }
 
   /**
@@ -281,6 +279,10 @@ export class WebSocketNetworkService {
       if (!alreadyTracked) {
         this.pendingRegistrations.push(registration);
       }
+      // If WS is open but not authenticated, trigger auth with this agent
+      if (this.ws?.readyState === WebSocket.OPEN && !this.authenticated && this.state !== "authenticating") {
+        this.authenticate(agent_pubkey);
+      }
     }
   }
 
@@ -343,12 +345,13 @@ export class WebSocketNetworkService {
   private handleOpen(): void {
     log.debug("Connected");
     this.reconnectAttempts = 0;
-    this.setState("authenticating");
     this.startHeartbeat();
 
-    // Always authenticate - gateway requires auth before registrations
-    // If no token, send empty auth (gateway accepts when no authenticator configured)
-    this.authenticate();
+    // Authenticate if we have pending registrations (use first agent's pubkey).
+    // Otherwise, wait for registerAgent() to trigger auth.
+    if (this.pendingRegistrations.length > 0) {
+      this.authenticate(this.pendingRegistrations[0].agent_pubkey);
+    }
   }
 
   private handleMessage(event: MessageEvent): void {
@@ -359,6 +362,10 @@ export class WebSocketNetworkService {
       switch (message.type) {
         case "auth_ok":
           this.handleAuthOk();
+          break;
+
+        case "auth_challenge":
+          this.handleAuthChallenge(message);
           break;
 
         case "auth_error":
@@ -417,12 +424,10 @@ export class WebSocketNetworkService {
     }
   }
 
-  private authenticate(): void {
-    // Always send auth - gateway requires authentication before accepting registrations
-    // When no authenticator is configured on gateway, any token (including empty) is accepted
-    log.debug("Authenticating...");
+  private authenticate(agentPubkey: string): void {
+    log.debug(`Authenticating with agent: ${agentPubkey.substring(0, 20)}...`);
     this.setState("authenticating");
-    this.send({ type: "auth", session_token: this.options.sessionToken || "" });
+    this.send({ type: "auth", agent_pubkey: agentPubkey });
   }
 
   private handleAuthOk(): void {
@@ -437,8 +442,14 @@ export class WebSocketNetworkService {
   private handleAuthError(message: string): void {
     console.error("[WebSocketService] Authentication failed:", message);
     this.authenticated = false;
-    // Stay connected but not authenticated - user can update token
     this.setState("connected");
+  }
+
+  private handleAuthChallenge(_message: Extract<ServerMessage, { type: "auth_challenge" }>): void {
+    log.debug("Received auth challenge");
+    // Auth challenge-response: sign the nonce with the agent's key and send back.
+    // Used when the gateway has authentication enabled.
+    console.warn("[WebSocketService] Auth challenge-response not yet implemented");
   }
 
   private handleSignal(message: Extract<ServerMessage, { type: "signal" }>): void {

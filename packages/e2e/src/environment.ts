@@ -24,8 +24,7 @@ export class EnvironmentManager {
 
   constructor(config: Partial<EnvConfig> = {}) {
     this.config = {
-      happ: config.happ ?? 'fixture1',
-      gateway: config.gateway ?? 'gw-fork',
+      happ: config.happ ?? 'ziptest',
     };
   }
 
@@ -39,7 +38,7 @@ export class EnvironmentManager {
 
     console.log(`Starting environment with hApp: ${this.config.happ}`);
 
-    await this.runScript('start', [`--happ=${this.config.happ}`, `--gateway=${this.config.gateway}`]);
+    await this.runScript('start', [`--happ=${this.config.happ}`]);
 
     // Read state from sandbox files
     return this.getStatus();
@@ -74,7 +73,7 @@ export class EnvironmentManager {
    */
   async unpauseGateway(): Promise<void> {
     console.log('Unpausing gateway...');
-    await this.runScript('unpause', [`--happ=${this.config.happ}`, `--gateway=${this.config.gateway}`]);
+    await this.runScript('unpause', [`--happ=${this.config.happ}`]);
   }
 
   /**
@@ -128,15 +127,6 @@ export class EnvironmentManager {
       state.appId = appId.trim();
     } catch {
       // No app ID
-    }
-
-    // Check known entry (for fixture1)
-    try {
-      const knownEntry = await readFile(join(SANDBOX_DIR, 'known_entry.json'), 'utf-8');
-      const parsed = JSON.parse(knownEntry);
-      state.knownEntryHash = parsed.entry_hash;
-    } catch {
-      // No known entry
     }
 
     // Gateway is on port 8000 by default

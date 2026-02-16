@@ -196,7 +196,7 @@ Note: `callZome()` automatically converts response byte arrays, so you typically
 ## Requirements
 
 - Fishy browser extension installed
-- hc-http-gw gateway running
+- hc-membrane gateway running
 - hApp bundle available at configured path
 
 ## License

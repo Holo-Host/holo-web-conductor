@@ -48,7 +48,7 @@
 - **Reference sources** (all local, no web searches):
   1. Holochain 0.6: `../holochain`
   2. @holochain/client: `../holochain-client-js`
-  3. Gateway: `../hc-http-gw-fork`
+  3. Gateway: `../hc-membrane`
 
 - **Commit hygiene**: No claude co-authored messages. Use `npm` for builds. 
 
@@ -71,7 +71,7 @@
 
 ## Project Overview
 
-Browser extension Holochain conductor. Zero-arc nodes that don't gossip - all data from network via hc-http-gw.
+Browser extension Holochain conductor. Zero-arc nodes that don't gossip - all data from network via gateway.
 
 **Key Assumptions**:
 1. Zero-arc: no gossip, fetch all data from network (may cache content-addressable data)

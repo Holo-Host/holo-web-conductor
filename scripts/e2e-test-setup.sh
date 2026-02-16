@@ -3,10 +3,10 @@
 # End-to-End Test Setup Script
 #
 # This script sets up the environment for end-to-end testing of the fishy
-# extension with a real Holochain conductor and gateway.
+# extension with a real Holochain conductor and hc-membrane gateway.
 #
 # Usage:
-#   ./scripts/e2e-test-setup.sh [command] [--happ=NAME] [--gateway=TYPE]
+#   ./scripts/e2e-test-setup.sh [command] [--happ=NAME]
 #
 # Commands:
 #   start     Start conductor and gateway (default)
@@ -17,13 +17,11 @@
 #   clean     Clean up sandbox data
 #
 # Options:
-#   --happ=NAME      Specify which hApp to use (fixture1, ziptest, or mewsfeed, default: fixture1)
-#   --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)
+#   --happ=NAME      Specify which hApp to use (ziptest or mewsfeed, default: ziptest)
 #
 # Examples:
-#   ./scripts/e2e-test-setup.sh start                              # Start with fixture1 + gw-fork
-#   ./scripts/e2e-test-setup.sh start --happ=ziptest               # Start with ziptest + gw-fork
-#   ./scripts/e2e-test-setup.sh start --happ=ziptest --gateway=membrane  # Start with ziptest + membrane
+#   ./scripts/e2e-test-setup.sh start                    # Start with ziptest
+#   ./scripts/e2e-test-setup.sh start --happ=mewsfeed    # Start with mewsfeed
 #   ./scripts/e2e-test-setup.sh stop
 #
 
@@ -35,12 +33,13 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SANDBOX_DIR="/tmp/fishy-e2e"
 
 # Default hApp configuration
-HAPP_NAME="fixture1"
+HAPP_NAME="ziptest"
 HAPP_EXPLICIT=false  # Track if --happ was explicitly provided
 
-# Default gateway configuration
-GATEWAY_TYPE="gw-fork"
-GATEWAY_EXPLICIT=false  # Track if --gateway was explicitly provided
+# Gateway configuration (hc-membrane only)
+GATEWAY_DIR="${HC_MEMBRANE_DIR:-$PROJECT_DIR/../hc-membrane}"
+GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-membrane"
+GATEWAY_PGREP_PATTERN="target/release/hc-membrane"
 
 # Parse arguments
 COMMAND=""
@@ -49,11 +48,6 @@ for arg in "$@"; do
         --happ=*)
             HAPP_NAME="${arg#*=}"
             HAPP_EXPLICIT=true
-            shift
-            ;;
-        --gateway=*)
-            GATEWAY_TYPE="${arg#*=}"
-            GATEWAY_EXPLICIT=true
             shift
             ;;
         start|stop|pause|unpause|status|clean)
@@ -68,7 +62,7 @@ done
 # Default command is start
 COMMAND="${COMMAND:-start}"
 
-# For unpause command, read saved app_id and gateway_type if not explicitly provided
+# For unpause command, read saved app_id if not explicitly provided
 if [ "$COMMAND" = "unpause" ]; then
     if [ "$HAPP_EXPLICIT" = "false" ] && [ -f "$SANDBOX_DIR/app_id.txt" ]; then
         SAVED_APP_ID=$(cat "$SANDBOX_DIR/app_id.txt")
@@ -77,65 +71,23 @@ if [ "$COMMAND" = "unpause" ]; then
             echo -e "\033[0;32m[INFO]\033[0m Using saved hApp from previous session: $HAPP_NAME"
         fi
     fi
-    if [ "$GATEWAY_EXPLICIT" = "false" ] && [ -f "$SANDBOX_DIR/gateway_type.txt" ]; then
-        SAVED_GATEWAY=$(cat "$SANDBOX_DIR/gateway_type.txt")
-        if [ -n "$SAVED_GATEWAY" ]; then
-            GATEWAY_TYPE="$SAVED_GATEWAY"
-            echo -e "\033[0;32m[INFO]\033[0m Using saved gateway from previous session: $GATEWAY_TYPE"
-        fi
-    fi
 fi
-
-# Configure gateway paths based on type
-# Override defaults with env vars: HC_HTTP_GW_DIR, HC_MEMBRANE_DIR
-configure_gateway() {
-    case "$GATEWAY_TYPE" in
-        gw-fork)
-            GATEWAY_DIR="${HC_HTTP_GW_DIR:-$PROJECT_DIR/../hc-http-gw-fork}"
-            GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-http-gw"
-            GATEWAY_PGREP_PATTERN="target/release/hc-http-gw"
-            ;;
-        membrane)
-            GATEWAY_DIR="${HC_MEMBRANE_DIR:-$PROJECT_DIR/../hc-membrane}"
-            GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-membrane"
-            GATEWAY_PGREP_PATTERN="target/release/hc-membrane"
-            ;;
-        *)
-            log_error "Unknown gateway type: $GATEWAY_TYPE (supported: gw-fork, membrane)"
-            exit 1
-            ;;
-    esac
-}
 
 # Configure paths based on hApp name
 configure_happ() {
-    # Configure gateway first (needed for fixture1 path)
-    configure_gateway
-
     case "$HAPP_NAME" in
-        fixture1)
-            HAPP_PATH="$PROJECT_DIR/../hc-http-gw-fork/fixture/package/happ1/fixture1.happ"
-            APP_ID="fixture1"
-            # Zome names for fixture1
-            COORDINATOR_ZOME="coordinator1"
-            TEST_FN="create_known_entry"
-            ;;
         ziptest)
             HAPP_PATH="$PROJECT_DIR/fixtures/ziptest.happ"
             APP_ID="ziptest"
-            # Zome names for ziptest
             COORDINATOR_ZOME="ziptest"
-            TEST_FN=""  # No test entry function for ziptest
             ;;
         mewsfeed)
             HAPP_PATH="$PROJECT_DIR/fixtures/mewsfeed.happ"
             APP_ID="mewsfeed"
-            # Zome names for mewsfeed
             COORDINATOR_ZOME="mews"
-            TEST_FN=""  # No test entry function for mewsfeed
             ;;
         *)
-            log_error "Unknown hApp: $HAPP_NAME (supported: fixture1, ziptest, mewsfeed)"
+            log_error "Unknown hApp: $HAPP_NAME (supported: ziptest, mewsfeed)"
             exit 1
             ;;
     esac
@@ -143,7 +95,7 @@ configure_happ() {
     log_info "Using hApp: $HAPP_NAME"
     log_info "  Path: $HAPP_PATH"
     log_info "  App ID: $APP_ID"
-    log_info "Using gateway: $GATEWAY_TYPE"
+    log_info "Using gateway: hc-membrane"
     log_info "  Binary: $GATEWAY_BINARY"
 }
 
@@ -241,15 +193,9 @@ check_prereqs() {
     fi
 
     if [ ! -f "$HAPP_PATH" ]; then
-        if [ "$HAPP_NAME" = "fixture1" ]; then
-            log_warn "hApp not found at $HAPP_PATH"
-            log_info "Building fixture hApp..."
-            (cd "$GATEWAY_DIR/fixture" && RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm32-unknown-unknown && ./package.sh)
-        else
-            log_error "hApp not found at $HAPP_PATH"
-            log_info "For ziptest, copy the happ to: $PROJECT_DIR/fixtures/ziptest.happ"
-            exit 1
-        fi
+        log_error "hApp not found at $HAPP_PATH"
+        log_info "For $HAPP_NAME, copy the happ to: $HAPP_PATH"
+        exit 1
     fi
 
     log_info "Prerequisites OK"
@@ -486,9 +432,9 @@ start_conductor() {
     start_conductors
 }
 
-# Start gateway
+# Start gateway (hc-membrane)
 start_gateway() {
-    log_info "Starting $GATEWAY_TYPE gateway..."
+    log_info "Starting hc-membrane gateway..."
 
     # Check if gateway is already running
     if pgrep -f "$GATEWAY_PGREP_PATTERN" > /dev/null 2>&1; then
@@ -513,7 +459,6 @@ start_gateway() {
         (cd "$GATEWAY_DIR" && cargo build --release)
     fi
 
-    # Start gateway with kitsune2 enabled for remote signal testing
     log_info "Starting gateway on port $GATEWAY_PORT (admin ws://localhost:$ACTUAL_ADMIN)..."
 
     # Get bootstrap/relay URLs from saved bootstrap address (local server)
@@ -532,33 +477,12 @@ start_gateway() {
     log_info "Kitsune2 bootstrap: $BOOTSTRAP_URL"
     log_info "Kitsune2 relay: $RELAY_URL"
 
-    # Save gateway type for unpause
-    echo "$GATEWAY_TYPE" > gateway_type.txt
-
-    if [ "$GATEWAY_TYPE" = "gw-fork" ]; then
-        # hc-http-gw-fork configuration
-        local ALLOWED_APP_IDS="$APP_ID"
-        log_info "Allowed app IDs: $ALLOWED_APP_IDS"
-
-        # Export the allowed functions variable dynamically
-        export "HC_GW_ALLOWED_FNS_${APP_ID}=*"
-
-        HC_GW_ADMIN_WS_URL="ws://localhost:$ACTUAL_ADMIN" \
-        HC_GW_PORT="$GATEWAY_PORT" \
-        HC_GW_ALLOWED_APP_IDS="$ALLOWED_APP_IDS" \
-        HC_GW_KITSUNE2_ENABLED="true" \
-        HC_GW_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
-        HC_GW_SIGNAL_URL="$RELAY_URL" \
-        RUST_LOG="info,holochain_http_gateway=debug" \
-        "$GATEWAY_BINARY" > gateway.log 2>&1 &
-    else
-        # hc-membrane configuration (needs IP address, not hostname)
-        HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
-        HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
-        HC_MEMBRANE_RELAY_URL="$RELAY_URL" \
-        RUST_LOG="info,hc_membrane=debug" \
-        "$GATEWAY_BINARY" --port "$GATEWAY_PORT" > gateway.log 2>&1 &
-    fi
+    HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
+    HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
+    HC_MEMBRANE_RELAY_URL="$RELAY_URL" \
+    HC_MEMBRANE_SIGNAL_URL="$RELAY_URL" \
+    RUST_LOG="info,hc_membrane=debug" \
+    "$GATEWAY_BINARY" --port "$GATEWAY_PORT" > gateway.log 2>&1 &
 
     GATEWAY_PID=$!
     echo "$GATEWAY_PID" > gateway.pid
@@ -567,10 +491,6 @@ start_gateway() {
     for i in {1..10}; do
         if curl -s "http://localhost:$GATEWAY_PORT/health" > /dev/null 2>&1; then
             log_info "Gateway started on port $GATEWAY_PORT"
-
-            # Note: kitsune readiness check removed - the gateway discovers peers
-            # only after browsers connect. For conductor-dht mode, DHT queries go
-            # through the conductor anyway, which is already ready.
             return 0
         fi
         sleep 1
@@ -605,6 +525,13 @@ start_ziptest_ui() {
     if [ ! -d "$ZIPTEST_UI_DIR/dist" ]; then
         log_warn "Ziptest UI dist not found, building..."
         (cd "$ZIPTEST_UI_DIR" && npm run build)
+    fi
+
+    # Copy the same hApp file to UI dist so the extension installs the exact same DNA
+    # as the conductors. A mismatch causes different DNA hashes → agents can't see each other.
+    if [ -f "$HAPP_PATH" ]; then
+        cp "$HAPP_PATH" "$ZIPTEST_UI_DIR/dist/ziptest.happ"
+        log_info "Copied $HAPP_PATH to UI dist (ensures matching DNA hash)"
     fi
 
     # Check if already running
@@ -649,6 +576,13 @@ start_mewsfeed_ui() {
     if [ ! -d "$MEWSFEED_UI_DIR/dist" ]; then
         log_error "Mewsfeed UI dist not found. Build it first: cd $MEWSFEED_UI_DIR && npm run build"
         exit 1
+    fi
+
+    # Copy the same hApp file to UI dist so the extension installs the exact same DNA
+    # as the conductors. A mismatch causes different DNA hashes → agents can't see each other.
+    if [ -f "$HAPP_PATH" ]; then
+        cp "$HAPP_PATH" "$MEWSFEED_UI_DIR/dist/mewsfeed.happ"
+        log_info "Copied $HAPP_PATH to UI dist (ensures matching DNA hash)"
     fi
 
     # Check if already running
@@ -725,11 +659,7 @@ pause_gateway() {
         fi
         rm -f gateway.pid
     else
-        # Also check by process name (both gateways)
-        if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1; then
-            log_info "Stopping hc-http-gw by process name..."
-            pkill -f "target/release/hc-http-gw$" || true
-        fi
+        # Also check by process name
         if pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
             log_info "Stopping hc-membrane by process name..."
             pkill -f "target/release/hc-membrane$" || true
@@ -763,9 +693,8 @@ unpause_gateway() {
         exit 1
     fi
 
-    # Check if either gateway already running
-    if pgrep -f "target/release/hc-http-gw$" > /dev/null 2>&1 || \
-       pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
+    # Check if gateway already running
+    if pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
         log_warn "Gateway already running"
         return 0
     fi
@@ -871,17 +800,9 @@ show_status() {
         echo -e "Conductors: ${RED}NONE RUNNING${NC}"
     fi
 
-    # Check gateway (both types)
-    # Note: hc-http-gw runs without args, hc-membrane runs with --port
-    local RUNNING_GATEWAY=""
-    if pgrep -f "target/release/hc-http-gw" > /dev/null 2>&1; then
-        RUNNING_GATEWAY="gw-fork"
-    elif pgrep -f "target/release/hc-membrane" > /dev/null 2>&1; then
-        RUNNING_GATEWAY="membrane"
-    fi
-
-    if [ -n "$RUNNING_GATEWAY" ]; then
-        echo -e "Gateway:   ${GREEN}RUNNING${NC} ($RUNNING_GATEWAY) on port $GATEWAY_PORT"
+    # Check gateway
+    if pgrep -f "target/release/hc-membrane" > /dev/null 2>&1; then
+        echo -e "Gateway:   ${GREEN}RUNNING${NC} (hc-membrane) on port $GATEWAY_PORT"
     else
         echo -e "Gateway:   ${RED}STOPPED${NC}"
     fi
@@ -903,7 +824,6 @@ show_status() {
     echo ""
     echo "Test URLs:"
     echo "  - Gateway: http://localhost:$GATEWAY_PORT"
-    echo "  - Test page: file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"
     echo ""
 
     # Show DNA hash if available
@@ -925,91 +845,7 @@ clean_sandbox() {
     log_info "Cleanup complete"
 }
 
-# Initialize test entry on the gateway (for fixture1 only)
-# Creates an entry with known content "fishy" that can be fetched by the browser extension
-initialize_test_entry() {
-    # Skip for happs that don't have a test entry function
-    if [ -z "$TEST_FN" ]; then
-        log_info "Skipping test entry initialization for $HAPP_NAME (no test function)"
-        return 0
-    fi
-
-    log_info "Initializing test entry on gateway..."
-
-    # Wait for gateway to be ready
-    sleep 2
-
-    cd "$SANDBOX_DIR"
-
-    # Get the DNA hash from the sandbox using the saved admin port
-    log_info "Getting DNA hash from sandbox..."
-
-    # Get the admin port
-    local ACTUAL_ADMIN
-    if [ -f admin_port.txt ]; then
-        ACTUAL_ADMIN=$(cat admin_port.txt)
-    else
-        log_warn "Admin port not saved, trying to parse from log"
-        ACTUAL_ADMIN=$(grep -oP '"admin_port":\K\d+' sandbox-generate.log 2>/dev/null | head -1)
-    fi
-
-    if [ -z "$ACTUAL_ADMIN" ]; then
-        log_warn "Could not determine admin port"
-        return 1
-    fi
-
-    log_info "Using admin port: $ACTUAL_ADMIN"
-
-    local DNA_HASH
-    # The output is a JSON array like: ["uhC0k..."]
-    # Extract the first hash from the array
-    DNA_HASH=$(hc sandbox call --running="$ACTUAL_ADMIN" list-dnas 2>&1 | grep -oP '"uhC0k[^"]+' | head -1 | tr -d '"')
-
-    if [ -z "$DNA_HASH" ]; then
-        log_warn "Could not get DNA hash from sandbox"
-        log_info "You can manually call: hc sandbox call list-dnas"
-        return 1
-    fi
-
-    log_info "DNA hash: $DNA_HASH"
-
-    # Create an entry with known content "fishy"
-    # The entry hash will be deterministic based on the content
-    local PAYLOAD='{"value":"fishy"}'
-    local ENCODED_PAYLOAD
-    ENCODED_PAYLOAD=$(echo -n "$PAYLOAD" | base64 -w0)
-
-    # Call the gateway to create the entry
-    # Format: GET /{dna-hash}/{app-id}/{zome-name}/{fn-name}?payload={base64}
-    # Note: The coordinator_identifier must be the app_id, not a numeric index
-    log_info "Creating known entry with value 'fishy'..."
-
-    local RESPONSE
-    RESPONSE=$(curl -s "http://localhost:$GATEWAY_PORT/${DNA_HASH}/${APP_ID}/${COORDINATOR_ZOME}/${TEST_FN}?payload=$ENCODED_PAYLOAD" 2>&1)
-
-    if echo "$RESPONSE" | grep -q "entry_hash"; then
-        log_info "Test entry created successfully"
-
-        # Extract and display the hashes
-        local ACTION_HASH
-        local ENTRY_HASH
-        ACTION_HASH=$(echo "$RESPONSE" | grep -oP '"action_hash"\s*:\s*"\K[^"]+' || echo "unknown")
-        ENTRY_HASH=$(echo "$RESPONSE" | grep -oP '"entry_hash"\s*:\s*"\K[^"]+' || echo "unknown")
-
-        log_info "Action hash: $ACTION_HASH"
-        log_info "Entry hash: $ENTRY_HASH"
-
-        # Save for reference
-        echo "$RESPONSE" > "$SANDBOX_DIR/known_entry.json"
-        echo "$DNA_HASH" > "$SANDBOX_DIR/dna_hash.txt"
-        log_info "Entry hashes saved to $SANDBOX_DIR/known_entry.json"
-    else
-        log_warn "Could not create test entry. Response: $RESPONSE"
-        log_info "Gateway URL was: http://localhost:$GATEWAY_PORT/${DNA_HASH}/${APP_ID}/${COORDINATOR_ZOME}/${TEST_FN}"
-    fi
-}
-
-# Get and save DNA hash (for happs without test entry)
+# Get and save DNA hash from conductor
 save_dna_hash() {
     log_info "Getting DNA hash from sandbox..."
 
@@ -1059,12 +895,7 @@ case "$COMMAND" in
         start_mewsfeed_ui
         show_status
         echo ""
-        # Initialize test entry (or just save DNA hash)
-        if [ -n "$TEST_FN" ]; then
-            initialize_test_entry
-        else
-            save_dna_hash
-        fi
+        save_dna_hash
 
         echo ""
         echo "To test, open in browser:"
@@ -1081,8 +912,6 @@ case "$COMMAND" in
             if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
                 echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"
             fi
-        else
-            echo "  file://$PROJECT_DIR/packages/extension/test/e2e-gateway-test.html"
         fi
         echo ""
         echo "Press Ctrl+C or run './scripts/e2e-test-setup.sh stop' to stop services"
@@ -1106,7 +935,7 @@ case "$COMMAND" in
         clean_sandbox
         ;;
     *)
-        echo "Usage: $0 {start|stop|pause|unpause|status|clean} [--happ=NAME] [--gateway=TYPE]"
+        echo "Usage: $0 {start|stop|pause|unpause|status|clean} [--happ=NAME]"
         echo ""
         echo "Commands:"
         echo "  start     Start conductor and gateway"
@@ -1117,20 +946,17 @@ case "$COMMAND" in
         echo "  clean     Clean up sandbox data"
         echo ""
         echo "Options:"
-        echo "  --happ=NAME      Specify which hApp to use (fixture1, ziptest, or mewsfeed, default: fixture1)"
-        echo "  --gateway=TYPE   Specify which gateway to use (gw-fork or membrane, default: gw-fork)"
+        echo "  --happ=NAME      Specify which hApp to use (ziptest or mewsfeed, default: ziptest)"
         echo ""
         echo "Environment variables:"
         echo "  HC_MEMBRANE_DIR  Path to hc-membrane repo (default: ../hc-membrane relative to project)"
-        echo "  HC_HTTP_GW_DIR   Path to hc-http-gw-fork repo (default: ../hc-http-gw-fork relative to project)"
         echo ""
         echo "Examples:"
-        echo "  $0 start                                    # Start with fixture1 + gw-fork"
-        echo "  $0 start --happ=ziptest                     # Start with ziptest + gw-fork"
-        echo "  $0 start --happ=ziptest --gateway=membrane  # Start with ziptest + hc-membrane"
-        echo "  HC_MEMBRANE_DIR=../hc-membrane-kitsune-dht-ops $0 start --gateway=membrane"
-        echo "  $0 pause                                    # Stop gateway, keep conductors"
-        echo "  $0 unpause                                  # Restart gateway"
+        echo "  $0 start                          # Start with ziptest + hc-membrane"
+        echo "  $0 start --happ=mewsfeed          # Start with mewsfeed + hc-membrane"
+        echo "  HC_MEMBRANE_DIR=../my-membrane $0 start"
+        echo "  $0 pause                           # Stop gateway, keep conductors"
+        echo "  $0 unpause                         # Restart gateway"
         echo "  $0 stop"
         exit 1
         ;;

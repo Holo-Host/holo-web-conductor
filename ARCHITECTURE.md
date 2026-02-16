@@ -995,7 +995,7 @@ This ensures the browser agent sees links created by other agents, not just its 
 | `src/proxy_agent.rs` | ProxyAgent (browser agent in kitsune2) |
 | `src/temp_op_store.rs` | TempOpStore for publish flow |
 
-Note: The gateway queries kitsune2 directly for DHT operations. There is no conductor or dht_util zome passthrough -- hc-membrane is itself a kitsune2 peer.
+Note: The gateway queries kitsune2 directly for DHT operations -- hc-membrane is itself a kitsune2 peer.
 
 ---
 
