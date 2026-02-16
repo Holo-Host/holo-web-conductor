@@ -480,7 +480,6 @@ start_gateway() {
     HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
     HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
     HC_MEMBRANE_RELAY_URL="$RELAY_URL" \
-    HC_MEMBRANE_SIGNAL_URL="$RELAY_URL" \
     RUST_LOG="info,hc_membrane=debug" \
     "$GATEWAY_BINARY" --port "$GATEWAY_PORT" > gateway.log 2>&1 &
 
