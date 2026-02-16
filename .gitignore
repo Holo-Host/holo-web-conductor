@@ -6,8 +6,9 @@ package-lock.json
 dist/
 *.tsbuildinfo
 
-# Claude
-.claude/
+# Claude (ignore all except agents definitions)
+.claude/*
+!.claude/agents/
 
 # IDE
 .idea/

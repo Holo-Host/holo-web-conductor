@@ -102,7 +102,7 @@ export const call: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Compile the target zome's WASM module synchronously (works in worker context)
   let module: WebAssembly.Module;
   try {
-    module = new WebAssembly.Module(targetWasm.buffer);
+    module = new WebAssembly.Module(targetWasm.buffer as ArrayBuffer);
   } catch (e) {
     throw new Error(`[HostFn:call] Failed to compile WASM for zome '${targetZome}': ${e}`);
   }
