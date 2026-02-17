@@ -1,10 +1,10 @@
 var E = Object.defineProperty;
-var I = (i, e, t) => e in i ? E(i, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : i[e] = t;
-var o = (i, e, t) => I(i, typeof e != "symbol" ? e + "" : e, t);
-import { SignalType as S, CellType as F } from "@holochain/client";
+var C = (i, e, t) => e in i ? E(i, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : i[e] = t;
+var o = (i, e, t) => C(i, typeof e != "symbol" ? e + "" : e, t);
+import { SignalType as I, CellType as S } from "@holochain/client";
 import { CellType as ne, SignalType as ie } from "@holochain/client";
 var a = /* @__PURE__ */ ((i) => (i.Disconnected = "disconnected", i.Connecting = "connecting", i.Connected = "connected", i.Reconnecting = "reconnecting", i.Error = "error", i))(a || {});
-class C {
+class T {
   constructor(e) {
     o(this, "state");
     o(this, "listeners", /* @__PURE__ */ new Map());
@@ -19,7 +19,7 @@ class C {
   }
   /**
    * Start health monitoring.
-   * Called automatically when FishyAppClient connects.
+   * Called automatically when WebConductorAppClient connects.
    */
   start() {
     if (this.healthCheckTimer) return;
@@ -54,7 +54,7 @@ class C {
   }
   /**
    * Report a successful zome call (resets failure counter).
-   * Called internally by FishyAppClient.
+   * Called internally by WebConductorAppClient.
    */
   reportCallSuccess() {
     this.consecutiveFailures = 0, this.state.status === a.Reconnecting ? (this.updateState({
@@ -70,7 +70,7 @@ class C {
   }
   /**
    * Report a failed zome call.
-   * Called internally by FishyAppClient.
+   * Called internally by WebConductorAppClient.
    */
   reportCallFailure(e) {
     this.consecutiveFailures++, (e.message.includes("network") || e.message.includes("fetch") || e.message.includes("Failed to fetch") || e.message.includes("NetworkError") || e.message.includes("linker")) && this.consecutiveFailures >= this.MAX_FAILURES_BEFORE_UNHEALTHY && (this.updateState({
@@ -168,7 +168,7 @@ class C {
     });
   }
 }
-class T {
+class b {
   constructor(e, t, n) {
     o(this, "attempt", 0);
     o(this, "timer");
@@ -243,7 +243,7 @@ function h(i) {
   }
   return new Uint8Array();
 }
-function m(i) {
+function x(i) {
   if (i.length === 0 || !i.every(
     (t) => typeof t == "number" && Number.isInteger(t) && t >= 0 && t <= 255
   )) return !1;
@@ -254,7 +254,7 @@ function m(i) {
   }
   return i.length > 39;
 }
-function y(i) {
+function p(i) {
   if (i == null || i instanceof Uint8Array)
     return i;
   if (typeof i == "object" && !Array.isArray(i)) {
@@ -263,16 +263,16 @@ function y(i) {
       const s = t.map((r) => parseInt(r, 10)).sort((r, c) => r - c);
       if (s[0] === 0 && s[s.length - 1] === s.length - 1) {
         const r = s.map((c) => e[c.toString()]);
-        if (m(r))
+        if (x(r))
           return new Uint8Array(r);
       }
     }
     const n = {};
     for (const s of Object.keys(e))
-      n[s] = y(e[s]);
+      n[s] = p(e[s]);
     return n;
   }
-  return Array.isArray(i) ? m(i) ? new Uint8Array(i) : i.map((e) => y(e)) : i;
+  return Array.isArray(i) ? x(i) ? new Uint8Array(i) : i.map((e) => p(e)) : i;
 }
 function _(i) {
   const e = i.length;
@@ -318,12 +318,12 @@ function B(i, e, t) {
     e[s++] = c & 63 | 128;
   }
 }
-const b = new TextEncoder(), v = 50;
-function H(i, e, t) {
-  b.encodeInto(i, e.subarray(t));
+const H = new TextEncoder(), v = 50;
+function F(i, e, t) {
+  H.encodeInto(i, e.subarray(t));
 }
 function M(i, e, t) {
-  i.length > v ? H(i, e, t) : B(i, e, t);
+  i.length > v ? F(i, e, t) : B(i, e, t);
 }
 new TextDecoder();
 class d {
@@ -344,22 +344,22 @@ class u extends Error {
     });
   }
 }
-function z(i, e, t) {
+function k(i, e, t) {
   const n = t / 4294967296, s = t;
   i.setUint32(e, n), i.setUint32(e + 4, s);
 }
-function x(i, e, t) {
+function m(i, e, t) {
   const n = Math.floor(t / 4294967296), s = t;
   i.setUint32(e, n), i.setUint32(e + 4, s);
 }
-function R(i, e) {
+function z(i, e) {
   const t = i.getInt32(e), n = i.getUint32(e + 4);
   return t * 4294967296 + n;
 }
-const D = -1, k = 4294967296 - 1, N = 17179869184 - 1;
-function P({ sec: i, nsec: e }) {
-  if (i >= 0 && e >= 0 && i <= N)
-    if (e === 0 && i <= k) {
+const R = -1, D = 4294967296 - 1, W = 17179869184 - 1;
+function N({ sec: i, nsec: e }) {
+  if (i >= 0 && e >= 0 && i <= W)
+    if (e === 0 && i <= D) {
       const t = new Uint8Array(4);
       return new DataView(t.buffer).setUint32(0, i), t;
     } else {
@@ -368,24 +368,24 @@ function P({ sec: i, nsec: e }) {
     }
   else {
     const t = new Uint8Array(12), n = new DataView(t.buffer);
-    return n.setUint32(0, e), x(n, 4, i), t;
+    return n.setUint32(0, e), m(n, 4, i), t;
   }
 }
-function W(i) {
+function P(i) {
   const e = i.getTime(), t = Math.floor(e / 1e3), n = (e - t * 1e3) * 1e6, s = Math.floor(n / 1e9);
   return {
     sec: t + s,
     nsec: n - s * 1e9
   };
 }
-function K(i) {
+function L(i) {
   if (i instanceof Date) {
-    const e = W(i);
-    return P(e);
+    const e = P(i);
+    return N(e);
   } else
     return null;
 }
-function O(i) {
+function K(i) {
   const e = new DataView(i.buffer, i.byteOffset, i.byteLength);
   switch (i.byteLength) {
     case 4:
@@ -395,21 +395,21 @@ function O(i) {
       return { sec: s, nsec: r };
     }
     case 12: {
-      const t = R(e, 4), n = e.getUint32(0);
+      const t = z(e, 4), n = e.getUint32(0);
       return { sec: t, nsec: n };
     }
     default:
       throw new u(`Unrecognized data size for timestamp (expected 4, 8, or 12): ${i.length}`);
   }
 }
-function $(i) {
-  const e = O(i);
+function O(i) {
+  const e = K(i);
   return new Date(e.sec * 1e3 + e.nsec / 1e6);
 }
-const L = {
-  type: D,
-  encode: K,
-  decode: $
+const $ = {
+  type: R,
+  encode: L,
+  decode: O
 }, w = class w {
   constructor() {
     // ensures ExtensionCodecType<X> matches ExtensionCodec<X>
@@ -422,7 +422,7 @@ const L = {
     // custom extensions
     o(this, "encoders", []);
     o(this, "decoders", []);
-    this.register(L);
+    this.register($);
   }
   register({ type: e, encode: t, decode: n }) {
     if (e >= 0)
@@ -461,14 +461,14 @@ const L = {
   }
 };
 o(w, "defaultCodec", new w());
-let p = w;
+let y = w;
 function V(i) {
   return i instanceof ArrayBuffer || typeof SharedArrayBuffer < "u" && i instanceof SharedArrayBuffer;
 }
 function X(i) {
   return i instanceof Uint8Array ? i : ArrayBuffer.isView(i) ? new Uint8Array(i.buffer, i.byteOffset, i.byteLength) : V(i) ? new Uint8Array(i) : Uint8Array.from(i);
 }
-const G = 100, Z = 2048;
+const Z = 100, q = 2048;
 class g {
   constructor(e) {
     o(this, "extensionCodec");
@@ -484,7 +484,7 @@ class g {
     o(this, "view");
     o(this, "bytes");
     o(this, "entered", !1);
-    this.extensionCodec = (e == null ? void 0 : e.extensionCodec) ?? p.defaultCodec, this.context = e == null ? void 0 : e.context, this.useBigInt64 = (e == null ? void 0 : e.useBigInt64) ?? !1, this.maxDepth = (e == null ? void 0 : e.maxDepth) ?? G, this.initialBufferSize = (e == null ? void 0 : e.initialBufferSize) ?? Z, this.sortKeys = (e == null ? void 0 : e.sortKeys) ?? !1, this.forceFloat32 = (e == null ? void 0 : e.forceFloat32) ?? !1, this.ignoreUndefined = (e == null ? void 0 : e.ignoreUndefined) ?? !1, this.forceIntegerToFloat = (e == null ? void 0 : e.forceIntegerToFloat) ?? !1, this.pos = 0, this.view = new DataView(new ArrayBuffer(this.initialBufferSize)), this.bytes = new Uint8Array(this.view.buffer);
+    this.extensionCodec = (e == null ? void 0 : e.extensionCodec) ?? y.defaultCodec, this.context = e == null ? void 0 : e.context, this.useBigInt64 = (e == null ? void 0 : e.useBigInt64) ?? !1, this.maxDepth = (e == null ? void 0 : e.maxDepth) ?? Z, this.initialBufferSize = (e == null ? void 0 : e.initialBufferSize) ?? q, this.sortKeys = (e == null ? void 0 : e.sortKeys) ?? !1, this.forceFloat32 = (e == null ? void 0 : e.forceFloat32) ?? !1, this.ignoreUndefined = (e == null ? void 0 : e.ignoreUndefined) ?? !1, this.forceIntegerToFloat = (e == null ? void 0 : e.forceIntegerToFloat) ?? !1, this.pos = 0, this.view = new DataView(new ArrayBuffer(this.initialBufferSize)), this.bytes = new Uint8Array(this.view.buffer);
   }
   clone() {
     return new g({
@@ -692,10 +692,10 @@ class g {
     this.ensureBufferSizeToWrite(8), this.view.setFloat64(this.pos, e), this.pos += 8;
   }
   writeU64(e) {
-    this.ensureBufferSizeToWrite(8), z(this.view, this.pos, e), this.pos += 8;
+    this.ensureBufferSizeToWrite(8), k(this.view, this.pos, e), this.pos += 8;
   }
   writeI64(e) {
-    this.ensureBufferSizeToWrite(8), x(this.view, this.pos, e), this.pos += 8;
+    this.ensureBufferSizeToWrite(8), m(this.view, this.pos, e), this.pos += 8;
   }
   writeBigUint64(e) {
     this.ensureBufferSizeToWrite(8), this.view.setBigUint64(this.pos, e), this.pos += 8;
@@ -704,7 +704,7 @@ class g {
     this.ensureBufferSizeToWrite(8), this.view.setBigInt64(this.pos, e), this.pos += 8;
   }
 }
-function q(i, e) {
+function Y(i, e) {
   return new g(e).encodeSharedRef(i);
 }
 class U {
@@ -714,7 +714,7 @@ class U {
     o(this, "_cellId", null);
     o(this, "_roleName");
     o(this, "signalHandlers", /* @__PURE__ */ new Set());
-    o(this, "unsubscribeFishy", null);
+    o(this, "unsubscribeExtension", null);
     /** Connection monitor for health status */
     o(this, "connection");
     /** Reconnection manager */
@@ -729,7 +729,7 @@ class U {
       maxReconnectDelayMs: 3e4,
       healthCheckIntervalMs: 1e4,
       ...e
-    }, this._roleName = e.roleName ?? "default", this.connection = new C(this.connectionConfig), this.reconnectionManager = new T(
+    }, this._roleName = e.roleName ?? "default", this.connection = new T(this.connectionConfig), this.reconnectionManager = new b(
       this.connectionConfig,
       () => this.doReconnect(),
       (t) => {
@@ -747,18 +747,18 @@ class U {
     return this._installedAppId;
   }
   /**
-   * Create and connect a FishyAppClient.
+   * Create and connect a WebConductorAppClient.
    *
    * @param config - Connection configuration (string for just linkerUrl, or full config object)
-   * @returns Connected FishyAppClient
+   * @returns Connected WebConductorAppClient
    *
    * @example
    * ```typescript
    * // Simple usage
-   * const client = await FishyAppClient.connect('http://localhost:8090');
+   * const client = await WebConductorAppClient.connect('http://localhost:8090');
    *
    * // With options
-   * const client = await FishyAppClient.connect({
+   * const client = await WebConductorAppClient.connect({
    *   linkerUrl: 'http://localhost:8090',
    *   autoReconnect: true,
    *   reconnectDelayMs: 2000,
@@ -772,8 +772,8 @@ class U {
   async initialize() {
     var n;
     const e = window.holochain;
-    if (!(e != null && e.isFishy))
-      throw new Error("Fishy extension not detected. Please install the Fishy browser extension.");
+    if (!(e != null && e.isWebConductor))
+      throw new Error("Holochain extension not detected. Please install the Holochain browser extension.");
     await e.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl }), await e.connect();
     try {
       const s = await e.appInfo();
@@ -782,7 +782,7 @@ class U {
         return;
       }
     } catch {
-      console.log("[FishyAppClient] hApp not installed, will install...");
+      console.log("[WebConductorAppClient] hApp not installed, will install...");
     }
     await this.installHapp();
     const t = await e.appInfo();
@@ -823,14 +823,14 @@ class U {
   }
   async installHapp() {
     const e = window.holochain;
-    if (!e) throw new Error("Fishy extension not available");
+    if (!e) throw new Error("Holochain extension not available");
     const t = this.connectionConfig.happBundlePath ? [this.connectionConfig.happBundlePath] : ["./app.happ", `./${this._roleName}.happ`, "./bundle.happ"];
     let n = null;
     for (const s of t)
       try {
         const r = await fetch(s);
         if (r.ok) {
-          n = new Uint8Array(await r.arrayBuffer()), console.log(`[FishyAppClient] Found hApp bundle at ${s}`);
+          n = new Uint8Array(await r.arrayBuffer()), console.log(`[WebConductorAppClient] Found hApp bundle at ${s}`);
           break;
         }
       } catch {
@@ -839,17 +839,17 @@ class U {
       throw new Error(
         `Failed to fetch hApp bundle. Tried: ${t.join(", ")}. Provide happBundlePath in config or place bundle at one of these locations.`
       );
-    console.log("[FishyAppClient] Installing hApp..."), await e.installApp({
+    console.log("[WebConductorAppClient] Installing hApp..."), await e.installApp({
       bundle: n,
       installedAppId: this._roleName
-    }), console.log("[FishyAppClient] hApp installed successfully");
+    }), console.log("[WebConductorAppClient] hApp installed successfully");
   }
   setupSignalForwarding() {
     const e = window.holochain;
-    e && (this.unsubscribeFishy && this.unsubscribeFishy(), this.unsubscribeFishy = e.on("signal", (t) => {
+    e && (this.unsubscribeExtension && this.unsubscribeExtension(), this.unsubscribeExtension = e.on("signal", (t) => {
       var r, c, l;
       const n = t, s = {
-        type: S.App,
+        type: I.App,
         value: {
           cell_id: (r = n.value) != null && r.cell_id ? [h(n.value.cell_id[0]), h(n.value.cell_id[1])] : this._cellId,
           zome_name: ((c = n.value) == null ? void 0 : c.zome_name) || "",
@@ -860,14 +860,14 @@ class U {
         try {
           f(s);
         } catch (A) {
-          console.error("[FishyAppClient] Signal handler error:", A);
+          console.error("[WebConductorAppClient] Signal handler error:", A);
         }
       });
     }));
   }
   async doReconnect() {
     const e = window.holochain;
-    if (!e) throw new Error("Fishy extension not available");
+    if (!e) throw new Error("Holochain extension not available");
     e.reconnectWebSocket && await e.reconnectWebSocket(), await e.connect(), this.reconnectionManager.reset(), this.connection.setConnected();
   }
   // --- Public API ---
@@ -908,7 +908,7 @@ class U {
    */
   async callZome(e, t) {
     const n = window.holochain;
-    if (!n) throw new Error("Fishy extension not available");
+    if (!n) throw new Error("Holochain extension not available");
     let s;
     if ("role_name" in e) {
       if (!this._cellId)
@@ -925,7 +925,7 @@ class U {
         provenance: e.provenance || this._myPubKey || void 0,
         cap_secret: e.cap_secret
       });
-      return this.connection.reportCallSuccess(), y(r);
+      return this.connection.reportCallSuccess(), p(r);
     } catch (r) {
       throw this.connection.reportCallFailure(r), r;
     }
@@ -945,17 +945,17 @@ class U {
   async appInfo() {
     var f;
     const e = window.holochain;
-    if (!e) throw new Error("Fishy extension not available");
+    if (!e) throw new Error("Holochain extension not available");
     const t = await e.appInfo();
     if (!t) return null;
-    const n = h(t.agentPubKey), s = [h(t.cells[0][0]), h(t.cells[0][1])], r = ((f = t.dnaProperties) == null ? void 0 : f[this._roleName]) ?? null, c = new Uint8Array(q(r));
+    const n = h(t.agentPubKey), s = [h(t.cells[0][0]), h(t.cells[0][1])], r = ((f = t.dnaProperties) == null ? void 0 : f[this._roleName]) ?? null, c = new Uint8Array(Y(r));
     return {
       installed_app_id: t.contextId || this._installedAppId,
       agent_pub_key: n,
       cell_info: {
         [this._roleName]: [
           {
-            type: F.Provisioned,
+            type: S.Provisioned,
             value: {
               cell_id: s,
               dna_modifiers: {
@@ -977,41 +977,41 @@ class U {
    * Disconnect from the extension and stop monitoring.
    */
   async disconnect() {
-    this.connection.stop(), this.reconnectionManager.cancel(), this.unsubscribeFishy && (this.unsubscribeFishy(), this.unsubscribeFishy = null);
+    this.connection.stop(), this.reconnectionManager.cancel(), this.unsubscribeExtension && (this.unsubscribeExtension(), this.unsubscribeExtension = null);
     const e = window.holochain;
     e && await e.disconnect(), this.connection.setDisconnected();
   }
-  // --- Stub implementations for methods not supported by Fishy ---
+  // --- Stub implementations for methods not supported by Web Conductor ---
   async dumpNetworkStats() {
-    return console.warn("[FishyAppClient] dumpNetworkStats not supported in Fishy mode"), { peer_urls: [], connections: [] };
+    return console.warn("[WebConductorAppClient] dumpNetworkStats not supported in Web Conductor mode"), { peer_urls: [], connections: [] };
   }
   async dumpNetworkMetrics(e) {
-    return console.warn("[FishyAppClient] dumpNetworkMetrics not supported in Fishy mode"), {};
+    return console.warn("[WebConductorAppClient] dumpNetworkMetrics not supported in Web Conductor mode"), {};
   }
   async createCloneCell(e) {
-    throw new Error("createCloneCell not supported in Fishy mode");
+    throw new Error("createCloneCell not supported in Web Conductor mode");
   }
   async enableCloneCell(e) {
-    throw new Error("enableCloneCell not supported in Fishy mode");
+    throw new Error("enableCloneCell not supported in Web Conductor mode");
   }
   async disableCloneCell(e) {
-    throw new Error("disableCloneCell not supported in Fishy mode");
+    throw new Error("disableCloneCell not supported in Web Conductor mode");
   }
 }
 function Q(i = 5e3) {
   return new Promise((e, t) => {
     var s;
-    if ((s = window.holochain) != null && s.isFishy) {
+    if ((s = window.holochain) != null && s.isWebConductor) {
       e();
       return;
     }
     const n = setTimeout(() => {
       t(
-        new Error("Fishy extension not detected. Please install the Fishy browser extension.")
+        new Error("Holochain extension not detected. Please install the Holochain browser extension.")
       );
     }, i);
     window.addEventListener(
-      "fishy:ready",
+      "holochain:ready",
       () => {
         clearTimeout(n), e();
       },
@@ -1021,19 +1021,19 @@ function Q(i = 5e3) {
 }
 function j() {
   var i;
-  return ((i = window.holochain) == null ? void 0 : i.isFishy) === !0;
+  return ((i = window.holochain) == null ? void 0 : i.isWebConductor) === !0;
 }
 export {
   ne as CellType,
-  C as ConnectionMonitor,
+  T as ConnectionMonitor,
   a as ConnectionStatus,
-  U as FishyAppClient,
-  T as ReconnectionManager,
+  b as ReconnectionManager,
   ie as SignalType,
-  y as deepConvertByteArrays,
-  j as isFishyAvailable,
-  m as looksLikeByteArray,
+  U as WebConductorAppClient,
+  p as deepConvertByteArrays,
+  j as isWebConductorAvailable,
+  x as looksLikeByteArray,
   h as toUint8Array,
-  Q as waitForFishy
+  Q as waitForHolochain
 };
 //# sourceMappingURL=index.js.map

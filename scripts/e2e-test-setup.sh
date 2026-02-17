@@ -2,7 +2,7 @@
 #
 # End-to-End Test Setup Script
 #
-# This script sets up the environment for end-to-end testing of the fishy
+# This script sets up the environment for end-to-end testing of the HWC
 # extension with a real Holochain conductor and h2hc-linker linker.
 #
 # Usage:
@@ -30,13 +30,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Use /tmp for sandbox to avoid Unix socket path length limits (SUN_LEN ~108 chars)
-SANDBOX_DIR="/tmp/fishy-e2e"
+SANDBOX_DIR="/tmp/hwc-e2e"
 
 # Default hApp configuration
 HAPP_NAME="ziptest"
 HAPP_EXPLICIT=false  # Track if --happ was explicitly provided
 
-# Linker configuration (h2hc-linker only)
+# Linker configuration (h2hc-linker)
 LINKER_DIR="${H2HC_LINKER_DIR:-$PROJECT_DIR/../h2hc-linker}"
 LINKER_BINARY="$LINKER_DIR/target/release/h2hc-linker"
 LINKER_PGREP_PATTERN="target/release/h2hc-linker"
@@ -110,7 +110,7 @@ MEWSFEED_UI_PORT=8082
 # Ziptest UI directory
 ZIPTEST_UI_DIR="$PROJECT_DIR/../ziptest/ui"
 
-# Mewsfeed UI directory (fishy worktree)
+# Mewsfeed UI directory (worktree of mewsfeed repo)
 MEWSFEED_UI_DIR="$PROJECT_DIR/../mewsfeed-fishy/ui"
 
 # Number of conductors to run (need 2 for full arc establishment)

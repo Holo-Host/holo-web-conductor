@@ -7,7 +7,7 @@ const PROJECT_ROOT = resolve(__dirname, '..', '..');
 const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
 
 /**
- * Playwright configuration for Fishy E2E tests
+ * Playwright configuration for HWC E2E tests
  *
  * Note: Extensions require a persistent context with headed mode.
  * Tests use a custom fixture that loads the extension.

@@ -1005,7 +1005,7 @@ export async function createMew(page: Page, text: string): Promise<void> {
  * Uses client-side Vue Router navigation (static server only serves files).
  * Polls by navigating away and back to trigger fresh data fetches.
  *
- * @param mewTextFragment - A substring to look for in the mew content (e.g. "fishy extension")
+ * @param mewTextFragment - A substring to look for in the mew content (e.g. "hwc extension")
  */
 export async function waitForHashtagResult(
   page: Page,

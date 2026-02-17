@@ -1,7 +1,7 @@
 /**
  * Mewsfeed Multi-Agent E2E Test
  *
- * Tests the fishy extension + h2hc-linker kitsune mode with the mewsfeed DNA,
+ * Tests the hwc extension + h2hc-linker kitsune mode with the mewsfeed DNA,
  * which is much more complex than ziptest (5 integrity + 6 coordinator zomes).
  *
  * Flow:
@@ -43,7 +43,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     test.setTimeout(300000); // 5 minutes
 
     const TEST_HASHTAG = 'testmew';
-    const MEW_TEXT = `Testing fishy extension with mewsfeed #${TEST_HASHTAG}`;
+    const MEW_TEXT = `Testing hwc extension with mewsfeed #${TEST_HASHTAG}`;
 
     // Capture page errors from both agents
     const alicePageErrors: string[] = [];
@@ -185,7 +185,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     console.log('[test] Navigating bob to mewsfeed UI...');
     await bob.page.goto(MEWSFEED_UI_URL);
 
-    // --- Wait for fishy extension to be ready on both pages ---
+    // --- Wait for hwc extension to be ready on both pages ---
     console.log('[test] Waiting for extension ready on alice...');
     await waitForExtensionReady(alice.page, 60000);
     console.log('[test] Waiting for extension ready on bob...');
@@ -243,7 +243,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
 
     // --- Test get_agent_activity via get_joining_timestamp_for_agent ---
     // This exercises the full get_agent_activity host function:
-    // fishy WASM → host_fn → SyncXHR → linker → kitsune → conductor
+    // HWC WASM → host_fn → SyncXHR → linker → kitsune → conductor
     // The zome function queries for AgentValidationPkg actions (genesis)
     // and returns the timestamp of the first one.
     console.log('[test] Testing get_agent_activity via get_joining_timestamp_for_agent...');
@@ -315,7 +315,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     });
     await alice.page.waitForTimeout(5000);
     const aliceFeedText = (await alice.page.textContent('body')) || '';
-    const aliceCanSeeMew = aliceFeedText.includes('fishy extension');
+    const aliceCanSeeMew = aliceFeedText.includes('hwc extension');
     console.log(`[test] Alice can see own mew: ${aliceCanSeeMew}`);
     console.log('[test] Alice feed body (300):', aliceFeedText.substring(0, 300));
     if (!aliceCanSeeMew) {
@@ -433,7 +433,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     }, `/hashtag/${TEST_HASHTAG}`);
     await alice.page.waitForTimeout(5000);
     const aliceHashtagText = (await alice.page.textContent('body')) || '';
-    const aliceCanFindHashtag = aliceHashtagText.includes('fishy extension');
+    const aliceCanFindHashtag = aliceHashtagText.includes('hwc extension');
     console.log(`[test] Alice hashtag search result: ${aliceCanFindHashtag}`);
     console.log('[test] Alice hashtag body (300):', aliceHashtagText.substring(0, 300));
     if (!aliceCanFindHashtag) {
@@ -506,7 +506,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
 
     // --- Bob navigates to hashtag page and looks for the mew ---
     console.log(`[test] Bob searching for #${TEST_HASHTAG} via UI...`);
-    await waitForHashtagResult(bob.page, TEST_HASHTAG, 'fishy extension', 120000);
+    await waitForHashtagResult(bob.page, TEST_HASHTAG, 'hwc extension', 120000);
     console.log('[test] Bob found Alice\'s mew via hashtag search');
   });
 });

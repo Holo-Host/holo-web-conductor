@@ -7,7 +7,7 @@ const EXTENSION_PATH = path.join(PROJECT_ROOT, 'packages', 'extension', 'dist');
 const ZIPTEST_UI_PATH = path.resolve(PROJECT_ROOT, '..', 'ziptest', 'ui', 'dist');
 
 /**
- * Playwright configuration for Fishy E2E tests
+ * Playwright configuration for HWC E2E tests
  */
 module.exports = defineConfig({
   testDir: './tests',

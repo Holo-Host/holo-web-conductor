@@ -1,7 +1,7 @@
 /**
  * Browser Context
  *
- * Sets up Playwright browser context with the Fishy extension loaded.
+ * Sets up Playwright browser context with the HWC extension loaded.
  */
 
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
@@ -30,7 +30,7 @@ export interface BrowserContextOptions {
 }
 
 /**
- * Create a browser context with the Fishy extension loaded
+ * Create a browser context with the HWC extension loaded
  */
 export async function createBrowserContext(
   options: BrowserContextOptions = {}

@@ -255,7 +255,7 @@ export class TestRunner {
   formatPretty(results: E2EResults): string {
     const lines: string[] = [
       '',
-      'Fishy E2E Test Runner',
+      'HWC E2E Test Runner',
       '=====================',
       `Environment: ${results.environment.happ} | Linker: ${results.environment.linkerUrl}`,
       '',
