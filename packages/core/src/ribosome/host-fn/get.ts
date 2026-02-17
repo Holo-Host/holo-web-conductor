@@ -78,7 +78,8 @@ function processGetInput(
   }
 
   // Build entry from network record
-  let entry: RecordEntry = { NotApplicable: undefined as unknown as void };
+  // Rust RecordEntry unit variants serialize as strings in msgpack: "NA", "Hidden", "NotStored"
+  let entry: RecordEntry = "NA" as unknown as RecordEntry;
   const recordEntry = networkRecord.entry;
   if (recordEntry && typeof recordEntry === 'object' && 'Present' in recordEntry) {
     const presentEntry = recordEntry.Present;
@@ -101,7 +102,7 @@ function processGetInput(
 
   console.log(`[get] Input ${inputIndex}: Found ${hashType} record`, {
     actionType: actionContent.type || localActionType,
-    hasEntry: !('NotApplicable' in entry),
+    hasEntry: typeof entry === 'object' && 'Present' in entry,
   });
 
   return record;

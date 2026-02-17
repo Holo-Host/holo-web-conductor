@@ -166,7 +166,7 @@ function mockRecord(action: Action, entry?: Entry): Record {
       },
       signature,
     } as SignedActionHashed,
-    entry: entry ? { Present: entry } : { NotApplicable: undefined as void },
+    entry: entry ? { Present: entry } : ("NA" as any),
   };
 }
 

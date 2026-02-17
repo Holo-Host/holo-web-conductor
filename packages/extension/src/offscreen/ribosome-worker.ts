@@ -1045,9 +1045,10 @@ class ProxyNetworkService implements NetworkService {
    */
   private parseEntry(data: unknown): any {
     if (!data) {
-      return 'NotApplicable';
+      // Rust RecordEntry::NA - unit variant serializes as string "NA" in msgpack
+      return 'NA';
     }
-    if (data === 'Hidden' || data === 'NotStored' || data === 'NotApplicable') {
+    if (data === 'Hidden' || data === 'NotStored' || data === 'NA') {
       return data;
     }
     const record = data as Record<string, unknown>;

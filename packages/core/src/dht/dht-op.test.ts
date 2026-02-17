@@ -191,7 +191,7 @@ function mockRecord(action: Action, entry?: Entry): Record {
       },
       signature,
     } as SignedActionHashed,
-    entry: entry ? { Present: entry } : { NA: null },
+    entry: entry ? { Present: entry } : ("NA" as any),
   };
 }
 
@@ -547,7 +547,7 @@ describe("RecordEntry helpers", () => {
     const recordEntry = recordEntryNA();
 
     expect(isRecordEntryPresent(recordEntry)).toBe(false);
-    expect("NA" in recordEntry).toBe(true);
+    expect(recordEntry).toBe("NA");
   });
 });
 

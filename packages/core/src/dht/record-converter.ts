@@ -233,8 +233,8 @@ export function storedEntryToClientEntry(stored: StoredEntry): Entry {
  */
 export function storedEntryToRecordEntry(stored: StoredEntry | undefined): RecordEntry {
   if (!stored) {
-    // Rust RecordEntry::NotApplicable - action doesn't have an entry
-    return { NotApplicable: undefined as void };
+    // Rust RecordEntry::NA - unit variant serializes as string "NA" in msgpack
+    return "NA" as unknown as RecordEntry;
   }
 
   const entry = storedEntryToClientEntry(stored);

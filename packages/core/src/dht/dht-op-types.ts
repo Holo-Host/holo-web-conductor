@@ -78,12 +78,16 @@ export enum ChainOpType {
  * RecordEntry represents the different ways an entry can be present in a record/op.
  *
  * Source: holochain/crates/holochain_integrity_types/src/record.rs
+ *
+ * Wire format: Unit variants (Hidden, NA, NotStored) serialize as strings in msgpack
+ * via rmp_serde's externally-tagged enum representation. Present is a newtype variant
+ * and serializes as a map { "Present": entry }.
  */
 export type RecordEntry =
   | { Present: Entry }
-  | { Hidden: null }
-  | { NA: null }
-  | { NotStored: null };
+  | "Hidden"
+  | "NA"
+  | "NotStored";
 
 /**
  * Helper to create Present variant
@@ -96,14 +100,14 @@ export function recordEntryPresent(entry: Entry): RecordEntry {
  * Helper to create NA variant (no entry for this action type)
  */
 export function recordEntryNA(): RecordEntry {
-  return { NA: null };
+  return "NA";
 }
 
 /**
  * Helper to create Hidden variant (private entry)
  */
 export function recordEntryHidden(): RecordEntry {
-  return { Hidden: null };
+  return "Hidden";
 }
 
 /**
@@ -112,7 +116,7 @@ export function recordEntryHidden(): RecordEntry {
 export function isRecordEntryPresent(
   entry: RecordEntry
 ): entry is { Present: Entry } {
-  return "Present" in entry;
+  return typeof entry === "object" && "Present" in entry;
 }
 
 /**

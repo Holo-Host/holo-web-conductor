@@ -190,7 +190,9 @@ function buildEntryCreationAction(
  */
 function extractEntry(record: Record): Entry | undefined {
   const re = record.entry;
-  if (re && "Present" in re) {
+  // Wire format: unit variants are strings ("NA", "Hidden", "NotStored"),
+  // Present is a map { Present: Entry }
+  if (re && typeof re === "object" && "Present" in re) {
     return re.Present;
   }
   return undefined;

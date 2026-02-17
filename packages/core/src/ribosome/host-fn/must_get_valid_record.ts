@@ -78,7 +78,8 @@ export const mustGetValidRecord: HostFunctionImpl = (
       : action;
 
   // Normalize entry bytes (gateway returns arrays instead of Uint8Array)
-  let entry: unknown = { NotApplicable: undefined as unknown as void };
+  // Rust RecordEntry::NA is a unit variant → serializes as string "NA" in msgpack
+  let entry: unknown = "NA";
   const recordEntry = record.entry;
   if (
     recordEntry &&

@@ -180,8 +180,8 @@ function createRecordEntry(action: Action, entry: Entry | undefined): RecordEntr
 function extractEntryFromRecord(record: Record): Entry | undefined {
   const recordEntry = record.entry;
 
-  // RecordEntry from @holochain/client is: Present | Hidden | NA | NotStored
-  if (recordEntry && "Present" in recordEntry) {
+  // RecordEntry wire format: "NA" | "Hidden" | "NotStored" (strings) or { Present: Entry } (map)
+  if (recordEntry && typeof recordEntry === "object" && "Present" in recordEntry) {
     return recordEntry.Present;
   }
   return undefined;

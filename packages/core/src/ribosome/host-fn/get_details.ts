@@ -220,7 +220,7 @@ function processActionHashQuery(
         ? {
             Present: buildEntry(details.record.entry.entryType, details.record.entry.entryContent)
           }
-        : { NotApplicable: null },
+        : "NA",
     },
     validation_status: "Valid",
     deletes: details.deletes.map((d: any) => ({
