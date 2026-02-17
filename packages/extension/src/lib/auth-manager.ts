@@ -1,5 +1,5 @@
 /**
- * Authorization request manager for Fishy extension
+ * Authorization request manager for Holochain extension
  *
  * Manages pending authorization requests while waiting for user approval/denial.
  * Handles request lifecycle, timeouts, and promise resolution.

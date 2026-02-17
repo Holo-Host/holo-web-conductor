@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-import { copyFileSync, rmSync, existsSync, mkdirSync } from "fs";
+import { copyFileSync, rmSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { build as viteBuild } from "vite";
 
 export default defineConfig({
@@ -68,7 +68,7 @@ export default defineConfig({
             lib: {
               entry: resolve(__dirname, "src/background/index.ts"),
               formats: ["iife"],
-              name: "FishyBackground",
+              name: "HwcBackground",
               fileName: () => "background/index.js",
             },
             sourcemap: true,
@@ -102,7 +102,7 @@ export default defineConfig({
             lib: {
               entry: resolve(__dirname, "src/content/index.ts"),
               formats: ["iife"],
-              name: "FishyContent",
+              name: "HwcContent",
               fileName: () => "content/index.js",
             },
             sourcemap: true,
@@ -132,7 +132,7 @@ export default defineConfig({
             lib: {
               entry: resolve(__dirname, "src/inject/index.ts"),
               formats: ["iife"],
-              name: "FishyInject",
+              name: "HwcInject",
               fileName: () => "inject/index.js",
             },
             sourcemap: true,
@@ -155,7 +155,7 @@ export default defineConfig({
             lib: {
               entry: resolve(__dirname, "src/offscreen/index.ts"),
               formats: ["iife"],
-              name: "FishyOffscreen",
+              name: "HwcOffscreen",
               fileName: () => "offscreen/offscreen.js",
             },
             sourcemap: true,
@@ -191,7 +191,7 @@ export default defineConfig({
               lib: {
                 entry: sqliteWorkerPath,
                 formats: ["iife"],
-                name: "FishySqliteWorker",
+                name: "HwcSqliteWorker",
                 fileName: () => "offscreen/sqlite-worker.js",
               },
               sourcemap: true,
@@ -235,7 +235,7 @@ export default defineConfig({
               lib: {
                 entry: ribosomeWorkerPath,
                 formats: ["iife"],
-                name: "FishyRibosomeWorker",
+                name: "HwcRibosomeWorker",
                 fileName: () => "offscreen/ribosome-worker.js",
               },
               sourcemap: true,
@@ -267,6 +267,18 @@ export default defineConfig({
           resolve(__dirname, "manifest.json"),
           resolve(distDir, "manifest.json")
         );
+
+        // Copy icons to dist folder
+        const iconsSrc = resolve(__dirname, "icons");
+        const iconsDest = resolve(distDir, "icons");
+        if (existsSync(iconsSrc)) {
+          if (!existsSync(iconsDest)) {
+            mkdirSync(iconsDest, { recursive: true });
+          }
+          readdirSync(iconsSrc).forEach((file) => {
+            copyFileSync(resolve(iconsSrc, file), resolve(iconsDest, file));
+          });
+        }
 
         // Move HTML files from dist/src/ to appropriate directories
         const srcDir = resolve(distDir, "src");

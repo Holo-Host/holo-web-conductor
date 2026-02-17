@@ -1,5 +1,5 @@
 /**
- * Popup UI script for Fishy extension
+ * Popup UI script for Holochain extension
  *
  * Displays connection status and basic info about the active tab
  */

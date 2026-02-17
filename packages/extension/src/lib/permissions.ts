@@ -1,5 +1,5 @@
 /**
- * Permission management for Fishy extension
+ * Permission management for Holochain extension
  *
  * Manages domain-based authorization for web pages attempting to
  * connect to the Holochain APIs exposed by the extension.
