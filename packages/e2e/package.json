@@ -14,7 +14,8 @@
     "start": "tsx src/index.ts",
     "env": "tsx src/index.ts env",
     "logs": "tsx src/index.ts logs",
-    "test": "playwright test",
+    "test": "echo 'E2E tests require headed browser + gateway. Run: npm run e2e:test (from repo root)'",
+    "test:e2e": "playwright test",
     "test:headed": "playwright test --headed",
     "lint": "eslint src/",
     "clean": "rm -rf dist"
