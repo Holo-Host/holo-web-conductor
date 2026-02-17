@@ -1,14 +1,17 @@
 # Current Session
 
 **Last Updated**: 2026-02-17
-**Branch**: agent-activity
-**Current Work**: Step 23 - Agent Activity Network Integration. Implementing get_agent_activity and must_get_agent_activity as network-backed host functions. Phase 1: gateway endpoints in hc-membrane. Phase 2: fishy host function rewrites.
+**Branch**: hc-membrane
+**Current Work**: None active. All feature work through Step 23 merged.
 
 ---
 
 ## Completed Steps (recent)
 
-All feature branches merged into hc-membrane. Steps 16-21 all complete or merged.
+All feature branches merged into hc-membrane. Steps 16-23 all complete or merged.
+- Step 23: Agent Activity Network Integration (get_agent_activity + must_get_agent_activity via gateway)
+- Step 19.3: Kitsune query response timeout documented, test coverage added
+
 See [STEPS/index.md](./STEPS/index.md) for full registry.
 
 ## Remaining Work (not started)
