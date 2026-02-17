@@ -41,7 +41,7 @@ function createNotImplementedStub(name: string): HostFunctionImpl {
 }
 
 // DHT / Agent Activity
-export const getAgentActivity = createEmptyArrayStub("get_agent_activity");
+// NOTE: get_agent_activity is now implemented in ./get_agent_activity.ts
 // NOTE: must_get_agent_activity is now implemented in ./must_get_agent_activity.ts
 
 // NOTE: get_details is implemented in ./get_details.ts, not here

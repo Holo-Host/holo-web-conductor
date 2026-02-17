@@ -288,22 +288,19 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     // --- Diagnostic: direct callZome to check hashtag indexing ---
     console.log('[test] Running callZome diagnostics...');
 
-    // 1. Get all mew hashes (uses simple Path("all_mews") which works)
+    // 1. Create a mew via callZome to get a hash for subsequent diagnostics
+    // (get_all_mew_hashes is not an #[hdk_extern] export, so we create directly)
     let mewHash: any = null;
     try {
-      const allHashes = await callZome(alice.page, {
+      mewHash = await callZome(alice.page, {
         zomeName: 'mews',
-        fnName: 'get_all_mew_hashes',
-        payload: null,
+        fnName: 'create_mew',
+        payload: { text: 'Diagnostic mew #diagnostictag', links: [], mew_type: 'Original' },
         appId: 'mewsfeed',
       });
-      console.log('[test] get_all_mew_hashes result:', JSON.stringify(allHashes)?.substring(0, 200));
-      if (Array.isArray(allHashes) && allHashes.length > 0) {
-        mewHash = allHashes[allHashes.length - 1]; // Most recent
-        console.log('[test] Got mew hash for diagnostics');
-      }
+      console.log('[test] create_mew for diagnostics result:', JSON.stringify(mewHash)?.substring(0, 200));
     } catch (e: any) {
-      console.log('[test] get_all_mew_hashes ERROR:', e.message?.substring(0, 500));
+      console.log('[test] create_mew for diagnostics ERROR:', e.message?.substring(0, 500));
     }
 
     // 2. Try add_hashtag_for_mew directly - this exercises typed path ensure()
@@ -368,7 +365,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
       const directResult = await callZome(alice.page, {
         zomeName: 'mews',
         fnName: 'create_mew',
-        payload: { text: 'Direct test #directtag', links: [] },
+        payload: { text: 'Direct test #directtag', links: [], mew_type: 'Original' },
         appId: 'mewsfeed',
       });
       console.log('[test] create_mew direct result:', JSON.stringify(directResult)?.substring(0, 200));

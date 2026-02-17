@@ -36,6 +36,7 @@ import { mustGetEntry } from "./must_get_entry";
 import { mustGetAction } from "./must_get_action";
 import { mustGetValidRecord } from "./must_get_valid_record";
 import { mustGetAgentActivity } from "./must_get_agent_activity";
+import { getAgentActivity } from "./get_agent_activity";
 import { allocate } from "./allocate";
 import { deallocate } from "./deallocate";
 import { emit_signal } from "./emit_signal";
@@ -167,7 +168,7 @@ function initializeRegistry(): HostFunctionRegistry {
   // DHT / Agent Activity
   registry.registerHostFunction(
     "__hc__get_agent_activity_1",
-    stubs.getAgentActivity
+    getAgentActivity
   );
   registry.registerHostFunction(
     "__hc__must_get_agent_activity_1",
