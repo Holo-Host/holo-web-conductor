@@ -1,5 +1,5 @@
 /**
- * Connection health monitoring for FishyAppClient.
+ * Connection health monitoring for WebConductorAppClient.
  *
  * Monitors gateway connection health via:
  * 1. Extension's connection status API
@@ -34,7 +34,7 @@ export class ConnectionMonitor {
 
   /**
    * Start health monitoring.
-   * Called automatically when FishyAppClient connects.
+   * Called automatically when WebConductorAppClient connects.
    */
   start(): void {
     if (this.healthCheckTimer) return;
@@ -87,7 +87,7 @@ export class ConnectionMonitor {
 
   /**
    * Report a successful zome call (resets failure counter).
-   * Called internally by FishyAppClient.
+   * Called internally by WebConductorAppClient.
    */
   reportCallSuccess(): void {
     this.consecutiveFailures = 0;
@@ -111,7 +111,7 @@ export class ConnectionMonitor {
 
   /**
    * Report a failed zome call.
-   * Called internally by FishyAppClient.
+   * Called internally by WebConductorAppClient.
    */
   reportCallFailure(error: Error): void {
     this.consecutiveFailures++;

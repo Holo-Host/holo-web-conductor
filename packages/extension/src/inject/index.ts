@@ -14,7 +14,7 @@ interface ConnectionStatus {
 }
 
 interface HolochainAPI {
-  isFishy: boolean;
+  isWebConductor: boolean;
   version: string;
   readonly myPubKey: Uint8Array | null;
   readonly installedAppId: string | null;
@@ -101,7 +101,7 @@ function sendToContentScript(type: string, payload: any): Promise<any> {
     // Send message to content script
     window.postMessage(
       {
-        source: "fishy-page",
+        source: "hwc-page",
         type,
         id,
         payload: normalizedPayload,
@@ -127,19 +127,19 @@ window.addEventListener("message", (event) => {
 
   const message = event.data;
 
-  // Only handle fishy-content messages
-  if (!message || message.source !== "fishy-content") return;
+  // Only handle hwc-content messages
+  if (!message || message.source !== "hwc-content") return;
 
   // Handle signal messages (push from extension)
   if (message.type === "signal") {
     // Restore Uint8Arrays that Chrome converted to {0: x, 1: y, ...} objects
     const restoredPayload = restoreUint8Arrays(message.payload);
-    console.log("[Fishy] Signal received:", restoredPayload);
+    console.log("[Holochain] Signal received:", restoredPayload);
     signalHandlers.forEach((handler) => {
       try {
         handler(restoredPayload);
       } catch (e) {
-        console.error("[Fishy] Signal handler error:", e);
+        console.error("[Holochain] Signal handler error:", e);
       }
     });
     return;
@@ -152,7 +152,7 @@ window.addEventListener("message", (event) => {
       try {
         handler(status);
       } catch (e) {
-        console.error("[Fishy] Connection status handler error:", e);
+        console.error("[Holochain] Connection status handler error:", e);
       }
     });
     return;
@@ -239,7 +239,7 @@ function restoreUint8Arrays(data: any): any {
 
 // Create the Holochain API
 const holochainAPI: HolochainAPI = {
-  isFishy: true,
+  isWebConductor: true,
   version: "0.0.1",
 
   get myPubKey(): Uint8Array | null {
@@ -262,7 +262,7 @@ const holochainAPI: HolochainAPI = {
         _installedAppId = appInfo.contextId;
       }
     } catch (e) {
-      console.warn("[Fishy] Could not fetch app info after connect:", e);
+      console.warn("[Holochain] Could not fetch app info after connect:", e);
     }
     return result;
   },
@@ -338,7 +338,7 @@ const holochainAPI: HolochainAPI = {
       isSubscribedToConnectionStatus = true;
       // Fire-and-forget subscription request
       sendToContentScript("connection_status_subscribe", null).catch((e) => {
-        console.warn("[Fishy] Failed to subscribe to connection status:", e);
+        console.warn("[Holochain] Failed to subscribe to connection status:", e);
       });
     }
 
@@ -349,7 +349,7 @@ const holochainAPI: HolochainAPI = {
       if (connectionStatusHandlers.size === 0 && isSubscribedToConnectionStatus) {
         isSubscribedToConnectionStatus = false;
         sendToContentScript("connection_status_unsubscribe", null).catch((e) => {
-          console.warn("[Fishy] Failed to unsubscribe from connection status:", e);
+          console.warn("[Holochain] Failed to unsubscribe from connection status:", e);
         });
       }
     };
@@ -363,7 +363,7 @@ Object.defineProperty(window, "holochain", {
   configurable: false,
 });
 
-// Notify page that Fishy is ready
-window.dispatchEvent(new Event("fishy:ready"));
+// Notify page that Holochain extension is ready
+window.dispatchEvent(new Event("holochain:ready"));
 
-console.log("Fishy API injected into page");
+console.log("Holochain API injected into page");

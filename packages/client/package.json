@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "build": "vite build && npm run copy-to-test",
-    "copy-to-test": "mkdir -p ../extension/test/lib && cp dist/index.js ../extension/test/lib/fishy-client.js",
+    "copy-to-test": "mkdir -p ../extension/test/lib && cp dist/index.js ../extension/test/lib/web-conductor-client.js",
     "dev": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",

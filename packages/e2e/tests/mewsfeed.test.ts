@@ -449,7 +449,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     // This bypasses Bob's extension entirely to confirm data is in the network
     try {
       const { readFile: readFileAsync } = await import('fs/promises');
-      const dnaHash = await readFileAsync('/tmp/fishy-e2e/dna_hash.txt', 'utf8').then((s: string) => s.trim());
+      const dnaHash = await readFileAsync('/tmp/hwc-e2e/dna_hash.txt', 'utf8').then((s: string) => s.trim());
       console.log(`[test] DNA hash from sandbox: ${dnaHash}`);
 
       // Use Bob's page to make a direct fetch to the gateway health endpoint

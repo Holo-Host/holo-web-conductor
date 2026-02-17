@@ -1,6 +1,6 @@
-# Fishy Testing Guide
+# Holochain Web Conductor Testing Guide
 
-This document covers testing procedures for the Fishy browser extension, including unit tests, integration tests, automated end-to-end tests, and manual test pages.
+This document covers testing procedures for the Holochain Web Conductor browser extension, including unit tests, integration tests, automated end-to-end tests, and manual test pages.
 
 ## Quick Reference
 
@@ -8,7 +8,7 @@ This document covers testing procedures for the Fishy browser extension, includi
 |-----------|---------|--------------|
 | Unit tests (vitest) | `npm test` | None |
 | Build validation | `npm run build` | None |
-| Type checking | `npm run build --workspace=@fishy/core` | None (uses tsc) |
+| Type checking | `npm run build --workspace=@hwc/core` | None (uses tsc) |
 | Integration tests | `npm run test:integration` | None |
 | E2E (Playwright) | See "E2E with Gateway" section | nix shell, conductor, gateway |
 | Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
@@ -26,11 +26,11 @@ npm test
 This runs Vitest tests across all packages:
 - `packages/core` - 18 test files (~209 tests): Ribosome, storage, network layer
 - `packages/extension` - 9 test files (~96 tests): Messaging, permissions, service worker
-- `packages/client` - 5 test files (~97 tests): FishyAppClient, connection monitoring
+- `packages/client` - 5 test files (~97 tests): WebConductorAppClient, connection monitoring
 - `packages/lair` - 1 test file (~25 tests): Key management
 - `packages/shared` - 1 test file: Shared utilities
 
-**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are NOT caught by `npm test`. Run `tsc` separately via `npm run build --workspace=@fishy/core` to check types.
+**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are NOT caught by `npm test`. Run `tsc` separately via `npm run build --workspace=@hwc/core` to check types.
 
 **Known issues**:
 - Some tests need libsodium; may fail with "No secure random number generator found" when run in isolation
@@ -106,14 +106,14 @@ The primary way to set up the E2E environment:
 ```
 
 **What it does**:
-1. Starts local kitsune2-bootstrap-srv (saves port to `/tmp/fishy-e2e/bootstrap_addr.txt`)
+1. Starts local kitsune2-bootstrap-srv (saves port to `/tmp/hwc-e2e/bootstrap_addr.txt`)
 2. Starts 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
 3. Waits for arc establishment (up to 90s, minimum 30s)
 4. Starts hc-membrane gateway on port 8000
 5. Starts UI server (ziptest: port 8081, mewsfeed: port 8082)
 6. Initializes test data (saves dna_hash for selected hApp)
 
-**State files** in `/tmp/fishy-e2e/`:
+**State files** in `/tmp/hwc-e2e/`:
 - `bootstrap_addr.txt` - Bootstrap server address
 - `admin_port.txt`, `admin_port_2.txt` - Conductor admin ports
 - `app_id.txt`, `happ_path.txt`, `dna_hash.txt` - hApp configuration
@@ -153,7 +153,7 @@ npx playwright test --ui
 - Each agent gets a separate Chromium context with its own user data directory
 - Each context loads the extension independently (separate keypairs in IndexedDB)
 - `setupAutoApproval()` intercepts authorization popups and auto-clicks approve
-- Extension readiness detected via `window.holochain?.isFishy === true`
+- Extension readiness detected via `window.holochain?.isWebConductor === true`
 
 ---
 
@@ -166,7 +166,7 @@ Interactive HTML test pages for developer debugging (not automated CI). Located 
 | `wasm-test.html` | 20+ host function tests: CRUD, links, signing, rollback | No | Self-contained, no network |
 | `test-page.html` | Basic extension API: detect, connect, install, callZome, signals | No | Extension detection flow |
 | `authorization-test.html` | Authorization flow and permission management | No | Permission revocation |
-| `profiles-test.html` | Real hApp integration via FishyAppClient | Optional | Client library testing |
+| `profiles-test.html` | Real hApp integration via WebConductorAppClient | Optional | Client library testing |
 
 **How to use**:
 
@@ -196,7 +196,7 @@ python3 -m http.server 8080
 
 **"holochain not found"**: Make sure you're in the nix shell (`nix develop -c bash`)
 
-**"Admin port set to: 0"**: The actual port is assigned dynamically. Look for "Admin Interfaces: XXXX" in conductor output, or check `/tmp/fishy-e2e/admin_port.txt`
+**"Admin port set to: 0"**: The actual port is assigned dynamically. Look for "Admin Interfaces: XXXX" in conductor output, or check `/tmp/hwc-e2e/admin_port.txt`
 
 **"No secure random number generator found"**: Some tests need libsodium. Run `npm test` from repo root, not individual test files.
 
@@ -204,7 +204,7 @@ python3 -m http.server 8080
 
 **Gateway connection refused**: Check that gateway is running (`./scripts/e2e-test-setup.sh status`). Check that `HC_MEMBRANE_DIR` points to correct repo and gateway is built (`cargo build --release` in hc-membrane).
 
-**Arc not established**: Conductors need time to establish DHT arcs. `e2e-test-setup.sh` waits up to 90s (minimum 30s). Check conductor logs in `/tmp/fishy-e2e/*.log` for arc establishment messages.
+**Arc not established**: Conductors need time to establish DHT arcs. `e2e-test-setup.sh` waits up to 90s (minimum 30s). Check conductor logs in `/tmp/hwc-e2e/*.log` for arc establishment messages.
 
 **Deserialization errors**: Verify that WASM boundary invariants are followed (see CLAUDE.md). Check that payloads with hashes use Uint8Array (39 bytes), not base64 strings or 32-byte raw keys.
 

@@ -63,13 +63,13 @@ test('ziptest multi-agent e2e', async () => {
       zerbina.page.goto(ZIPTEST_UI_URL),
     ]);
 
-    // Wait for Fishy extension to be ready on both pages
-    console.log('Waiting for Fishy extension...');
+    // Wait for Holochain extension to be ready on both pages
+    console.log('Waiting for Holochain extension...');
     await Promise.all([
-      zippy.page.waitForFunction(() => (window as any).holochain?.isFishy === true, {
+      zippy.page.waitForFunction(() => (window as any).holochain?.isWebConductor === true, {
         timeout: TIMEOUTS.extensionInit,
       }),
-      zerbina.page.waitForFunction(() => (window as any).holochain?.isFishy === true, {
+      zerbina.page.waitForFunction(() => (window as any).holochain?.isWebConductor === true, {
         timeout: TIMEOUTS.extensionInit,
       }),
     ]);

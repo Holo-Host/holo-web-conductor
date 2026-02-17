@@ -31,7 +31,7 @@ const logSignal = createLogger('Signal');
 const logPublish = createLogger('Publish');
 const logZome = createLogger('ZomeCall');
 
-// Ribosome worker instance (declared early for setFishyLogFilter)
+// Ribosome worker instance (declared early for setHwcLogFilter)
 let ribosomeWorker: Worker | null = null;
 
 // Set log filter for offscreen AND worker
@@ -57,16 +57,16 @@ function forwardLogFilterToWorker(filter: string): void {
 // (Any context sets filter -> runtime message -> all contexts including offscreen -> forward to worker)
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === 'FISHY_LOG_FILTER_CHANGE') {
+    if (message?.type === 'HWC_LOG_FILTER_CHANGE') {
       forwardLogFilterToWorker(message.filter);
     }
   });
 }
 
 // Expose filter control to window for runtime debugging
-// Usage: setFishyLogFilter('Signal') or setFishyLogFilter('')
-(globalThis as any).setFishyLogFilter = setAllLogFilters;
-(globalThis as any).getFishyLogFilter = getLogFilter;
+// Usage: setHwcLogFilter('Signal') or setHwcLogFilter('')
+(globalThis as any).setHwcLogFilter = setAllLogFilters;
+(globalThis as any).getHwcLogFilter = getLogFilter;
 
 log.info("Document loaded");
 let workerReady = false;

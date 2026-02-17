@@ -16,7 +16,7 @@ const __dirname = dirname(__filename);
 // Navigate from packages/e2e/src to project root
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 // Use /tmp for sandbox to avoid Unix socket path length limits (SUN_LEN ~108 chars)
-const SANDBOX_DIR = '/tmp/fishy-e2e';
+const SANDBOX_DIR = '/tmp/hwc-e2e';
 const SETUP_SCRIPT = join(PROJECT_ROOT, 'scripts', 'e2e-test-setup.sh');
 
 export class EnvironmentManager {

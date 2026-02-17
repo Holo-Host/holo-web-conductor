@@ -1,11 +1,11 @@
 /**
- * Tests for Fishy extension detection utilities.
+ * Tests for Holochain extension detection utilities.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { waitForFishy, isFishyAvailable } from './wait-for-fishy';
+import { waitForHolochain, isWebConductorAvailable } from './wait-for-holochain';
 
-describe('isFishyAvailable', () => {
+describe('isWebConductorAvailable', () => {
   beforeEach(() => {
     // Reset window.holochain before each test
     delete (window as any).holochain;
@@ -16,21 +16,21 @@ describe('isFishyAvailable', () => {
   });
 
   it('returns false when window.holochain is undefined', () => {
-    expect(isFishyAvailable()).toBe(false);
+    expect(isWebConductorAvailable()).toBe(false);
   });
 
-  it('returns false when window.holochain exists but isFishy is false', () => {
-    (window as any).holochain = { isFishy: false };
-    expect(isFishyAvailable()).toBe(false);
+  it('returns false when window.holochain exists but isWebConductor is false', () => {
+    (window as any).holochain = { isWebConductor: false };
+    expect(isWebConductorAvailable()).toBe(false);
   });
 
-  it('returns true when window.holochain.isFishy is true', () => {
-    (window as any).holochain = { isFishy: true };
-    expect(isFishyAvailable()).toBe(true);
+  it('returns true when window.holochain.isWebConductor is true', () => {
+    (window as any).holochain = { isWebConductor: true };
+    expect(isWebConductorAvailable()).toBe(true);
   });
 });
 
-describe('waitForFishy', () => {
+describe('waitForHolochain', () => {
   beforeEach(() => {
     delete (window as any).holochain;
     vi.useFakeTimers();
@@ -42,35 +42,35 @@ describe('waitForFishy', () => {
   });
 
   it('resolves immediately if extension already available', async () => {
-    (window as any).holochain = { isFishy: true };
+    (window as any).holochain = { isWebConductor: true };
 
-    const promise = waitForFishy();
+    const promise = waitForHolochain();
     await expect(promise).resolves.toBeUndefined();
   });
 
-  it('resolves when fishy:ready event is fired', async () => {
-    const promise = waitForFishy();
+  it('resolves when holochain:ready event is fired', async () => {
+    const promise = waitForHolochain();
 
     // Simulate extension injecting itself
-    (window as any).holochain = { isFishy: true };
-    window.dispatchEvent(new Event('fishy:ready'));
+    (window as any).holochain = { isWebConductor: true };
+    window.dispatchEvent(new Event('holochain:ready'));
 
     await expect(promise).resolves.toBeUndefined();
   });
 
   it('rejects after timeout if extension not detected', async () => {
-    const promise = waitForFishy(1000);
+    const promise = waitForHolochain(1000);
 
     // Advance timers past timeout
     vi.advanceTimersByTime(1001);
 
     await expect(promise).rejects.toThrow(
-      'Fishy extension not detected. Please install the Fishy browser extension.'
+      'Holochain extension not detected. Please install the Holochain browser extension.'
     );
   });
 
   it('uses custom timeout', async () => {
-    const promise = waitForFishy(500);
+    const promise = waitForHolochain(500);
 
     // Not timed out yet
     vi.advanceTimersByTime(400);
@@ -81,15 +81,15 @@ describe('waitForFishy', () => {
     await expect(promise).rejects.toThrow();
   });
 
-  it('clears timeout when fishy:ready event fires', async () => {
+  it('clears timeout when holochain:ready event fires', async () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
-    const promise = waitForFishy(5000);
+    const promise = waitForHolochain(5000);
 
     // Fire the event before timeout
     vi.advanceTimersByTime(100);
-    (window as any).holochain = { isFishy: true };
-    window.dispatchEvent(new Event('fishy:ready'));
+    (window as any).holochain = { isWebConductor: true };
+    window.dispatchEvent(new Event('holochain:ready'));
 
     await promise;
 

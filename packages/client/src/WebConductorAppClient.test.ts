@@ -1,25 +1,25 @@
 /**
- * Tests for FishyAppClient.
+ * Tests for WebConductorAppClient.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { FishyAppClient } from './FishyAppClient';
+import { WebConductorAppClient } from './WebConductorAppClient';
 import { ConnectionStatus } from './connection';
-import type { FishyHolochainAPI, FishyAppInfo } from './types';
+import type { HolochainAPI, WebConductorAppInfo } from './types';
 
 // Extended mock type with test helpers
-type MockFishyHolochain = FishyHolochainAPI & {
+type MockHolochain = HolochainAPI & {
   _emitSignal: (signal: unknown) => void;
   _emitConnectionChange: (status: any) => void;
 };
 
-// Mock FishyHolochainAPI
-function createMockHolochain(overrides: Partial<FishyHolochainAPI> = {}): MockFishyHolochain {
+// Mock HolochainAPI
+function createMockHolochain(overrides: Partial<HolochainAPI> = {}): MockHolochain {
   const signalHandlers = new Set<(signal: unknown) => void>();
   const connectionStatusHandlers = new Set<(status: any) => void>();
 
-  const mock: MockFishyHolochain = {
-    isFishy: true,
+  const mock: MockHolochain = {
+    isWebConductor: true,
     version: '0.0.1',
     myPubKey: null,
     installedAppId: null,
@@ -35,7 +35,7 @@ function createMockHolochain(overrides: Partial<FishyHolochainAPI> = {}): MockFi
           [132, 32, 36, ...Array(36).fill(1)], // AgentPubKey
         ],
       ],
-    } as FishyAppInfo),
+    } as WebConductorAppInfo),
     installApp: vi.fn().mockResolvedValue(undefined),
     on: vi.fn((event: string, callback: (signal: unknown) => void) => {
       if (event === 'signal') {
@@ -68,7 +68,7 @@ function createMockHolochain(overrides: Partial<FishyHolochainAPI> = {}): MockFi
   return mock;
 }
 
-describe('FishyAppClient', () => {
+describe('WebConductorAppClient', () => {
   let mockHolochain: ReturnType<typeof createMockHolochain>;
 
   beforeEach(() => {
@@ -81,16 +81,16 @@ describe('FishyAppClient', () => {
   });
 
   describe('connect', () => {
-    it('throws if Fishy extension not detected', async () => {
+    it('throws if Holochain extension not detected', async () => {
       delete (window as any).holochain;
 
       await expect(
-        FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' })
-      ).rejects.toThrow('Fishy extension not detected');
+        WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' })
+      ).rejects.toThrow('Holochain extension not detected');
     });
 
     it('configures gateway URL', async () => {
-      await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
         gatewayUrl: 'http://localhost:8090',
@@ -98,13 +98,13 @@ describe('FishyAppClient', () => {
     });
 
     it('calls holochain.connect', async () => {
-      await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.connect).toHaveBeenCalled();
     });
 
     it('fetches and stores app info', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.appInfo).toHaveBeenCalled();
       expect(client.myPubKey).toBeInstanceOf(Uint8Array);
@@ -113,7 +113,7 @@ describe('FishyAppClient', () => {
     });
 
     it('accepts string config for just gatewayUrl', async () => {
-      await FishyAppClient.connect('http://localhost:8090');
+      await WebConductorAppClient.connect('http://localhost:8090');
 
       expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
         gatewayUrl: 'http://localhost:8090',
@@ -121,7 +121,7 @@ describe('FishyAppClient', () => {
     });
 
     it('subscribes to extension connection status', async () => {
-      await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.onConnectionChange).toHaveBeenCalled();
       expect(mockHolochain.getConnectionStatus).toHaveBeenCalled();
@@ -130,7 +130,7 @@ describe('FishyAppClient', () => {
 
   describe('myPubKey', () => {
     it('returns agent public key as Uint8Array', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       expect(client.myPubKey).toBeInstanceOf(Uint8Array);
       expect(client.myPubKey[0]).toBe(132); // HoloHash prefix
@@ -139,13 +139,13 @@ describe('FishyAppClient', () => {
 
     it('throws if not connected', () => {
       // Cannot access myPubKey before connect, but we can't test this
-      // since FishyAppClient constructor is private
+      // since WebConductorAppClient constructor is private
     });
   });
 
   describe('callZome', () => {
     it('calls holochain.callZome with correct parameters', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       await client.callZome({
         role_name: 'my_role',
@@ -168,7 +168,7 @@ describe('FishyAppClient', () => {
         hash: [132, 41, 36, ...Array(36).fill(5)], // ActionHash as array
       });
 
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const result = (await client.callZome({
         role_name: 'test',
         zome_name: 'test',
@@ -180,7 +180,7 @@ describe('FishyAppClient', () => {
     });
 
     it('reports success to connection monitor', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       await client.callZome({
         role_name: 'test',
@@ -197,7 +197,7 @@ describe('FishyAppClient', () => {
     it('reports failure to connection monitor on error', async () => {
       mockHolochain.callZome = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
 
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       await expect(
         client.callZome({
@@ -212,7 +212,7 @@ describe('FishyAppClient', () => {
 
   describe('appInfo', () => {
     it('returns app info in @holochain/client format', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const info = await client.appInfo();
 
       expect(info).not.toBeNull();
@@ -224,7 +224,7 @@ describe('FishyAppClient', () => {
 
   describe('signal handling', () => {
     it('on("signal") registers handler', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       client.on('signal', handler);
@@ -233,7 +233,7 @@ describe('FishyAppClient', () => {
     });
 
     it('on() returns unsubscribe function', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       const unsubscribe = client.on('signal', handler);
@@ -241,7 +241,7 @@ describe('FishyAppClient', () => {
     });
 
     it('forwards signals to registered handlers', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       client.on('signal', handler);
@@ -267,7 +267,7 @@ describe('FishyAppClient', () => {
 
   describe('connection status', () => {
     it('getConnectionState returns current state', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const state = client.getConnectionState();
 
       expect(state.status).toBe(ConnectionStatus.Connected);
@@ -275,7 +275,7 @@ describe('FishyAppClient', () => {
     });
 
     it('onConnection subscribes to connection events', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       const unsubscribe = client.onConnection('connection:change', handler);
@@ -297,7 +297,7 @@ describe('FishyAppClient', () => {
     });
 
     it('updates state when extension reports gateway down', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       // Simulate gateway going down
       mockHolochain._emitConnectionChange({
@@ -314,7 +314,7 @@ describe('FishyAppClient', () => {
     });
 
     it('updates state when gateway comes back up', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       // Gateway goes down
       mockHolochain._emitConnectionChange({
@@ -337,14 +337,14 @@ describe('FishyAppClient', () => {
 
   describe('disconnect', () => {
     it('calls holochain.disconnect', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       await client.disconnect();
 
       expect(mockHolochain.disconnect).toHaveBeenCalled();
     });
 
     it('updates connection state to disconnected', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       await client.disconnect();
 
       const state = client.getConnectionState();
@@ -376,7 +376,7 @@ describe('FishyAppClient', () => {
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
       });
 
-      await FishyAppClient.connect({
+      await WebConductorAppClient.connect({
         gatewayUrl: 'http://localhost:8090',
         happBundlePath: './test.happ',
       });
@@ -397,7 +397,7 @@ describe('FishyAppClient', () => {
         ],
       });
 
-      await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.installApp).not.toHaveBeenCalled();
     });
@@ -405,26 +405,26 @@ describe('FishyAppClient', () => {
 
   describe('unsupported methods', () => {
     it('dumpNetworkStats returns empty response', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
       const result = await client.dumpNetworkStats();
 
       expect(result).toEqual({ peer_urls: [], connections: [] });
     });
 
     it('createCloneCell throws not supported', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       await expect(client.createCloneCell({} as any)).rejects.toThrow('not supported');
     });
 
     it('enableCloneCell throws not supported', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       await expect(client.enableCloneCell({} as any)).rejects.toThrow('not supported');
     });
 
     it('disableCloneCell throws not supported', async () => {
-      const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
 
       await expect(client.disableCloneCell({} as any)).rejects.toThrow('not supported');
     });

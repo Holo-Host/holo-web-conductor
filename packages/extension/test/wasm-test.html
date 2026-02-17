@@ -13,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fishy - WASM Ribosome Test</title>
+    <title>Holochain Web Conductor - WASM Ribosome Test</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -117,7 +117,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🐠 Fishy WASM Ribosome Test</h1>
+        <h1>WASM Ribosome Test</h1>
         <p class="subtitle">Step 5.7: hApp Bundle Support with DNA Manifests</p>
 
         <div class="warning">
@@ -344,9 +344,9 @@
 
         // Check extension
         document.getElementById('check-extension').addEventListener('click', async () => {
-            log('Checking for Fishy extension...');
+            log('Checking for Holochain extension...');
             if (typeof window.holochain !== 'undefined') {
-                log('✓ Fishy extension detected!');
+                log('Holochain extension detected');
                 showStatus('extension-status',
                     '<strong>Extension found!</strong> window.holochain API is available.',
                     'success');

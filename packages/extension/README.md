@@ -1,4 +1,4 @@
-# Fishy Browser Extension
+# Holochain Web Conductor Browser Extension
 
 Browser extension implementation of Holochain conductor and Lair keystore.
 
@@ -49,7 +49,7 @@ Runs unit tests with Vitest.
 3. Enable "Developer mode" (toggle in top right)
 4. Click "Load unpacked"
 5. Select the `packages/extension/dist` directory
-6. The Fishy extension should now be loaded
+6. The extension should now be loaded
 
 ### Firefox
 
@@ -57,7 +57,7 @@ Runs unit tests with Vitest.
 2. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`
 3. Click "Load Temporary Add-on"
 4. Navigate to `packages/extension/dist` and select `manifest.json`
-5. The Fishy extension should now be loaded
+5. The extension should now be loaded
 
 ## Testing
 
@@ -133,7 +133,7 @@ Pages can access the Holochain API via `window.holochain`:
 
 ```javascript
 // Check if extension is installed
-if (window.holochain?.isFishy) {
+if (window.holochain?.isWebConductor) {
   // Connect to extension
   const result = await window.holochain.connect();
 

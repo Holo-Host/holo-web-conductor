@@ -1,15 +1,15 @@
 /**
- * FishyAppClient - AppClient implementation for the Fishy browser extension.
+ * WebConductorAppClient - AppClient implementation for the Holo Web Conductor browser extension.
  *
  * This adapter implements the @holochain/client AppClient interface
- * using the window.holochain API provided by the Fishy extension.
+ * using the window.holochain API provided by the Web Conductor extension.
  *
  * @example
  * ```typescript
- * import { FishyAppClient, waitForFishy } from '@holo-host/web-conductor-client';
+ * import { WebConductorAppClient, waitForHolochain } from '@holo-host/web-conductor-client';
  *
- * await waitForFishy();
- * const client = await FishyAppClient.connect({
+ * await waitForHolochain();
+ * const client = await WebConductorAppClient.connect({
  *   gatewayUrl: 'http://localhost:8090',
  * });
  *
@@ -58,12 +58,12 @@ import {
 } from './connection';
 import { toUint8Array, deepConvertByteArrays } from './utils/byte-arrays';
 import { encode as msgpackEncode } from '@msgpack/msgpack';
-import type { FishyHolochainAPI, FishyAppInfo } from './types';
+import type { HolochainAPI, WebConductorAppInfo } from './types';
 
 /**
- * Options for creating a FishyAppClient.
+ * Options for creating a WebConductorAppClient.
  */
-export interface FishyAppClientOptions extends ConnectionConfig {
+export interface WebConductorAppClientOptions extends ConnectionConfig {
   /** Role name to use for RoleNameCallZomeRequest (default: inferred from hApp) */
   roleName?: string;
   /** Path to hApp bundle for auto-install (default: looks for .happ in current path) */
@@ -71,16 +71,16 @@ export interface FishyAppClientOptions extends ConnectionConfig {
 }
 
 /**
- * FishyAppClient implements the AppClient interface from @holochain/client
- * using the Fishy browser extension's window.holochain API.
+ * WebConductorAppClient implements the AppClient interface from @holochain/client
+ * using the Web Conductor browser extension's window.holochain API.
  */
-export class FishyAppClient implements AppClient {
+export class WebConductorAppClient implements AppClient {
   private _myPubKey: AgentPubKey | null = null;
   private _installedAppId: InstalledAppId = '';
   private _cellId: CellId | null = null;
   private _roleName: string;
   private signalHandlers = new Set<SignalCb>();
-  private unsubscribeFishy: (() => void) | null = null;
+  private unsubscribeExtension: (() => void) | null = null;
 
   /** Connection monitor for health status */
   readonly connection: ConnectionMonitor;
@@ -89,7 +89,7 @@ export class FishyAppClient implements AppClient {
   private reconnectionManager: ReconnectionManager;
 
   /** Connection configuration */
-  private connectionConfig: FishyAppClientOptions;
+  private connectionConfig: WebConductorAppClientOptions;
 
   /** Cached AppInfo for ZomeClient compatibility */
   cachedAppInfo: AppInfo | null = null;
@@ -104,34 +104,34 @@ export class FishyAppClient implements AppClient {
   }
 
   /**
-   * Create and connect a FishyAppClient.
+   * Create and connect a WebConductorAppClient.
    *
    * @param config - Connection configuration (string for just gatewayUrl, or full config object)
-   * @returns Connected FishyAppClient
+   * @returns Connected WebConductorAppClient
    *
    * @example
    * ```typescript
    * // Simple usage
-   * const client = await FishyAppClient.connect('http://localhost:8090');
+   * const client = await WebConductorAppClient.connect('http://localhost:8090');
    *
    * // With options
-   * const client = await FishyAppClient.connect({
+   * const client = await WebConductorAppClient.connect({
    *   gatewayUrl: 'http://localhost:8090',
    *   autoReconnect: true,
    *   reconnectDelayMs: 2000,
    * });
    * ```
    */
-  static async connect(config: string | FishyAppClientOptions): Promise<FishyAppClient> {
-    const normalizedConfig: FishyAppClientOptions =
+  static async connect(config: string | WebConductorAppClientOptions): Promise<WebConductorAppClient> {
+    const normalizedConfig: WebConductorAppClientOptions =
       typeof config === 'string' ? { gatewayUrl: config } : config;
 
-    const client = new FishyAppClient(normalizedConfig);
+    const client = new WebConductorAppClient(normalizedConfig);
     await client.initialize();
     return client;
   }
 
-  private constructor(config: FishyAppClientOptions) {
+  private constructor(config: WebConductorAppClientOptions) {
     this.connectionConfig = {
       autoReconnect: true,
       reconnectDelayMs: 1000,
@@ -162,8 +162,8 @@ export class FishyAppClient implements AppClient {
 
   private async initialize(): Promise<void> {
     const holochain = window.holochain;
-    if (!holochain?.isFishy) {
-      throw new Error('Fishy extension not detected. Please install the Fishy browser extension.');
+    if (!holochain?.isWebConductor) {
+      throw new Error('Holochain extension not detected. Please install the Holochain browser extension.');
     }
 
     // Configure gateway
@@ -185,7 +185,7 @@ export class FishyAppClient implements AppClient {
       }
     } catch (e) {
       // Not installed yet, continue to installation
-      console.log('[FishyAppClient] hApp not installed, will install...');
+      console.log('[WebConductorAppClient] hApp not installed, will install...');
     }
 
     // Install hApp
@@ -242,7 +242,7 @@ export class FishyAppClient implements AppClient {
     });
   }
 
-  private async setupFromAppInfo(info: FishyAppInfo): Promise<void> {
+  private async setupFromAppInfo(info: WebConductorAppInfo): Promise<void> {
     this._myPubKey = toUint8Array(info.agentPubKey);
     this._installedAppId = info.contextId || 'default';
 
@@ -263,7 +263,7 @@ export class FishyAppClient implements AppClient {
 
   private async installHapp(): Promise<void> {
     const holochain = window.holochain;
-    if (!holochain) throw new Error('Fishy extension not available');
+    if (!holochain) throw new Error('Holochain extension not available');
 
     // Try to fetch bundled hApp from configured path or common locations
     const paths = this.connectionConfig.happBundlePath
@@ -276,7 +276,7 @@ export class FishyAppClient implements AppClient {
         const response = await fetch(path);
         if (response.ok) {
           bundle = new Uint8Array(await response.arrayBuffer());
-          console.log(`[FishyAppClient] Found hApp bundle at ${path}`);
+          console.log(`[WebConductorAppClient] Found hApp bundle at ${path}`);
           break;
         }
       } catch {
@@ -291,12 +291,12 @@ export class FishyAppClient implements AppClient {
       );
     }
 
-    console.log('[FishyAppClient] Installing hApp...');
+    console.log('[WebConductorAppClient] Installing hApp...');
     await holochain.installApp({
       bundle,
       installedAppId: this._roleName,
     });
-    console.log('[FishyAppClient] hApp installed successfully');
+    console.log('[WebConductorAppClient] hApp installed successfully');
   }
 
   private setupSignalForwarding(): void {
@@ -304,12 +304,12 @@ export class FishyAppClient implements AppClient {
     if (!holochain) return;
 
     // Unsubscribe from previous if any
-    if (this.unsubscribeFishy) {
-      this.unsubscribeFishy();
+    if (this.unsubscribeExtension) {
+      this.unsubscribeExtension();
     }
 
     // Subscribe to signals from extension
-    this.unsubscribeFishy = holochain.on('signal', (rawSignal: unknown) => {
+    this.unsubscribeExtension = holochain.on('signal', (rawSignal: unknown) => {
       const raw = rawSignal as {
         value?: {
           cell_id?: [unknown, unknown];
@@ -335,7 +335,7 @@ export class FishyAppClient implements AppClient {
         try {
           handler(signal);
         } catch (e) {
-          console.error('[FishyAppClient] Signal handler error:', e);
+          console.error('[WebConductorAppClient] Signal handler error:', e);
         }
       });
     });
@@ -343,7 +343,7 @@ export class FishyAppClient implements AppClient {
 
   private async doReconnect(): Promise<void> {
     const holochain = window.holochain;
-    if (!holochain) throw new Error('Fishy extension not available');
+    if (!holochain) throw new Error('Holochain extension not available');
 
     // Try WebSocket reconnect if available
     if (holochain.reconnectWebSocket) {
@@ -406,7 +406,7 @@ export class FishyAppClient implements AppClient {
     _timeout?: number
   ): Promise<unknown> {
     const holochain = window.holochain;
-    if (!holochain) throw new Error('Fishy extension not available');
+    if (!holochain) throw new Error('Holochain extension not available');
 
     // Determine cell_id
     let cell_id: CellId;
@@ -466,12 +466,12 @@ export class FishyAppClient implements AppClient {
    */
   async appInfo(): Promise<AppInfo | null> {
     const holochain = window.holochain;
-    if (!holochain) throw new Error('Fishy extension not available');
+    if (!holochain) throw new Error('Holochain extension not available');
 
     const info = await holochain.appInfo();
     if (!info) return null;
 
-    // Convert fishy format to standard AppInfo format
+    // Convert extension format to standard AppInfo format
     const agentPubKey = toUint8Array(info.agentPubKey);
     const cellId: CellId = [toUint8Array(info.cells[0][0]), toUint8Array(info.cells[0][1])];
 
@@ -516,9 +516,9 @@ export class FishyAppClient implements AppClient {
     this.connection.stop();
     this.reconnectionManager.cancel();
 
-    if (this.unsubscribeFishy) {
-      this.unsubscribeFishy();
-      this.unsubscribeFishy = null;
+    if (this.unsubscribeExtension) {
+      this.unsubscribeExtension();
+      this.unsubscribeExtension = null;
     }
 
     const holochain = window.holochain;
@@ -529,29 +529,29 @@ export class FishyAppClient implements AppClient {
     this.connection.setDisconnected();
   }
 
-  // --- Stub implementations for methods not supported by Fishy ---
+  // --- Stub implementations for methods not supported by Web Conductor ---
 
   async dumpNetworkStats(): Promise<AppDumpNetworkStatsResponse> {
-    console.warn('[FishyAppClient] dumpNetworkStats not supported in Fishy mode');
+    console.warn('[WebConductorAppClient] dumpNetworkStats not supported in Web Conductor mode');
     return { peer_urls: [], connections: [] } as unknown as AppDumpNetworkStatsResponse;
   }
 
   async dumpNetworkMetrics(
     _args: DumpNetworkMetricsRequest
   ): Promise<DumpNetworkMetricsResponse> {
-    console.warn('[FishyAppClient] dumpNetworkMetrics not supported in Fishy mode');
+    console.warn('[WebConductorAppClient] dumpNetworkMetrics not supported in Web Conductor mode');
     return {} as DumpNetworkMetricsResponse;
   }
 
   async createCloneCell(_args: CreateCloneCellRequest): Promise<CreateCloneCellResponse> {
-    throw new Error('createCloneCell not supported in Fishy mode');
+    throw new Error('createCloneCell not supported in Web Conductor mode');
   }
 
   async enableCloneCell(_args: EnableCloneCellRequest): Promise<EnableCloneCellResponse> {
-    throw new Error('enableCloneCell not supported in Fishy mode');
+    throw new Error('enableCloneCell not supported in Web Conductor mode');
   }
 
   async disableCloneCell(_args: DisableCloneCellRequest): Promise<DisableCloneCellResponse> {
-    throw new Error('disableCloneCell not supported in Fishy mode');
+    throw new Error('disableCloneCell not supported in Web Conductor mode');
   }
 }

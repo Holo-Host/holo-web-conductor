@@ -1,5 +1,5 @@
 /**
- * Test Fixtures for Fishy E2E Tests
+ * Test Fixtures for Holochain Web Conductor E2E Tests
  *
  * Provides shared setup for tests including:
  * - Browser context with extension loaded
@@ -18,12 +18,12 @@ const __dirname = dirname(__filename);
 
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
-const SANDBOX_DIR = '/tmp/fishy-e2e';
+const SANDBOX_DIR = '/tmp/hwc-e2e';
 // Use HTTP URL to avoid file:// issues with Chrome extension signal delivery
 const TEST_PAGE_URL = 'http://localhost:3333/e2e-gateway-test.html';
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
 
-export interface FishyFixtures {
+export interface HwcFixtures {
   /** Browser context with extension loaded */
   extensionContext: BrowserContext;
   /** Extension ID */
@@ -127,9 +127,9 @@ function setupAutoApproval(context: BrowserContext): void {
 }
 
 /**
- * Extended test with Fishy fixtures
+ * Extended test with HWC fixtures
  */
-export const test = base.extend<FishyFixtures>({
+export const test = base.extend<HwcFixtures>({
   extensionContext: async ({}, use) => {
     const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
@@ -157,7 +157,7 @@ export const test = base.extend<FishyFixtures>({
     const page = await extensionContext.newPage();
     await page.goto(TEST_PAGE_URL);
     // Wait for extension to be detected
-    await page.waitForFunction(() => (window as any).holochain?.isFishy, {
+    await page.waitForFunction(() => (window as any).holochain?.isWebConductor, {
       timeout: 10000,
     });
     await use(page);
@@ -433,7 +433,7 @@ export async function cleanupAgentContext(agent: AgentContext): Promise<void> {
  */
 export async function waitForExtensionReady(page: Page, timeout = 10000): Promise<void> {
   await page.waitForFunction(
-    () => (window as any).holochain?.isFishy === true,
+    () => (window as any).holochain?.isWebConductor === true,
     { timeout }
   );
 }

@@ -12,7 +12,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fishy Authorization Test Page</title>
+  <title>Holochain Authorization Test Page</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -178,13 +178,13 @@
   </style>
 </head>
 <body>
-  <h1>Fishy Authorization Test Page</h1>
+  <h1>Holochain Authorization Test Page</h1>
   <p class="subtitle">Test the authorization flow and permission management</p>
 
   <div class="instructions">
     <h3>Testing Instructions</h3>
     <ol>
-      <li>Load the Fishy extension as an unpacked extension in Chrome</li>
+      <li>Load the Holochain Web Conductor extension as an unpacked extension in Chrome</li>
       <li>Open this HTML file in your browser (either via file:// or localhost)</li>
       <li>Click "Test Connection" - should open authorization popup on first attempt</li>
       <li>Approve the connection in the popup</li>
@@ -264,15 +264,15 @@
         extensionStatus.textContent = 'Yes';
         extensionStatus.style.color = '#28a745';
         extensionStatus.style.fontWeight = '600';
-        log('Fishy extension detected', 'success');
+        log('Holochain extension detected', 'success');
         return true;
       } else {
         extensionStatus.textContent = 'No';
         extensionStatus.style.color = '#dc3545';
         extensionStatus.style.fontWeight = '600';
-        log('Fishy extension NOT detected', 'error');
+        log('Holochain extension NOT detected', 'error');
         showStatus(
-          'Fishy extension not detected! Make sure the extension is installed and loaded.',
+          'Holochain extension not detected. Make sure the extension is installed and loaded.',
           'error'
         );
         return false;
@@ -342,9 +342,9 @@
       updateUI();
     });
 
-    // Wait for fishy:ready event (fired when extension injects window.holochain)
-    window.addEventListener('fishy:ready', () => {
-      log('Received fishy:ready event');
+    // Wait for holochain:ready event (fired when extension injects window.holochain)
+    window.addEventListener('holochain:ready', () => {
+      log('Received holochain:ready event');
       checkExtension();
     });
 

@@ -1,5 +1,5 @@
 /**
- * Connection status and monitoring types for FishyAppClient.
+ * Connection status and monitoring types for WebConductorAppClient.
  */
 
 /**

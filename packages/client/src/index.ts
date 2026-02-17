@@ -6,13 +6,13 @@
  *
  * @example
  * ```typescript
- * import { FishyAppClient, waitForFishy, ConnectionStatus } from '@holo-host/web-conductor-client';
+ * import { WebConductorAppClient, waitForHolochain, ConnectionStatus } from '@holo-host/web-conductor-client';
  *
  * // Wait for extension to be ready
- * await waitForFishy();
+ * await waitForHolochain();
  *
  * // Connect to gateway
- * const client = await FishyAppClient.connect({
+ * const client = await WebConductorAppClient.connect({
  *   gatewayUrl: 'http://localhost:8090',
  *   autoReconnect: true,
  * });
@@ -39,7 +39,7 @@
  */
 
 // Core client
-export { FishyAppClient, type FishyAppClientOptions } from './FishyAppClient';
+export { WebConductorAppClient, type WebConductorAppClientOptions } from './WebConductorAppClient';
 
 // Connection management
 export {
@@ -53,11 +53,11 @@ export { ConnectionMonitor } from './connection/monitor';
 export { ReconnectionManager } from './connection/reconnect';
 
 // Utilities
-export { waitForFishy, isFishyAvailable } from './utils/wait-for-fishy';
+export { waitForHolochain, isWebConductorAvailable } from './utils/wait-for-holochain';
 export { deepConvertByteArrays, toUint8Array, looksLikeByteArray } from './utils/byte-arrays';
 
 // Types
-export type { FishyHolochainAPI, FishyAppInfo, CallZomeParams, InstallAppRequest } from './types';
+export type { HolochainAPI, WebConductorAppInfo, CallZomeParams, InstallAppRequest } from './types';
 
 // Re-export useful @holochain/client types for convenience
 export type {

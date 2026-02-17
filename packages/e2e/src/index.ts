@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Fishy E2E Test Runner CLI
+ * HWC E2E Test Runner CLI
  *
  * Usage:
  *   npm run e2e                    # Run all tests
@@ -21,8 +21,8 @@ import type { EnvConfig } from './types.js';
 const program = new Command();
 
 program
-  .name('fishy-e2e')
-  .description('E2E test runner for Fishy browser extension')
+  .name('hwc-e2e')
+  .description('E2E test runner for Holochain Web Conductor browser extension')
   .version('0.0.1');
 
 // Main test command

@@ -1,11 +1,11 @@
 /**
- * Content script for Fishy extension
+ * Content script for Holochain extension
  *
  * Injected into web pages to provide the bridge between
  * web page JavaScript and the extension's background service worker.
  *
  * This script:
- * 1. Injects the Fishy API script into the page context
+ * 1. Injects the Holochain API script into the page context
  * 2. Listens for messages from the injected script (via postMessage)
  * 3. Forwards messages to the background service worker
  * 4. Returns responses back to the injected script
@@ -18,7 +18,7 @@ import {
   createRequest,
 } from "../lib/messaging";
 
-console.log("Fishy content script loaded");
+console.log("Holochain content script loaded");
 
 /**
  * Pending requests waiting for responses from background
@@ -59,7 +59,7 @@ async function sendToBackground(
       // Send response back to page
       window.postMessage(
         {
-          source: "fishy-content",
+          source: "hwc-content",
           id: callbacks.pageMessageId,
           payload: response.payload,
           error: response.type === MessageType.ERROR ? response.error : undefined,
@@ -85,8 +85,8 @@ window.addEventListener("message", (event) => {
 
   const message = event.data;
 
-  // Only handle fishy-page messages
-  if (!message || message.source !== "fishy-page") return;
+  // Only handle hwc-page messages
+  if (!message || message.source !== "hwc-page") return;
 
   // Forward to background
   sendToBackground(message.type, message.payload, message.id).catch((error) => {
@@ -94,7 +94,7 @@ window.addEventListener("message", (event) => {
     // Send error back to page
     window.postMessage(
       {
-        source: "fishy-content",
+        source: "hwc-content",
         id: message.id,
         error: error.message || "Unknown error",
       },
@@ -104,7 +104,7 @@ window.addEventListener("message", (event) => {
 });
 
 /**
- * Inject the Fishy API script into the page context
+ * Inject the Holochain API script into the page context
  * Uses src attribute to avoid CSP inline script violations
  */
 function injectAPI() {
@@ -133,7 +133,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     console.log("[Content] Forwarding signal to page:", message.payload);
     window.postMessage(
       {
-        source: "fishy-content",
+        source: "hwc-content",
         type: "signal",
         payload: message.payload,
       },
@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === "connectionStatusChange") {
     window.postMessage(
       {
-        source: "fishy-content",
+        source: "hwc-content",
         type: "connectionStatusChange",
         payload: message.payload,
       },

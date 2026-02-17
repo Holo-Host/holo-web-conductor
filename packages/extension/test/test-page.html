@@ -13,7 +13,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Fishy Extension Test Page</title>
+    <title>Holochain Web Conductor Test Page</title>
     <style>
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -83,12 +83,12 @@
     </style>
   </head>
   <body>
-    <h1>🐟 Fishy Extension Test Page</h1>
+    <h1>Holochain Web Conductor Test Page</h1>
 
     <div class="test-section">
       <h2>Extension Detection</h2>
       <div id="detection-status" class="status info">
-        Checking for Fishy extension...
+        Checking for Holochain extension...
       </div>
       <div id="detection-result" class="test-result"></div>
     </div>
@@ -224,19 +224,19 @@
       }
 
       // Check for extension
-      addLog("Waiting for Fishy extension...");
+      addLog("Waiting for Holochain extension...");
 
       function checkExtension() {
         if (window.holochain) {
-          addLog("✓ Fishy extension detected!");
+          addLog("Extension detected");
           addLog(`  Version: ${window.holochain.version}`);
-          addLog(`  isFishy: ${window.holochain.isFishy}`);
+          addLog(`  isWebConductor: ${window.holochain.isWebConductor}`);
 
-          showStatus("detection-status", "success", "✓ Extension detected!");
+          showStatus("detection-status", "success", "Extension detected");
           showResult("detection-result", {
             detected: true,
             version: window.holochain.version,
-            isFishy: window.holochain.isFishy,
+            isWebConductor: window.holochain.isWebConductor,
             hasOnMethod: typeof window.holochain.on === "function",
             hasMyPubKey: "myPubKey" in window.holochain,
             hasInstalledAppId: "installedAppId" in window.holochain,
@@ -245,7 +245,7 @@
           // Enable test buttons
           document.getElementById("connect-btn").disabled = false;
         } else {
-          addLog("✗ Fishy extension not detected");
+          addLog("Extension not detected");
           showStatus(
             "detection-status",
             "error",
@@ -254,9 +254,9 @@
         }
       }
 
-      // Wait for fishy:ready event
-      window.addEventListener("fishy:ready", () => {
-        addLog("Received fishy:ready event");
+      // Wait for holochain:ready event
+      window.addEventListener("holochain:ready", () => {
+        addLog("Received holochain:ready event");
         checkExtension();
       });
 

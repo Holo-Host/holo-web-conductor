@@ -1,17 +1,17 @@
 /**
- * Utility for detecting the Fishy browser extension.
+ * Utility for detecting the Holochain browser extension.
  */
 
-import type { FishyHolochainAPI } from '../types';
+import type { HolochainAPI } from '../types';
 
 declare global {
   interface Window {
-    holochain?: FishyHolochainAPI;
+    holochain?: HolochainAPI;
   }
 }
 
 /**
- * Wait for the Fishy extension to be ready.
+ * Wait for the Holochain extension to be ready.
  *
  * The extension injects window.holochain when loaded. This function waits
  * for that injection to complete.
@@ -22,27 +22,27 @@ declare global {
  *
  * @example
  * ```typescript
- * await waitForFishy();
- * const client = await FishyAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+ * await waitForHolochain();
+ * const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
  * ```
  */
-export function waitForFishy(timeoutMs: number = 5000): Promise<void> {
+export function waitForHolochain(timeoutMs: number = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
     // Check if already ready
-    if (window.holochain?.isFishy) {
+    if (window.holochain?.isWebConductor) {
       resolve();
       return;
     }
 
     const timeout = setTimeout(() => {
       reject(
-        new Error('Fishy extension not detected. Please install the Fishy browser extension.')
+        new Error('Holochain extension not detected. Please install the Holochain browser extension.')
       );
     }, timeoutMs);
 
     // Listen for the ready event from the extension
     window.addEventListener(
-      'fishy:ready',
+      'holochain:ready',
       () => {
         clearTimeout(timeout);
         resolve();
@@ -53,10 +53,10 @@ export function waitForFishy(timeoutMs: number = 5000): Promise<void> {
 }
 
 /**
- * Check if the Fishy extension is available.
+ * Check if the Holochain extension is available.
  *
- * @returns true if Fishy extension is detected
+ * @returns true if Holochain extension is detected
  */
-export function isFishyAvailable(): boolean {
-  return window.holochain?.isFishy === true;
+export function isWebConductorAvailable(): boolean {
+  return window.holochain?.isWebConductor === true;
 }

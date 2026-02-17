@@ -8,9 +8,9 @@
  *   log.debug('details'); // Only shows if 'Background' matches filter
  *
  * Runtime filter control (in any extension console):
- *   setFishyLogFilter('Background,Offscreen'); // Show only these
- *   setFishyLogFilter('*'); // Show all (default)
- *   setFishyLogFilter(''); // Show none
+ *   setHwcLogFilter('Background,Offscreen'); // Show only these
+ *   setHwcLogFilter('*'); // Show all (default)
+ *   setHwcLogFilter(''); // Show none
  *
  * Filter syncs across all contexts (background, offscreen, worker) via chrome.runtime messaging
  */
@@ -18,9 +18,9 @@
 // Global filter - comma-separated list of prefixes to show, '*' for all, '' for none
 declare global {
   interface Window {
-    fishyLogFilter?: string;
+    hwcLogFilter?: string;
   }
-  var fishyLogFilter: string | undefined;
+  var hwcLogFilter: string | undefined;
   // Chrome extension API (optional - only available in extension contexts)
   var chrome: {
     storage?: {
@@ -39,19 +39,19 @@ declare global {
 }
 
 // Message type for log filter changes
-const LOG_FILTER_MESSAGE_TYPE = 'FISHY_LOG_FILTER_CHANGE';
+const LOG_FILTER_MESSAGE_TYPE = 'HWC_LOG_FILTER_CHANGE';
 
 // Initialize filter on globalThis if not set
-if (typeof globalThis !== 'undefined' && globalThis.fishyLogFilter === undefined) {
-  globalThis.fishyLogFilter = '*'; // Default until loaded from storage
+if (typeof globalThis !== 'undefined' && globalThis.hwcLogFilter === undefined) {
+  globalThis.hwcLogFilter = '*'; // Default until loaded from storage
 }
 
 // Load filter from storage on init (for persistence across restarts)
 // Only in extension contexts where chrome.storage is available
 if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
-  chrome.storage.local.get(['fishyLogFilter']).then((result: Record<string, unknown>) => {
-    if (typeof result.fishyLogFilter === 'string') {
-      globalThis.fishyLogFilter = result.fishyLogFilter;
+  chrome.storage.local.get(['hwcLogFilter']).then((result: Record<string, unknown>) => {
+    if (typeof result.hwcLogFilter === 'string') {
+      globalThis.hwcLogFilter = result.hwcLogFilter;
     }
   }).catch(() => {});
 }
@@ -63,7 +63,7 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
     if (message && typeof message === 'object' && 'type' in message && 'filter' in message) {
       const msg = message as { type: string; filter: string };
       if (msg.type === LOG_FILTER_MESSAGE_TYPE) {
-        globalThis.fishyLogFilter = msg.filter;
+        globalThis.hwcLogFilter = msg.filter;
       }
     }
   });
@@ -73,7 +73,7 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
  * Check if a prefix should be logged based on the current filter
  */
 function shouldLog(prefix: string): boolean {
-  const filter = globalThis.fishyLogFilter ?? '*';
+  const filter = globalThis.hwcLogFilter ?? '*';
   if (filter === '*') return true;
   if (filter === '') return false;
 
@@ -88,13 +88,13 @@ function shouldLog(prefix: string): boolean {
  * Set the log filter at runtime - syncs across all contexts
  */
 export function setLogFilter(filter: string): void {
-  globalThis.fishyLogFilter = filter;
+  globalThis.hwcLogFilter = filter;
   console.log(`[Logger] Filter set to: ${filter === '*' ? 'all' : filter === '' ? 'none' : filter}`);
 
   if (typeof chrome !== 'undefined') {
     // Persist to storage for persistence across restarts
     if (chrome.storage?.local) {
-      chrome.storage.local.set({ fishyLogFilter: filter }).catch(() => {});
+      chrome.storage.local.set({ hwcLogFilter: filter }).catch(() => {});
     }
 
     // Broadcast to all extension contexts via runtime messaging
@@ -108,7 +108,7 @@ export function setLogFilter(filter: string): void {
  * Get current log filter
  */
 export function getLogFilter(): string {
-  return globalThis.fishyLogFilter ?? '*';
+  return globalThis.hwcLogFilter ?? '*';
 }
 
 export interface Logger {

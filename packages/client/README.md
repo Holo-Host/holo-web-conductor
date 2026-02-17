@@ -12,13 +12,13 @@ npm install @holo-host/web-conductor-client
 ## Usage
 
 ```typescript
-import { FishyAppClient, waitForFishy, ConnectionStatus } from '@holo-host/web-conductor-client';
+import { WebConductorAppClient, waitForHolochain, ConnectionStatus } from '@holo-host/web-conductor-client';
 
 // Wait for extension to be ready
-await waitForFishy();
+await waitForHolochain();
 
 // Connect to gateway
-const client = await FishyAppClient.connect({
+const client = await WebConductorAppClient.connect({
   gatewayUrl: 'http://localhost:8090',
   autoReconnect: true,
 });
@@ -44,15 +44,15 @@ const result = await client.callZome({
 ## Switching between Holo Web Conductor and standard Holochain
 
 ```typescript
-import { FishyAppClient, waitForFishy, isFishyAvailable } from '@holo-host/web-conductor-client';
+import { WebConductorAppClient, waitForHolochain, isWebConductorAvailable } from '@holo-host/web-conductor-client';
 import { AppWebsocket } from '@holochain/client';
 import type { AppClient } from '@holochain/client';
 
 async function getClient(): Promise<AppClient> {
   // Check if Holo Web Conductor extension is available
-  if (isFishyAvailable()) {
-    await waitForFishy();
-    return FishyAppClient.connect('http://localhost:8090');
+  if (isWebConductorAvailable()) {
+    await waitForHolochain();
+    return WebConductorAppClient.connect('http://localhost:8090');
   } else {
     // Fall back to standard Holochain conductor
     return AppWebsocket.connect('ws://localhost:8888');
@@ -63,7 +63,7 @@ async function getClient(): Promise<AppClient> {
 ## Connection Configuration
 
 ```typescript
-const client = await FishyAppClient.connect({
+const client = await WebConductorAppClient.connect({
   // Required: Gateway URL
   gatewayUrl: 'http://localhost:8090',
 
@@ -154,7 +154,7 @@ unsubscribe();
 
 ## API Compatibility
 
-FishyAppClient implements the full `AppClient` interface from `@holochain/client` (class will be renamed to `WebConductorAppClient` in a future release):
+WebConductorAppClient implements the full `AppClient` interface from `@holochain/client` :
 
 - ✅ `callZome()` - Call zome functions
 - ✅ `appInfo()` - Get app information

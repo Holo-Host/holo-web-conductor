@@ -1,5 +1,5 @@
 /**
- * Background service worker for Fishy extension
+ * Background service worker for Holochain Web Conductor extension
  *
  * This is the main entry point for the extension's background process.
  * It handles:
@@ -60,9 +60,9 @@ import type { ZomeExecutor } from "../lib/zome-executor";
 import { ChromeOffscreenExecutor } from "./chrome-offscreen-executor";
 
 // Expose filter control to globalThis for runtime debugging
-// Usage in service worker console: setFishyLogFilter('Signal,CallZome') or fishyLogFilter = 'Signal'
-(globalThis as any).setFishyLogFilter = setLogFilter;
-(globalThis as any).getFishyLogFilter = getLogFilter;
+// Usage in service worker console: setHwcLogFilter('Signal,CallZome') or hwcLogFilter = 'Signal'
+(globalThis as any).setHwcLogFilter = setLogFilter;
+(globalThis as any).getHwcLogFilter = getLogFilter;
 
 // Create specialized loggers for different concerns
 const log = createLogger('Background');
@@ -73,7 +73,7 @@ const logSignal = createLogger('Signal');
 const logLair = createLogger('Lair');
 const logHapp = createLogger('HappContext');
 
-log.info("Fishy background service worker loaded");
+log.info("Background service worker loaded");
 
 // ============================================================================
 // ZomeExecutor - abstraction over offscreen document / WASM execution
@@ -505,7 +505,7 @@ async function handleConnect(
     logAuth.debug(`Origin ${origin} was previously denied`);
     return createErrorResponse(
       message.id,
-      "Connection denied. This site was previously denied access to Fishy."
+      "Connection denied. This site was previously denied access to Holochain."
     );
   }
 

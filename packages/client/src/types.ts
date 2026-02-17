@@ -1,15 +1,15 @@
 /**
- * Type definitions for the Fishy client library.
+ * Type definitions for the Web Conductor client library.
  */
 
 import type { ConnectionState } from './connection/types';
 
 /**
- * The window.holochain API provided by Fishy extension.
+ * The window.holochain API provided by the Web Conductor extension.
  */
-export interface FishyHolochainAPI {
-  /** Always true for Fishy extension */
-  isFishy: boolean;
+export interface HolochainAPI {
+  /** Always true for Web Conductor extension */
+  isWebConductor: boolean;
   /** Extension version */
   version: string;
   /** Current agent's public key (if connected) */
@@ -21,7 +21,7 @@ export interface FishyHolochainAPI {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   callZome(params: CallZomeParams): Promise<unknown>;
-  appInfo(installedAppId?: string): Promise<FishyAppInfo | null>;
+  appInfo(installedAppId?: string): Promise<WebConductorAppInfo | null>;
   installApp(request: InstallAppRequest): Promise<void>;
 
   // Signal handling
@@ -69,9 +69,9 @@ export interface InstallAppRequest {
 }
 
 /**
- * App info returned by Fishy extension.
+ * App info returned by Web Conductor extension.
  */
-export interface FishyAppInfo {
+export interface WebConductorAppInfo {
   contextId: string;
   agentPubKey: Uint8Array | number[];
   cells: Array<[Uint8Array | number[], Uint8Array | number[]]>;
@@ -81,6 +81,6 @@ export interface FishyAppInfo {
 
 declare global {
   interface Window {
-    holochain?: FishyHolochainAPI;
+    holochain?: HolochainAPI;
   }
 }
