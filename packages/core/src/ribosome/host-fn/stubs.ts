@@ -50,12 +50,9 @@ function createNotImplementedStub(name: string): HostFunctionImpl {
 // NOTE: getLinksDetails moved to ./get_links_details.ts (real implementation)
 export const getValidationReceipts = createEmptyArrayStub("get_validation_receipts");
 
-// Cross-zome/cell calls
-export const call = createNotImplementedStub("call");
-
-// Signals
-export const emitSignal = createNullStub("emit_signal");
-export const sendRemoteSignal = createNullStub("send_remote_signal");
+// NOTE: call is now implemented in ./call.ts
+// NOTE: emit_signal is now implemented in ./emit_signal.ts
+// NOTE: send_remote_signal is now implemented in ./send_remote_signal.ts
 
 // Capabilities
 export const capabilityInfo = createNullStub("capability_info");
@@ -88,14 +85,12 @@ export const acceptCountersigningPreflightRequest = createNotImplementedStub(
 // X25519 encryption (libsodium)
 export const createX25519Keypair: HostFunctionImpl = (context, inputPtr, inputLen) => {
   console.warn(
-    "[HostFn] create_x25519_keypair called (STUB - returns mock keypair)"
+    "[HostFn] create_x25519_keypair called (STUB - returns mock pubkey)"
   );
-  // Return mock X25519 keypair (32 bytes each)
-  const mockKeypair = {
-    public_key: new Uint8Array(32).fill(0x01),
-    secret_key: new Uint8Array(32).fill(0x02),
-  };
-  return serializeResult(context.instance, mockKeypair);
+  // X25519PubKey is a 32-byte binary blob (serialize_bytes), not a struct.
+  // The secret key never leaves Lair - guest only receives the public key.
+  const mockPubKey = new Uint8Array(32).fill(0x01);
+  return serializeResult(context.instance, mockPubKey);
 };
 
 export const x25519XSalsa20Poly1305Encrypt = createNotImplementedStub(
