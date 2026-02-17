@@ -406,15 +406,90 @@ Historical STEPS files (completed steps) - leave as-is with a note in `STEPS/ind
 - `CLAUDE.md` - team workflow section + update cross-references from "fishy" to "holo-web-conductor"
 
 ### NOT changed
-- `flake.nix` in either repo (no "fishy" references in nix config)
-- `Cargo.toml` in hc-membrane
+- `flake.nix` in either repo (check for references, but likely none in nix config)
 - `rust-toolchain.toml`
 
 ---
 
-## 6. Verification
+## 6. Test App Modifications (ziptest + mewsfeed)
 
-- `nix develop -c npm test` passes after all renames
+Both e2e test apps (`ziptest` and `mewsfeed-fishy`) depend on `@zippy/fishy-client` and use "fishy"/"gateway" terminology. Each needs a new branch with updated imports and terminology to work with the renamed client and linker.
+
+### 6a. ziptest repo
+
+**Current state**: `ziptest` at `../ziptest/`
+- `ui/src/fishy/index.ts` imports from `@zippy/fishy-client` (npm linked, not in package.json)
+- `ui/src/App.svelte` uses `FishyAppClient`, `waitForFishy`, `gatewayUrl: GATEWAY_URL`
+- `ui/src/Controller.svelte` uses `FishyAppClient`, "gateway" status UI
+- `ui/vite.config.ts` defines `__GATEWAY_URL__` env variable
+- `ui/package.json` has `"build:fishy": "vite build"` script
+
+**New branch**: `holo-web-conductor` (or `hwc`)
+
+| File | Changes |
+|------|---------|
+| `ui/src/fishy/` directory | Rename to `ui/src/holochain/` |
+| `ui/src/holochain/index.ts` (was `fishy/index.ts`) | `@zippy/fishy-client` -> `@holo-host/web-conductor-client`; `FishyAppClient` -> `WebConductorAppClient`; `waitForFishy` -> `waitForHolochain`; `isFishyAvailable` -> `isWebConductorAvailable`; `FishyAppClientOptions` -> `WebConductorAppClientOptions` |
+| `ui/src/App.svelte` | Import path `./fishy` -> `./holochain`; `FishyAppClient` -> `WebConductorAppClient`; `waitForFishy` -> `waitForHolochain`; `gatewayUrl: GATEWAY_URL` -> `linkerUrl: LINKER_URL`; "Fishy browser extension" text -> "Holochain extension"; "gateway is running" -> "linker is running" |
+| `ui/src/Controller.svelte` | Import path `./fishy` -> `./holochain`; `FishyAppClient` -> `WebConductorAppClient`; `fishyClient` variable -> `hwcClient`; "gateway status" -> "linker status"; "gateway reachable/unreachable" -> "linker reachable/unreachable" |
+| `ui/vite.config.ts` | `__GATEWAY_URL__` -> `__LINKER_URL__` |
+| `ui/package.json` | Add `"@holo-host/web-conductor-client": "file:../../holo-web-conductor/packages/client"` to dependencies (or use published npm version); rename `"build:fishy"` -> `"build:hwc"` or remove (it's identical to `"build"`) |
+
+**Decision: file: link vs npm dependency**
+- During development: Use `"file:../../holo-web-conductor/packages/client"` for instant iteration
+- For release: Switch to `"@holo-host/web-conductor-client": "^0.1.0"` (published npm package)
+- The branch should use file: link initially, with a note to switch before any release
+
+### 6b. mewsfeed-fishy repo
+
+**Current state**: `mewsfeed-fishy` at `../mewsfeed-fishy/`
+- Fork/branch of mewsfeed with fishy extension support added
+- `ui/package.json` has `"@zippy/fishy-client": "file:../../fishy/packages/client"`
+- `ui/src/fishy/index.ts` imports from `@zippy/fishy-client`
+- `ui/src/utils/client.ts` uses `FishyAppClient`, `waitForFishy`, `gatewayUrl: GATEWAY_URL`
+- `ui/src/App.vue` imports `ZeroArcProfilesClient` from `@/fishy`
+
+**New branch**: `holo-web-conductor` (or rename the whole repo to `mewsfeed-hwc`)
+
+| File | Changes |
+|------|---------|
+| `ui/src/fishy/` directory | Rename to `ui/src/holochain/` |
+| `ui/src/holochain/index.ts` (was `fishy/index.ts`) | `@zippy/fishy-client` -> `@holo-host/web-conductor-client`; same identifier renames as ziptest |
+| `ui/src/utils/client.ts` | `FishyAppClient` -> `WebConductorAppClient`; `waitForFishy` -> `waitForHolochain`; `fishyClient` -> `hwcClient`; `gatewayUrl: GATEWAY_URL` -> `linkerUrl: LINKER_URL`; "fishy extension" comments -> "holochain extension" |
+| `ui/src/App.vue` | Import path `@/fishy` -> `@/holochain`; "fishy" comments -> "web conductor" |
+| `ui/package.json` | `"@zippy/fishy-client": "file:../../fishy/packages/client"` -> `"@holo-host/web-conductor-client": "file:../../holo-web-conductor/packages/client"` |
+| `ui/vite.config.ts` (if `__GATEWAY_URL__` exists) | `__GATEWAY_URL__` -> `__LINKER_URL__` |
+
+### 6c. E2E test fixtures (in holo-web-conductor repo)
+
+The e2e tests in holo-web-conductor reference the test apps and their behavior:
+
+| File | Changes |
+|------|---------|
+| `packages/e2e/tests/fixtures.ts` | `gatewayUrl` fixture -> `linkerUrl`; `TEST_PAGE_URL` with `e2e-gateway-test.html` -> `e2e-linker-test.html` (if that HTML file exists); `fishy-e2e` sandbox dir -> `hwc-e2e` |
+| `packages/e2e/tests/mewsfeed.test.ts` | "fishy extension" in test text -> "holochain extension"; `gatewayUrl` -> `linkerUrl`; "gateway" log checks -> "linker"; `fishy-e2e` path -> `hwc-e2e` |
+| `packages/e2e/tests/ziptest.test.ts` | Similar changes if any fishy/gateway references exist |
+
+### 6d. Coordination & Execution Order
+
+The test app branches must be created **after** the holo-web-conductor client rename lands, so the file: links resolve correctly.
+
+```
+1. Land holo-web-conductor rename (Phases 3a commits 1-6)
+2. Land h2hc-linker rename (Phase 3b)
+3. Create ziptest `holo-web-conductor` branch with client + terminology updates
+4. Create mewsfeed `holo-web-conductor` branch with same updates
+5. Verify e2e tests pass with both test apps on new branches
+6. Later: when @holo-host/web-conductor-client is published to npm,
+   update test apps to use npm dependency instead of file: link
+```
+
+---
+
+## 7. Verification
+
+- `nix develop -c npm test` passes after all renames (holo-web-conductor)
+- `nix develop -c cargo test` passes after rename (h2hc-linker)
 - `nix develop -c npm run build:extension` produces valid extension
 - Extension loads in Chrome showing "Holochain" name and logo
 - All `@hwc/*` workspace imports resolve correctly
@@ -422,13 +497,20 @@ Historical STEPS files (completed steps) - leave as-is with a note in `STEPS/ind
 - `npm install @holo-host/web-conductor-client` works from npm registry
 - `window.holochain.isWebConductor === true` in browser
 - `waitForHolochain()` utility works in client apps
+- `WebConductorAppClient.connect({ linkerUrl: '...' })` works
+- E2E tests pass with `H2HC_LINKER_DIR` env var and `h2hc-linker` binary
+- ziptest builds and runs on `holo-web-conductor` branch
+- mewsfeed builds and runs on `holo-web-conductor` branch
 - GitHub Project board populated with converted issues
+- No remaining references to "fishy" in active source code (STEPS historical docs excluded)
+- No remaining references to "gateway" in source code
+- `grep -r "hc-membrane" packages/ scripts/` returns zero results in both repos
 
 ---
 
-## 7. Risk Mitigation
+## 8. Risk Mitigation
 
-**Largest risk**: The ~90-file rename in Phase 3 could introduce subtle breakage.
+**Largest risk**: The ~120-file rename in Phase 3a could introduce subtle breakage.
 
 Mitigations:
 1. Pre-flight tag allows instant rollback
@@ -437,8 +519,23 @@ Mitigations:
 4. Run `npm test` after each commit in the rename sequence
 5. The rename is purely cosmetic - no logic changes - so failures are limited to import resolution and string matching
 
+**Cross-repo coordination risk**: The e2e setup script must match the h2hc-linker binary name. Test apps must use new client API.
+
+Mitigations:
+1. Land h2hc-linker rename first (Rust side)
+2. Then update holo-web-conductor's e2e-test-setup.sh to look for new binary name
+3. Create test app branches only after conductor rename lands
+4. Verify e2e with both test apps before declaring complete
+
 **npm publishing risk**: Publishing under a new scope means the old `@zippy/fishy-client` becomes orphaned.
 
 Mitigations:
-1. Publish `@zippy/fishy-client` final version with deprecation notice pointing to `@holo-host/web-conductor-client`
-2. Or simply unpublish if no external consumers yet
+1. Simply leave unpublished - it's at v0.1.0 and was never published to npm
+2. Test apps use file: links during development, switch to npm dep for release
+
+**Gateway terminology completeness risk**: With 763+ occurrences across 114+ files, some might be missed.
+
+Mitigations:
+1. After rename, run `grep -ri "gateway\|hc-membrane\|fishy" packages/ scripts/ src/` in all repos
+2. Verify zero results in source code (documentation exclusions are fine)
+3. Include this grep as a verification step in the PR checklist

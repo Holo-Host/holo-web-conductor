@@ -59,7 +59,7 @@
 | 21 | ✅ | Firefox Compatibility Plan (plan doc only) |
 | 22 | 📋 | Migration to holo-host GitHub Org |
 | 23 | ✅ | Agent Activity Network Integration |
-| 24 | 📋 | Kitsune2 DHT Query Fix (critical) |
+| 24 | ✅ | Kitsune2 DHT Query Fix (resolved in 19.3/M4) |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 🔀 Pending Merge | 📋 Planned | ❌ Blocked
@@ -125,30 +125,20 @@ Core functionality works: agent registration, preflight exchange, publishing, ge
 Promise-chain serialization in ribosome worker for CALL_ZOME messages.
 See [18_PLAN.md](./18_PLAN.md)
 
-### Step 24: Kitsune2 DHT Query Fix
-**Priority**: Critical (blocks real multi-node operation)
-**Repo**: hc-membrane (kitsune-dht-ops branch)
+### Step 24: Kitsune2 DHT Query Fix (resolved)
+**Status**: Complete — resolved as part of M4 milestone (kitsune-dht-ops branch, merged to main).
+See [19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) for investigation details and test coverage.
 
-The kitsune2 `send_notify` request-response path for DHT queries (`GetReq`, `GetLinksReq`) is broken -- conductors never respond within 30 seconds. Publishing works (fire-and-forget), but querying does not.
-
-**Why this is critical**: Fishy nodes are zero-arc. They don't hold DHT data. The current ziptest e2e only works because both agents publish through the same gateway, so the gateway's REST endpoints can serve data from its locally-managed conductors. In any real deployment with multiple gateways or external conductors, data retrieval requires the kitsune2 query path.
-
-**Root cause candidates** (from [19.3 investigation](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md)):
-1. Conductor doesn't recognize the wire message format from hc-membrane
-2. Conductor processes query but doesn't send response back to non-agent peers (gateway)
-3. Response sent but not routed correctly in hc-membrane's `recv_notify` handler
-
-**Next steps**:
-1. Enable TRACE logging on conductor to verify `GetLinksReq` arrives and is processed
-2. Compare wire message encoding between hc-membrane and holochain's `holochain_p2p/src/types/wire.rs`
-3. Check if conductor's kitsune2 handler sends responses to non-agent peers
-
-See [19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) for full analysis.
-
-### Step 22: Migration to holo-host GitHub Org
+### Step 22: Migration to holo-host GitHub Org + Full Rename
 **Priority**: High (organizational)
 
-Migrate fishy and hc-membrane repos from `zippy` to `holo-host` GitHub org. Publish `@holo-host/fishy-client` as a real npm package. Evolve step-based solo workflow into team workflow with GitHub Projects/Issues for 2-3 contributors. Set up CI/CD.
+Full migration and rebrand:
+- Repos: `fishy` -> `holo-web-conductor`, `hc-membrane` -> `h2hc-linker` (Holo-To-Holochain Linker)
+- npm: `@zippy/fishy-client` -> `@holo-host/web-conductor-client`; `@fishy/*` -> `@hwc/*`
+- Terminology: "gateway" -> "linker" throughout both codebases
+- Extension: user-facing name "Holochain" with standard logo
+- Test apps: new branches in ziptest and mewsfeed for new client API
+- Process: GitHub Projects/Issues, CI/CD, team workflow for 2-3 contributors
 
 See [22_PLAN.md](./22_PLAN.md)
 
