@@ -8,7 +8,7 @@
 interface ConnectionStatus {
   httpHealthy: boolean;
   wsHealthy: boolean;
-  gatewayUrl: string | null;
+  linkerUrl: string | null;
   lastChecked: number;
   lastError?: string;
 }
@@ -37,7 +37,7 @@ interface HolochainAPI {
     installedAppId?: string;
   }): Promise<any>;
   on(event: "signal", callback: (signal: any) => void): () => void;
-  configureNetwork(config: { gatewayUrl: string }): Promise<any>;
+  configureNetwork(config: { linkerUrl: string }): Promise<any>;
   getNetworkStatus(): Promise<any>;
   // Connection status APIs
   getConnectionStatus(): Promise<ConnectionStatus>;
@@ -307,12 +307,12 @@ const holochainAPI: HolochainAPI = {
     });
   },
 
-  async configureNetwork(config: { gatewayUrl: string }): Promise<any> {
-    return sendToContentScript("gateway_configure", config);
+  async configureNetwork(config: { linkerUrl: string }): Promise<any> {
+    return sendToContentScript("linker_configure", config);
   },
 
   async getNetworkStatus(): Promise<any> {
-    return sendToContentScript("gateway_get_status", null);
+    return sendToContentScript("linker_get_status", null);
   },
 
   on(event: "signal", callback: (signal: any) => void): () => void {

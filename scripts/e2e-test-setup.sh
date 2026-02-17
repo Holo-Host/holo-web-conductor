@@ -3,16 +3,16 @@
 # End-to-End Test Setup Script
 #
 # This script sets up the environment for end-to-end testing of the fishy
-# extension with a real Holochain conductor and hc-membrane gateway.
+# extension with a real Holochain conductor and h2hc-linker linker.
 #
 # Usage:
 #   ./scripts/e2e-test-setup.sh [command] [--happ=NAME]
 #
 # Commands:
-#   start     Start conductor and gateway (default)
+#   start     Start conductor and linker (default)
 #   stop      Stop all services
-#   pause     Stop only the gateway (conductors keep running)
-#   unpause   Start only the gateway (when conductors are already running)
+#   pause     Stop only the linker (conductors keep running)
+#   unpause   Start only the linker (when conductors are already running)
 #   status    Show running services
 #   clean     Clean up sandbox data
 #
@@ -36,10 +36,10 @@ SANDBOX_DIR="/tmp/fishy-e2e"
 HAPP_NAME="ziptest"
 HAPP_EXPLICIT=false  # Track if --happ was explicitly provided
 
-# Gateway configuration (hc-membrane only)
-GATEWAY_DIR="${HC_MEMBRANE_DIR:-$PROJECT_DIR/../hc-membrane}"
-GATEWAY_BINARY="$GATEWAY_DIR/target/release/hc-membrane"
-GATEWAY_PGREP_PATTERN="target/release/hc-membrane"
+# Linker configuration (h2hc-linker only)
+LINKER_DIR="${H2HC_LINKER_DIR:-$PROJECT_DIR/../h2hc-linker}"
+LINKER_BINARY="$LINKER_DIR/target/release/h2hc-linker"
+LINKER_PGREP_PATTERN="target/release/h2hc-linker"
 
 # Parse arguments
 COMMAND=""
@@ -95,14 +95,14 @@ configure_happ() {
     log_info "Using hApp: $HAPP_NAME"
     log_info "  Path: $HAPP_PATH"
     log_info "  App ID: $APP_ID"
-    log_info "Using gateway: hc-membrane"
-    log_info "  Binary: $GATEWAY_BINARY"
+    log_info "Using linker: h2hc-linker"
+    log_info "  Binary: $LINKER_BINARY"
 }
 
 # Ports
 ADMIN_PORT=8888
 APP_PORT=8889
-GATEWAY_PORT=8000
+LINKER_PORT=8000
 BOOTSTRAP_PORT=0  # 0 = auto-assign
 ZIPTEST_UI_PORT=8081
 MEWSFEED_UI_PORT=8082
@@ -432,13 +432,13 @@ start_conductor() {
     start_conductors
 }
 
-# Start gateway (hc-membrane)
-start_gateway() {
-    log_info "Starting hc-membrane gateway..."
+# Start linker (h2hc-linker)
+start_linker() {
+    log_info "Starting h2hc-linker linker..."
 
-    # Check if gateway is already running
-    if pgrep -f "$GATEWAY_PGREP_PATTERN" > /dev/null 2>&1; then
-        log_warn "Gateway already running"
+    # Check if linker is already running
+    if pgrep -f "$LINKER_PGREP_PATTERN" > /dev/null 2>&1; then
+        log_warn "Linker already running"
         return 0
     fi
 
@@ -453,13 +453,13 @@ start_gateway() {
         fi
     fi
 
-    # Build gateway if needed
-    if [ ! -f "$GATEWAY_BINARY" ]; then
-        log_info "Building gateway..."
-        (cd "$GATEWAY_DIR" && cargo build --release)
+    # Build linker if needed
+    if [ ! -f "$LINKER_BINARY" ]; then
+        log_info "Building linker..."
+        (cd "$LINKER_DIR" && cargo build --release)
     fi
 
-    log_info "Starting gateway on port $GATEWAY_PORT (admin ws://localhost:$ACTUAL_ADMIN)..."
+    log_info "Starting linker on port $LINKER_PORT (admin ws://localhost:$ACTUAL_ADMIN)..."
 
     # Get bootstrap/relay URLs from saved bootstrap address (local server)
     local BOOTSTRAP_URL
@@ -480,29 +480,29 @@ start_gateway() {
     HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
     HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
     HC_MEMBRANE_RELAY_URL="$RELAY_URL" \
-    RUST_LOG="info,hc_membrane=debug" \
-    "$GATEWAY_BINARY" --port "$GATEWAY_PORT" > gateway.log 2>&1 &
+    RUST_LOG="info,h2hc_linker=debug" \
+    "$LINKER_BINARY" --port "$LINKER_PORT" > linker.log 2>&1 &
 
-    GATEWAY_PID=$!
-    echo "$GATEWAY_PID" > gateway.pid
+    LINKER_PID=$!
+    echo "$LINKER_PID" > linker.pid
 
-    # Wait for gateway to start
+    # Wait for linker to start
     for i in {1..10}; do
-        if curl -s "http://localhost:$GATEWAY_PORT/health" > /dev/null 2>&1; then
-            log_info "Gateway started on port $GATEWAY_PORT"
+        if curl -s "http://localhost:$LINKER_PORT/health" > /dev/null 2>&1; then
+            log_info "Linker started on port $LINKER_PORT"
             return 0
         fi
         sleep 1
     done
 
     # Check if process is still running
-    if kill -0 "$GATEWAY_PID" 2>/dev/null; then
-        log_info "Gateway started (health endpoint not responding, but process running)"
+    if kill -0 "$LINKER_PID" 2>/dev/null; then
+        log_info "Linker started (health endpoint not responding, but process running)"
         return 0
     fi
 
-    log_error "Gateway failed to start. Check gateway.log"
-    cat gateway.log
+    log_error "Linker failed to start. Check linker.log"
+    cat linker.log
     exit 1
 }
 
@@ -636,41 +636,41 @@ stop_ziptest_ui() {
     pkill -f "python3 -m http.server $ZIPTEST_UI_PORT" 2>/dev/null || true
 }
 
-# Stop only the gateway (pause)
-pause_gateway() {
-    log_info "Pausing gateway (stopping gateway only, conductors keep running)..."
+# Stop only the linker (pause)
+pause_linker() {
+    log_info "Pausing linker (stopping linker only, conductors keep running)..."
 
     cd "$SANDBOX_DIR" 2>/dev/null || true
 
-    # Stop gateway
-    if [ -f gateway.pid ]; then
-        GATEWAY_PID=$(cat gateway.pid)
-        if kill -0 "$GATEWAY_PID" 2>/dev/null; then
-            log_info "Stopping gateway (PID $GATEWAY_PID)..."
-            kill "$GATEWAY_PID"
+    # Stop linker
+    if [ -f linker.pid ]; then
+        LINKER_PID=$(cat linker.pid)
+        if kill -0 "$LINKER_PID" 2>/dev/null; then
+            log_info "Stopping linker (PID $LINKER_PID)..."
+            kill "$LINKER_PID"
             # Wait for it to actually stop
             for i in {1..10}; do
-                if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+                if ! kill -0 "$LINKER_PID" 2>/dev/null; then
                     break
                 fi
                 sleep 0.5
             done
         fi
-        rm -f gateway.pid
+        rm -f linker.pid
     else
         # Also check by process name
-        if pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
-            log_info "Stopping hc-membrane by process name..."
-            pkill -f "target/release/hc-membrane$" || true
+        if pgrep -f "target/release/h2hc-linker$" > /dev/null 2>&1; then
+            log_info "Stopping h2hc-linker by process name..."
+            pkill -f "target/release/h2hc-linker$" || true
         fi
     fi
 
-    log_info "Gateway paused (conductors still running)"
+    log_info "Linker paused (conductors still running)"
 }
 
-# Start only the gateway (unpause) - assumes conductors already running
-unpause_gateway() {
-    log_info "Unpausing gateway (starting gateway only)..."
+# Start only the linker (unpause) - assumes conductors already running
+unpause_linker() {
+    log_info "Unpausing linker (starting linker only)..."
 
     cd "$SANDBOX_DIR" 2>/dev/null || true
 
@@ -692,16 +692,16 @@ unpause_gateway() {
         exit 1
     fi
 
-    # Check if gateway already running
-    if pgrep -f "target/release/hc-membrane$" > /dev/null 2>&1; then
-        log_warn "Gateway already running"
+    # Check if linker already running
+    if pgrep -f "target/release/h2hc-linker$" > /dev/null 2>&1; then
+        log_warn "Linker already running"
         return 0
     fi
 
-    # Start gateway (reuse start_gateway function)
-    start_gateway
+    # Start linker (reuse start_linker function)
+    start_linker
 
-    log_info "Gateway unpaused"
+    log_info "Linker unpaused"
 }
 
 # Stop services
@@ -714,8 +714,8 @@ stop_services() {
     stop_ziptest_ui 2>/dev/null || true
     stop_mewsfeed_ui 2>/dev/null || true
 
-    # Stop gateway first
-    pause_gateway 2>/dev/null || true
+    # Stop linker first
+    pause_linker 2>/dev/null || true
 
     # Stop all conductors
     for PID_FILE in conductor.pid conductor_*.pid; do
@@ -799,11 +799,11 @@ show_status() {
         echo -e "Conductors: ${RED}NONE RUNNING${NC}"
     fi
 
-    # Check gateway
-    if pgrep -f "target/release/hc-membrane" > /dev/null 2>&1; then
-        echo -e "Gateway:   ${GREEN}RUNNING${NC} (hc-membrane) on port $GATEWAY_PORT"
+    # Check linker
+    if pgrep -f "target/release/h2hc-linker" > /dev/null 2>&1; then
+        echo -e "Linker:   ${GREEN}RUNNING${NC} (h2hc-linker) on port $LINKER_PORT"
     else
-        echo -e "Gateway:   ${RED}STOPPED${NC}"
+        echo -e "Linker:   ${RED}STOPPED${NC}"
     fi
 
     # Check ziptest UI (only relevant for ziptest hApp)
@@ -822,7 +822,7 @@ show_status() {
 
     echo ""
     echo "Test URLs:"
-    echo "  - Gateway: http://localhost:$GATEWAY_PORT"
+    echo "  - Linker: http://localhost:$LINKER_PORT"
     echo ""
 
     # Show DNA hash if available
@@ -888,7 +888,7 @@ case "$COMMAND" in
         wait_for_arc_establishment
         # Give conductors time to fully initialize after arc establishment
         sleep 2
-        start_gateway
+        start_linker
         # Start UI server for the selected hApp
         start_ziptest_ui
         start_mewsfeed_ui
@@ -900,14 +900,14 @@ case "$COMMAND" in
         echo "To test, open in browser:"
         if [ "$HAPP_NAME" = "ziptest" ]; then
             echo "  Ziptest UI: http://localhost:$ZIPTEST_UI_PORT"
-            echo "  Configure the extension with gateway URL: http://localhost:$GATEWAY_PORT"
+            echo "  Configure the extension with linker URL: http://localhost:$LINKER_PORT"
             if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
                 echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"
                 echo "  (Extension should compute the same hash - no override needed)"
             fi
         elif [ "$HAPP_NAME" = "mewsfeed" ]; then
             echo "  Mewsfeed UI: http://localhost:$MEWSFEED_UI_PORT"
-            echo "  Configure the extension with gateway URL: http://localhost:$GATEWAY_PORT"
+            echo "  Configure the extension with linker URL: http://localhost:$LINKER_PORT"
             if [ -f "$SANDBOX_DIR/dna_hash.txt" ]; then
                 echo "  Conductor DNA hash: $(cat "$SANDBOX_DIR/dna_hash.txt")"
             fi
@@ -919,12 +919,12 @@ case "$COMMAND" in
         stop_services
         ;;
     pause)
-        pause_gateway
+        pause_linker
         show_status
         ;;
     unpause)
         configure_happ
-        unpause_gateway
+        unpause_linker
         show_status
         ;;
     status)
@@ -937,10 +937,10 @@ case "$COMMAND" in
         echo "Usage: $0 {start|stop|pause|unpause|status|clean} [--happ=NAME]"
         echo ""
         echo "Commands:"
-        echo "  start     Start conductor and gateway"
+        echo "  start     Start conductor and linker"
         echo "  stop      Stop all services"
-        echo "  pause     Stop only the gateway (conductors keep running)"
-        echo "  unpause   Start only the gateway (conductors must be running)"
+        echo "  pause     Stop only the linker (conductors keep running)"
+        echo "  unpause   Start only the linker (conductors must be running)"
         echo "  status    Show running services"
         echo "  clean     Clean up sandbox data"
         echo ""
@@ -948,14 +948,14 @@ case "$COMMAND" in
         echo "  --happ=NAME      Specify which hApp to use (ziptest or mewsfeed, default: ziptest)"
         echo ""
         echo "Environment variables:"
-        echo "  HC_MEMBRANE_DIR  Path to hc-membrane repo (default: ../hc-membrane relative to project)"
+        echo "  H2HC_LINKER_DIR  Path to h2hc-linker repo (default: ../h2hc-linker relative to project)"
         echo ""
         echo "Examples:"
-        echo "  $0 start                          # Start with ziptest + hc-membrane"
-        echo "  $0 start --happ=mewsfeed          # Start with mewsfeed + hc-membrane"
-        echo "  HC_MEMBRANE_DIR=../my-membrane $0 start"
-        echo "  $0 pause                           # Stop gateway, keep conductors"
-        echo "  $0 unpause                         # Restart gateway"
+        echo "  $0 start                          # Start with ziptest + h2hc-linker"
+        echo "  $0 start --happ=mewsfeed          # Start with mewsfeed + h2hc-linker"
+        echo "  H2HC_LINKER_DIR=../my-membrane $0 start"
+        echo "  $0 pause                           # Stop linker, keep conductors"
+        echo "  $0 unpause                         # Restart linker"
         echo "  $0 stop"
         exit 1
         ;;

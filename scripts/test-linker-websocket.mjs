@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * Gateway WebSocket Integration Test
+ * Linker WebSocket Integration Test
  *
- * Tests the WebSocket protocol between browser extension and gateway:
- * 1. Connect to gateway WebSocket
+ * Tests the WebSocket protocol between browser extension and linker:
+ * 1. Connect to linker WebSocket
  * 2. Authenticate
  * 3. Register an agent
  * 4. Send ping and receive pong
  * 5. Listen for signals (in watch mode)
  *
  * Usage:
- *   node scripts/test-gateway-websocket.mjs [gateway-url] [--watch]
+ *   node scripts/test-linker-websocket.mjs [linker-url] [--watch]
  *
  * Options:
  *   --watch    Stay connected and listen for signals after tests pass
  *   --signal-test    Wait 5 seconds for a signal (for automated testing)
  *
- * Default gateway URL: ws://localhost:8090/ws
+ * Default linker URL: ws://localhost:8090/ws
  */
 
 import WebSocket from 'ws';
@@ -24,7 +24,7 @@ import WebSocket from 'ws';
 const args = process.argv.slice(2);
 const WATCH_MODE = args.includes('--watch');
 const SIGNAL_TEST = args.includes('--signal-test');
-const GATEWAY_URL = args.find(a => !a.startsWith('--')) || 'ws://localhost:8090/ws';
+const LINKER_URL = args.find(a => !a.startsWith('--')) || 'ws://localhost:8090/ws';
 
 // Test data - using proper HoloHash format (base64 URL-safe, 53 chars = 39 bytes)
 // DNA hash from the test fixture
@@ -32,7 +32,7 @@ const TEST_DNA_HASH = 'uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii';
 // Valid 53-char URL-safe base64 for 39-byte agent pubkey (type prefix + 32-byte key + 4-byte loc)
 const TEST_AGENT_PUBKEY = 'uhCAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
-class GatewayWebSocketTest {
+class LinkerWebSocketTest {
   constructor(url) {
     this.url = url;
     this.ws = null;
@@ -143,7 +143,7 @@ class GatewayWebSocketTest {
   async testAuth() {
     this.log('info', 'Test: Authentication');
 
-    // Send auth with empty token (gateway accepts when no authenticator configured)
+    // Send auth with empty token (linker accepts when no authenticator configured)
     this.send({ type: 'auth', session_token: '' });
 
     try {
@@ -322,7 +322,7 @@ class GatewayWebSocketTest {
 
   async run() {
     console.log('\n========================================');
-    console.log('Gateway WebSocket Integration Test');
+    console.log('Linker WebSocket Integration Test');
     console.log('========================================\n');
 
     if (WATCH_MODE) {
@@ -332,7 +332,7 @@ class GatewayWebSocketTest {
     } else {
       console.log('Mode: STANDARD');
     }
-    console.log(`Gateway URL: ${this.url}\n`);
+    console.log(`Linker URL: ${this.url}\n`);
 
     try {
       await this.connect();
@@ -370,5 +370,5 @@ class GatewayWebSocketTest {
 }
 
 // Run tests
-const test = new GatewayWebSocketTest(GATEWAY_URL);
+const test = new LinkerWebSocketTest(LINKER_URL);
 test.run().catch(console.error);

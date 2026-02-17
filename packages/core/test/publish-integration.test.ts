@@ -2,17 +2,17 @@
  * Publish Integration Test
  *
  * Tests the end-to-end flow of publishing records from the browser extension
- * to the gateway and verifying they reach the DHT.
+ * to the linker and verifying they reach the DHT.
  *
  * Prerequisites:
  * - Run `./scripts/e2e-test-setup.sh start` before running this test
- * - Conductor and gateway must be running
+ * - Conductor and linker must be running
  *
  * Test Flow:
  * 1. Create a Record with proper hashes and signature (simulating extension)
  * 2. Convert to DhtOps using produceOpsFromRecord
- * 3. Send ops to gateway /dht/{dna}/publish endpoint
- * 4. Verify gateway accepts and processes the ops
+ * 3. Send ops to linker /dht/{dna}/publish endpoint
+ * 4. Verify linker accepts and processes the ops
  * 5. (Future) Query conductor to verify data reached DHT
  */
 
@@ -55,17 +55,17 @@ function encodeWithBigInt(value: unknown): Uint8Array {
 import { HoloHashType, hashFrom32AndType } from "@holochain/client";
 
 // Test configuration
-const GATEWAY_URL = process.env.GATEWAY_URL || "http://localhost:8090";
+const LINKER_URL = process.env.LINKER_URL || "http://localhost:8090";
 const TEST_TIMEOUT = 30000; // 30 seconds
 
 // Known DNA hash from fixture - base64url encoded
 // This is the hash from the e2e-test-setup.sh conductor
 const FIXTURE_DNA_HASH = "uhC0k2J3h4yJ17fbOaKJ8muCcpi9r58tqRFVVKFa6PeFqwy84A3ii";
 
-// Helper to check if gateway is running
-async function isGatewayRunning(): Promise<boolean> {
+// Helper to check if linker is running
+async function isLinkerRunning(): Promise<boolean> {
   try {
-    const response = await fetch(`${GATEWAY_URL}/health`, { method: "GET" });
+    const response = await fetch(`${LINKER_URL}/health`, { method: "GET" });
     return response.ok;
   } catch {
     return false;
@@ -155,20 +155,20 @@ function buildMockRecord(seed: number = 0): Record {
   };
 }
 
-// Check gateway availability before test suite runs
-let gatewayAvailable = false;
+// Check linker availability before test suite runs
+let linkerAvailable = false;
 let testDnaHash: DnaHash;
 
 beforeAll(async () => {
-  // Check if gateway is running
-  gatewayAvailable = await isGatewayRunning();
-  if (!gatewayAvailable) {
+  // Check if linker is running
+  linkerAvailable = await isLinkerRunning();
+  if (!linkerAvailable) {
     console.warn(
-      "\n⚠️  Gateway not running. Run './scripts/e2e-test-setup.sh start' first.\n" +
-      "   Skipping integration tests that require gateway.\n"
+      "\n⚠️  Linker not running. Run './scripts/e2e-test-setup.sh start' first.\n" +
+      "   Skipping integration tests that require linker.\n"
     );
   } else {
-    console.log("✓ Gateway available at", GATEWAY_URL);
+    console.log("✓ Linker available at", LINKER_URL);
   }
 
   // Use a consistent test DNA hash
@@ -179,7 +179,7 @@ describe("Publish Integration", () => {
 
   describe("DhtOp Production", () => {
     it("should produce ops from a Create record", async () => {
-      // Dynamic import to avoid issues when gateway not running
+      // Dynamic import to avoid issues when linker not running
       const { produceOpsFromRecord, ChainOpType } = await import("../src/dht");
 
       const record = buildMockRecord(1);
@@ -193,7 +193,7 @@ describe("Publish Integration", () => {
       expect(opTypes).toContain(ChainOpType.RegisterAgentActivity);
     });
 
-    it("should serialize ops for gateway transmission", async () => {
+    it("should serialize ops for linker transmission", async () => {
       const { produceOpsFromRecord } = await import("../src/dht");
 
       const record = buildMockRecord(2);
@@ -210,10 +210,10 @@ describe("Publish Integration", () => {
     });
   });
 
-  describe("Gateway Publish Endpoint", () => {
+  describe("Linker Publish Endpoint", () => {
     it("should accept valid publish request", async () => {
-      if (!gatewayAvailable) {
-        console.log("Skipping: Gateway not available");
+      if (!linkerAvailable) {
+        console.log("Skipping: Linker not available");
         return;
       }
       const { produceOpsFromRecord } = await import("../src/dht");
@@ -221,7 +221,7 @@ describe("Publish Integration", () => {
       const record = buildMockRecord(3);
       const ops = produceOpsFromRecord(record);
 
-      // Serialize ops for gateway
+      // Serialize ops for linker
       const signedOps = ops.map((op) => {
         const dhtOp = { ChainOp: op };
         const encoded = encodeWithBigInt(dhtOp);
@@ -231,14 +231,14 @@ describe("Publish Integration", () => {
         };
       });
 
-      // Send to gateway using the fixture DNA hash
-      const response = await fetch(`${GATEWAY_URL}/dht/${FIXTURE_DNA_HASH}/publish`, {
+      // Send to linker using the fixture DNA hash
+      const response = await fetch(`${LINKER_URL}/dht/${FIXTURE_DNA_HASH}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ops: signedOps }),
       });
 
-      // Gateway should accept the request (may fail validation but shouldn't 400)
+      // Linker should accept the request (may fail validation but shouldn't 400)
       // Note: Full validation requires proper hashes computed by the extension
       expect(response.status).toBeLessThan(500);
 
@@ -250,12 +250,12 @@ describe("Publish Integration", () => {
     }, TEST_TIMEOUT);
 
     it("should reject malformed ops", async () => {
-      if (!gatewayAvailable) {
-        console.log("Skipping: Gateway not available");
+      if (!linkerAvailable) {
+        console.log("Skipping: Linker not available");
         return;
       }
       // Send invalid op data
-      const response = await fetch(`${GATEWAY_URL}/dht/${FIXTURE_DNA_HASH}/publish`, {
+      const response = await fetch(`${LINKER_URL}/dht/${FIXTURE_DNA_HASH}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -276,8 +276,8 @@ describe("Publish Integration", () => {
     }, TEST_TIMEOUT);
 
     it("should reject wrong signature length", async () => {
-      if (!gatewayAvailable) {
-        console.log("Skipping: Gateway not available");
+      if (!linkerAvailable) {
+        console.log("Skipping: Linker not available");
         return;
       }
       const { produceOpsFromRecord } = await import("../src/dht");
@@ -294,7 +294,7 @@ describe("Publish Integration", () => {
         };
       });
 
-      const response = await fetch(`${GATEWAY_URL}/dht/${FIXTURE_DNA_HASH}/publish`, {
+      const response = await fetch(`${LINKER_URL}/dht/${FIXTURE_DNA_HASH}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ops: signedOps }),
@@ -307,25 +307,25 @@ describe("Publish Integration", () => {
   });
 
   describe("PublishService Integration", () => {
-    it("should create publish service with gateway URL", async () => {
+    it("should create publish service with linker URL", async () => {
       const { PublishService } = await import("../src/dht");
 
       const service = new PublishService({
-        gatewayUrl: GATEWAY_URL,
+        linkerUrl: LINKER_URL,
       });
 
       expect(service).toBeDefined();
     });
 
     it("should track status counts", async () => {
-      if (!gatewayAvailable) {
-        console.log("Skipping: Gateway not available");
+      if (!linkerAvailable) {
+        console.log("Skipping: Linker not available");
         return;
       }
       const { PublishService, PublishStatus } = await import("../src/dht");
 
       const service = new PublishService({
-        gatewayUrl: GATEWAY_URL,
+        linkerUrl: LINKER_URL,
       });
 
       await service.init();
@@ -340,7 +340,7 @@ describe("Publish Integration", () => {
   });
 
   // TODO: Full E2E test that verifies conductor can see the data
-  // This requires completing the gateway's kitsune2 publish integration
+  // This requires completing the linker's kitsune2 publish integration
   describe.todo("Full DHT Visibility", () => {
     it.todo("should make published entry visible to conductor via get");
     it.todo("should make published link visible to conductor via get_links");

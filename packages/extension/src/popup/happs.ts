@@ -186,9 +186,9 @@ function renderHappCard(context: HappContext): string {
           <button class="secondary retry-failed-btn" data-id="${context.id}">Retry Failed</button>
           <button class="primary republish-all-btn" data-id="${context.id}">Republish All</button>
         </div>
-        <div class="gateway-control" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;">
+        <div class="linker-control" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;">
           <span style="font-size: 12px; color: #6b7280;">WebSocket:</span>
-          <button class="secondary gateway-toggle-btn" style="margin-left: 8px;">Loading...</button>
+          <button class="secondary linker-toggle-btn" style="margin-left: 8px;">Loading...</button>
         </div>
       </div>
     </div>
@@ -308,16 +308,16 @@ function attachEventListeners(): void {
     });
   });
 
-  // Gateway Toggle buttons
-  document.querySelectorAll(".gateway-toggle-btn").forEach((btn) => {
+  // Linker Toggle buttons
+  document.querySelectorAll(".linker-toggle-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const target = e.target as HTMLButtonElement;
-      await toggleGatewayConnection(target);
+      await toggleLinkerConnection(target);
     });
   });
 
-  // Update all gateway toggle buttons on initial render
-  updateAllGatewayToggleButtons();
+  // Update all linker toggle buttons on initial render
+  updateAllLinkerToggleButtons();
 }
 
 /**
@@ -540,23 +540,23 @@ async function uninstallHapp(contextId: string): Promise<void> {
   }
 }
 
-// Gateway state tracking
+// Linker state tracking
 type WsState = "connected" | "disconnected" | "connecting" | "not_configured" | "unknown";
 type HttpState = "available" | "unavailable" | "not_configured" | "unknown";
 let currentWsState: WsState = "unknown";
 let currentHttpState: HttpState = "unknown";
-let gatewayUrl: string | null = null;
+let linkerUrl: string | null = null;
 
 /**
- * Check HTTP availability of gateway
+ * Check HTTP availability of linker
  */
 async function checkHttpStatus(): Promise<void> {
   const indicator = document.getElementById("httpIndicator")!;
   const statusText = document.getElementById("httpStatusText")!;
 
   try {
-    // First check if gateway is configured
-    const configMessage = createRequest(MessageType.GATEWAY_GET_STATUS, null);
+    // First check if linker is configured
+    const configMessage = createRequest(MessageType.LINKER_GET_STATUS, null);
     const configResponse: ResponseMessage = await chrome.runtime.sendMessage(configMessage);
 
     if (configResponse.type === MessageType.ERROR) {
@@ -566,7 +566,7 @@ async function checkHttpStatus(): Promise<void> {
       return;
     }
 
-    const payload = configResponse.payload as { configured: boolean; gatewayUrl: string | null };
+    const payload = configResponse.payload as { configured: boolean; linkerUrl: string | null };
     if (!payload.configured) {
       indicator.className = "status-indicator unknown";
       statusText.textContent = "HTTP: Not configured";
@@ -574,11 +574,11 @@ async function checkHttpStatus(): Promise<void> {
       return;
     }
 
-    gatewayUrl = payload.gatewayUrl;
+    linkerUrl = payload.linkerUrl;
 
-    // Check gateway health endpoint
+    // Check linker health endpoint
     try {
-      const healthUrl = gatewayUrl!.replace(/\/$/, "") + "/health";
+      const healthUrl = linkerUrl!.replace(/\/$/, "") + "/health";
       const healthResponse = await fetch(healthUrl, { method: "GET", signal: AbortSignal.timeout(3000) });
       if (healthResponse.ok) {
         indicator.className = "status-indicator connected";
@@ -610,8 +610,8 @@ async function checkWsStatus(): Promise<void> {
   const statusText = document.getElementById("wsStatusText")!;
 
   try {
-    // First check if gateway is configured
-    const configMessage = createRequest(MessageType.GATEWAY_GET_STATUS, null);
+    // First check if linker is configured
+    const configMessage = createRequest(MessageType.LINKER_GET_STATUS, null);
     const configResponse: ResponseMessage = await chrome.runtime.sendMessage(configMessage);
 
     if (configResponse.type === MessageType.ERROR) {
@@ -663,54 +663,54 @@ async function checkWsStatus(): Promise<void> {
   }
 
   // Update all toggle buttons
-  updateAllGatewayToggleButtons();
+  updateAllLinkerToggleButtons();
 }
 
 /**
- * Check both HTTP and WS gateway status
+ * Check both HTTP and WS linker status
  */
-async function checkGatewayStatus(): Promise<void> {
+async function checkLinkerStatus(): Promise<void> {
   await Promise.all([checkHttpStatus(), checkWsStatus()]);
 }
 
 /**
- * Update all gateway toggle buttons based on current state
+ * Update all linker toggle buttons based on current state
  */
-function updateAllGatewayToggleButtons(): void {
-  document.querySelectorAll(".gateway-toggle-btn").forEach((btn) => {
+function updateAllLinkerToggleButtons(): void {
+  document.querySelectorAll(".linker-toggle-btn").forEach((btn) => {
     const button = btn as HTMLButtonElement;
-    updateGatewayToggleButton(button);
+    updateLinkerToggleButton(button);
   });
 }
 
 /**
- * Update a single gateway toggle button based on current WS state
+ * Update a single linker toggle button based on current WS state
  */
-function updateGatewayToggleButton(button: HTMLButtonElement): void {
+function updateLinkerToggleButton(button: HTMLButtonElement): void {
   switch (currentWsState) {
     case "connected":
       button.textContent = "Disconnect WS";
-      button.className = "secondary gateway-toggle-btn";
+      button.className = "secondary linker-toggle-btn";
       button.disabled = false;
       break;
     case "disconnected":
       button.textContent = "Connect WS";
-      button.className = "primary gateway-toggle-btn";
+      button.className = "primary linker-toggle-btn";
       button.disabled = false;
       break;
     case "connecting":
       button.textContent = "Connecting...";
-      button.className = "secondary gateway-toggle-btn";
+      button.className = "secondary linker-toggle-btn";
       button.disabled = true;
       break;
     case "not_configured":
       button.textContent = "Not Configured";
-      button.className = "secondary gateway-toggle-btn";
+      button.className = "secondary linker-toggle-btn";
       button.disabled = true;
       break;
     default:
       button.textContent = "Loading...";
-      button.className = "secondary gateway-toggle-btn";
+      button.className = "secondary linker-toggle-btn";
       button.disabled = true;
   }
 }
@@ -718,14 +718,14 @@ function updateGatewayToggleButton(button: HTMLButtonElement): void {
 /**
  * Toggle WebSocket connection (connect if disconnected, disconnect if connected)
  */
-async function toggleGatewayConnection(button: HTMLButtonElement): Promise<void> {
+async function toggleLinkerConnection(button: HTMLButtonElement): Promise<void> {
   try {
     if (currentWsState === "connected") {
       // Disconnect WS
       button.textContent = "Disconnecting...";
       button.disabled = true;
 
-      const message = createRequest(MessageType.GATEWAY_DISCONNECT, null);
+      const message = createRequest(MessageType.LINKER_DISCONNECT, null);
       const response: ResponseMessage = await chrome.runtime.sendMessage(message);
 
       if (response.type === MessageType.ERROR) {
@@ -738,7 +738,7 @@ async function toggleGatewayConnection(button: HTMLButtonElement): Promise<void>
       button.textContent = "Connecting...";
       button.disabled = true;
 
-      const message = createRequest(MessageType.GATEWAY_RECONNECT, null);
+      const message = createRequest(MessageType.LINKER_RECONNECT, null);
       const response: ResponseMessage = await chrome.runtime.sendMessage(message);
 
       if (response.type === MessageType.ERROR) {
@@ -749,11 +749,11 @@ async function toggleGatewayConnection(button: HTMLButtonElement): Promise<void>
     }
 
     // Update status after a short delay to allow state change
-    setTimeout(() => checkGatewayStatus(), 500);
+    setTimeout(() => checkLinkerStatus(), 500);
   } catch (error) {
     console.error("Error toggling WS connection:", error);
     showError(error instanceof Error ? error.message : "Failed to toggle connection");
-    await checkGatewayStatus();
+    await checkLinkerStatus();
   }
 }
 
@@ -806,9 +806,9 @@ async function updateWindowToggleButton(): Promise<void> {
 // Load hApps on page load
 document.addEventListener("DOMContentLoaded", async () => {
   loadHapps();
-  checkGatewayStatus();
-  // Check gateway status every 10 seconds
-  setInterval(checkGatewayStatus, 10000);
+  checkLinkerStatus();
+  // Check linker status every 10 seconds
+  setInterval(checkLinkerStatus, 10000);
 
   // Update window toggle button
   await updateWindowToggleButton();

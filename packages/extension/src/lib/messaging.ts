@@ -62,11 +62,11 @@ export enum MessageType {
   ENABLE_HAPP = "enable_happ",
   DISABLE_HAPP = "disable_happ",
 
-  // Gateway Configuration (for network requests via hc-membrane)
-  GATEWAY_CONFIGURE = "gateway_configure",
-  GATEWAY_GET_STATUS = "gateway_get_status",
-  GATEWAY_DISCONNECT = "gateway_disconnect",
-  GATEWAY_RECONNECT = "gateway_reconnect",
+  // Linker Configuration (for network requests via h2hc-linker)
+  LINKER_CONFIGURE = "linker_configure",
+  LINKER_GET_STATUS = "linker_get_status",
+  LINKER_DISCONNECT = "linker_disconnect",
+  LINKER_RECONNECT = "linker_reconnect",
 
   // Connection status (real-time health monitoring)
   CONNECTION_STATUS_GET = "connection_status_get",
@@ -124,10 +124,10 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LIST_HAPPS
     | MessageType.ENABLE_HAPP
     | MessageType.DISABLE_HAPP
-    | MessageType.GATEWAY_CONFIGURE
-    | MessageType.GATEWAY_GET_STATUS
-    | MessageType.GATEWAY_DISCONNECT
-    | MessageType.GATEWAY_RECONNECT
+    | MessageType.LINKER_CONFIGURE
+    | MessageType.LINKER_GET_STATUS
+    | MessageType.LINKER_DISCONNECT
+    | MessageType.LINKER_RECONNECT
     | MessageType.PUBLISH_GET_STATUS
     | MessageType.PUBLISH_RETRY_FAILED
     | MessageType.PUBLISH_ALL_RECORDS;
@@ -301,10 +301,10 @@ export interface RequestIdPayload {
 }
 
 /**
- * Gateway configure payload
+ * Linker configure payload
  */
-export interface GatewayConfigurePayload {
-  gatewayUrl: string;
+export interface LinkerConfigurePayload {
+  linkerUrl: string;
 }
 
 /**
@@ -424,10 +424,10 @@ export interface RequestPayloadMap {
   [MessageType.LIST_HAPPS]: undefined;
   [MessageType.ENABLE_HAPP]: ContextIdPayload;
   [MessageType.DISABLE_HAPP]: ContextIdPayload;
-  [MessageType.GATEWAY_CONFIGURE]: GatewayConfigurePayload;
-  [MessageType.GATEWAY_GET_STATUS]: undefined;
-  [MessageType.GATEWAY_DISCONNECT]: undefined;
-  [MessageType.GATEWAY_RECONNECT]: undefined;
+  [MessageType.LINKER_CONFIGURE]: LinkerConfigurePayload;
+  [MessageType.LINKER_GET_STATUS]: undefined;
+  [MessageType.LINKER_DISCONNECT]: undefined;
+  [MessageType.LINKER_RECONNECT]: undefined;
   [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
   [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
   [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;
@@ -568,10 +568,10 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.LIST_HAPPS ||
     message.type === MessageType.ENABLE_HAPP ||
     message.type === MessageType.DISABLE_HAPP ||
-    message.type === MessageType.GATEWAY_CONFIGURE ||
-    message.type === MessageType.GATEWAY_GET_STATUS ||
-    message.type === MessageType.GATEWAY_DISCONNECT ||
-    message.type === MessageType.GATEWAY_RECONNECT ||
+    message.type === MessageType.LINKER_CONFIGURE ||
+    message.type === MessageType.LINKER_GET_STATUS ||
+    message.type === MessageType.LINKER_DISCONNECT ||
+    message.type === MessageType.LINKER_RECONNECT ||
     message.type === MessageType.CONNECTION_STATUS_GET ||
     message.type === MessageType.CONNECTION_STATUS_SUBSCRIBE ||
     message.type === MessageType.CONNECTION_STATUS_UNSUBSCRIBE ||

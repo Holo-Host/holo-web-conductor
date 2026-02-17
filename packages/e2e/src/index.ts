@@ -79,7 +79,7 @@ envCommand
       console.log(`  Running: ${state.running}`);
       console.log(`  App ID: ${state.appId}`);
       console.log(`  DNA Hash: ${state.dnaHash}`);
-      console.log(`  Gateway: ${env.getGatewayUrl()}`);
+      console.log(`  Linker: ${env.getLinkerUrl()}`);
       console.log(`  Admin Ports: ${state.adminPorts.join(', ')}`);
     } catch (err) {
       console.error('Failed to start environment:', err);
@@ -119,7 +119,7 @@ envCommand
         console.log(`  DNA Hash: ${state.dnaHash}`);
         console.log(`  Bootstrap: ${state.bootstrapAddr}`);
         console.log(`  Admin Ports: ${state.adminPorts.join(', ')}`);
-        console.log(`  Gateway Port: ${state.gatewayPort}`);
+        console.log(`  Linker Port: ${state.linkerPort}`);
       }
     }
   });
@@ -140,29 +140,29 @@ envCommand
 
 envCommand
   .command('pause')
-  .description('Pause the gateway (conductors keep running)')
+  .description('Pause the linker (conductors keep running)')
   .action(async () => {
     const env = new EnvironmentManager();
     try {
-      await env.pauseGateway();
-      console.log('Gateway paused');
+      await env.pauseLinker();
+      console.log('Linker paused');
     } catch (err) {
-      console.error('Failed to pause gateway:', err);
+      console.error('Failed to pause linker:', err);
       process.exit(1);
     }
   });
 
 envCommand
   .command('unpause')
-  .description('Unpause the gateway')
+  .description('Unpause the linker')
   .option('--happ <name>', 'hApp to use', 'ziptest')
   .action(async (options) => {
     const env = new EnvironmentManager({ happ: options.happ });
     try {
-      await env.unpauseGateway();
-      console.log('Gateway unpaused');
+      await env.unpauseLinker();
+      console.log('Linker unpaused');
     } catch (err) {
-      console.error('Failed to unpause gateway:', err);
+      console.error('Failed to unpause linker:', err);
       process.exit(1);
     }
   });
@@ -171,7 +171,7 @@ envCommand
 program
   .command('logs')
   .description('Stream logs from the test environment')
-  .option('--source <source>', 'Filter by source (gateway, conductor, bootstrap)')
+  .option('--source <source>', 'Filter by source (linker, conductor, bootstrap)')
   .option('--level <level>', 'Minimum log level (debug, info, warn, error)', 'info')
   .action(async (options) => {
     const env = new EnvironmentManager();
@@ -180,7 +180,7 @@ program
     console.log('Streaming logs... (Ctrl+C to stop)\n');
 
     // Attach to log files
-    await collector.attachFileLog('gateway', env.getLogPath('gateway'));
+    await collector.attachFileLog('linker', env.getLogPath('linker'));
     await collector.attachFileLog('conductor', env.getLogPath('conductor'));
     await collector.attachFileLog('bootstrap', env.getLogPath('bootstrap'));
 

@@ -8,7 +8,7 @@
  * Output: Record = { signed_action: SignedActionHashed, entry: RecordEntry }
  *
  * For fishy (zero-arc), locally-authored data is treated as valid.
- * Data from network is trusted (the gateway's peers validated it).
+ * Data from network is trusted (the linker's peers validated it).
  *
  * In validation context, throws UnresolvedDependenciesError if not found.
  * In normal context, throws a host function error.
@@ -77,7 +77,7 @@ export const mustGetValidRecord: HostFunctionImpl = (
       ? toHolochainAction(action as unknown as StoredAction)
       : action;
 
-  // Normalize entry bytes (gateway returns arrays instead of Uint8Array)
+  // Normalize entry bytes (linker returns arrays instead of Uint8Array)
   // Rust RecordEntry::NA is a unit variant → serializes as string "NA" in msgpack
   let entry: unknown = "NA";
   const recordEntry = record.entry;

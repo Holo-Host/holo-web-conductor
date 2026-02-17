@@ -9,7 +9,7 @@
  * - SQLite has direct synchronous access in the worker (OPFS)
  * - Network calls come back here for synchronous XHR
  * - Worker uses Atomics.wait to block while we do sync XHR
- * - WebSocket service handles remote signal forwarding from gateway
+ * - WebSocket service handles remote signal forwarding from linker
  */
 
 import { encode, decode } from "@msgpack/msgpack";
@@ -96,7 +96,7 @@ const pendingRequests = new Map<number, { resolve: (value: any) => void; reject:
 let nextRequestId = 1;
 
 // Network configuration
-let gatewayUrl: string = '';
+let linkerUrl: string = '';
 let sessionToken: string | null = null;
 
 
@@ -170,9 +170,9 @@ async function initRibosomeWorker(): Promise<void> {
     log.info("Ribosome worker initialized with SQLite");
 
     // Send any existing network configuration to the worker
-    if (gatewayUrl || sessionToken) {
-      log.info("Sending existing network config to worker:", gatewayUrl);
-      await sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken });
+    if (linkerUrl || sessionToken) {
+      log.info("Sending existing network config to worker:", linkerUrl);
+      await sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken });
     }
   })();
 
@@ -232,7 +232,7 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
     // Build full URL
     let fullUrl = request.url;
     if (!fullUrl.startsWith('http')) {
-      fullUrl = gatewayUrl + request.url;
+      fullUrl = linkerUrl + request.url;
     }
 
     // Add session token to headers
@@ -391,11 +391,11 @@ function sendToWorker(type: string, payload?: any): Promise<any> {
  * Initialize WebSocket service for remote signals
  */
 function initializeWebSocketService(config: {
-  gatewayUrl: string;
+  linkerUrl: string;
   sessionToken?: string;
 }): void {
   // Convert HTTP URL to WebSocket URL
-  const wsUrl = config.gatewayUrl
+  const wsUrl = config.linkerUrl
     .replace(/^http:/, 'ws:')
     .replace(/^https:/, 'wss:')
     .replace(/\/$/, '') + '/ws';
@@ -403,7 +403,7 @@ function initializeWebSocketService(config: {
   logNetwork.info(`Initializing WebSocket service: ${wsUrl}`);
 
   wsService = new WebSocketNetworkService({
-    gatewayWsUrl: wsUrl,
+    linkerWsUrl: wsUrl,
     sessionToken: config.sessionToken,
   });
 
@@ -483,7 +483,7 @@ function initializeWebSocketService(config: {
     }
   });
 
-  // Connect to gateway
+  // Connect to linker
   wsService.connect();
 }
 
@@ -534,27 +534,27 @@ function transportedRecordToRecord(transported: any): HolochainRecord {
 }
 
 /**
- * Publish pending records to the gateway (runs in background)
+ * Publish pending records to the linker (runs in background)
  */
 async function publishPendingRecords(
   transportedRecords: any[],
   dnaHash: DnaHash
 ): Promise<void> {
-  if (!gatewayUrl) {
-    log.info("No gateway URL configured, skipping publish");
+  if (!linkerUrl) {
+    log.info("No linker URL configured, skipping publish");
     return;
   }
 
   // Initialize publish service if needed
   if (!publishService) {
     publishService = new PublishService({
-      gatewayUrl,
+      linkerUrl,
       sessionToken: sessionToken || undefined,
     });
     await publishService.init();
   } else {
     // Update config in case it changed
-    publishService.setGatewayUrl(gatewayUrl);
+    publishService.setLinkerUrl(linkerUrl);
     if (sessionToken) {
       publishService.setSessionToken(sessionToken);
     }
@@ -563,7 +563,7 @@ async function publishPendingRecords(
   // Convert transported records back to proper Records
   const records = transportedRecords.map(transportedRecordToRecord);
 
-  logPublish.info(`Publishing ${records.length} records to gateway...`);
+  logPublish.info(`Publishing ${records.length} records to linker...`);
 
   // Publish each record (PublishService will batch them)
   for (const record of records) {
@@ -669,7 +669,7 @@ interface OffscreenMessage {
   type: "EXECUTE_ZOME_CALL" | "CONFIGURE_NETWORK" | "UPDATE_SESSION_TOKEN";
   requestId: string;
   zomeCallRequest?: MinimalZomeCallRequest;
-  gatewayUrl?: string;
+  linkerUrl?: string;
   sessionToken?: string;
 }
 
@@ -697,20 +697,20 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message.type === "CONFIGURE_NETWORK") {
-      gatewayUrl = message.gatewayUrl || '';
+      linkerUrl = message.linkerUrl || '';
       sessionToken = message.sessionToken || null;
 
-      logNetwork.info(`Network configured: ${gatewayUrl}`);
+      logNetwork.info(`Network configured: ${linkerUrl}`);
 
       // Also configure the worker if it's ready
       if (workerReady && ribosomeWorker) {
-        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken })
+        sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
           .catch(console.error);
       }
 
       // Initialize WebSocket service for remote signals
-      if (gatewayUrl && !wsService) {
-        initializeWebSocketService({ gatewayUrl, sessionToken: sessionToken || undefined });
+      if (linkerUrl && !wsService) {
+        initializeWebSocketService({ linkerUrl, sessionToken: sessionToken || undefined });
       } else if (wsService && sessionToken) {
         wsService.setSessionToken(sessionToken);
       }
@@ -722,7 +722,7 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "UPDATE_SESSION_TOKEN") {
       sessionToken = message.sessionToken || null;
       if (workerReady && ribosomeWorker) {
-        sendToWorker('CONFIGURE_NETWORK', { gatewayUrl, sessionToken })
+        sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
           .catch(console.error);
       }
       if (wsService) {
@@ -763,9 +763,9 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
-    // Gateway disconnect - actually close the WebSocket
-    if (message.type === "GATEWAY_DISCONNECT") {
-      logNetwork.info("Disconnecting gateway WebSocket...");
+    // Linker disconnect - actually close the WebSocket
+    if (message.type === "LINKER_DISCONNECT") {
+      logNetwork.info("Disconnecting linker WebSocket...");
       if (wsService) {
         wsService.disconnect();
       }
@@ -773,9 +773,9 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
-    // Gateway reconnect - reopen the WebSocket connection
-    if (message.type === "GATEWAY_RECONNECT") {
-      logNetwork.info("Reconnecting gateway WebSocket...");
+    // Linker reconnect - reopen the WebSocket connection
+    if (message.type === "LINKER_RECONNECT") {
+      logNetwork.info("Reconnecting linker WebSocket...");
       if (wsService) {
         // connect() is synchronous (void), it initiates the connection
         wsService.connect();
@@ -829,16 +829,16 @@ chrome.runtime.onMessage.addListener(
       (async () => {
         try {
           if (!publishService) {
-            if (!gatewayUrl) {
+            if (!linkerUrl) {
               sendResponse({
                 success: false,
-                error: "No gateway configured",
+                error: "No linker configured",
                 requestId: message.requestId || "process",
               });
               return;
             }
             publishService = new PublishService({
-              gatewayUrl,
+              linkerUrl,
               sessionToken: sessionToken || undefined,
             });
             await publishService.init();

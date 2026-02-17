@@ -1,7 +1,7 @@
 /**
  * Mewsfeed Multi-Agent E2E Test
  *
- * Tests the fishy extension + hc-membrane kitsune mode with the mewsfeed DNA,
+ * Tests the fishy extension + h2hc-linker kitsune mode with the mewsfeed DNA,
  * which is much more complex than ziptest (5 integrity + 6 coordinator zomes).
  *
  * Flow:
@@ -243,7 +243,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
 
     // --- Test get_agent_activity via get_joining_timestamp_for_agent ---
     // This exercises the full get_agent_activity host function:
-    // fishy WASM → host_fn → SyncXHR → gateway → kitsune → conductor
+    // fishy WASM → host_fn → SyncXHR → linker → kitsune → conductor
     // The zome function queries for AgentValidationPkg actions (genesis)
     // and returns the timestamp of the first one.
     console.log('[test] Testing get_agent_activity via get_joining_timestamp_for_agent...');
@@ -445,15 +445,15 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     console.log('[test] Waiting 30s for DHT propagation + publish completion...');
     await bob.page.waitForTimeout(30000);
 
-    // --- Direct gateway check: verify Alice's publish reached the DHT ---
+    // --- Direct linker check: verify Alice's publish reached the DHT ---
     // This bypasses Bob's extension entirely to confirm data is in the network
     try {
       const { readFile: readFileAsync } = await import('fs/promises');
       const dnaHash = await readFileAsync('/tmp/hwc-e2e/dna_hash.txt', 'utf8').then((s: string) => s.trim());
       console.log(`[test] DNA hash from sandbox: ${dnaHash}`);
 
-      // Use Bob's page to make a direct fetch to the gateway health endpoint
-      const gatewayCheck = await bob.page.evaluate(async () => {
+      // Use Bob's page to make a direct fetch to the linker health endpoint
+      const linkerCheck = await bob.page.evaluate(async () => {
         try {
           const healthResp = await fetch('http://localhost:8000/health');
           const healthText = await healthResp.text();
@@ -462,9 +462,9 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
           return { health: null, error: e.message };
         }
       });
-      console.log('[test] Gateway health check:', JSON.stringify(gatewayCheck));
+      console.log('[test] Linker health check:', JSON.stringify(linkerCheck));
     } catch (e: any) {
-      console.log('[test] Gateway check failed:', e.message);
+      console.log('[test] Linker check failed:', e.message);
     }
 
     // --- Also try Bob's zome call directly to search for the hashtag ---

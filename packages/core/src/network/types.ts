@@ -223,9 +223,9 @@ export interface NetworkService {
   isAvailable(): boolean;
 
   /**
-   * Get the gateway URL (for debugging/logging)
+   * Get the linker URL (for debugging/logging)
    */
-  getGatewayUrl(): string | null;
+  getLinkerUrl(): string | null;
 }
 
 /**

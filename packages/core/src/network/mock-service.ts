@@ -221,7 +221,7 @@ export class MockNetworkService implements NetworkService {
     return this.available;
   }
 
-  getGatewayUrl(): string | null {
-    return 'mock://test-gateway';
+  getLinkerUrl(): string | null {
+    return 'mock://test-linker';
   }
 }

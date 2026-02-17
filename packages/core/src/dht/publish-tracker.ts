@@ -47,8 +47,8 @@ export interface PublishAttemptResult {
  * Options for publish operations
  */
 export interface PublishOptions {
-  /** Gateway URL for publishing */
-  gatewayUrl: string;
+  /** Linker URL for publishing */
+  linkerUrl: string;
   /** Session token for authentication */
   sessionToken?: string;
   /** Maximum retry attempts */

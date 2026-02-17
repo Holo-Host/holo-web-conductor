@@ -57,7 +57,7 @@ export interface ParsedLinkTypeFilter {
  * - {"Dependencies": [zome_index, ...]} - match all types from zomes
  * - number - simple link type (legacy/simplified format)
  *
- * Returns separate zomeIndex and linkType for gateway query parameters
+ * Returns separate zomeIndex and linkType for linker query parameters
  */
 export function parseLinkTypeFilter(linkType: unknown): ParsedLinkTypeFilter {
   if (typeof linkType === 'number') {

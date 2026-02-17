@@ -4,7 +4,7 @@
  * Implements the cascade pattern for fetching data:
  * 1. Local source chain (session cache - synchronous)
  * 2. Network cache (in-memory - synchronous)
- * 3. Network (via gateway - synchronous XHR in offscreen document)
+ * 3. Network (via linker - synchronous XHR in offscreen document)
  *
  * This mirrors Holochain's holochain_cascade crate behavior.
  */
@@ -171,7 +171,7 @@ export class Cascade {
       if (!this.network) {
         log.debug(` Network not configured - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
-        log.debug(` Network service not available (gateway: ${this.network.getGatewayUrl()})`);
+        log.debug(` Network service not available (linker: ${this.network.getLinkerUrl()})`);
       }
     }
 
@@ -220,7 +220,7 @@ export class Cascade {
       if (!this.network) {
         log.debug(` Network not configured - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
-        log.debug(` Network service not available (gateway: ${this.network.getGatewayUrl()})`);
+        log.debug(` Network service not available (linker: ${this.network.getLinkerUrl()})`);
       }
     }
 
@@ -401,7 +401,7 @@ export class Cascade {
       if (!this.network) {
         log.debug(` Network not configured for links - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
-        log.debug(` Network service not available for links (gateway: ${this.network.getGatewayUrl()})`);
+        log.debug(` Network service not available for links (linker: ${this.network.getLinkerUrl()})`);
       }
     }
 

@@ -25,7 +25,7 @@ import type { ZomeCallRequest } from "@hwc/core/ribosome";
 import { createLogger } from "../lib/logger";
 
 const logOffscreen = createLogger("OffscreenMgr");
-const logGateway = createLogger("Gateway");
+const logLinker = createLogger("Linker");
 const logZome = createLogger("CallZome");
 const logSignal = createLogger("Signal");
 const logLair = createLogger("Lair");
@@ -79,7 +79,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         }
 
         if (rawMessage.type === "WS_STATE_CHANGE") {
-          logGateway.debug(`WebSocket state changed: ${rawMessage.state}`);
+          logLinker.debug(`WebSocket state changed: ${rawMessage.state}`);
           if (this.wsStateChangeCallback) {
             this.wsStateChangeCallback(rawMessage.state);
           }
@@ -121,21 +121,21 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   // Network configuration
   // ============================================================================
 
-  async configureNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void> {
-    logGateway.info(`Configuring offscreen network with gateway: ${config.gatewayUrl}`);
+  async configureNetwork(config: { linkerUrl: string; sessionToken?: string }): Promise<void> {
+    logLinker.info(`Configuring offscreen network with linker: ${config.linkerUrl}`);
 
     try {
       await this.ensureOffscreenDocument();
       await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "CONFIGURE_NETWORK",
-        gatewayUrl: config.gatewayUrl,
+        linkerUrl: config.linkerUrl,
         sessionToken: config.sessionToken,
       });
       this._networkConfigured = true;
-      logGateway.info("Offscreen network configured");
+      logLinker.info("Offscreen network configured");
     } catch (error) {
-      logGateway.error("Failed to configure offscreen network:", error);
+      logLinker.error("Failed to configure offscreen network:", error);
       throw error;
     }
   }
@@ -149,9 +149,9 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         type: "UPDATE_SESSION_TOKEN",
         sessionToken: token,
       });
-      logGateway.debug("Session token updated in offscreen");
+      logLinker.debug("Session token updated in offscreen");
     } catch (error) {
-      logGateway.error("Failed to update session token:", error);
+      logLinker.error("Failed to update session token:", error);
     }
   }
 
@@ -161,12 +161,12 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
 
   async registerAgent(dnaHashB64: string, agentPubKeyB64: string): Promise<void> {
     if (!this._networkConfigured) {
-      logGateway.debug("Skipping agent registration - network not configured");
+      logLinker.debug("Skipping agent registration - network not configured");
       return;
     }
 
-    logGateway.info(
-      `Registering agent with gateway: dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`
+    logLinker.info(
+      `Registering agent with linker: dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`
     );
 
     try {
@@ -176,9 +176,9 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         dna_hash: dnaHashB64,
         agent_pubkey: agentPubKeyB64,
       });
-      logGateway.debug("Agent registered with gateway");
+      logLinker.debug("Agent registered with linker");
     } catch (error) {
-      logGateway.error("Failed to register agent with gateway:", error);
+      logLinker.error("Failed to register agent with linker:", error);
     }
   }
 
@@ -270,22 +270,22 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
-  // Gateway connectivity
+  // Linker connectivity
   // ============================================================================
 
-  async disconnectGateway(): Promise<void> {
+  async disconnectLinker(): Promise<void> {
     await this.ensureOffscreenDocument();
     await chrome.runtime.sendMessage({
       target: "offscreen",
-      type: "GATEWAY_DISCONNECT",
+      type: "LINKER_DISCONNECT",
     });
   }
 
-  async reconnectGateway(): Promise<void> {
+  async reconnectLinker(): Promise<void> {
     await this.ensureOffscreenDocument();
     await chrome.runtime.sendMessage({
       target: "offscreen",
-      type: "GATEWAY_RECONNECT",
+      type: "LINKER_RECONNECT",
     });
   }
 
@@ -304,7 +304,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         };
       }
     } catch (error) {
-      logGateway.debug("Could not get WebSocket state from offscreen:", error);
+      logLinker.debug("Could not get WebSocket state from offscreen:", error);
     }
 
     return { state: "disconnected", isConnected: false };

@@ -1,13 +1,13 @@
 /**
  * WebSocket Network Service
  *
- * Manages a WebSocket connection to the gateway for receiving remote signals.
+ * Manages a WebSocket connection to the linker for receiving remote signals.
  * This service is designed to run in the offscreen document where persistent
  * connections are supported.
  *
- * Protocol (see hc-membrane gateway):
- * - Browser → Gateway: auth, auth_challenge_response, register, unregister, ping
- * - Gateway → Browser: auth_ok, auth_challenge, auth_error, registered, unregistered, signal, pong, error
+ * Protocol (see h2hc-linker linker):
+ * - Browser → Linker: auth, auth_challenge_response, register, unregister, ping
+ * - Linker → Browser: auth_ok, auth_challenge, auth_error, registered, unregistered, signal, pong, error
  */
 
 import { decodeHashFromBase64 } from "../types/holochain-types";
@@ -16,10 +16,10 @@ import { createLogger } from "@hwc/shared";
 const log = createLogger('WebSocket');
 
 /**
- * Messages from browser to gateway
+ * Messages from browser to linker
  */
 /**
- * Signed remote signal for transport to gateway
+ * Signed remote signal for transport to linker
  */
 export interface SignedRemoteSignalTransport {
   /** Target agent public key (as array for JSON transport) */
@@ -49,7 +49,7 @@ export type ClientMessage =
     };
 
 /**
- * Messages from gateway to browser
+ * Messages from linker to browser
  */
 export type ServerMessage =
   | { type: "auth_ok"; session_token?: string }
@@ -85,7 +85,7 @@ export type ConnectionState =
   | "reconnecting";
 
 /**
- * Signal callback - called when a signal is received from the gateway
+ * Signal callback - called when a signal is received from the linker
  */
 export type SignalCallback = (signal: {
   dna_hash: string;
@@ -101,7 +101,7 @@ export type SignalCallback = (signal: {
 export type StateCallback = (state: ConnectionState) => void;
 
 /**
- * Sign callback - called when the gateway requests a signature
+ * Sign callback - called when the linker requests a signature
  * The callback should return a base64-encoded signature or throw an error
  */
 export type SignCallback = (request: {
@@ -113,8 +113,8 @@ export type SignCallback = (request: {
  * Options for WebSocket network service
  */
 export interface WebSocketServiceOptions {
-  /** Gateway WebSocket URL (e.g., "ws://localhost:8090/ws") */
-  gatewayWsUrl: string;
+  /** Linker WebSocket URL (e.g., "ws://localhost:8090/ws") */
+  linkerWsUrl: string;
   /** Session token for authentication (from /auth/verify flow) */
   sessionToken?: string;
   /** Heartbeat interval in ms (default: 30000) */
@@ -140,7 +140,7 @@ interface AgentRegistration {
 /**
  * WebSocket Network Service
  *
- * Manages connection to gateway for remote signal delivery.
+ * Manages connection to linker for remote signal delivery.
  */
 export class WebSocketNetworkService {
   private ws: WebSocket | null = null;
@@ -160,7 +160,7 @@ export class WebSocketNetworkService {
 
   constructor(options: WebSocketServiceOptions) {
     this.options = {
-      gatewayWsUrl: options.gatewayWsUrl,
+      linkerWsUrl: options.linkerWsUrl,
       sessionToken: options.sessionToken || "",
       heartbeatInterval: options.heartbeatInterval ?? 30000,
       heartbeatTimeout: options.heartbeatTimeout ?? 5000,
@@ -199,7 +199,7 @@ export class WebSocketNetworkService {
   }
 
   /**
-   * Set sign callback - called when the gateway requests a signature
+   * Set sign callback - called when the linker requests a signature
    *
    * The callback receives the agent public key and message bytes,
    * and should return the signature bytes.
@@ -217,7 +217,7 @@ export class WebSocketNetworkService {
   }
 
   /**
-   * Connect to the gateway WebSocket
+   * Connect to the linker WebSocket
    */
   connect(): void {
     if (this.ws) {
@@ -228,10 +228,10 @@ export class WebSocketNetworkService {
     this.intentionalClose = false;
     this.setState("connecting");
 
-    log.debug(`Connecting to ${this.options.gatewayWsUrl}`);
+    log.debug(`Connecting to ${this.options.linkerWsUrl}`);
 
     try {
-      this.ws = new WebSocket(this.options.gatewayWsUrl);
+      this.ws = new WebSocket(this.options.linkerWsUrl);
 
       this.ws.onopen = () => this.handleOpen();
       this.ws.onmessage = (event) => this.handleMessage(event);
@@ -244,7 +244,7 @@ export class WebSocketNetworkService {
   }
 
   /**
-   * Disconnect from the gateway
+   * Disconnect from the linker
    */
   disconnect(): void {
     log.debug("Disconnecting");
@@ -267,8 +267,8 @@ export class WebSocketNetworkService {
     );
 
     if (this.isConnected()) {
-      // Always send registration when connected - gateway may have lost it
-      // (e.g., gateway restarted while we stayed connected)
+      // Always send registration when connected - linker may have lost it
+      // (e.g., linker restarted while we stayed connected)
       log.debug(`Sending registration: ${agent_pubkey.substring(0, 20)}... for ${dna_hash.substring(0, 20)}...`);
       this.send({ type: "register", dna_hash, agent_pubkey });
       if (!alreadyTracked) {
@@ -313,7 +313,7 @@ export class WebSocketNetworkService {
   }
 
   /**
-   * Send remote signals to target agents via the gateway
+   * Send remote signals to target agents via the linker
    *
    * Fire-and-forget: signals are queued for delivery but success is not confirmed.
    */
@@ -410,7 +410,7 @@ export class WebSocketNetworkService {
     this.cleanup();
 
     // Move registrations back to pending so they get re-sent on reconnect
-    // This is needed because the gateway forgets registrations when connection drops
+    // This is needed because the linker forgets registrations when connection drops
     if (this.registrations.length > 0) {
       log.debug(`Moving ${this.registrations.length} registrations to pending for re-send`);
       this.pendingRegistrations.push(...this.registrations);
@@ -448,7 +448,7 @@ export class WebSocketNetworkService {
   private handleAuthChallenge(_message: Extract<ServerMessage, { type: "auth_challenge" }>): void {
     log.debug("Received auth challenge");
     // Auth challenge-response: sign the nonce with the agent's key and send back.
-    // Used when the gateway has authentication enabled.
+    // Used when the linker has authentication enabled.
     console.warn("[WebSocketService] Auth challenge-response not yet implemented");
   }
 

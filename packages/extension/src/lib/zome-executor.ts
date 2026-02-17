@@ -48,7 +48,7 @@ export interface WsStateInfo {
 }
 
 /**
- * Remote signal data forwarded from the gateway via the executor.
+ * Remote signal data forwarded from the linker via the executor.
  */
 export interface RemoteSignalData {
   dna_hash: string;
@@ -101,15 +101,15 @@ export interface ZomeExecutor {
 
   // --- Network configuration ---
 
-  /** Configure gateway network (URL + optional session token). */
-  configureNetwork(config: { gatewayUrl: string; sessionToken?: string }): Promise<void>;
+  /** Configure linker network (URL + optional session token). */
+  configureNetwork(config: { linkerUrl: string; sessionToken?: string }): Promise<void>;
 
-  /** Update the gateway session token. */
+  /** Update the linker session token. */
   updateSessionToken(token: string | null): Promise<void>;
 
-  // --- Agent registration (for gateway signal forwarding) ---
+  // --- Agent registration (for linker signal forwarding) ---
 
-  /** Register an agent for gateway signal forwarding. */
+  /** Register an agent for linker signal forwarding. */
   registerAgent(dnaHashB64: string, agentPubKeyB64: string): Promise<void>;
 
   // --- Zome execution ---
@@ -125,20 +125,20 @@ export interface ZomeExecutor {
   /** Trigger publish queue processing for the given DNAs. */
   processPublishQueue(dnaHashes: number[][]): Promise<void>;
 
-  // --- Gateway connectivity ---
+  // --- Linker connectivity ---
 
-  /** Disconnect the gateway WebSocket. */
-  disconnectGateway(): Promise<void>;
+  /** Disconnect the linker WebSocket. */
+  disconnectLinker(): Promise<void>;
 
-  /** Reconnect the gateway WebSocket. */
-  reconnectGateway(): Promise<void>;
+  /** Reconnect the linker WebSocket. */
+  reconnectLinker(): Promise<void>;
 
   /** Query current WebSocket connection state. */
   getWebSocketState(): Promise<WsStateInfo>;
 
   // --- Events (executor → background) ---
 
-  /** Register callback for incoming remote signals from the gateway. */
+  /** Register callback for incoming remote signals from the linker. */
   onRemoteSignal(callback: RemoteSignalCallback): void;
 
   /** Register callback for sign requests (executor needs Lair signing from background). */

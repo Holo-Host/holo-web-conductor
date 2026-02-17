@@ -17,9 +17,9 @@ import { WebConductorAppClient, waitForHolochain, ConnectionStatus } from '@holo
 // Wait for extension to be ready
 await waitForHolochain();
 
-// Connect to gateway
+// Connect to linker
 const client = await WebConductorAppClient.connect({
-  gatewayUrl: 'http://localhost:8090',
+  linkerUrl: 'http://localhost:8090',
   autoReconnect: true,
 });
 
@@ -64,8 +64,8 @@ async function getClient(): Promise<AppClient> {
 
 ```typescript
 const client = await WebConductorAppClient.connect({
-  // Required: Gateway URL
-  gatewayUrl: 'http://localhost:8090',
+  // Required: Linker URL
+  linkerUrl: 'http://localhost:8090',
 
   // Optional: Auto-reconnect on disconnect (default: true)
   autoReconnect: true,
@@ -122,7 +122,7 @@ client.onConnection('connection:reconnected', () => {
 import { ConnectionStatus } from '@holo-host/web-conductor-client';
 
 // Available statuses:
-ConnectionStatus.Disconnected  // Not connected to gateway
+ConnectionStatus.Disconnected  // Not connected to linker
 ConnectionStatus.Connecting    // Initial connection in progress
 ConnectionStatus.Connected     // Successfully connected
 ConnectionStatus.Reconnecting  // Lost connection, attempting to reconnect
@@ -196,7 +196,7 @@ Note: `callZome()` automatically converts response byte arrays, so you typically
 ## Requirements
 
 - Holo Web Conductor browser extension installed
-- hc-membrane gateway running
+- h2hc-linker running
 - hApp bundle available at configured path
 
 ## License

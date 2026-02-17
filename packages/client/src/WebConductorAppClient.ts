@@ -10,7 +10,7 @@
  *
  * await waitForHolochain();
  * const client = await WebConductorAppClient.connect({
- *   gatewayUrl: 'http://localhost:8090',
+ *   linkerUrl: 'http://localhost:8090',
  * });
  *
  * const result = await client.callZome({
@@ -106,7 +106,7 @@ export class WebConductorAppClient implements AppClient {
   /**
    * Create and connect a WebConductorAppClient.
    *
-   * @param config - Connection configuration (string for just gatewayUrl, or full config object)
+   * @param config - Connection configuration (string for just linkerUrl, or full config object)
    * @returns Connected WebConductorAppClient
    *
    * @example
@@ -116,7 +116,7 @@ export class WebConductorAppClient implements AppClient {
    *
    * // With options
    * const client = await WebConductorAppClient.connect({
-   *   gatewayUrl: 'http://localhost:8090',
+   *   linkerUrl: 'http://localhost:8090',
    *   autoReconnect: true,
    *   reconnectDelayMs: 2000,
    * });
@@ -124,7 +124,7 @@ export class WebConductorAppClient implements AppClient {
    */
   static async connect(config: string | WebConductorAppClientOptions): Promise<WebConductorAppClient> {
     const normalizedConfig: WebConductorAppClientOptions =
-      typeof config === 'string' ? { gatewayUrl: config } : config;
+      typeof config === 'string' ? { linkerUrl: config } : config;
 
     const client = new WebConductorAppClient(normalizedConfig);
     await client.initialize();
@@ -166,8 +166,8 @@ export class WebConductorAppClient implements AppClient {
       throw new Error('Holochain extension not detected. Please install the Holochain browser extension.');
     }
 
-    // Configure gateway
-    await holochain.configureNetwork({ gatewayUrl: this.connectionConfig.gatewayUrl });
+    // Configure linker
+    await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
 
     // Connect (triggers authorization popup if needed)
     await holochain.connect();
@@ -208,9 +208,9 @@ export class WebConductorAppClient implements AppClient {
    * Subscribe to extension's connection status updates for real-time monitoring.
    * The extension handles health checks - we just reflect its status.
    *
-   * Extension connection status is separate from gateway health:
+   * Extension connection status is separate from linker health:
    * - Extension: Always "connected" if window.holochain exists
-   * - Gateway: May be healthy or unreachable
+   * - Linker: May be healthy or unreachable
    */
   private subscribeToExtensionConnectionStatus(): void {
     const holochain = window.holochain;
@@ -222,7 +222,7 @@ export class WebConductorAppClient implements AppClient {
     // Get initial status immediately (subscription only fires on changes)
     if (holochain.getConnectionStatus) {
       holochain.getConnectionStatus().then((status) => {
-        this.connection.setGatewayHealth(
+        this.connection.setLinkerHealth(
           status.httpHealthy,
           status.wsHealthy,
           status.lastError
@@ -234,7 +234,7 @@ export class WebConductorAppClient implements AppClient {
 
     // Subscribe to future changes
     holochain.onConnectionChange((status) => {
-      this.connection.setGatewayHealth(
+      this.connection.setLinkerHealth(
         status.httpHealthy,
         status.wsHealthy,
         status.lastError

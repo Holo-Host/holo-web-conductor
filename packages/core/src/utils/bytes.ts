@@ -166,11 +166,11 @@ export function normalizeUint8Arrays<T = unknown>(data: T): T {
 /**
  * Recursively normalize byte arrays from JSON format to Uint8Array
  *
- * This is specifically for gateway responses where byte arrays come as
+ * This is specifically for linker responses where byte arrays come as
  * JSON arrays of numbers (e.g., [132, 41, 36, ...]).
  *
  * Unlike normalizeUint8Arrays, this converts ALL number arrays to Uint8Array,
- * which is appropriate for gateway responses where we know the structure.
+ * which is appropriate for linker responses where we know the structure.
  *
  * @param data - Data structure from JSON parsing
  * @returns Normalized data with byte arrays as Uint8Array

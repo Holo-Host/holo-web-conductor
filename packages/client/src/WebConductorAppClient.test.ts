@@ -48,7 +48,7 @@ function createMockHolochain(overrides: Partial<HolochainAPI> = {}): MockHolocha
     getConnectionStatus: vi.fn().mockResolvedValue({
       httpHealthy: true,
       wsHealthy: true,
-      gatewayUrl: 'http://localhost:8090',
+      linkerUrl: 'http://localhost:8090',
       lastChecked: Date.now(),
     }),
     onConnectionChange: vi.fn((callback: (status: any) => void) => {
@@ -85,26 +85,26 @@ describe('WebConductorAppClient', () => {
       delete (window as any).holochain;
 
       await expect(
-        WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' })
+        WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' })
       ).rejects.toThrow('Holochain extension not detected');
     });
 
-    it('configures gateway URL', async () => {
-      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+    it('configures linker URL', async () => {
+      await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
-        gatewayUrl: 'http://localhost:8090',
+        linkerUrl: 'http://localhost:8090',
       });
     });
 
     it('calls holochain.connect', async () => {
-      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.connect).toHaveBeenCalled();
     });
 
     it('fetches and stores app info', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.appInfo).toHaveBeenCalled();
       expect(client.myPubKey).toBeInstanceOf(Uint8Array);
@@ -112,16 +112,16 @@ describe('WebConductorAppClient', () => {
       expect(client.installedAppId).toBe('test-app');
     });
 
-    it('accepts string config for just gatewayUrl', async () => {
+    it('accepts string config for just linkerUrl', async () => {
       await WebConductorAppClient.connect('http://localhost:8090');
 
       expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
-        gatewayUrl: 'http://localhost:8090',
+        linkerUrl: 'http://localhost:8090',
       });
     });
 
     it('subscribes to extension connection status', async () => {
-      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.onConnectionChange).toHaveBeenCalled();
       expect(mockHolochain.getConnectionStatus).toHaveBeenCalled();
@@ -130,7 +130,7 @@ describe('WebConductorAppClient', () => {
 
   describe('myPubKey', () => {
     it('returns agent public key as Uint8Array', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(client.myPubKey).toBeInstanceOf(Uint8Array);
       expect(client.myPubKey[0]).toBe(132); // HoloHash prefix
@@ -145,7 +145,7 @@ describe('WebConductorAppClient', () => {
 
   describe('callZome', () => {
     it('calls holochain.callZome with correct parameters', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       await client.callZome({
         role_name: 'my_role',
@@ -168,7 +168,7 @@ describe('WebConductorAppClient', () => {
         hash: [132, 41, 36, ...Array(36).fill(5)], // ActionHash as array
       });
 
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const result = (await client.callZome({
         role_name: 'test',
         zome_name: 'test',
@@ -180,7 +180,7 @@ describe('WebConductorAppClient', () => {
     });
 
     it('reports success to connection monitor', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       await client.callZome({
         role_name: 'test',
@@ -197,7 +197,7 @@ describe('WebConductorAppClient', () => {
     it('reports failure to connection monitor on error', async () => {
       mockHolochain.callZome = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
 
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       await expect(
         client.callZome({
@@ -212,7 +212,7 @@ describe('WebConductorAppClient', () => {
 
   describe('appInfo', () => {
     it('returns app info in @holochain/client format', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const info = await client.appInfo();
 
       expect(info).not.toBeNull();
@@ -224,7 +224,7 @@ describe('WebConductorAppClient', () => {
 
   describe('signal handling', () => {
     it('on("signal") registers handler', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       client.on('signal', handler);
@@ -233,7 +233,7 @@ describe('WebConductorAppClient', () => {
     });
 
     it('on() returns unsubscribe function', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       const unsubscribe = client.on('signal', handler);
@@ -241,7 +241,7 @@ describe('WebConductorAppClient', () => {
     });
 
     it('forwards signals to registered handlers', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       client.on('signal', handler);
@@ -267,7 +267,7 @@ describe('WebConductorAppClient', () => {
 
   describe('connection status', () => {
     it('getConnectionState returns current state', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const state = client.getConnectionState();
 
       expect(state.status).toBe(ConnectionStatus.Connected);
@@ -275,16 +275,16 @@ describe('WebConductorAppClient', () => {
     });
 
     it('onConnection subscribes to connection events', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const handler = vi.fn();
 
       const unsubscribe = client.onConnection('connection:change', handler);
 
-      // Simulate gateway going down
+      // Simulate linker going down
       mockHolochain._emitConnectionChange({
         httpHealthy: false,
         wsHealthy: false,
-        lastError: 'Gateway unreachable',
+        lastError: 'Linker unreachable',
       });
 
       expect(handler).toHaveBeenCalledWith(
@@ -296,14 +296,14 @@ describe('WebConductorAppClient', () => {
       unsubscribe();
     });
 
-    it('updates state when extension reports gateway down', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+    it('updates state when extension reports linker down', async () => {
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
-      // Simulate gateway going down
+      // Simulate linker going down
       mockHolochain._emitConnectionChange({
         httpHealthy: false,
         wsHealthy: false,
-        gatewayUrl: 'http://localhost:8090',
+        linkerUrl: 'http://localhost:8090',
         lastChecked: Date.now(),
         lastError: 'Connection refused',
       });
@@ -313,17 +313,17 @@ describe('WebConductorAppClient', () => {
       expect(state.lastError).toBe('Connection refused');
     });
 
-    it('updates state when gateway comes back up', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+    it('updates state when linker comes back up', async () => {
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
-      // Gateway goes down
+      // Linker goes down
       mockHolochain._emitConnectionChange({
         httpHealthy: false,
         wsHealthy: false,
         lastError: 'Down',
       });
 
-      // Gateway comes back up
+      // Linker comes back up
       mockHolochain._emitConnectionChange({
         httpHealthy: true,
         wsHealthy: true,
@@ -337,14 +337,14 @@ describe('WebConductorAppClient', () => {
 
   describe('disconnect', () => {
     it('calls holochain.disconnect', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       await client.disconnect();
 
       expect(mockHolochain.disconnect).toHaveBeenCalled();
     });
 
     it('updates connection state to disconnected', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       await client.disconnect();
 
       const state = client.getConnectionState();
@@ -377,7 +377,7 @@ describe('WebConductorAppClient', () => {
       });
 
       await WebConductorAppClient.connect({
-        gatewayUrl: 'http://localhost:8090',
+        linkerUrl: 'http://localhost:8090',
         happBundlePath: './test.happ',
       });
 
@@ -397,7 +397,7 @@ describe('WebConductorAppClient', () => {
         ],
       });
 
-      await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.installApp).not.toHaveBeenCalled();
     });
@@ -405,26 +405,26 @@ describe('WebConductorAppClient', () => {
 
   describe('unsupported methods', () => {
     it('dumpNetworkStats returns empty response', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
       const result = await client.dumpNetworkStats();
 
       expect(result).toEqual({ peer_urls: [], connections: [] });
     });
 
     it('createCloneCell throws not supported', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       await expect(client.createCloneCell({} as any)).rejects.toThrow('not supported');
     });
 
     it('enableCloneCell throws not supported', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       await expect(client.enableCloneCell({} as any)).rejects.toThrow('not supported');
     });
 
     it('disableCloneCell throws not supported', async () => {
-      const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       await expect(client.disableCloneCell({} as any)).rejects.toThrow('not supported');
     });

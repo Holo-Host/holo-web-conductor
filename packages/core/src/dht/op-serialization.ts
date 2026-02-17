@@ -1,8 +1,8 @@
 /**
- * Op Serialization for Gateway
+ * Op Serialization for Linker
  *
  * This module handles converting TypeScript ChainOps to the format expected
- * by the Rust gateway (holochain_serialized_bytes).
+ * by the Rust linker (holochain_serialized_bytes).
  *
  * CRITICAL: Different ChainOp variants expect different action formats:
  * - Variants taking Action enum (with "type" field): StoreRecord, StoreEntry,
@@ -96,11 +96,11 @@ export function convertToExternallyTagged<T extends { type: string }>(action: T)
 }
 
 /**
- * Serialize a ChainOp to msgpack bytes in DhtOp format for gateway transmission.
+ * Serialize a ChainOp to msgpack bytes in DhtOp format for linker transmission.
  *
  * The output format is: { ChainOp: { VariantName: [signature, action, ...] } }
  */
-export function serializeOpForGateway(op: ChainOp): Uint8Array {
+export function serializeOpForLinker(op: ChainOp): Uint8Array {
   const rustChainOp = convertOpToRustFormat(op);
   const dhtOp = { ChainOp: rustChainOp };
   return new Uint8Array(encode(dhtOp));

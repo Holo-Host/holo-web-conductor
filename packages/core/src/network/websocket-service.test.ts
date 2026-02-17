@@ -94,7 +94,7 @@ describe("WebSocketNetworkService", () => {
     (globalThis.WebSocket as any).CLOSED = 3;
 
     options = {
-      gatewayWsUrl: "ws://localhost:8090/ws",
+      linkerWsUrl: "ws://localhost:8090/ws",
       heartbeatInterval: 30000, // Long enough to not interfere
       heartbeatTimeout: 5000,
       reconnectBaseDelay: 1000,
@@ -107,7 +107,7 @@ describe("WebSocketNetworkService", () => {
   });
 
   describe("connection", () => {
-    it("should connect to the gateway", () => {
+    it("should connect to the linker", () => {
       const service = new WebSocketNetworkService(options);
       service.connect();
       expect(service.getState()).toBe("connecting");
@@ -269,7 +269,7 @@ describe("WebSocketNetworkService", () => {
       );
     });
 
-    it("should always send registration (for gateway sync) but not duplicate internal tracking", () => {
+    it("should always send registration (for linker sync) but not duplicate internal tracking", () => {
       const service = new WebSocketNetworkService(options);
       service.registerAgent("dna123", "agent456");
       service.connect();
@@ -279,7 +279,7 @@ describe("WebSocketNetworkService", () => {
       // First registration came from pending, now send a duplicate
       service.registerAgent("dna123", "agent456");
 
-      // Messages are always sent - gateway may have lost state
+      // Messages are always sent - linker may have lost state
       const registerMessages = mockWs.sentMessages.filter(
         (m) => JSON.parse(m).type === "register"
       );
@@ -320,7 +320,7 @@ describe("WebSocketNetworkService", () => {
       mockWs.simulateOpen();
       mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
-      // Simulate signal from gateway (signal is base64 encoded)
+      // Simulate signal from linker (signal is base64 encoded)
       const signalData = btoa("test signal data");
       mockWs.simulateMessage({
         type: "signal",

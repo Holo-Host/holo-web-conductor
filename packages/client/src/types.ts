@@ -28,20 +28,20 @@ export interface HolochainAPI {
   on(event: 'signal', callback: (signal: unknown) => void): () => void;
 
   // Network configuration
-  configureNetwork(config: { gatewayUrl: string }): Promise<void>;
+  configureNetwork(config: { linkerUrl: string }): Promise<void>;
 
   // Connection status (real-time health monitoring)
   getConnectionStatus(): Promise<{
     httpHealthy: boolean;
     wsHealthy: boolean;
-    gatewayUrl: string | null;
+    linkerUrl: string | null;
     lastChecked: number;
     lastError?: string;
   }>;
   onConnectionChange(callback: (status: {
     httpHealthy: boolean;
     wsHealthy: boolean;
-    gatewayUrl: string | null;
+    linkerUrl: string | null;
     lastChecked: number;
     lastError?: string;
   }) => void): () => void;

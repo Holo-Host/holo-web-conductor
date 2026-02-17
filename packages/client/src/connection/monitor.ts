@@ -1,7 +1,7 @@
 /**
  * Connection health monitoring for WebConductorAppClient.
  *
- * Monitors gateway connection health via:
+ * Monitors linker connection health via:
  * 1. Extension's connection status API
  * 2. Zome call success/failure patterns
  */
@@ -15,7 +15,7 @@ import type {
 import { ConnectionStatus } from './types';
 
 /**
- * Monitors gateway connection health and emits events on state changes.
+ * Monitors linker connection health and emits events on state changes.
  */
 export class ConnectionMonitor {
   private state: ConnectionState;
@@ -121,7 +121,7 @@ export class ConnectionMonitor {
       error.message.includes('fetch') ||
       error.message.includes('Failed to fetch') ||
       error.message.includes('NetworkError') ||
-      error.message.includes('gateway');
+      error.message.includes('linker');
 
     if (isNetworkError && this.consecutiveFailures >= this.MAX_FAILURES_BEFORE_UNHEALTHY) {
       this.updateState({
@@ -174,10 +174,10 @@ export class ConnectionMonitor {
   }
 
   /**
-   * Update gateway health status without changing overall connection status.
-   * Used when extension is connected but gateway may be unreachable.
+   * Update linker health status without changing overall connection status.
+   * Used when extension is connected but linker may be unreachable.
    */
-  setGatewayHealth(httpHealthy: boolean, wsHealthy: boolean, error?: string): void {
+  setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, error?: string): void {
     this.updateState({
       httpHealthy,
       wsHealthy,
@@ -199,10 +199,10 @@ export class ConnectionMonitor {
             status: ConnectionStatus.Error,
             httpHealthy: status.httpHealthy,
             wsHealthy: status.wsHealthy,
-            lastError: status.lastError || 'Gateway connection lost',
+            lastError: status.lastError || 'Linker connection lost',
           });
           this.emit('connection:error', {
-            error: status.lastError || 'Gateway connection lost',
+            error: status.lastError || 'Linker connection lost',
             recoverable: true,
           });
         } else if (!wasHealthy && isHealthy) {

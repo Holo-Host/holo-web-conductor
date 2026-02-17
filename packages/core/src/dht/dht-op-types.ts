@@ -424,11 +424,11 @@ export function isNewEntryAction(action: Action): action is NewEntryAction {
  * Status of a DhtOp publication attempt
  */
 export enum PublishStatus {
-  /** Op created but not yet sent to gateway */
+  /** Op created but not yet sent to linker */
   Pending = "Pending",
-  /** Op sent to gateway, awaiting confirmation */
+  /** Op sent to linker, awaiting confirmation */
   InFlight = "InFlight",
-  /** Gateway confirmed receipt and forwarding to DHT */
+  /** Linker confirmed receipt and forwarding to DHT */
   Published = "Published",
   /** Publication failed (will retry) */
   Failed = "Failed",

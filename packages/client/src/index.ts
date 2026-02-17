@@ -11,9 +11,9 @@
  * // Wait for extension to be ready
  * await waitForHolochain();
  *
- * // Connect to gateway
+ * // Connect to linker
  * const client = await WebConductorAppClient.connect({
- *   gatewayUrl: 'http://localhost:8090',
+ *   linkerUrl: 'http://localhost:8090',
  *   autoReconnect: true,
  * });
  *

@@ -35,8 +35,8 @@ const DEFAULT_TIMEOUT = 30000;
  * Configuration for SyncXHRNetworkService
  */
 export interface SyncXHRConfig {
-  /** Gateway base URL */
-  gatewayUrl: string;
+  /** Linker base URL */
+  linkerUrl: string;
   /** Default timeout in ms */
   timeout?: number;
   /** Session token for authenticated requests */
@@ -46,27 +46,27 @@ export interface SyncXHRConfig {
 /**
  * Synchronous XHR network service for offscreen document context
  *
- * Note: This service is designed for use with hc-membrane or similar gateway.
+ * Note: This service is designed for use with h2hc-linker or similar linker.
  *
- * Gateway endpoints:
+ * Linker endpoints:
  * - GET /dht/{dna_hash}/record/{hash} - Fetch a record by hash
  * - GET /dht/{dna_hash}/details/{hash} - Fetch details for a hash
  * - GET /dht/{dna_hash}/links?base={base}&type={type} - Fetch links
  * - GET /dht/{dna_hash}/links/count?base={base}&type={type} - Count links
  */
 export class SyncXHRNetworkService implements NetworkService {
-  private gatewayUrl: string;
+  private linkerUrl: string;
   private defaultTimeout: number;
   private sessionToken: string | null;
 
   constructor(config: SyncXHRConfig | string, defaultTimeout: number = DEFAULT_TIMEOUT) {
     if (typeof config === 'string') {
-      // Legacy constructor: just gatewayUrl
-      this.gatewayUrl = config.replace(/\/$/, '');
+      // Legacy constructor: just linkerUrl
+      this.linkerUrl = config.replace(/\/$/, '');
       this.defaultTimeout = defaultTimeout;
       this.sessionToken = null;
     } else {
-      this.gatewayUrl = config.gatewayUrl.replace(/\/$/, '');
+      this.linkerUrl = config.linkerUrl.replace(/\/$/, '');
       this.defaultTimeout = config.timeout ?? DEFAULT_TIMEOUT;
       this.sessionToken = config.sessionToken ?? null;
     }
@@ -74,7 +74,7 @@ export class SyncXHRNetworkService implements NetworkService {
 
   /**
    * Get the DNA hash as base64 for URL building
-   * Note: Gateway expects Holochain base64 format "u{base64}" (with 'u' prefix)
+   * Note: Linker expects Holochain base64 format "u{base64}" (with 'u' prefix)
    */
   private getDnaHashB64(dnaHash: DnaHash): string {
     // Use @holochain/client utility which adds 'u' prefix
@@ -109,7 +109,7 @@ export class SyncXHRNetworkService implements NetworkService {
   private buildRecordUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
-    return `${this.gatewayUrl}/dht/${dnaHashB64}/record/${hashB64}`;
+    return `${this.linkerUrl}/dht/${dnaHashB64}/record/${hashB64}`;
   }
 
   /**
@@ -118,7 +118,7 @@ export class SyncXHRNetworkService implements NetworkService {
   private buildDetailsUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
-    return `${this.gatewayUrl}/dht/${dnaHashB64}/details/${hashB64}`;
+    return `${this.linkerUrl}/dht/${dnaHashB64}/details/${hashB64}`;
   }
 
   /**
@@ -140,7 +140,7 @@ export class SyncXHRNetworkService implements NetworkService {
     if (zomeIndex !== undefined) {
       params.set('zome_index', zomeIndex.toString());
     }
-    return `${this.gatewayUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
+    return `${this.linkerUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
   }
 
   /**
@@ -162,7 +162,7 @@ export class SyncXHRNetworkService implements NetworkService {
     if (zomeIndex !== undefined) {
       params.set('zome_index', zomeIndex.toString());
     }
-    return `${this.gatewayUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
+    return `${this.linkerUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
   }
 
   /**
@@ -175,7 +175,7 @@ export class SyncXHRNetworkService implements NetworkService {
   }
 
   /**
-   * Parse record response from gateway
+   * Parse record response from linker
    */
   private parseRecordResponse(responseText: string): NetworkRecord | null {
     try {
@@ -200,9 +200,9 @@ export class SyncXHRNetworkService implements NetworkService {
   }
 
   /**
-   * Parse signed action from gateway response
+   * Parse signed action from linker response
    *
-   * Gateway returns signed_action with:
+   * Linker returns signed_action with:
    * - hashed.content: the action content
    * - hashed.hash: the action hash (as JSON array)
    * - signature: 64-byte signature (as JSON array)
@@ -246,9 +246,9 @@ export class SyncXHRNetworkService implements NetworkService {
   }
 
   /**
-   * Parse entry from gateway response
+   * Parse entry from linker response
    *
-   * Gateway returns RecordEntry which is one of:
+   * Linker returns RecordEntry which is one of:
    * - null → 'NotApplicable'
    * - 'Hidden' | 'NotStored' | 'NotApplicable'
    * - { Present: Entry } where Entry is { entry_type: "App"|"Agent"|etc, entry: bytes }
@@ -262,7 +262,7 @@ export class SyncXHRNetworkService implements NetworkService {
     if (data === 'Hidden' || data === 'NotStored' || data === 'NotApplicable') {
       return data;
     }
-    // Gateway already returns { Present: Entry } format - don't double-wrap
+    // Linker already returns { Present: Entry } format - don't double-wrap
     const record = data as Record<string, unknown>;
     if (record.Present !== undefined) {
       // Normalize byte arrays in the entry
@@ -273,16 +273,16 @@ export class SyncXHRNetworkService implements NetworkService {
   }
 
   /**
-   * Parse links response from gateway
+   * Parse links response from linker
    *
-   * Gateway may return one of two formats:
+   * Linker may return one of two formats:
    * 1. Vec<Link> - array of Link objects (conductor-dht mode)
    * 2. WireLinkOps - {creates: [...], deletes: [...]} (direct kitsune2 mode)
    *
-   * Gateway returns hashes as byte arrays (e.g., [132, 41, 36, ...]) not base64 strings.
+   * Linker returns hashes as byte arrays (e.g., [132, 41, 36, ...]) not base64 strings.
    * We use normalizeByteArrays to convert these to Uint8Array.
    *
-   * @param responseText - JSON response from gateway
+   * @param responseText - JSON response from linker
    * @param baseAddress - The base address from the query (needed for WireLinkOps format)
    */
   private parseLinksResponse(responseText: string, baseAddress?: AnyDhtHash): NetworkLink[] {
@@ -301,7 +301,7 @@ export class SyncXHRNetworkService implements NetworkService {
         return [];
       }
 
-      log.debug(` Parsing ${data.length} links from gateway (Link array format)`);
+      log.debug(` Parsing ${data.length} links from linker (Link array format)`);
 
       return data.map((link: any, idx: number): NetworkLink => {
         const target = this.normalizeByteArrays(link.target);
@@ -311,7 +311,7 @@ export class SyncXHRNetworkService implements NetworkService {
         const rawTargetPrefix = Array.isArray(link.target) ? link.target.slice(0, 3) : 'not array';
         const normalizedTargetPrefix = target instanceof Uint8Array ? Array.from(target.slice(0, 3)) : 'not Uint8Array';
 
-        log.debug(` Link ${idx} from gateway:`, {
+        log.debug(` Link ${idx} from linker:`, {
           raw_target_prefix: rawTargetPrefix,
           raw_target_length: Array.isArray(link.target) ? link.target.length : 'N/A',
           normalized_target_prefix: normalizedTargetPrefix,
@@ -457,7 +457,7 @@ export class SyncXHRNetworkService implements NetworkService {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, false); // false = synchronous
       // In a Worker context (not Window), xhr.timeout works for sync XHR.
-      // Without this, a slow gateway DHT query blocks the entire worker thread
+      // Without this, a slow linker DHT query blocks the entire worker thread
       // and serialized zome call chain indefinitely.
       try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported in this context */ }
       xhr.setRequestHeader('Accept', 'application/json');
@@ -494,7 +494,7 @@ export class SyncXHRNetworkService implements NetworkService {
     const url = this.buildLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    log.info(`🔗 Fetching links from gateway: ${url}`);
+    log.info(`🔗 Fetching links from linker: ${url}`);
     log.info(`🔗 Base address: ${this.toHolochainBase64(baseAddress)}, linkType: ${linkType}, zomeIndex: ${zomeIndex}`);
 
     try {
@@ -506,15 +506,15 @@ export class SyncXHRNetworkService implements NetworkService {
       xhr.send();
 
       if (xhr.status === 200) {
-        log.info(`🔗 Gateway returned status 200, response length: ${xhr.responseText.length}`);
+        log.info(`🔗 Linker returned status 200, response length: ${xhr.responseText.length}`);
         const links = this.parseLinksResponse(xhr.responseText, baseAddress);
-        log.info(`🔗 Parsed ${links.length} links from gateway response`);
+        log.info(`🔗 Parsed ${links.length} links from linker response`);
         return links;
       } else if (xhr.status === 404) {
         log.info(`🔗 No links found (404)`);
         return [];
       } else {
-        log.error(`🔗 Gateway error: ${xhr.status} ${xhr.statusText}`);
+        log.error(`🔗 Linker error: ${xhr.status} ${xhr.statusText}`);
         throw new Error(`Network error: ${xhr.status} ${xhr.statusText}`);
       }
     } catch (error) {
@@ -616,7 +616,7 @@ export class SyncXHRNetworkService implements NetworkService {
   ): AgentActivityResponse | null {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const agentB64 = this.toHolochainBase64(agentPubKey);
-    const url = `${this.gatewayUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
+    const url = `${this.linkerUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
     const timeout = options?.timeout ?? this.defaultTimeout;
 
     log.debug(`Fetching agent activity: ${url}`);
@@ -655,7 +655,7 @@ export class SyncXHRNetworkService implements NetworkService {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const agentB64 = this.toHolochainBase64(agent);
     const chainTopB64 = this.toHolochainBase64(chainTop);
-    const url = `${this.gatewayUrl}/dht/${dnaHashB64}/must_get_agent_activity`;
+    const url = `${this.linkerUrl}/dht/${dnaHashB64}/must_get_agent_activity`;
     const timeout = options?.timeout ?? this.defaultTimeout;
 
     log.debug(`Fetching must_get_agent_activity: ${url}`);
@@ -694,15 +694,15 @@ export class SyncXHRNetworkService implements NetworkService {
     return typeof XMLHttpRequest !== 'undefined';
   }
 
-  getGatewayUrl(): string | null {
-    return this.gatewayUrl;
+  getLinkerUrl(): string | null {
+    return this.linkerUrl;
   }
 
   /**
-   * Request an authentication challenge (nonce) from the gateway
+   * Request an authentication challenge (nonce) from the linker
    */
   requestChallenge(): { nonce: string; expires_at: number } {
-    const url = `${this.gatewayUrl}/auth/challenge`;
+    const url = `${this.linkerUrl}/auth/challenge`;
 
     log.debug(` Requesting auth challenge: ${url}`);
 
@@ -710,7 +710,7 @@ export class SyncXHRNetworkService implements NetworkService {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
       // Note: xhr.timeout on sync XHR may cause hangs in some Worker contexts.
-      // Disabled for now - rely on gateway's own timeouts.
+      // Disabled for now - rely on linker's own timeouts.
       // try { xhr.timeout = this.defaultTimeout; } catch (_) {}
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send();
@@ -744,7 +744,7 @@ export class SyncXHRNetworkService implements NetworkService {
     signature: string,
     nonce: string
   ): { token: string; expires_at: number } {
-    const url = `${this.gatewayUrl}/auth/verify`;
+    const url = `${this.linkerUrl}/auth/verify`;
 
     log.debug(` Verifying auth challenge: ${url}`);
 
@@ -752,7 +752,7 @@ export class SyncXHRNetworkService implements NetworkService {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false); // false = synchronous
       // Note: xhr.timeout on sync XHR may cause hangs in some Worker contexts.
-      // Disabled for now - rely on gateway's own timeouts.
+      // Disabled for now - rely on linker's own timeouts.
       // try { xhr.timeout = this.defaultTimeout; } catch (_) {}
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify({

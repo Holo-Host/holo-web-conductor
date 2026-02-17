@@ -4,7 +4,7 @@
 
   Tests real hApp integration with the profiles zome via WebConductorAppClient:
   create profile, get profile, update profile, list agents.
-  Gateway optional (works offline for local operations).
+  Linker optional (works offline for local operations).
 
   Serve: cd packages/extension/test && python3 -m http.server 8080
   Open:  http://localhost:8080/profiles-test.html
@@ -525,16 +525,16 @@
       // ============================================================
       // Step 4: Connect
       // ============================================================
-      const GATEWAY_URL = "http://localhost:8090";
+      const LINKER_URL = "http://localhost:8090";
 
       document.getElementById("connect-btn").addEventListener("click", async () => {
         log("Connecting...");
         showStatus("connect-status", "warning", "Connecting...");
 
         try {
-          // Use the package's WebConductorAppClient with gateway configuration
+          // Use the package's WebConductorAppClient with linker configuration
           appClient = await WebConductorAppClient.connect({
-            gatewayUrl: GATEWAY_URL,
+            linkerUrl: LINKER_URL,
             autoReconnect: true,
             // hApp is already installed manually, so no happBundlePath needed
           });
@@ -554,7 +554,7 @@
 
           // Subscribe to connection status changes
           appClient.onConnection("connection:change", (state) => {
-            const statusText = `Gateway: ${state.httpHealthy ? "✓" : "✗"} HTTP, ${state.wsHealthy ? "✓" : "✗"} WS`;
+            const statusText = `Linker: ${state.httpHealthy ? "✓" : "✗"} HTTP, ${state.wsHealthy ? "✓" : "✗"} WS`;
             log(`Connection status changed: ${state.status} - ${statusText}`);
             if (state.status === ConnectionStatus.Error && state.lastError) {
               log(`Connection error: ${state.lastError}`);

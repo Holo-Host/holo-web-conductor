@@ -28,7 +28,7 @@ interface CountLinksInput {
  * count_links host function implementation
  *
  * Uses cascade pattern (local + network) so zero-arc nodes can count
- * other agents' links via the gateway.
+ * other agents' links via the linker.
  */
 export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;

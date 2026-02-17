@@ -2,7 +2,7 @@
  * send_remote_signal host function
  *
  * Sends signals to remote agents via the kitsune2 network.
- * Signals are signed and queued for delivery through the gateway.
+ * Signals are signed and queued for delivery through the linker.
  *
  * Reference: holochain/crates/holochain/src/core/ribosome/host_fn/send_remote_signal.rs
  */
@@ -25,7 +25,7 @@ interface RemoteSignalInput {
 }
 
 /**
- * Signed signal for transport to gateway
+ * Signed signal for transport to linker
  */
 export interface SignedRemoteSignal {
   /** Target agent public key (as array for JSON transport) */
@@ -44,7 +44,7 @@ export interface SignedRemoteSignal {
  * 2. Serialize to msgpack
  * 3. Hash with blake2b-256
  * 4. Sign hash with sender's Ed25519 key via Lair
- * 5. Queue for delivery through gateway WebSocket
+ * 5. Queue for delivery through linker WebSocket
  *
  * Fire-and-forget semantics: returns immediately, delivery is async.
  */

@@ -3,14 +3,14 @@
  */
 
 /**
- * Connection status enum representing the current state of the gateway connection.
+ * Connection status enum representing the current state of the linker connection.
  */
 export enum ConnectionStatus {
-  /** Not connected to the gateway */
+  /** Not connected to the linker */
   Disconnected = 'disconnected',
   /** Attempting initial connection */
   Connecting = 'connecting',
-  /** Successfully connected to gateway */
+  /** Successfully connected to linker */
   Connected = 'connected',
   /** Connection lost, attempting to reconnect */
   Reconnecting = 'reconnecting',
@@ -19,7 +19,7 @@ export enum ConnectionStatus {
 }
 
 /**
- * Current state of the gateway connection.
+ * Current state of the linker connection.
  */
 export interface ConnectionState {
   /** Overall connection status */
@@ -37,11 +37,11 @@ export interface ConnectionState {
 }
 
 /**
- * Configuration for gateway connection.
+ * Configuration for linker connection.
  */
 export interface ConnectionConfig {
-  /** URL of the hc-membrane gateway */
-  gatewayUrl: string;
+  /** URL of the h2hc-linker linker */
+  linkerUrl: string;
   /** Enable automatic reconnection (default: true) */
   autoReconnect?: boolean;
   /** Initial reconnect delay in ms (default: 1000) */

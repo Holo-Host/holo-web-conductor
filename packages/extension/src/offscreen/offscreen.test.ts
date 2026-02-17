@@ -23,8 +23,8 @@ describe("Offscreen Document Helpers", () => {
     });
 
     it("should convert https URL to wss URL", () => {
-      expect(httpToWsUrl("https://gateway.example.com")).toBe(
-        "wss://gateway.example.com/ws"
+      expect(httpToWsUrl("https://linker.example.com")).toBe(
+        "wss://linker.example.com/ws"
       );
     });
 

@@ -30,7 +30,7 @@ import {
   type PermissionDecisionPayload,
   type OriginPayload,
   type RequestIdPayload,
-  type GatewayConfigurePayload,
+  type LinkerConfigurePayload,
   type ContextIdPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
@@ -68,7 +68,7 @@ import { ChromeOffscreenExecutor } from "./chrome-offscreen-executor";
 const log = createLogger('Background');
 const logAuth = createLogger('Auth');
 const logZome = createLogger('CallZome');
-const logGateway = createLogger('Gateway');
+const logLinker = createLogger('Linker');
 const logSignal = createLogger('Signal');
 const logLair = createLogger('Lair');
 const logHapp = createLogger('HappContext');
@@ -81,15 +81,15 @@ log.info("Background service worker loaded");
 
 const executor: ZomeExecutor = new ChromeOffscreenExecutor();
 
-// Gateway configuration - tracked in background for status reporting and health checks.
+// Linker configuration - tracked in background for status reporting and health checks.
 // Executor gets its own copy via configureNetwork().
-let gatewayConfig: { gatewayUrl: string; sessionToken?: string } | null = null;
+let linkerConfig: { linkerUrl: string; sessionToken?: string } | null = null;
 
 // Connection status tracking
 interface ConnectionStatus {
   httpHealthy: boolean;
   wsHealthy: boolean;
-  gatewayUrl: string | null;
+  linkerUrl: string | null;
   lastChecked: number;
   lastError?: string;
 }
@@ -97,7 +97,7 @@ interface ConnectionStatus {
 let connectionStatus: ConnectionStatus = {
   httpHealthy: false,
   wsHealthy: false,
-  gatewayUrl: null,
+  linkerUrl: null,
   lastChecked: 0,
 };
 
@@ -108,16 +108,16 @@ const HEALTH_CHECK_INTERVAL_MS = 5000;
 const connectionStatusSubscribers = new Set<number>();
 
 /**
- * Check gateway health by making a simple HTTP request
+ * Check linker health by making a simple HTTP request
  */
-async function checkGatewayHealth(): Promise<void> {
-  if (!gatewayConfig?.gatewayUrl) {
+async function checkLinkerHealth(): Promise<void> {
+  if (!linkerConfig?.linkerUrl) {
     connectionStatus = {
       httpHealthy: false,
       wsHealthy: false,
-      gatewayUrl: null,
+      linkerUrl: null,
       lastChecked: Date.now(),
-      lastError: 'No gateway configured',
+      lastError: 'No linker configured',
     };
     notifyConnectionStatusChange();
     return;
@@ -126,11 +126,11 @@ async function checkGatewayHealth(): Promise<void> {
   const previousStatus = { ...connectionStatus };
 
   try {
-    // Simple health check - try to reach the gateway
+    // Simple health check - try to reach the linker
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
 
-    const response = await fetch(`${gatewayConfig.gatewayUrl}/health`, {
+    const response = await fetch(`${linkerConfig.linkerUrl}/health`, {
       method: 'GET',
       signal: controller.signal,
     });
@@ -139,7 +139,7 @@ async function checkGatewayHealth(): Promise<void> {
     connectionStatus = {
       httpHealthy: response.ok,
       wsHealthy: connectionStatus.wsHealthy, // WebSocket status tracked separately
-      gatewayUrl: gatewayConfig.gatewayUrl,
+      linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: response.ok ? undefined : `HTTP ${response.status}`,
     };
@@ -161,7 +161,7 @@ async function checkGatewayHealth(): Promise<void> {
     connectionStatus = {
       httpHealthy: false,
       wsHealthy: false,
-      gatewayUrl: gatewayConfig.gatewayUrl,
+      linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: error instanceof Error ? error.message : 'Connection failed',
     };
@@ -201,10 +201,10 @@ function startHealthChecks(): void {
   if (healthCheckInterval) return;
 
   // Immediate check
-  checkGatewayHealth();
+  checkLinkerHealth();
 
   // Periodic checks
-  healthCheckInterval = setInterval(checkGatewayHealth, HEALTH_CHECK_INTERVAL_MS);
+  healthCheckInterval = setInterval(checkLinkerHealth, HEALTH_CHECK_INTERVAL_MS);
 }
 
 /**
@@ -218,19 +218,19 @@ function stopHealthChecks(): void {
 }
 
 /**
- * Set the gateway configuration
- * Call this to enable network requests via hc-membrane
+ * Set the linker configuration
+ * Call this to enable network requests via h2hc-linker
  */
-function setGatewayConfig(url: string, sessionToken?: string): void {
-  gatewayConfig = { gatewayUrl: url, sessionToken };
-  logGateway.info(`Gateway config set: ${url}`);
+function setLinkerConfig(url: string, sessionToken?: string): void {
+  linkerConfig = { linkerUrl: url, sessionToken };
+  logLinker.info(`Linker config set: ${url}`);
   startHealthChecks();
 }
 
 /**
- * Register all agents from a hApp context with the gateway via the executor
+ * Register all agents from a hApp context with the linker via the executor
  */
-async function registerContextAgentsWithGateway(context: HappContext): Promise<void> {
+async function registerContextAgentsWithLinker(context: HappContext): Promise<void> {
   const agentPubKey = toUint8Array(context.agentPubKey);
   const agentPubKeyB64 = encodeHashToBase64(agentPubKey);
 
@@ -243,7 +243,7 @@ async function registerContextAgentsWithGateway(context: HappContext): Promise<v
 
 // Wire executor event callbacks
 executor.onWebSocketStateChange((state) => {
-  logGateway.debug(`WebSocket state changed: ${state}`);
+  logLinker.debug(`WebSocket state changed: ${state}`);
   const wasHealthy = connectionStatus.wsHealthy;
   connectionStatus.wsHealthy = state === "connected";
   if (wasHealthy !== connectionStatus.wsHealthy) {
@@ -417,18 +417,18 @@ async function handleMessage(
       case MessageType.AUTH_REQUEST_INFO:
         return handleAuthRequestInfo(message);
 
-      // Gateway configuration
-      case MessageType.GATEWAY_CONFIGURE:
-        return handleGatewayConfigure(message);
+      // Linker configuration
+      case MessageType.LINKER_CONFIGURE:
+        return handleLinkerConfigure(message);
 
-      case MessageType.GATEWAY_GET_STATUS:
-        return handleGatewayGetStatus(message);
+      case MessageType.LINKER_GET_STATUS:
+        return handleLinkerGetStatus(message);
 
-      case MessageType.GATEWAY_DISCONNECT:
-        return handleGatewayDisconnect(message);
+      case MessageType.LINKER_DISCONNECT:
+        return handleLinkerDisconnect(message);
 
-      case MessageType.GATEWAY_RECONNECT:
-        return handleGatewayReconnect(message);
+      case MessageType.LINKER_RECONNECT:
+        return handleLinkerReconnect(message);
 
       // Connection Status
       case MessageType.CONNECTION_STATUS_GET:
@@ -827,10 +827,10 @@ async function handleInstallHapp(
 
     const context = await happContextManager.installHapp(origin, normalizedRequest);
 
-    // Register agents with gateway for signal forwarding
+    // Register agents with linker for signal forwarding
     // Do this asynchronously - don't block the install response
-    registerContextAgentsWithGateway(context).catch((err) => {
-      logGateway.warn("Failed to register agents with gateway:", err);
+    registerContextAgentsWithLinker(context).catch((err) => {
+      logLinker.warn("Failed to register agents with linker:", err);
     });
 
     return createSuccessResponse(message.id, {
@@ -1457,39 +1457,39 @@ async function handleAuthRequestInfo(
 }
 
 // ============================================================================
-// Gateway Configuration Handlers
+// Linker Configuration Handlers
 // ============================================================================
 
 /**
- * Handle gateway configuration
- * Payload: { gatewayUrl: string }
+ * Handle linker configuration
+ * Payload: { linkerUrl: string }
  */
-async function handleGatewayConfigure(
+async function handleLinkerConfigure(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   try {
-    const { gatewayUrl } = getPayload<MessageType.GATEWAY_CONFIGURE>(message);
+    const { linkerUrl } = getPayload<MessageType.LINKER_CONFIGURE>(message);
 
-    if (!gatewayUrl) {
-      return createErrorResponse(message.id, "gatewayUrl is required");
+    if (!linkerUrl) {
+      return createErrorResponse(message.id, "linkerUrl is required");
     }
 
-    setGatewayConfig(gatewayUrl);
+    setLinkerConfig(linkerUrl);
 
     // Initialize executor and configure network
     await executor.initialize();
     if (!executor.networkConfigured) {
-      await executor.configureNetwork({ gatewayUrl });
+      await executor.configureNetwork({ linkerUrl });
     } else {
-      logGateway.debug("Network already configured, skipping");
+      logLinker.debug("Network already configured, skipping");
     }
 
     // Register agents for existing hApp contexts
     const contexts = await happContextManager.listContexts();
     for (const context of contexts) {
       if (context.enabled) {
-        registerContextAgentsWithGateway(context).catch((err) => {
-          logGateway.warn(`Failed to register agents for ${context.id}:`, err);
+        registerContextAgentsWithLinker(context).catch((err) => {
+          logLinker.warn(`Failed to register agents for ${context.id}:`, err);
         });
       }
     }
@@ -1504,31 +1504,31 @@ async function handleGatewayConfigure(
 }
 
 /**
- * Handle gateway status request
+ * Handle linker status request
  */
-async function handleGatewayGetStatus(
+async function handleLinkerGetStatus(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   return createSuccessResponse(message.id, {
-    configured: gatewayConfig !== null,
-    gatewayUrl: gatewayConfig?.gatewayUrl || null,
-    hasSession: !!gatewayConfig?.sessionToken,
+    configured: linkerConfig !== null,
+    linkerUrl: linkerConfig?.linkerUrl || null,
+    hasSession: !!linkerConfig?.sessionToken,
     networkConfigured: executor.networkConfigured,
   });
 }
 
 /**
- * Handle gateway disconnect request - actually disconnects WebSocket
+ * Handle linker disconnect request - actually disconnects WebSocket
  */
-async function handleGatewayDisconnect(
+async function handleLinkerDisconnect(
   message: RequestMessage
 ): Promise<ResponseMessage> {
-  log.info("[Gateway] Disconnecting WebSocket...");
+  log.info("[Linker] Disconnecting WebSocket...");
 
   try {
-    await executor.disconnectGateway();
+    await executor.disconnectLinker();
   } catch (error) {
-    log.warn("Failed to disconnect gateway:", error);
+    log.warn("Failed to disconnect linker:", error);
     return createErrorResponse(message.id, error instanceof Error ? error.message : "Failed to disconnect");
   }
 
@@ -1536,17 +1536,17 @@ async function handleGatewayDisconnect(
 }
 
 /**
- * Handle gateway reconnect request - reconnects WebSocket
+ * Handle linker reconnect request - reconnects WebSocket
  */
-async function handleGatewayReconnect(
+async function handleLinkerReconnect(
   message: RequestMessage
 ): Promise<ResponseMessage> {
-  log.info("[Gateway] Reconnecting WebSocket...");
+  log.info("[Linker] Reconnecting WebSocket...");
 
   try {
-    await executor.reconnectGateway();
+    await executor.reconnectLinker();
   } catch (error) {
-    log.warn("Failed to reconnect gateway:", error);
+    log.warn("Failed to reconnect linker:", error);
     return createErrorResponse(message.id, error instanceof Error ? error.message : "Failed to reconnect");
   }
 
@@ -1762,10 +1762,10 @@ async function handlePublishAllRecords(
     if (opsQueued > 0) {
       const dnaHashes = context.dnas.map((d) => Array.from(toUint8Array(d.hash)));
 
-      // Ensure agents are registered with gateway WebSocket before publishing
-      // This is critical: the gateway's kitsune2 needs to know about the agents
+      // Ensure agents are registered with linker WebSocket before publishing
+      // This is critical: the linker's kitsune2 needs to know about the agents
       // before it can accept publish requests on their behalf
-      log.info(`[PUBLISH_ALL_RECORDS] Registering agents with gateway WebSocket...`);
+      log.info(`[PUBLISH_ALL_RECORDS] Registering agents with linker WebSocket...`);
 
       const agentPubKeyB64 = encodeHashToBase64(toUint8Array(context.agentPubKey));
       for (const dna of context.dnas) {
@@ -1779,7 +1779,7 @@ async function handlePublishAllRecords(
       }
 
       // Wait a brief moment for agent info to propagate through kitsune2
-      // This allows the gateway proxy agents to be recognized by conductors
+      // This allows the linker proxy agents to be recognized by conductors
       log.info(`[PUBLISH_ALL_RECORDS] Waiting for agent propagation (2s)...`);
       await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -1847,7 +1847,7 @@ function convertTransportEntryToStored(transportEntry: any): any {
  * WASM's recv_remote_signal callback. The WASM decides whether to forward
  * to the UI by calling emit_signal().
  *
- * Flow: Gateway → WebSocket → Background → WASM recv_remote_signal → emit_signal → UI
+ * Flow: Linker → WebSocket → Background → WASM recv_remote_signal → emit_signal → UI
  */
 async function handleRemoteSignal(signalData: {
   dna_hash: string;
@@ -2004,10 +2004,10 @@ async function handleRemoteSignal(signalData: {
 }
 
 /**
- * Handle sign request from offscreen document (forwarded from gateway)
+ * Handle sign request from offscreen document (forwarded from linker)
  *
  * This is part of the remote signing protocol for kitsune2 agent info.
- * The gateway needs the browser to sign data because the private key
+ * The linker needs the browser to sign data because the private key
  * is stored in the browser's Lair keystore.
  */
 async function handleSignRequest(request: {

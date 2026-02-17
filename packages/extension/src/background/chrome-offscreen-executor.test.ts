@@ -180,12 +180,12 @@ describe("ChromeOffscreenExecutor", () => {
       sendMessageMock.mockResolvedValue({ success: true });
       const executor = await createReadyExecutor();
 
-      await executor.configureNetwork({ gatewayUrl: "http://localhost:8090", sessionToken: "tok" });
+      await executor.configureNetwork({ linkerUrl: "http://localhost:8090", sessionToken: "tok" });
 
       expect(sendMessageMock).toHaveBeenCalledWith({
         target: "offscreen",
         type: "CONFIGURE_NETWORK",
-        gatewayUrl: "http://localhost:8090",
+        linkerUrl: "http://localhost:8090",
         sessionToken: "tok",
       });
       expect(executor.networkConfigured).toBe(true);
@@ -196,7 +196,7 @@ describe("ChromeOffscreenExecutor", () => {
     it("sends UPDATE_SESSION_TOKEN when network is configured", async () => {
       sendMessageMock.mockResolvedValue({ success: true });
       const executor = await createReadyExecutor();
-      await executor.configureNetwork({ gatewayUrl: "http://localhost:8090" });
+      await executor.configureNetwork({ linkerUrl: "http://localhost:8090" });
 
       await executor.updateSessionToken("new-token");
 
@@ -225,7 +225,7 @@ describe("ChromeOffscreenExecutor", () => {
     it("sends REGISTER_AGENT with base64 hashes", async () => {
       sendMessageMock.mockResolvedValue({ success: true });
       const executor = await createReadyExecutor();
-      await executor.configureNetwork({ gatewayUrl: "http://localhost:8090" });
+      await executor.configureNetwork({ linkerUrl: "http://localhost:8090" });
 
       await executor.registerAgent("uhC0k_dna_hash_b64", "uhCAk_agent_b64");
 
@@ -306,31 +306,31 @@ describe("ChromeOffscreenExecutor", () => {
   });
 
   // --------------------------------------------------------------------------
-  // Gateway connectivity
+  // Linker connectivity
   // --------------------------------------------------------------------------
 
-  describe("gateway connectivity", () => {
-    it("disconnectGateway sends GATEWAY_DISCONNECT", async () => {
+  describe("linker connectivity", () => {
+    it("disconnectLinker sends LINKER_DISCONNECT", async () => {
       sendMessageMock.mockResolvedValue({ success: true });
       const executor = await createReadyExecutor();
 
-      await executor.disconnectGateway();
+      await executor.disconnectLinker();
 
       expect(sendMessageMock).toHaveBeenCalledWith({
         target: "offscreen",
-        type: "GATEWAY_DISCONNECT",
+        type: "LINKER_DISCONNECT",
       });
     });
 
-    it("reconnectGateway sends GATEWAY_RECONNECT", async () => {
+    it("reconnectLinker sends LINKER_RECONNECT", async () => {
       sendMessageMock.mockResolvedValue({ success: true });
       const executor = await createReadyExecutor();
 
-      await executor.reconnectGateway();
+      await executor.reconnectLinker();
 
       expect(sendMessageMock).toHaveBeenCalledWith({
         target: "offscreen",
-        type: "GATEWAY_RECONNECT",
+        type: "LINKER_RECONNECT",
       });
     });
 

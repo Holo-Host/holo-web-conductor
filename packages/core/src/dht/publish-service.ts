@@ -1,7 +1,7 @@
 /**
  * Publish Service
  *
- * Handles publishing DhtOps to the gateway and managing the publish lifecycle.
+ * Handles publishing DhtOps to the linker and managing the publish lifecycle.
  * Works with PublishTracker for persistence and retry logic.
  */
 
@@ -9,14 +9,14 @@ import { encodeHashToBase64, type DnaHash, type Record as HolochainRecord } from
 import type { ChainOp } from "./dht-op-types";
 import { PublishStatus } from "./dht-op-types";
 import { PublishTracker } from "./publish-tracker";
-import { serializeOpForGateway } from "./op-serialization";
+import { serializeOpForLinker } from "./op-serialization";
 
 /**
  * Options for the publish service
  */
 export interface PublishServiceOptions {
-  /** Gateway base URL (e.g., "http://localhost:8090") */
-  gatewayUrl: string;
+  /** Linker base URL (e.g., "http://localhost:8090") */
+  linkerUrl: string;
   /** Session token for authentication */
   sessionToken?: string;
   /** Maximum number of retries for failed publishes */
@@ -28,9 +28,9 @@ export interface PublishServiceOptions {
 }
 
 /**
- * Response from gateway publish endpoint
+ * Response from linker publish endpoint
  */
-interface GatewayPublishResponse {
+interface LinkerPublishResponse {
   /** Overall success (true if ops stored AND published to at least one peer) */
   success: boolean;
   /** Number of ops stored in TempOpStore */
@@ -47,7 +47,7 @@ interface GatewayPublishResponse {
 }
 
 /**
- * Signed DhtOp for gateway transmission
+ * Signed DhtOp for linker transmission
  */
 interface SignedDhtOpPayload {
   op_data: string; // base64 msgpack encoded
@@ -55,7 +55,7 @@ interface SignedDhtOpPayload {
 }
 
 /**
- * Publish Service - manages publishing DhtOps to gateway
+ * Publish Service - manages publishing DhtOps to linker
  */
 export class PublishService {
   private tracker: PublishTracker;
@@ -65,7 +65,7 @@ export class PublishService {
   constructor(options: PublishServiceOptions) {
     this.tracker = PublishTracker.getInstance();
     this.options = {
-      gatewayUrl: options.gatewayUrl,
+      linkerUrl: options.linkerUrl,
       sessionToken: options.sessionToken ?? "",
       maxRetries: options.maxRetries ?? 5,
       baseDelayMs: options.baseDelayMs ?? 1000,
@@ -81,10 +81,10 @@ export class PublishService {
   }
 
   /**
-   * Update gateway URL (e.g., when connection changes)
+   * Update linker URL (e.g., when connection changes)
    */
-  setGatewayUrl(url: string): void {
-    this.options.gatewayUrl = url;
+  setLinkerUrl(url: string): void {
+    this.options.linkerUrl = url;
   }
 
   /**
@@ -199,7 +199,7 @@ export class PublishService {
   }
 
   /**
-   * Publish a batch of ops to the gateway
+   * Publish a batch of ops to the linker
    */
   private async publishBatch(
     batch: Array<{
@@ -215,13 +215,13 @@ export class PublishService {
     }
 
     try {
-      // Serialize ops for gateway
+      // Serialize ops for linker
       const signedOps = await Promise.all(
-        batch.map((item) => this.serializeOpForGatewayPayload(item.op))
+        batch.map((item) => this.serializeOpForLinkerPayload(item.op))
       );
 
-      // Send to gateway
-      const response = await this.sendToGateway(dnaHash, signedOps);
+      // Send to linker
+      const response = await this.sendToLinker(dnaHash, signedOps);
 
       // Check if ops were stored but not published to any peers
       // This happens when no DHT peers are available
@@ -275,15 +275,15 @@ export class PublishService {
   }
 
   /**
-   * Serialize a ChainOp for gateway transmission
+   * Serialize a ChainOp for linker transmission
    *
-   * The gateway expects:
+   * The linker expects:
    * - op_data: base64 encoded msgpack serialized DhtOp
    * - signature: base64 encoded 64-byte Ed25519 signature
    */
-  private async serializeOpForGatewayPayload(op: ChainOp): Promise<SignedDhtOpPayload> {
+  private async serializeOpForLinkerPayload(op: ChainOp): Promise<SignedDhtOpPayload> {
     // Use the extracted serialization function
-    const opBytes = serializeOpForGateway(op);
+    const opBytes = serializeOpForLinker(op);
 
     // Convert to base64
     const opBase64 = this.uint8ArrayToBase64(opBytes);
@@ -298,15 +298,15 @@ export class PublishService {
   }
 
   /**
-   * Send ops to the gateway publish endpoint
+   * Send ops to the linker publish endpoint
    */
-  private async sendToGateway(
+  private async sendToLinker(
     dnaHash: DnaHash,
     ops: SignedDhtOpPayload[]
-  ): Promise<GatewayPublishResponse> {
+  ): Promise<LinkerPublishResponse> {
     // Use @holochain/client's encodeHashToBase64 for proper HoloHash format (u prefix)
     const dnaHashB64 = encodeHashToBase64(dnaHash);
-    const url = `${this.options.gatewayUrl}/dht/${dnaHashB64}/publish`;
+    const url = `${this.options.linkerUrl}/dht/${dnaHashB64}/publish`;
     console.log(`[PublishService] Publishing to: ${url}`);
 
     const headers: Record<string, string> = {
@@ -325,10 +325,10 @@ export class PublishService {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Gateway publish failed: ${response.status} - ${text}`);
+      throw new Error(`Linker publish failed: ${response.status} - ${text}`);
     }
 
-    return (await response.json()) as GatewayPublishResponse;
+    return (await response.json()) as LinkerPublishResponse;
   }
 
   /**

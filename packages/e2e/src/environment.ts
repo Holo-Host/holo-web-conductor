@@ -29,7 +29,7 @@ export class EnvironmentManager {
   }
 
   /**
-   * Start the test environment (conductors + gateway)
+   * Start the test environment (conductors + linker)
    */
   async start(config?: Partial<EnvConfig>): Promise<EnvState> {
     if (config) {
@@ -61,18 +61,18 @@ export class EnvironmentManager {
   }
 
   /**
-   * Pause the gateway (conductors keep running)
+   * Pause the linker (conductors keep running)
    */
-  async pauseGateway(): Promise<void> {
-    console.log('Pausing gateway...');
+  async pauseLinker(): Promise<void> {
+    console.log('Pausing linker...');
     await this.runScript('pause');
   }
 
   /**
-   * Unpause the gateway (restart it while conductors are running)
+   * Unpause the linker (restart it while conductors are running)
    */
-  async unpauseGateway(): Promise<void> {
-    console.log('Unpausing gateway...');
+  async unpauseLinker(): Promise<void> {
+    console.log('Unpausing linker...');
     await this.runScript('unpause', [`--happ=${this.config.happ}`]);
   }
 
@@ -129,8 +129,8 @@ export class EnvironmentManager {
       // No app ID
     }
 
-    // Gateway is on port 8000 by default
-    state.gatewayPort = 8000;
+    // Linker is on port 8000 by default
+    state.linkerPort = 8000;
 
     // Check if services are running by checking PID files
     const running = await this.checkProcessesRunning();
@@ -214,9 +214,9 @@ export class EnvironmentManager {
   /**
    * Get path to a specific log file
    */
-  getLogPath(name: 'gateway' | 'conductor' | 'bootstrap'): string {
+  getLogPath(name: 'linker' | 'conductor' | 'bootstrap'): string {
     const logFiles: Record<string, string> = {
-      gateway: 'gateway.log',
+      linker: 'linker.log',
       conductor: 'sandbox-generate.log',
       bootstrap: 'bootstrap.log',
     };
@@ -224,10 +224,10 @@ export class EnvironmentManager {
   }
 
   /**
-   * Get the gateway URL for the current environment
+   * Get the linker URL for the current environment
    */
-  getGatewayUrl(): string {
-    // Both gateways use port 8000 (configured in e2e-test-setup.sh)
+  getLinkerUrl(): string {
+    // Both linkers use port 8000 (configured in e2e-test-setup.sh)
     return 'http://localhost:8000';
   }
 }

@@ -77,12 +77,12 @@ export {
   buildSignedActionHashedArray,
 } from "./record-converter";
 
-// Op serialization for gateway
+// Op serialization for linker
 export {
   convertOpToRustFormat,
   stripTypeField,
   convertToExternallyTagged,
-  serializeOpForGateway,
+  serializeOpForLinker,
 } from "./op-serialization";
 
 // Validation types

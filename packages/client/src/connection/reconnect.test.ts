@@ -11,7 +11,7 @@ describe('ReconnectionManager', () => {
   let reconnectFn: ReturnType<typeof vi.fn>;
   let onStateChange: ReturnType<typeof vi.fn>;
   const defaultConfig: ConnectionConfig = {
-    gatewayUrl: 'http://localhost:8090',
+    linkerUrl: 'http://localhost:8090',
     autoReconnect: true,
     reconnectDelayMs: 100, // Short delays for testing
     maxReconnectDelayMs: 1000,

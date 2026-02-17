@@ -49,7 +49,7 @@ export class TestRunner {
       timestamp: startTime.toISOString(),
       environment: {
         happ: options.envConfig?.happ ?? 'ziptest',
-        gatewayUrl: 'http://localhost:8000',
+        linkerUrl: 'http://localhost:8000',
       },
       results: {
         total: 0,
@@ -60,7 +60,7 @@ export class TestRunner {
       },
       logs: {
         extension: [],
-        gateway: [],
+        linker: [],
         conductor: [],
         bootstrap: [],
       },
@@ -78,7 +78,7 @@ export class TestRunner {
       const envState = await this.env.start(options.envConfig);
 
       results.environment.dnaHash = envState.dnaHash;
-      results.environment.gatewayUrl = this.env.getGatewayUrl();
+      results.environment.linkerUrl = this.env.getLinkerUrl();
 
       // Attach log collectors if requested
       if (options.collectLogs !== false) {
@@ -95,7 +95,7 @@ export class TestRunner {
       if (options.collectLogs !== false) {
         results.logs = {
           extension: this.logCollector.getLogs({ source: 'extension' }),
-          gateway: this.logCollector.getLogs({ source: 'gateway' }),
+          linker: this.logCollector.getLogs({ source: 'linker' }),
           conductor: this.logCollector.getLogs({ source: 'conductor' }),
           bootstrap: this.logCollector.getLogs({ source: 'bootstrap' }),
         };
@@ -122,7 +122,7 @@ export class TestRunner {
    * Attach log collectors to environment log files
    */
   private async attachLogCollectors(): Promise<void> {
-    await this.logCollector.attachFileLog('gateway', this.env.getLogPath('gateway'));
+    await this.logCollector.attachFileLog('linker', this.env.getLogPath('linker'));
     await this.logCollector.attachFileLog('conductor', this.env.getLogPath('conductor'));
     await this.logCollector.attachFileLog('bootstrap', this.env.getLogPath('bootstrap'));
   }
@@ -149,7 +149,7 @@ export class TestRunner {
         stdio: ['inherit', 'pipe', 'pipe'],
         env: {
           ...process.env,
-          GATEWAY_URL: this.env.getGatewayUrl(),
+          LINKER_URL: this.env.getLinkerUrl(),
         },
       });
 
@@ -257,7 +257,7 @@ export class TestRunner {
       '',
       'Fishy E2E Test Runner',
       '=====================',
-      `Environment: ${results.environment.happ} | Gateway: ${results.environment.gatewayUrl}`,
+      `Environment: ${results.environment.happ} | Linker: ${results.environment.linkerUrl}`,
       '',
     ];
 

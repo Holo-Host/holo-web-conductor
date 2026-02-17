@@ -9,7 +9,7 @@ import { ConnectionStatus, type ConnectionConfig, type ConnectionState } from '.
 describe('ConnectionMonitor', () => {
   let monitor: ConnectionMonitor;
   const defaultConfig: ConnectionConfig = {
-    gatewayUrl: 'http://localhost:8090',
+    linkerUrl: 'http://localhost:8090',
     healthCheckIntervalMs: 10000,
   };
 
@@ -99,18 +99,18 @@ describe('ConnectionMonitor', () => {
     });
   });
 
-  describe('setGatewayHealth', () => {
+  describe('setLinkerHealth', () => {
     it('updates health status without changing connection status', () => {
       monitor.setConnected();
-      monitor.setGatewayHealth(false, false, 'Gateway unreachable');
+      monitor.setLinkerHealth(false, false, 'Linker unreachable');
 
       const state = monitor.getState();
       // Status should still be Connected (extension is connected)
       expect(state.status).toBe(ConnectionStatus.Connected);
-      // But health reflects gateway being down
+      // But health reflects linker being down
       expect(state.httpHealthy).toBe(false);
       expect(state.wsHealthy).toBe(false);
-      expect(state.lastError).toBe('Gateway unreachable');
+      expect(state.lastError).toBe('Linker unreachable');
     });
 
     it('emits connection:change event when health changes', () => {
@@ -119,7 +119,7 @@ describe('ConnectionMonitor', () => {
       const listener = vi.fn();
       monitor.on('connection:change', listener);
 
-      monitor.setGatewayHealth(false, true, 'HTTP down');
+      monitor.setLinkerHealth(false, true, 'HTTP down');
 
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -132,8 +132,8 @@ describe('ConnectionMonitor', () => {
 
     it('clears error when health is restored', () => {
       monitor.setConnected();
-      monitor.setGatewayHealth(false, false, 'Gateway down');
-      monitor.setGatewayHealth(true, true);
+      monitor.setLinkerHealth(false, false, 'Linker down');
+      monitor.setLinkerHealth(true, true);
 
       const state = monitor.getState();
       expect(state.httpHealthy).toBe(true);

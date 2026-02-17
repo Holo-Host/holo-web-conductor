@@ -2,7 +2,7 @@
  * get_agent_activity host function
  *
  * Returns agent activity (chain status and action hashes) for an agent.
- * Queries the network via gateway since fishy is a zero-arc node.
+ * Queries the network via linker since fishy is a zero-arc node.
  *
  * Input: GetAgentActivityInput { agent_pubkey, chain_query_filter, activity_request, get_options }
  * Output: AgentActivity { valid_activity, rejected_activity, status, highest_observed, warrants }
@@ -38,7 +38,7 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
       .join("")}..., request=${activityRequest}`
   );
 
-  // Query network via gateway
+  // Query network via linker
   const networkService = getNetworkService();
   if (!networkService) {
     console.log("[HostFn] get_agent_activity: no network service, returning empty");

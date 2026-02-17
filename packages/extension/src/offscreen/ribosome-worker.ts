@@ -116,7 +116,7 @@ let signResultBuffer: SharedArrayBuffer | null = null;
 let signResultView: Uint8Array | null = null;
 
 // Network configuration
-let gatewayUrl: string = '';
+let linkerUrl: string = '';
 let sessionToken: string | null = null;
 
 // Request ID counter
@@ -948,7 +948,7 @@ class ProxyNetworkService implements NetworkService {
   private buildRecordUrl(dnaHash: Uint8Array, hash: Uint8Array): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
-    return `${gatewayUrl}/dht/${dnaHashB64}/record/${hashB64}`;
+    return `${linkerUrl}/dht/${dnaHashB64}/record/${hashB64}`;
   }
 
   /**
@@ -957,7 +957,7 @@ class ProxyNetworkService implements NetworkService {
   private buildDetailsUrl(dnaHash: Uint8Array, hash: Uint8Array): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
-    return `${gatewayUrl}/dht/${dnaHashB64}/details/${hashB64}`;
+    return `${linkerUrl}/dht/${dnaHashB64}/details/${hashB64}`;
   }
 
   /**
@@ -974,7 +974,7 @@ class ProxyNetworkService implements NetworkService {
     if (zomeIndex !== undefined) {
       params.set('zome_index', zomeIndex.toString());
     }
-    return `${gatewayUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
+    return `${linkerUrl}/dht/${dnaHashB64}/links?${params.toString()}`;
   }
 
   /**
@@ -991,7 +991,7 @@ class ProxyNetworkService implements NetworkService {
     if (zomeIndex !== undefined) {
       params.set('zome_index', zomeIndex.toString());
     }
-    return `${gatewayUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
+    return `${linkerUrl}/dht/${dnaHashB64}/count_links?${params.toString()}`;
   }
 
   /**
@@ -1021,7 +1021,7 @@ class ProxyNetworkService implements NetworkService {
   }
 
   /**
-   * Parse record response from gateway
+   * Parse record response from linker
    */
   private parseRecordResponse(responseText: string): any | null {
     try {
@@ -1041,7 +1041,7 @@ class ProxyNetworkService implements NetworkService {
   }
 
   /**
-   * Parse entry from gateway response
+   * Parse entry from linker response
    */
   private parseEntry(data: unknown): any {
     if (!data) {
@@ -1059,13 +1059,13 @@ class ProxyNetworkService implements NetworkService {
   }
 
   /**
-   * Parse links response from gateway
+   * Parse links response from linker
    *
-   * Gateway may return one of two formats:
+   * Linker may return one of two formats:
    * 1. Vec<Link> - array of Link objects (conductor-dht mode)
    * 2. WireLinkOps - {creates: [...], deletes: [...]} (direct kitsune2 mode)
    *
-   * Gateway returns hashes as JSON arrays (e.g., [132, 41, 36, ...])
+   * Linker returns hashes as JSON arrays (e.g., [132, 41, 36, ...])
    * NOT as base64 strings. Use normalizeByteArrays to convert.
    */
   private parseLinksResponse(responseText: string, baseAddress?: Uint8Array): any[] {
@@ -1084,7 +1084,7 @@ class ProxyNetworkService implements NetworkService {
         return [];
       }
 
-      console.log(`[ProxyNetwork] Parsing ${data.length} links from gateway (Link array format)`);
+      console.log(`[ProxyNetwork] Parsing ${data.length} links from linker (Link array format)`);
 
       return data.map((link: any) => ({
         create_link_hash: this.normalizeByteArrays(link.create_link_hash),
@@ -1179,7 +1179,7 @@ class ProxyNetworkService implements NetworkService {
   // NetworkService interface methods
 
   getRecordSync(dnaHash: Uint8Array, hash: Uint8Array, options?: any): any | null {
-    if (!gatewayUrl) {
+    if (!linkerUrl) {
       return null;
     }
 
@@ -1208,7 +1208,7 @@ class ProxyNetworkService implements NetworkService {
   }
 
   getLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number, options?: any): any[] {
-    if (!gatewayUrl) {
+    if (!linkerUrl) {
       return [];
     }
 
@@ -1237,7 +1237,7 @@ class ProxyNetworkService implements NetworkService {
   }
 
   getDetailsSync(dnaHash: Uint8Array, hash: Uint8Array, options?: any): any | null {
-    if (!gatewayUrl) {
+    if (!linkerUrl) {
       return null;
     }
 
@@ -1266,7 +1266,7 @@ class ProxyNetworkService implements NetworkService {
   }
 
   countLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number, options?: any): number {
-    if (!gatewayUrl) {
+    if (!linkerUrl) {
       return 0;
     }
 
@@ -1304,12 +1304,12 @@ class ProxyNetworkService implements NetworkService {
     activityRequest: 'status' | 'full',
     options?: any,
   ): AgentActivityResponse | null {
-    if (!gatewayUrl) {
+    if (!linkerUrl) {
       return null;
     }
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const agentB64 = this.toHolochainBase64(agentPubKey);
-    const url = `${gatewayUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
+    const url = `${linkerUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
     console.log(`[ProxyNetwork] Fetching agent activity: ${url}`);
     try {
       const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
@@ -1338,11 +1338,11 @@ class ProxyNetworkService implements NetworkService {
     includeCachedEntries: boolean,
     options?: any,
   ): MustGetAgentActivityResponse | null {
-    if (!gatewayUrl) {
+    if (!linkerUrl) {
       return null;
     }
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
-    const url = `${gatewayUrl}/dht/${dnaHashB64}/must_get_agent_activity`;
+    const url = `${linkerUrl}/dht/${dnaHashB64}/must_get_agent_activity`;
     const body = JSON.stringify({
       agent: Array.from(agent),
       chain_top: Array.from(chainTop),
@@ -1370,12 +1370,12 @@ class ProxyNetworkService implements NetworkService {
   }
 
   isAvailable(): boolean {
-    // Network is available if gateway URL is configured
-    return gatewayUrl !== '';
+    // Network is available if linker URL is configured
+    return linkerUrl !== '';
   }
 
-  getGatewayUrl(): string {
-    return gatewayUrl;
+  getLinkerUrl(): string {
+    return linkerUrl;
   }
 
   getSessionToken(): string | null {
@@ -1486,7 +1486,7 @@ async function handleCallZome(payload: any): Promise<any> {
   if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
     console.log(`[Ribosome Worker] Sending ${zomeResult.remoteSignals.length} remote signals`);
     // Send as separate message - offscreen will forward to WebSocket
-    // Include DNA hash so offscreen knows which gateway connection to use
+    // Include DNA hash so offscreen knows which linker connection to use
     self.postMessage({
       type: 'SEND_REMOTE_SIGNALS',
       dnaHash: Array.from(cellIdBytes[0]),
@@ -1550,9 +1550,9 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'CONFIGURE_NETWORK':
-        gatewayUrl = payload.gatewayUrl || '';
+        linkerUrl = payload.linkerUrl || '';
         sessionToken = payload.sessionToken || null;
-        console.log('[Ribosome Worker] Network configured:', gatewayUrl);
+        console.log('[Ribosome Worker] Network configured:', linkerUrl);
         result = { success: true };
         break;
 

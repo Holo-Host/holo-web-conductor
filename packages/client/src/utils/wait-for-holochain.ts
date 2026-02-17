@@ -23,7 +23,7 @@ declare global {
  * @example
  * ```typescript
  * await waitForHolochain();
- * const client = await WebConductorAppClient.connect({ gatewayUrl: 'http://localhost:8090' });
+ * const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
  * ```
  */
 export function waitForHolochain(timeoutMs: number = 5000): Promise<void> {

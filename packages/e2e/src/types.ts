@@ -12,8 +12,8 @@ export interface EnvState {
   running: boolean;
   /** Bootstrap server address */
   bootstrapAddr?: string;
-  /** Gateway port */
-  gatewayPort?: number;
+  /** Linker port */
+  linkerPort?: number;
   /** Admin ports for each conductor */
   adminPorts: number[];
   /** DNA hash from the conductor */
@@ -27,7 +27,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface LogEntry {
   /** Timestamp of the log entry */
   timestamp: Date;
-  /** Source of the log (gateway, conductor, extension, bootstrap) */
+  /** Source of the log (linker, conductor, extension, bootstrap) */
   source: string;
   /** Log level */
   level: LogLevel;
@@ -66,7 +66,7 @@ export interface E2EResults {
   environment: {
     happ: string;
     dnaHash?: string;
-    gatewayUrl: string;
+    linkerUrl: string;
   };
   /** Test results summary */
   results: {
@@ -79,7 +79,7 @@ export interface E2EResults {
   /** Aggregated logs by source */
   logs: {
     extension: LogEntry[];
-    gateway: LogEntry[];
+    linker: LogEntry[];
     conductor: LogEntry[];
     bootstrap: LogEntry[];
   };

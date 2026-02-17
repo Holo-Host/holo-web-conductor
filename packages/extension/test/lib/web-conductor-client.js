@@ -73,7 +73,7 @@ class C {
    * Called internally by FishyAppClient.
    */
   reportCallFailure(e) {
-    this.consecutiveFailures++, (e.message.includes("network") || e.message.includes("fetch") || e.message.includes("Failed to fetch") || e.message.includes("NetworkError") || e.message.includes("gateway")) && this.consecutiveFailures >= this.MAX_FAILURES_BEFORE_UNHEALTHY && (this.updateState({
+    this.consecutiveFailures++, (e.message.includes("network") || e.message.includes("fetch") || e.message.includes("Failed to fetch") || e.message.includes("NetworkError") || e.message.includes("linker")) && this.consecutiveFailures >= this.MAX_FAILURES_BEFORE_UNHEALTHY && (this.updateState({
       status: a.Error,
       httpHealthy: !1,
       lastError: e.message
@@ -115,10 +115,10 @@ class C {
     });
   }
   /**
-   * Update gateway health status without changing overall connection status.
-   * Used when extension is connected but gateway may be unreachable.
+   * Update linker health status without changing overall connection status.
+   * Used when extension is connected but linker may be unreachable.
    */
-  setGatewayHealth(e, t, n) {
+  setLinkerHealth(e, t, n) {
     this.updateState({
       httpHealthy: e,
       wsHealthy: t,
@@ -134,9 +134,9 @@ class C {
           status: a.Error,
           httpHealthy: t.httpHealthy,
           wsHealthy: t.wsHealthy,
-          lastError: t.lastError || "Gateway connection lost"
+          lastError: t.lastError || "Linker connection lost"
         }), this.emit("connection:error", {
-          error: t.lastError || "Gateway connection lost",
+          error: t.lastError || "Linker connection lost",
           recoverable: !0
         })) : !n && s ? (this.updateState({
           status: a.Connected,
@@ -749,7 +749,7 @@ class U {
   /**
    * Create and connect a FishyAppClient.
    *
-   * @param config - Connection configuration (string for just gatewayUrl, or full config object)
+   * @param config - Connection configuration (string for just linkerUrl, or full config object)
    * @returns Connected FishyAppClient
    *
    * @example
@@ -759,14 +759,14 @@ class U {
    *
    * // With options
    * const client = await FishyAppClient.connect({
-   *   gatewayUrl: 'http://localhost:8090',
+   *   linkerUrl: 'http://localhost:8090',
    *   autoReconnect: true,
    *   reconnectDelayMs: 2000,
    * });
    * ```
    */
   static async connect(e) {
-    const t = typeof e == "string" ? { gatewayUrl: e } : e, n = new U(t);
+    const t = typeof e == "string" ? { linkerUrl: e } : e, n = new U(t);
     return await n.initialize(), n;
   }
   async initialize() {
@@ -774,7 +774,7 @@ class U {
     const e = window.holochain;
     if (!(e != null && e.isFishy))
       throw new Error("Fishy extension not detected. Please install the Fishy browser extension.");
-    await e.configureNetwork({ gatewayUrl: this.connectionConfig.gatewayUrl }), await e.connect();
+    await e.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl }), await e.connect();
     try {
       const s = await e.appInfo();
       if (s != null && s.agentPubKey && ((n = s == null ? void 0 : s.cells) == null ? void 0 : n.length) > 0) {
@@ -794,21 +794,21 @@ class U {
    * Subscribe to extension's connection status updates for real-time monitoring.
    * The extension handles health checks - we just reflect its status.
    *
-   * Extension connection status is separate from gateway health:
+   * Extension connection status is separate from linker health:
    * - Extension: Always "connected" if window.holochain exists
-   * - Gateway: May be healthy or unreachable
+   * - Linker: May be healthy or unreachable
    */
   subscribeToExtensionConnectionStatus() {
     const e = window.holochain;
     e != null && e.onConnectionChange && (this.reconnectionManager.cancel(), e.getConnectionStatus && e.getConnectionStatus().then((t) => {
-      this.connection.setGatewayHealth(
+      this.connection.setLinkerHealth(
         t.httpHealthy,
         t.wsHealthy,
         t.lastError
       );
     }).catch(() => {
     }), e.onConnectionChange((t) => {
-      this.connection.setGatewayHealth(
+      this.connection.setLinkerHealth(
         t.httpHealthy,
         t.wsHealthy,
         t.lastError

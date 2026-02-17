@@ -20,7 +20,7 @@ const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
 const SANDBOX_DIR = '/tmp/hwc-e2e';
 // Use HTTP URL to avoid file:// issues with Chrome extension signal delivery
-const TEST_PAGE_URL = 'http://localhost:3333/e2e-gateway-test.html';
+const TEST_PAGE_URL = 'http://localhost:3333/e2e-linker-test.html';
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
 
 export interface HwcFixtures {
@@ -30,8 +30,8 @@ export interface HwcFixtures {
   extensionId: string;
   /** Test page for interacting with extension */
   testPage: Page;
-  /** Gateway URL from environment */
-  gatewayUrl: string;
+  /** Linker URL from environment */
+  linkerUrl: string;
   /** DNA hash from sandbox */
   dnaHash: string | null;
   /** App ID from sandbox */
@@ -164,8 +164,8 @@ export const test = base.extend<HwcFixtures>({
     await page.close();
   },
 
-  gatewayUrl: async ({}, use) => {
-    const url = process.env.GATEWAY_URL ?? 'http://localhost:8000';
+  linkerUrl: async ({}, use) => {
+    const url = process.env.LINKER_URL ?? 'http://localhost:8000';
     await use(url);
   },
 
@@ -188,19 +188,19 @@ export const test = base.extend<HwcFixtures>({
 export { expect };
 
 /**
- * Helper to connect to extension and configure gateway
+ * Helper to connect to extension and configure linker
  */
 export async function connectAndConfigure(
   page: Page,
-  gatewayUrl: string
+  linkerUrl: string
 ): Promise<void> {
   await page.evaluate(async (url) => {
     const holochain = (window as any).holochain;
     await holochain.connect();
     if (url) {
-      await holochain.configureNetwork({ gatewayUrl: url });
+      await holochain.configureNetwork({ linkerUrl: url });
     }
-  }, gatewayUrl);
+  }, linkerUrl);
 }
 
 /**
