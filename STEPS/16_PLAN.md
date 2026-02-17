@@ -1,5 +1,25 @@
 # Step 16: E2E Debugging Automation
 
+**Status**: COMPLETE (infrastructure built, tests written)
+
+**What was built** (differs from original plan in test file names):
+- `packages/e2e/package.json`, `tsconfig.json` -- package setup (16.1)
+- `packages/e2e/src/environment.ts` -- EnvironmentManager wrapping e2e-test-setup.sh (16.2)
+- `packages/e2e/src/log-collector.ts` -- log aggregation (16.3)
+- `packages/e2e/src/browser-context.ts` -- Playwright persistent context (16.4)
+- `packages/e2e/src/test-runner.ts`, `src/index.ts` -- test runner + CLI (16.5)
+- `packages/e2e/src/types.ts` -- shared types
+- `packages/e2e/playwright.config.cjs` -- Playwright config with JSON reporter
+- `packages/e2e/tests/fixtures.ts` -- test fixtures
+- `packages/e2e/tests/ziptest.test.ts` -- ziptest e2e suite
+- `packages/e2e/tests/mewsfeed.test.ts` -- mewsfeed e2e suite (blocked upstream on kitsune2 timeout)
+
+**Not built** (from original plan): `dht-ops.test.ts`, `cascade.test.ts`, `signals.test.ts` were replaced by `ziptest.test.ts` and `mewsfeed.test.ts` which cover equivalent scenarios through real hApp testing.
+
+---
+
+## Original Plan (for reference)
+
 ## Problem Statement
 
 Currently debugging e2e issues requires manual intervention:

@@ -51,13 +51,15 @@
 | 14.3 | ✅ | Enhanced FishyAppClient |
 | 14.4 | ✅ | Extension API Enhancements |
 | 15 | 📋 | Robust Publish Verification |
-| 16 | ⏳ | E2E Debugging Automation |
-| 17 | ⏳ | hc-membrane 0.6.1 Integration |
+| 16 | ✅ | E2E Debugging Automation (Playwright infrastructure) |
+| 17 | ✅ | hc-membrane 0.6.1 Integration (core complete, see notes) |
 | 18 | ✅ | Zome Call Serialization |
-| 19 | 🔀 | Mewsfeed E2E (pending merge) |
+| 19 | ✅ | Mewsfeed E2E (merged; blocked upstream on kitsune2 timeout) |
 | 20 | ✅ | Validation Host Functions & Validate Callback |
-| 21 | 🔀 | Firefox Compatibility Plan (pending merge) |
+| 21 | ✅ | Firefox Compatibility Plan (plan doc only) |
 | 22 | 📋 | Migration to holo-host GitHub Org |
+| 23 | ⏳ | Agent Activity Network Integration |
+| 24 | 📋 | Kitsune2 DHT Query Fix (critical) |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 🔀 Pending Merge | 📋 Planned | ❌ Blocked
@@ -66,10 +68,10 @@
 
 ## Pending Steps
 
-### Step 9: Additional Holochain Features
-- **9.1** Implement `get_agent_activity`
-- **9.2** Implement `must_get*` functions
-- **9.3** Implement validation callbacks
+### Step 9: Additional Holochain Features (all complete)
+- **9.1** ✅ `get_agent_activity` (commit ffb3ac0)
+- **9.2** ✅ `must_get*` functions (Step 20)
+- **9.3** ✅ Validation callbacks (Step 20)
 
 ### Step 12.2: DHT Publishing Debug Panel
 See [12.2_PLAN.md](./12.2_PLAN.md)
@@ -98,54 +100,50 @@ Ensure publishing only proceeds when network connectivity is verified:
 
 **Background**: Currently auto-retry on reconnect uses a 2-second delay to hope agent registration propagates. This should verify actual peer connectivity instead.
 
-### Step 16: E2E Debugging Automation
-**Priority**: High (developer productivity)
-**Status**: In Progress
+### Step 16: E2E Debugging Automation (complete)
+**Status**: Complete
 
-Enable Claude to run e2e tests programmatically without manual intervention:
-- Playwright-based test runner with extension loading
-- Environment manager wrapping e2e-test-setup.sh
-- Log aggregation from gateway/conductor/extension
-- Structured JSON output for programmatic parsing
+Playwright-based e2e test infrastructure in `packages/e2e/`:
+- `src/environment.ts` - EnvironmentManager wrapping e2e-test-setup.sh
+- `src/browser-context.ts` - Playwright persistent context with extension loading
+- `src/log-collector.ts` - Multi-source log aggregation
+- `src/test-runner.ts` - Test execution orchestration
+- `tests/ziptest.test.ts`, `tests/mewsfeed.test.ts` - E2E test suites
+- `playwright.config.cjs` - Chromium extension project with JSON reporter
 
-See [16_PLAN.md](./16_PLAN.md)
+See [16_PLAN.md](./16_PLAN.md) for original design.
 
-### Step 17: hc-membrane 0.6.1 Integration
-**Priority**: High (required for Holochain 0.6.1 compatibility)
-**Status**: In Progress - Partial Success
-**Depends On**: hc-membrane repo (separate)
+### Step 17: hc-membrane 0.6.1 Integration (complete)
+**Status**: Complete (all changes committed to hc-membrane branch)
 
-Integrate fishy extension with updated hc-membrane gateway using kitsune2 0.4.x + iroh transport:
+Integrated fishy extension with hc-membrane gateway (kitsune2 0.4.x + iroh transport).
+Core functionality works: agent registration, preflight exchange, publishing, get_links, cross-agent profile visibility.
 
-**What Works**:
-- Both browser agents register with gateway
-- Gateway exchanges preflights with conductors (kitsune2/iroh)
-- Profile data published to both conductors
-- get_links queries return correct data
-- One browser window shows the other agent's profile
+**Known upstream issue**: Kitsune2 query-response path broken -- blocks all real multi-node operation (see Step 24).
 
-**What Doesn't Work Yet**:
-- Second browser window times out waiting for "active" agent
-- Likely timing or "active" status detection issue
-
-**Uncommitted Changes**:
-- `packages/core/src/network/sync-xhr-service.ts` - WireLinkOps dual-format parsing
-- `packages/extension/src/offscreen/ribosome-worker.ts` - Mirror WireLinkOps parsing
-- `packages/e2e/src/environment.ts` - Gateway config for membrane mode
-- `scripts/e2e-test-setup.sh` - Added --gateway option, quic transport, ziptest UI
-
-**Next Steps**:
-1. Diagnose why one browser window doesn't see "active" agents
-2. Check ping/signal flow between browser agents
-3. May need signal relay support for browser-to-browser pings
-
-### Step 18: Zome Call Serialization
-**Priority**: High (data integrity)
-**Status**: Complete (merged)
-
-Prevent concurrent zome calls from corrupting the source chain. The worker's async `onmessage` handler can interleave two `CALL_ZOME` messages at `await` points within the transaction window, causing SQLite errors or silent data corruption. Fix: promise-chain serialization in the worker for `CALL_ZOME` messages.
-
+### Step 18: Zome Call Serialization (complete)
+Promise-chain serialization in ribosome worker for CALL_ZOME messages.
 See [18_PLAN.md](./18_PLAN.md)
+
+### Step 24: Kitsune2 DHT Query Fix
+**Priority**: Critical (blocks real multi-node operation)
+**Repo**: hc-membrane (kitsune-dht-ops branch)
+
+The kitsune2 `send_notify` request-response path for DHT queries (`GetReq`, `GetLinksReq`) is broken -- conductors never respond within 30 seconds. Publishing works (fire-and-forget), but querying does not.
+
+**Why this is critical**: Fishy nodes are zero-arc. They don't hold DHT data. The current ziptest e2e only works because both agents publish through the same gateway, so the gateway's REST endpoints can serve data from its locally-managed conductors. In any real deployment with multiple gateways or external conductors, data retrieval requires the kitsune2 query path.
+
+**Root cause candidates** (from [19.3 investigation](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md)):
+1. Conductor doesn't recognize the wire message format from hc-membrane
+2. Conductor processes query but doesn't send response back to non-agent peers (gateway)
+3. Response sent but not routed correctly in hc-membrane's `recv_notify` handler
+
+**Next steps**:
+1. Enable TRACE logging on conductor to verify `GetLinksReq` arrives and is processed
+2. Compare wire message encoding between hc-membrane and holochain's `holochain_p2p/src/types/wire.rs`
+3. Check if conductor's kitsune2 handler sends responses to non-agent peers
+
+See [19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) for full analysis.
 
 ### Step 22: Migration to holo-host GitHub Org
 **Priority**: High (organizational)
