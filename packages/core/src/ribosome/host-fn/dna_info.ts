@@ -1,65 +1,76 @@
 /**
- * dna_info host function
+ * dna_info host function (v1 and v2)
  *
  * Returns information about the current DNA.
+ *
+ * v1: DnaInfoV1 { name, hash, properties, zome_names }
+ * v2: DnaInfoV2 { name, hash, modifiers: { network_seed, properties }, zome_names }
+ *
+ * HDI 0.7+ calls __hc__dna_info_2 which expects DnaInfoV2.
+ * Reference: holochain/crates/holochain_integrity_types/src/info.rs
  */
 
+import { encode } from "@msgpack/msgpack";
 import { HostFunctionImpl } from "./base";
-import { deserializeFromWasm, serializeResult } from "../serialization";
+import { serializeResult } from "../serialization";
 
 /**
- * DNA info response structure
+ * Get all zome names from the DNA manifest.
  */
-export interface DnaInfo {
-  /** DNA hash */
-  hash: Uint8Array;
-
-  /** DNA name */
-  name: string;
-
-  /** DNA properties (arbitrary data) */
-  properties: Record<string, unknown>;
-
-  /** List of zome names in this DNA */
-  zome_names: string[];
-
-  /** DNA modifiers */
-  modifiers: {
-    /** Network seed for DHT isolation */
-    network_seed: string;
-
-    /** Properties used during DNA creation */
-    properties: Record<string, unknown>;
-
-    /** Origin time (microseconds since UNIX epoch) */
-    origin_time: number;
-  };
+function getAllZomeNames(context: { callContext: { dnaManifest?: { integrity_zomes?: { name: string }[]; coordinator_zomes?: { name: string }[] } } }): string[] {
+  const manifest = context.callContext.dnaManifest;
+  if (!manifest) return [];
+  const names: string[] = [];
+  for (const z of manifest.integrity_zomes || []) names.push(z.name);
+  for (const z of manifest.coordinator_zomes || []) names.push(z.name);
+  return names;
 }
 
 /**
- * dna_info host function implementation
+ * dna_info v1 host function (__hc__dna_info_1)
  *
- * Returns DNA hash and metadata.
- * For now, returns mock data with basic structure.
+ * DnaInfoV1 { name, hash, properties, zome_names }
+ * properties is SerializedBytes (Uint8Array of msgpack-encoded data)
  */
 export const dnaInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
+  const [dnaHash] = callContext.cellId;
+  const manifest = callContext.dnaManifest;
 
-  // Get DNA hash from cell ID
-  const [dnaHash, _agentPubKey] = callContext.cellId;
+  const propertiesBytes = new Uint8Array(encode(manifest?.properties || null));
 
-  // Mock DNA info data
-  const dnaInfoData: DnaInfo = {
+  return serializeResult(instance, {
+    name: manifest?.name || "unknown",
     hash: dnaHash,
-    name: "mock_dna",
-    properties: {},
-    zome_names: [callContext.zome], // Current zome at minimum
-    modifiers: {
-      network_seed: "",
-      properties: {},
-      origin_time: Date.now() * 1000, // Current time in microseconds
-    },
-  };
+    properties: propertiesBytes,
+    zome_names: getAllZomeNames(context),
+  });
+};
 
-  return serializeResult(instance, dnaInfoData);
+/**
+ * dna_info v2 host function (__hc__dna_info_2)
+ *
+ * DnaInfoV2 { name, hash, modifiers: DnaModifiers, zome_names }
+ * DnaModifiers { network_seed: String, properties: SerializedBytes }
+ *
+ * SerializedBytes is serialized as msgpack binary (Uint8Array).
+ */
+export const dnaInfoV2: HostFunctionImpl = (context, inputPtr, inputLen) => {
+  const { callContext, instance } = context;
+  const [dnaHash] = callContext.cellId;
+  const manifest = callContext.dnaManifest;
+
+  // SerializedBytes of properties: msgpack-encode the properties value
+  // Default is () encoded as msgpack nil = [0xc0]
+  const propertiesBytes = new Uint8Array(encode(manifest?.properties || null));
+
+  return serializeResult(instance, {
+    name: manifest?.name || "unknown",
+    hash: dnaHash,
+    modifiers: {
+      network_seed: manifest?.network_seed || "",
+      properties: propertiesBytes,
+    },
+    zome_names: getAllZomeNames(context),
+  });
 };

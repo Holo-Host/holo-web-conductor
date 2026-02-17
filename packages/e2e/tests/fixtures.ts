@@ -875,9 +875,19 @@ export async function createMewsfeedProfile(page: Page, nickname: string): Promi
     .waitFor({ state: 'visible', timeout: 30000 });
   console.log(`[createMewsfeedProfile] Found mew button on feed page`);
 
+  // Type text into the mew input first so that after profile creation,
+  // the app can submit a valid mew (mews must be >= 10 characters).
+  const mewInput = page.locator('[data-placeholder="What\'s mewing on?"]').first();
+  try {
+    await mewInput.waitFor({ state: 'visible', timeout: 10000 });
+    await mewInput.click();
+    await page.keyboard.type(`Hello from ${nickname} on mewsfeed`, { delay: 30 });
+    console.log(`[createMewsfeedProfile] Typed initial mew text`);
+  } catch {
+    console.log(`[createMewsfeedProfile] Could not find mew input, proceeding to click button`);
+  }
+
   // Click the button programmatically to bypass DaisyUI btn-disabled pointer-events:none.
-  // When the mew input is empty, the button gets pointer-events:none via CSS,
-  // but HTMLElement.click() dispatches the event regardless.
   const clicked = await page.evaluate(() => {
     const buttons = document.querySelectorAll('button');
     for (const btn of buttons) {

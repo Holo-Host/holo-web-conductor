@@ -129,6 +129,3 @@ export const xSalsa20Poly1305SharedSecretExport = createNotImplementedStub(
 export const xSalsa20Poly1305SharedSecretIngest = createNotImplementedStub(
   "x_salsa20_poly1305_shared_secret_ingest"
 );
-
-// DNA info version 2
-export const dnaInfo2 = createNullStub("dna_info_2");

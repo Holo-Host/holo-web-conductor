@@ -13,7 +13,7 @@ const log = createLogger('HostFn');
 // Import all host functions
 import { call as callImpl } from "./call";
 import { agentInfo } from "./agent_info";
-import { dnaInfo } from "./dna_info";
+import { dnaInfo, dnaInfoV2 } from "./dna_info";
 import { zomeInfo } from "./zome_info";
 import { callInfo } from "./call_info";
 import { randomBytes } from "./random_bytes";
@@ -283,8 +283,8 @@ function initializeRegistry(): HostFunctionRegistry {
     stubs.xSalsa20Poly1305SharedSecretIngest
   );
 
-  // DNA info version 2
-  registry.registerHostFunction("__hc__dna_info_2", stubs.dnaInfo2);
+  // DNA info version 2 (HDI 0.7+ uses this instead of v1)
+  registry.registerHostFunction("__hc__dna_info_2", dnaInfoV2);
 
   log.debug(`Initialized registry with ${registry.size} host functions`);
 
