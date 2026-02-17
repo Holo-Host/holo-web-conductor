@@ -1,12 +1,12 @@
 /**
- * @zippy/fishy-client
+ * @holo-host/web-conductor-client
  *
  * Drop-in replacement for @holochain/client's AppClient that uses the
- * Fishy browser extension for zero-arc Holochain nodes.
+ * Holo Web Conductor browser extension for zero-arc Holochain nodes.
  *
  * @example
  * ```typescript
- * import { FishyAppClient, waitForFishy, ConnectionStatus } from '@zippy/fishy-client';
+ * import { FishyAppClient, waitForFishy, ConnectionStatus } from '@holo-host/web-conductor-client';
  *
  * // Wait for extension to be ready
  * await waitForFishy();

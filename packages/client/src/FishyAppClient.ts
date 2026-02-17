@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { FishyAppClient, waitForFishy } from '@zippy/fishy-client';
+ * import { FishyAppClient, waitForFishy } from '@holo-host/web-conductor-client';
  *
  * await waitForFishy();
  * const client = await FishyAppClient.connect({

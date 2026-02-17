@@ -1,18 +1,18 @@
-# @zippy/fishy-client
+# @holo-host/web-conductor-client
 
 Drop-in replacement for `@holochain/client`'s AppClient that uses the
-Fishy browser extension for zero-arc Holochain nodes.
+Holo Web Conductor browser extension for zero-arc Holochain nodes.
 
 ## Installation
 
 ```bash
-npm install @zippy/fishy-client
+npm install @holo-host/web-conductor-client
 ```
 
 ## Usage
 
 ```typescript
-import { FishyAppClient, waitForFishy, ConnectionStatus } from '@zippy/fishy-client';
+import { FishyAppClient, waitForFishy, ConnectionStatus } from '@holo-host/web-conductor-client';
 
 // Wait for extension to be ready
 await waitForFishy();
@@ -41,15 +41,15 @@ const result = await client.callZome({
 });
 ```
 
-## Switching between Fishy and standard Holochain
+## Switching between Holo Web Conductor and standard Holochain
 
 ```typescript
-import { FishyAppClient, waitForFishy, isFishyAvailable } from '@zippy/fishy-client';
+import { FishyAppClient, waitForFishy, isFishyAvailable } from '@holo-host/web-conductor-client';
 import { AppWebsocket } from '@holochain/client';
 import type { AppClient } from '@holochain/client';
 
 async function getClient(): Promise<AppClient> {
-  // Check if Fishy extension is available
+  // Check if Holo Web Conductor extension is available
   if (isFishyAvailable()) {
     await waitForFishy();
     return FishyAppClient.connect('http://localhost:8090');
@@ -119,7 +119,7 @@ client.onConnection('connection:reconnected', () => {
 ## Connection Status Enum
 
 ```typescript
-import { ConnectionStatus } from '@zippy/fishy-client';
+import { ConnectionStatus } from '@holo-host/web-conductor-client';
 
 // Available statuses:
 ConnectionStatus.Disconnected  // Not connected to gateway
@@ -154,7 +154,7 @@ unsubscribe();
 
 ## API Compatibility
 
-FishyAppClient implements the full `AppClient` interface from `@holochain/client`:
+FishyAppClient implements the full `AppClient` interface from `@holochain/client` (class will be renamed to `WebConductorAppClient` in a future release):
 
 - ✅ `callZome()` - Call zome functions
 - ✅ `appInfo()` - Get app information
@@ -175,7 +175,7 @@ import {
   toUint8Array,
   deepConvertByteArrays,
   looksLikeByteArray
-} from '@zippy/fishy-client';
+} from '@holo-host/web-conductor-client';
 
 // Convert a single value back to Uint8Array
 const bytes = toUint8Array({ 0: 132, 1: 32, 2: 36 });
@@ -195,7 +195,7 @@ Note: `callZome()` automatically converts response byte arrays, so you typically
 
 ## Requirements
 
-- Fishy browser extension installed
+- Holo Web Conductor browser extension installed
 - hc-membrane gateway running
 - hApp bundle available at configured path
 

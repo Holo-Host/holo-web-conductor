@@ -1,7 +1,7 @@
 {
-  "name": "@zippy/fishy-client",
+  "name": "@holo-host/web-conductor-client",
   "version": "0.1.0",
-  "description": "Holochain AppClient for Fishy browser extension - drop-in replacement for @holochain/client",
+  "description": "Holochain AppClient for the Holo Web Conductor browser extension - drop-in replacement for @holochain/client",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -42,13 +42,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/fishy"
+    "url": "https://github.com/holo-host/holo-web-conductor"
   },
   "keywords": [
     "holochain",
     "browser-extension",
     "zero-arc",
-    "fishy"
+    "web-conductor",
+    "holo"
   ],
   "license": "MIT"
 }
