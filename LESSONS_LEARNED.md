@@ -775,6 +775,37 @@ Create the automated test FIRST (test-driven), then implement the fix. Only use 
 
 ---
 
+### Pattern 8: Investigating Code When the Problem Is a Stale Build
+
+**Evidence**: 2026-02-17 session. Previous session fixed RecordEntry serialization across 10+ files (commit 057dd2f). E2e ziptest still showed the same errors. Session spent the bulk of its time on byte-level serialization analysis, Rust fixture generation, and cross-deserialization testing -- all of which passed, confirming the code was correct. Only after exhausting code-level investigation did the session check build timestamps. The extension dist was built at 16:35 but source changes were at 18:02+. Fix: `npm run build:extension`.
+
+**Summary**: When source code changes are correct but e2e tests still fail, the most likely cause is that the extension was not rebuilt. Unit tests (vitest) compile TypeScript on the fly and always test current source. E2e tests run against the built extension loaded in a browser and will test stale code if the build is not current.
+
+**Why it happened**: LESSONS_LEARNED.md said "check simple stuff first" but this is advice, not a procedure. The agent read it, agreed in principle, and then dove into byte-level analysis. No documentation contained a concrete, ordered pre-flight checklist that includes comparing source timestamps against build output timestamps.
+
+**Prevention -- MANDATORY PRE-FLIGHT for e2e/runtime debugging**:
+
+Before ANY investigation of e2e test failures or browser runtime errors:
+
+```
+1. Check build freshness:
+   ls -la packages/extension/dist/background/index.js  # build timestamp
+   ls -la packages/core/src/**/*.ts | tail -5           # latest source change
+   If source is newer than build: npm run build:extension, then retest.
+
+2. Check extension is loaded:
+   Is the extension loaded in the browser?
+   Was it reloaded after the last build?
+
+3. Only if build is current AND extension is reloaded: proceed to investigate code.
+```
+
+This is now also in CLAUDE.md as a mandatory pre-flight checklist.
+
+**Key insight**: "Check simple stuff first" does not work as a guardrail. A concrete, ordered checklist with specific commands does.
+
+---
+
 ### Quick Reference Checklist
 
 Before starting serialization work:
@@ -789,6 +820,11 @@ Before any significant debugging:
 - [ ] Check each boundary, not just the one you suspect
 - [ ] Look for simple missing steps (decode not called, etc.)
 - [ ] Reference ../holochain/ not web searches
+
+Before investigating e2e/runtime failures (MANDATORY -- do this FIRST):
+- [ ] Compare extension dist timestamp vs source timestamps (is build current?)
+- [ ] If stale: rebuild with `npm run build:extension`, reload extension, retest
+- [ ] Only proceed to code investigation if build is confirmed current
 
 ---
 

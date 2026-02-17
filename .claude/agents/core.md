@@ -43,6 +43,16 @@ You implement core Holochain conductor functionality in the fishy browser extens
 | `"Offset outside DataView bounds"` | Wrong encoding format entirely | Check double vs single encoding |
 | `"BadSize"` / hash length mismatch | 32-byte raw key vs 39-byte HoloHash | Use `hashFrom32AndType()` or `ensureAgentPubKey()` |
 
+## E2E / Runtime Debugging Pre-Flight (MANDATORY)
+
+When e2e tests fail after source changes, run this BEFORE any code investigation:
+
+1. **Check build freshness**: Compare `packages/extension/dist/` timestamps against source file timestamps. If source is newer than dist, the extension is stale.
+2. **Rebuild if stale**: `npm run build:extension`, reload extension in browser, retest.
+3. **Only investigate code if build is confirmed current.** Unit tests (vitest) always test current source. E2e tests run against built artifacts and WILL test stale code.
+
+This exists because a full session was wasted investigating correct serialization code when the extension had not been rebuilt. See LESSONS_LEARNED.md Pattern 8.
+
 ## Before ANY Change
 
 1. If touching code that imports from `serialization.ts`, calls encode/decode, or modifies how data enters/exits WASM memory: verify against WASM Boundary Invariants above

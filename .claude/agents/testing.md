@@ -88,6 +88,16 @@ cd ../mewsfeed-fishy && nix develop -c bash -c 'npm run build && hc app pack .'
 cp ../mewsfeed-fishy/*.happ fixtures/mewsfeed.happ
 ```
 
+## E2E / Runtime Debugging Pre-Flight (MANDATORY)
+
+When e2e tests fail after source changes, run this BEFORE any code investigation:
+
+1. **Check build freshness**: Compare `packages/extension/dist/` timestamps against source file timestamps. If source is newer than dist, the extension is stale.
+2. **Rebuild if stale**: `npm run build:extension`, reload extension in browser, retest.
+3. **Only investigate code if build is confirmed current.** Unit tests (vitest) always test current source. E2e tests run against built artifacts and WILL test stale code.
+
+This exists because a full session was wasted investigating correct code when the extension had not been rebuilt. See LESSONS_LEARNED.md Pattern 8.
+
 ## E2E Environment Setup (`scripts/e2e-test-setup.sh`)
 
 **Commands**: `start [--happ=NAME]`, `stop`, `pause`, `unpause`, `status`, `clean`

@@ -1,7 +1,25 @@
 # Current Session
 
-**Last Updated**: 2026-02-15
-**Current Work**: Agent teams setup complete, pilot task ready
+**Last Updated**: 2026-02-17
+**Current Work**: Retro complete; agent definitions updated with e2e pre-flight checklist
+
+---
+
+## Retro: Stale Build Investigation (2026-02-17)
+
+**Incident**: Session spent bulk of time on byte-level serialization investigation when the e2e ziptest showed errors after RecordEntry format fix (057dd2f). All analysis confirmed the code was correct. Root cause: extension was not rebuilt after source changes.
+
+**Pattern added**: LESSONS_LEARNED.md Pattern 8 -- "Investigating Code When the Problem Is a Stale Build"
+
+**Files updated**:
+- `LESSONS_LEARNED.md` -- New Pattern 8 with mandatory pre-flight checklist
+- `CLAUDE.md` -- Added "E2E / Runtime Debugging Pre-Flight" section
+- `.claude/agents/coordinator.md` -- Added pre-flight checklist
+- `.claude/agents/core.md` -- Added pre-flight checklist
+- `.claude/agents/extension.md` -- Added pre-flight checklist
+- `.claude/agents/testing.md` -- Added pre-flight checklist
+
+**Key lesson**: "Check simple stuff first" does not work as an agent guardrail. A concrete, ordered checklist with specific commands (compare timestamps, rebuild if stale, only then investigate) does work.
 
 ---
 

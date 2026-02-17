@@ -33,6 +33,15 @@
 3. Write test before implementation
 4. If touching ANY code that imports from `serialization.ts`, calls encode/decode, or modifies how data enters/exits WASM memory (including validation, host functions, zome calls): verify against WASM Boundary Invariants above
 
+**E2E / Runtime Debugging Pre-Flight (MANDATORY -- run BEFORE any investigation)**:
+
+When e2e tests fail or browser runtime shows errors after source changes:
+1. **Check build freshness**: Compare `packages/extension/dist/` timestamps against source file timestamps. If source is newer than build output, the extension is stale.
+2. **Rebuild if stale**: Run `npm run build:extension` (or `npm run build` for all packages), reload the extension in the browser, then retest.
+3. **Only investigate code if build is confirmed current**. Unit tests (vitest) always test current source. E2e tests run against built artifacts and WILL test stale code if not rebuilt.
+
+This checklist exists because a full session was wasted on byte-level serialization analysis when the actual problem was a stale extension build. See LESSONS_LEARNED.md Pattern 8.
+
 ---
 
 ## Critical Rules

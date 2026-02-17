@@ -151,6 +151,12 @@ fishy/
 - **Cause**: Browser cached old version
 - **Solution**: Click reload button on extension in `chrome://extensions/`
 
+### E2E tests fail but unit tests pass after source changes
+- **Cause**: Extension not rebuilt. Unit tests (vitest) compile TypeScript on the fly. E2E tests run against the built extension in `packages/extension/dist/`.
+- **Solution**: Run `npm run build:extension`, reload extension in browser, retest.
+- **Check**: Compare timestamps: `ls -la packages/extension/dist/background/index.js` vs latest source file modification times.
+- **See also**: LESSONS_LEARNED.md Pattern 8
+
 ## Requirements & Constraints
 
 From `claude.md`:

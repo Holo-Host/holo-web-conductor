@@ -41,6 +41,16 @@ After any agent completes work:
 3. Verify no new Chrome message passing boundary issues (Uint8Array handling)
 4. If changes touch multiple packages, verify cross-package imports still resolve
 
+## E2E / Runtime Debugging Pre-Flight (MANDATORY)
+
+When e2e tests fail or browser runtime shows errors after source changes, run this checklist BEFORE any code investigation:
+
+1. **Check build freshness**: Compare `packages/extension/dist/` timestamps against source file timestamps. If source is newer than dist, the extension is stale.
+2. **Rebuild if stale**: `npm run build:extension`, reload extension in browser, retest.
+3. **Only investigate code if build is confirmed current.** Unit tests (vitest) compile TypeScript on the fly and always test current source. E2e tests run against built artifacts and WILL test stale code.
+
+This exists because a full session was wasted on byte-level serialization analysis when the fix was `npm run build:extension`. See LESSONS_LEARNED.md Pattern 8.
+
 ## WASM Boundary Invariants (cross-cutting - ALL agents must follow)
 
 1. All data INTO WASM -> `serializeToWasm()`. Never bypass with `wasmAllocate`+`writeToWasmMemory`. The "double encoding" IS the ExternIO contract.
