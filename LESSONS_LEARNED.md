@@ -1,6 +1,6 @@
 # Lessons Learned: Serialization Debugging
 
-> **Purpose**: This document captures hard-won lessons from debugging serialization issues in the Fishy project. It documents failed approaches, root cause analysis, and testing strategies to prevent repeating mistakes across sessions.
+> **Purpose**: This document captures hard-won lessons from debugging serialization issues in the Holo Web Conductor (HWC) project (formerly "fishy"). It documents failed approaches, root cause analysis, and testing strategies to prevent repeating mistakes across sessions.
 
 ---
 

@@ -1,20 +1,18 @@
 # Current Session
 
 **Last Updated**: 2026-02-17
-**Branch**: hc-membrane
-**Current Work**: None active. All feature work through Step 23 merged.
+**Branch**: step22-rename
+**Current Work**: Step 22 - Rename and migration to holo-web-conductor
 
 ---
 
-## Completed Steps (recent)
+## Active
 
-All feature branches merged into hc-membrane. Steps 16-23 all complete or merged.
-- Step 23: Agent Activity Network Integration (get_agent_activity + must_get_agent_activity via gateway)
-- Step 19.3: Kitsune query response timeout documented, test coverage added
+Step 22: Repo rename (fishy -> holo-web-conductor, hc-membrane -> h2hc-linker).
+Commits 1-5 done (package.json, imports, source code, manifest, branding).
+Commit 6 in progress (documentation updates).
 
-See [STEPS/index.md](./STEPS/index.md) for full registry.
-
-## Remaining Work (not started)
+## Remaining Work
 
 | Step | Priority | Description |
 |------|----------|-------------|
@@ -23,14 +21,7 @@ See [STEPS/index.md](./STEPS/index.md) for full registry.
 | 13 | High | Storage Backup & Recovery (seed phrase, persistent storage) |
 | 15 | Medium | Robust Publish Verification (peer count before publish) |
 | 21 | Medium | Firefox Compatibility (plan exists, implementation not started) |
-| 22 | High | Migration to holo-host GitHub Org |
-
-## Agent Teams
-
-Infrastructure complete. Agent definitions in `.claude/agents/`.
-See `AGENT_TEAMS.md` for workflow guide.
-
----
+| 22 | High | Migration to holo-host GitHub Org (in progress) |
 
 ## Quick Links
 

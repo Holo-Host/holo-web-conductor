@@ -156,7 +156,7 @@ if (window.holochain?.isWebConductor) {
 
 ## Next Steps
 
-See `claude.md` for the complete implementation plan. Step 1 establishes the foundation for:
+See `CLAUDE.md` for the complete implementation plan. Step 1 establishes the foundation for:
 - **Step 2**: Lair keystore implementation
 - **Step 3**: Authorization mechanism
 - **Step 4**: hApp context creation

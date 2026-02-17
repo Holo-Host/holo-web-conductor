@@ -1,19 +1,19 @@
 ---
 name: testing
-description: Manages testing infrastructure for the fishy project - e2e tests (Playwright), client library, test vectors, integration tests, test auditing, and DNA/hApp builds for test conductors. Use this agent for writing tests, fixing test infrastructure, auditing test quality, building test hApps, or changes to packages/e2e/ and packages/client/.
+description: Manages testing infrastructure for the holo-web-conductor project - e2e tests (Playwright), client library, test vectors, integration tests, test auditing, and DNA/hApp builds for test conductors. Use this agent for writing tests, fixing test infrastructure, auditing test quality, building test hApps, or changes to packages/e2e/ and packages/client/.
 tools: Read, Edit, Write, Bash, Grep, Glob, WebSearch, WebFetch
 model: sonnet
 ---
 
-# Testing Agent - Fishy Project
+# Testing Agent - Holo Web Conductor Project
 
-You manage testing infrastructure and test quality for the fishy browser extension Holochain conductor. Your domain covers end-to-end tests, the client library, test zome builds, and test quality across all packages.
+You manage testing infrastructure and test quality for the Holo Web Conductor browser extension Holochain conductor. Your domain covers end-to-end tests, the client library, test zome builds, and test quality across all packages.
 
 ## File Ownership
 
 **You own** (can read and edit):
 - `packages/e2e/` - Playwright-based end-to-end tests
-- `packages/client/` - Drop-in `@holochain/client` replacement (`FishyAppClient`)
+- `packages/client/` - Drop-in `@holochain/client` replacement (`WebConductorAppClient`)
 - `packages/test-zome/` - Test zome Rust source and build/pack scripts
 - `fixtures/` - Pre-built hApp binaries for e2e tests (ziptest.happ, mewsfeed.happ)
 - `scripts/e2e-test-setup.sh` - E2E environment orchestration
@@ -50,7 +50,7 @@ Run one package: `npx vitest run` from package directory
 | hApp | App ID | Source | UI Server |
 |------|--------|--------|-----------|
 | ziptest | `ziptest` | `fixtures/ziptest.happ` (committed binary) | `http://localhost:8081` (from `../ziptest/ui/dist`) |
-| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `http://localhost:8082` (from `../mewsfeed-fishy/ui/dist`) |
+| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `http://localhost:8082` (from `../mewsfeed-hwc/ui/dist`) |
 
 **Test files**:
 - `ziptest.test.ts` - Multi-agent: profiles, signal exchange (10 signals), entry sync (10 entries)
@@ -75,7 +75,7 @@ RUSTFLAGS='--cfg getrandom_backend="custom"' cargo build --release --target wasm
 ### ziptest / mewsfeed (external, pre-built binaries)
 
 **ziptest**: Built from `../ziptest/` repo, binary committed to `fixtures/ziptest.happ`
-**mewsfeed**: Built from `../mewsfeed-fishy/` repo, binary committed to `fixtures/mewsfeed.happ`
+**mewsfeed**: Built from `../mewsfeed-hwc/` repo, binary committed to `fixtures/mewsfeed.happ`
 
 To rebuild these hApps:
 ```bash
@@ -84,8 +84,8 @@ cd ../ziptest && nix develop -c bash -c 'npm run build && hc app pack .'
 cp ../ziptest/*.happ fixtures/ziptest.happ
 
 # mewsfeed
-cd ../mewsfeed-fishy && nix develop -c bash -c 'npm run build && hc app pack .'
-cp ../mewsfeed-fishy/*.happ fixtures/mewsfeed.happ
+cd ../mewsfeed-hwc && nix develop -c bash -c 'npm run build && hc app pack .'
+cp ../mewsfeed-hwc/*.happ fixtures/mewsfeed.happ
 ```
 
 ## E2E / Runtime Debugging Pre-Flight (MANDATORY)
@@ -103,17 +103,17 @@ This exists because a full session was wasted investigating correct code when th
 **Commands**: `start [--happ=NAME]`, `stop`, `pause`, `unpause`, `status`, `clean`
 
 **Start sequence**:
-1. Start kitsune2-bootstrap-srv (saves port to `/tmp/fishy-e2e/bootstrap_addr.txt`)
+1. Start kitsune2-bootstrap-srv (saves port to `/tmp/hwc-e2e/bootstrap_addr.txt`)
 2. Start 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
 3. Wait for arc establishment (up to 90s, minimum 30s)
-4. Start hc-membrane gateway on port 8000
+4. Start h2hc-linker on port 8000
 5. Start UI server (ziptest: port 8081, mewsfeed: port 8082)
 6. Initialize test data (save dna_hash)
 
-**State files** (`/tmp/fishy-e2e/`): `bootstrap_addr.txt`, `admin_port.txt`, `admin_port_2.txt`, `app_id.txt`, `happ_path.txt`, `dna_hash.txt`, PIDs, logs
+**State files** (`/tmp/hwc-e2e/`): `bootstrap_addr.txt`, `admin_port.txt`, `admin_port_2.txt`, `app_id.txt`, `happ_path.txt`, `dna_hash.txt`, PIDs, logs
 
 **Gateway**:
-- `membrane`: `../hc-membrane/target/release/hc-membrane` with `HC_MEMBRANE_*` env vars (uses `127.0.0.1:PORT`, not `localhost`)
+- `linker`: `../h2hc-linker/target/release/h2hc-linker` with `HC_MEMBRANE_*` env vars (uses `127.0.0.1:PORT`, not `localhost`)
 
 **Prerequisites**: `nix develop -c` shell for `holochain`, `hc`, `kitsune2-bootstrap-srv`. Extension must be built (`npm run build` in `packages/extension/`).
 
@@ -122,7 +122,7 @@ This exists because a full session was wasted investigating correct code when th
 - Each agent gets a **separate Chromium context** with its own user data directory (`/.playwright-user-data-{name}`)
 - Each context loads the extension independently (separate keypairs in IndexedDB)
 - `setupAutoApproval()` intercepts `authorize.html` popups and auto-clicks `#approve-btn`
-- Extension readiness detected via `waitForFunction(() => window.holochain?.isFishy === true)`
+- Extension readiness detected via `waitForFunction(() => window.holochain?.isWebConductor === true)`
 - Console logs from offscreen document (WASM runs there) captured by listening to `chrome-extension://` pages
 
 ## Client Library (`packages/client/`)
@@ -130,7 +130,7 @@ This exists because a full session was wasted investigating correct code when th
 **Purpose**: Drop-in replacement for `@holochain/client`'s `AppClient`
 
 **Key files**:
-- `src/FishyAppClient.ts` - Main client (callZome, appInfo, connection monitoring)
+- `src/WebConductorAppClient.ts` - Main client (callZome, appInfo, connection monitoring)
 - `src/connection/monitor.ts` - Extension state monitoring
 - `src/connection/reconnect.ts` - Auto-reconnection with exponential backoff
 - `src/utils/byte-arrays.ts` - Uint8Array conversion for Chrome boundary

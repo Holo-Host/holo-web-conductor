@@ -1,10 +1,10 @@
-# Fishy Development Guide
+# Holo Web Conductor Development Guide
 
 ## Quick Start for Continuing Development
 
 ### First Time Setup
 ```bash
-cd /path/to/holochain/fishy
+cd /path/to/holochain/holo-web-conductor
 npm install
 ```
 
@@ -59,8 +59,8 @@ npm run test:watch
 ## Project Structure
 
 ```
-fishy/
-├── claude.md              # Main project plan
+holo-web-conductor/
+├── CLAUDE.md              # Main project plan
 ├── SESSION.md             # Current session state
 ├── DEVELOPMENT.md         # This file
 ├── package.json           # Root workspace config
@@ -83,7 +83,7 @@ fishy/
 
 ### Starting a New Feature/Step
 1. Read `SESSION.md` for current state
-2. Read relevant section in `claude.md`
+2. Read relevant section in `CLAUDE.md`
 3. Create tests first (TDD)
 4. Implement feature
 5. Run tests: `npm test`
@@ -159,7 +159,7 @@ fishy/
 
 ## Requirements & Constraints
 
-From `claude.md`:
+From `CLAUDE.md`:
 
 1. **Test-Driven Development**: CI must confirm no regressions
 2. **User Testing Required**: Manual browser testing before commits
@@ -187,7 +187,7 @@ Simpler than pnpm/yarn for this project size. All packages are private and co-lo
 
 ## Step-by-Step Plan
 
-See `claude.md` for full details. Summary:
+See `CLAUDE.md` for full details. Summary:
 
 - ✅ **Step 0**: Plan refinement and scaffolding
 - ⚠️ **Step 1**: Browser extension base (PENDING USER TEST)
@@ -204,7 +204,7 @@ See `claude.md` for full details. Summary:
 
 - **Holochain**: `../holochain/` (reference implementation)
 - **Lair**: `../lair/` (keystore reference)
-- **hc-http-gw**: `../hc-http-gw/` (HTTP gateway)
+- **h2hc-linker**: `../h2hc-linker/` (Holo-to-Holochain linker)
 - **Chrome Extension Docs**: https://developer.chrome.com/docs/extensions/mv3/
 - **Web Crypto API**: https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API
 

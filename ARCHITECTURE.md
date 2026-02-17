@@ -1,4 +1,4 @@
-# Fishy Architecture
+# Holo Web Conductor Architecture
 
 A browser extension implementation of the Holochain conductor, enabling hApps to run in the browser with the extension handling host-side operations (signing, storage, network).
 
@@ -27,7 +27,7 @@ A browser extension implementation of the Holochain conductor, enabling hApps to
 │                      │                                                      │ │
 │                      │  - Spawns Ribosome Worker                           │ │
 │                      │  - Sync XHR proxy (XMLHttpRequest)                  │ │
-│                      │  - WebSocket connection to gateway                  │ │
+│                      │  - WebSocket connection to linker                  │ │
 │                      │  - Sign request relay to background                 │ │
 │                      │                                                      │ │
 │                      └──────────────────────┬──────────────────────────────┘ │
@@ -54,7 +54,7 @@ A browser extension implementation of the Holochain conductor, enabling hApps to
                               │                                  │           │
                               ▼                                  ▼           │
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        hc-membrane (Gateway)                                │
+│                        h2hc-linker (Linker)                                │
 │                                                                             │
 │  ┌──────────────────────┐  ┌───────────────────┐  ┌─────────────────────┐  │
 │  │     HTTP Routes      │  │     WebSocket     │  │   AgentProxyManager │  │
@@ -71,7 +71,7 @@ A browser extension implementation of the Holochain conductor, enabling hApps to
 │             │                                    │                         │
 │             ▼                                    ▼                         │
 │  ┌──────────────────────┐           ┌────────────────────────────────────┐ │
-│  │   TempOpStore        │           │         GatewayKitsune             │ │
+│  │   TempOpStore        │           │         LinkerKitsune             │ │
 │  │                      │           │                                    │ │
 │  │ - Hold browser ops   │           │ ┌────────────────┐ ┌────────────┐ │ │
 │  │   during publish     │           │ │ KitsuneProxy   │ │ ProxyAgent │ │ │
@@ -153,7 +153,7 @@ let entry = get(entry_hash)?;  // Must return immediately, no async
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ const xhr = new XMLHttpRequest();                            ││
-│  │ xhr.open('GET', gatewayUrl, false);  // false = synchronous  ││
+│  │ xhr.open('GET', linkerUrl, false);  // false = synchronous  ││
 │  │ xhr.send();                                                  ││
 │  │                                                              ││
 │  │ // Write result to SharedArrayBuffer                         ││
@@ -203,8 +203,8 @@ interface ZomeExecutor {
   executeZomeCall(contextId, request): Promise<ZomeCallResult>;
   getAllRecords(dnaHash, agentPubKey): Promise<{ records: any[] }>;
   processPublishQueue(dnaHashes): Promise<void>;
-  disconnectGateway(): Promise<void>;
-  reconnectGateway(): Promise<void>;
+  disconnectLinker(): Promise<void>;
+  reconnectLinker(): Promise<void>;
   getWebSocketState(): Promise<WsStateInfo>;
   onRemoteSignal(callback): void;
   onSignRequest(callback): void;
@@ -274,7 +274,7 @@ window.holochain = {
 **Responsibilities**:
 - Spawn and manage Ribosome Worker
 - Execute synchronous XHR for network requests
-- Maintain WebSocket connection to gateway
+- Maintain WebSocket connection to linker
 - Relay sign requests between worker and background
 - Coordinate via SharedArrayBuffer + Atomics
 
@@ -335,7 +335,7 @@ window.holochain = {
 
 ---
 
-## Gateway Components
+## Linker Components
 
 ### HTTP Routes
 
@@ -357,7 +357,7 @@ window.holochain = {
 
 ### WebSocket Protocol
 
-**Client → Gateway Messages**:
+**Client → Linker Messages**:
 ```typescript
 { type: "auth", session_token: string }
 { type: "register", dna_hash: string, agent_pubkey: string }
@@ -367,7 +367,7 @@ window.holochain = {
 { type: "send_remote_signal", dna_hash: string, signals: SignedRemoteSignalTransport[] }
 ```
 
-**Gateway → Client Messages**:
+**Linker → Client Messages**:
 ```typescript
 { type: "auth_ok" }
 { type: "auth_error", message: string }
@@ -384,7 +384,7 @@ window.holochain = {
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ GatewayKitsune                                           │
+│ LinkerKitsune                                           │
 │                                                          │
 │  Manages browser agents' participation in kitsune2      │
 │                                                          │
@@ -427,8 +427,8 @@ window.holochain = {
 | Background ↔ Offscreen | Array format | `serializeForTransport()` | `new Uint8Array()` | Cleaner than object format |
 | Offscreen ↔ Worker | SharedArrayBuffer | `Atomics.store()` | `Atomics.wait()` + read | Sync blocking required |
 | Worker ↔ WASM | MessagePack | `@msgpack/msgpack encode()` | `decode()` | Holochain wire format |
-| Extension ↔ Gateway HTTP | JSON + base64 | `encodeHashToBase64()` | `normalizeByteArraysFromJson()` | URL-safe hashes |
-| Extension ↔ Gateway WS | JSON + base64 | `btoa()` | `atob()` | Binary over text |
+| Extension ↔ Linker HTTP | JSON + base64 | `encodeHashToBase64()` | `normalizeByteArraysFromJson()` | URL-safe hashes |
+| Extension ↔ Linker WS | JSON + base64 | `btoa()` | `atob()` | Binary over text |
 | Worker ↔ SQLite | MessagePack blobs | `encode()` | `decode()` | Efficient binary |
 
 ---
@@ -504,7 +504,7 @@ TypeScript value
 
 ---
 
-### HTTP Gateway Encoding
+### HTTP Linker Encoding
 
 **Hashes use Holochain base64 format** (`'u' + url_safe_base64`):
 
@@ -566,7 +566,7 @@ Converted by `normalizeByteArraysFromJson()` to proper Uint8Arrays.
 
 **URL-safe base64 handling** (sign requests use different alphabet):
 ```typescript
-// Gateway sends URL-safe base64
+// Linker sends URL-safe base64
 const urlSafe = message.replace(/-/g, '+').replace(/_/g, '/');
 const padded = urlSafe + '='.repeat((4 - urlSafe.length % 4) % 4);
 const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
@@ -669,7 +669,7 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
                    │ kitsune2 protocol
                    ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ hc-membrane                                                      │
+│ h2hc-linker                                                      │
 │                                                                 │
 │ ProxySpaceHandler.recv_notify():                               │
 │   1. Decode WireMessage batch                                   │
@@ -744,23 +744,23 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
                               │ HTTP
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ hc-membrane                                                      │
+│ h2hc-linker                                                      │
 │                                                                 │
 │ POST /dht/{dna}/publish handler:                               │
 │   1. Decode SignedDhtOps                                        │
 │   2. Verify signatures                                          │
 │   3. Store in TempOpStore (60s TTL)                            │
-│   4. Call gateway_kitsune.publish_ops(dna, op_ids, basis)      │
+│   4. Call linker_kitsune.publish_ops(dna, op_ids, basis)      │
 └─────────────────────────────┬──────────────────────────────────┘
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ GatewayKitsune                                                  │
+│ LinkerKitsune                                                  │
 │                                                                 │
 │ publish_ops():                                                  │
 │   1. Find peers near basis location                             │
 │   2. Send publish notification via kitsune2                     │
-│   3. Peers request ops back from gateway                        │
+│   3. Peers request ops back from linker                         │
 │   4. TempOpStore.retrieve_ops() serves the data                │
 │   5. Peers validate and store in their DHT                     │
 └────────────────────────────────────────────────────────────────┘
@@ -772,7 +772,7 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ GatewayKitsune / ProxyAgent                                     │
+│ LinkerKitsune / ProxyAgent                                     │
 │                                                                 │
 │ Kitsune2 needs agent signature (e.g., for agent_info):         │
 │   ProxyAgent.sign(message_bytes) called                         │
@@ -812,7 +812,7 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ Offscreen → WebSocket → Gateway                                 │
+│ Offscreen → WebSocket → Linker                                   │
 │                                                                 │
 │   Send: SignResponse { request_id, signature }                 │
 │                                                                 │
@@ -827,7 +827,7 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
 
 ### Get Flow (Cascade Pattern)
 
-The `get()`, `get_links()`, and `get_details()` host functions use a **cascade pattern** that checks local storage first, then network cache, then makes gateway requests.
+The `get()`, `get_links()`, and `get_details()` host functions use a **cascade pattern** that checks local storage first, then network cache, then makes linker requests.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -855,7 +855,7 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 │   │      └─► Found & not expired? Return                       │
 │   │                                                             │
 │   └─► 3. NETWORK: networkService.getRecordSync(dnaHash, hash)  │
-│          └─► Sync XHR to gateway                               │
+│          └─► Sync XHR to linker                                │
 │          └─► Cache result before returning                     │
 └─────────────────────────────┬──────────────────────────────────┘
                               │ If network fetch needed
@@ -886,7 +886,7 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
                               │ HTTP GET
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ hc-membrane                                                     │
+│ h2hc-linker                                                     │
 │                                                                 │
 │ GET /dht/{dna_hash}/record/{hash}                              │
 │   1. Parse hash from URL (Holochain base64 format)             │
@@ -898,9 +898,9 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 └────────────────────────────────────────────────────────────────┘
 ```
 
-#### Gateway Endpoints for Get Operations
+#### Linker Endpoints for Get Operations
 
-| Host Function | Gateway Endpoint | Response | Uses Cascade |
+| Host Function | Linker Endpoint | Response | Uses Cascade |
 |---------------|-----------------|----------|--------------|
 | `get()` | `GET /dht/{dna}/record/{hash}` | `{ signed_action, entry }` | Yes |
 | `get_links()` | `GET /dht/{dna}/links?base=&type=&zome_index=` | `Vec<Link>` or `WireLinkOps` (dual-format) | Yes (always network) |
@@ -909,7 +909,7 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 
 *`get_details` currently only queries local storage. See `STEPS/12.2_GET_DETAILS_CASCADE.md` for planned fix.
 
-**Link response dual-format**: hc-membrane can return links as either a flat `Vec<Link>` array (conductor mode) or `WireLinkOps { creates, deletes }` (direct kitsune2 mode). The extension parses both formats -- see `sync-xhr-service.ts` and `ribosome-worker.ts` for the dual-format parsing logic.
+**Link response dual-format**: h2hc-linker can return links as either a flat `Vec<Link>` array (conductor mode) or `WireLinkOps { creates, deletes }` (direct kitsune2 mode). The extension parses both formats -- see `sync-xhr-service.ts` and `ribosome-worker.ts` for the dual-format parsing logic.
 
 #### Hash Encoding in URLs
 
@@ -921,7 +921,7 @@ URL encoded:  uhCQk...  (u + URL-safe base64)
 
 #### Response Normalization
 
-Gateway returns JSON with hashes as number arrays:
+Linker returns JSON with hashes as number arrays:
 ```json
 {
   "signed_action": {
@@ -949,7 +949,7 @@ Unlike `get()`, the `get_links()` function **always queries the network** becaus
 │ get_links(base_address, link_type)                              │
 │                                                                 │
 │ 1. Fetch LOCAL links from SQLite                               │
-│ 2. Fetch NETWORK links from gateway (always)                   │
+│ 2. Fetch NETWORK links from linker (always)                    │
 │ 3. MERGE results (deduplicate by create_link_hash)             │
 │ 4. Return combined link set                                    │
 └────────────────────────────────────────────────────────────────┘
@@ -981,11 +981,11 @@ This ensures the browser agent sees links created by other agents, not just its 
 | `packages/core/src/ribosome/host-fn/*.ts` | Host function implementations |
 | `packages/core/src/ribosome/serialization.ts` | WASM I/O encoding |
 | `packages/core/src/storage/sqlite-storage.ts` | SQLite storage provider |
-| `packages/core/src/network/sync-xhr-service.ts` | Gateway HTTP client |
-| `packages/core/src/network/websocket-service.ts` | Gateway WebSocket client |
+| `packages/core/src/network/sync-xhr-service.ts` | Linker HTTP client |
+| `packages/core/src/network/websocket-service.ts` | Linker WebSocket client |
 | `packages/core/src/utils/bytes.ts` | Uint8Array conversion utilities |
 
-### Gateway (hc-membrane, separate repo)
+### Linker (h2hc-linker, separate repo)
 | File | Purpose |
 |------|---------|
 | `src/routes.rs` | HTTP route definitions |
@@ -995,7 +995,7 @@ This ensures the browser agent sees links created by other agents, not just its 
 | `src/proxy_agent.rs` | ProxyAgent (browser agent in kitsune2) |
 | `src/temp_op_store.rs` | TempOpStore for publish flow |
 
-Note: The gateway queries kitsune2 directly for DHT operations -- hc-membrane is itself a kitsune2 peer.
+Note: The linker queries kitsune2 directly for DHT operations -- h2hc-linker is itself a kitsune2 peer.
 
 ---
 
@@ -1031,7 +1031,7 @@ Chrome's message passing (chrome.runtime.sendMessage, chrome.tabs.sendMessage) u
 
 Currently, the browser extension builds DhtOps from Records using TypeScript ports of Holochain's Rust code (`produceOpsFromRecord`). This is fragile -- serialization must be byte-identical for hash compatibility.
 
-**Planned change (Gateway Architecture):** Delegate op construction to hc-membrane gateway, which uses Holochain's actual Rust code. Browser sends Records, gateway calls `produce_ops_from_record()`. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 6.
+**Planned change (Linker Architecture):** Delegate op construction to h2hc-linker, which uses Holochain's actual Rust code. Browser sends Records, linker calls `produce_ops_from_record()`. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 6.
 
 ### Why ZomeExecutor Was Extracted
 
@@ -1045,16 +1045,16 @@ The `ZomeExecutor` interface isolates everything the background needs from the e
 **Key design choices:**
 - Interface in `src/lib/` (shared types), Chrome implementation in `src/background/` (Chrome-specific)
 - Event callbacks (onRemoteSignal, onSignRequest, onWebSocketStateChange) flow executor → background
-- Background keeps its own `gatewayConfig` for status reporting; executor gets its copy via `configureNetwork()` -- no shared mutable state
+- Background keeps its own `linkerConfig` for status reporting; executor gets its copy via `configureNetwork()` -- no shared mutable state
 - Health checks stay in background (monitoring concern, not execution concern)
 
 **Test coverage:** `chrome-offscreen-executor.test.ts` validates lifecycle, message routing, event callbacks, and error handling with Chrome API mocks.
 
-### Why Two Gateway Protocols (HTTP + WebSocket)
+### Why Two Linker Protocols (HTTP + WebSocket)
 
 HTTP with sync XHR handles DHT queries (get, get_links) -- required by the synchronous WASM constraint. WebSocket handles async operations (signals, remote signing) that need bidirectional push.
 
-**Planned change (Gateway Architecture):** Unify async operations under a single RPC protocol (Cap'n Web or msgpack-rpc). Keep sync XHR for DHT queries. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 2.
+**Planned change (Linker Architecture):** Unify async operations under a single RPC protocol (Cap'n Web or msgpack-rpc). Keep sync XHR for DHT queries. See `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` section 2.
 
 ---
 
@@ -1123,7 +1123,7 @@ export const my_function: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
 ## Summary
 
-The fishy architecture solves a fundamental impedance mismatch:
+The HWC architecture solves a fundamental impedance mismatch:
 
 **WASM requires synchronous host functions**, but **browsers only provide async APIs**.
 
@@ -1133,7 +1133,7 @@ The solution distributes responsibilities across multiple contexts:
 2. **Offscreen Document**: Provides sync XMLHttpRequest, proxies to worker
 3. **Background Service Worker**: Coordinates everything, manages keys and state
 4. **Content Script + Injected Script**: Bridge the security boundary to web pages
-5. **Gateway**: Bridges browser agents to Holochain's kitsune2 network
+5. **Linker**: Bridges browser agents to Holochain's kitsune2 network
 
 Each boundary has specific encoding/decoding requirements, primarily driven by:
 - Chrome's loss of Uint8Array type information during message passing

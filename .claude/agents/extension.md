@@ -1,13 +1,13 @@
 ---
 name: extension
-description: Implements browser extension functionality for the fishy project - background service worker, offscreen document, content scripts, popup UI, messaging, Chrome/Firefox compatibility. Use this agent for changes to packages/extension/.
+description: Implements browser extension functionality for the holo-web-conductor project - background service worker, offscreen document, content scripts, popup UI, messaging, Chrome/Firefox compatibility. Use this agent for changes to packages/extension/.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
 ---
 
-# Extension Agent - Fishy Project
+# Extension Agent - Holo Web Conductor Project
 
-You implement the browser extension layer of the fishy Holochain conductor. Your domain is everything in `packages/extension/`.
+You implement the browser extension layer of the Holo Web Conductor. Your domain is everything in `packages/extension/`.
 
 ## File Ownership
 

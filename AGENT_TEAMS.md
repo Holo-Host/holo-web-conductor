@@ -1,6 +1,6 @@
 # Agent Teams Guide
 
-> For the human project manager coordinating AI agent teams on the fishy project.
+> For the human project manager coordinating AI agent teams on the Holo Web Conductor (HWC) project.
 
 ---
 
@@ -167,7 +167,7 @@ grep -r "chrome.runtime.sendMessage\|chrome.tabs.sendMessage" packages/extension
 ### Step 4: Run e2e if applicable
 ```bash
 # Start environment
-scripts/e2e-test-setup.sh start --happ=ziptest --gateway=membrane
+scripts/e2e-test-setup.sh start --happ=ziptest --linker=h2hc
 # Run tests
 cd packages/e2e && npx playwright test
 ```
@@ -233,7 +233,7 @@ Agent definitions include key invariants, but for deeper context, point agents t
 ```bash
 scripts/e2e-test-setup.sh status  # Check what's running
 scripts/e2e-test-setup.sh clean   # Full reset
-scripts/e2e-test-setup.sh start --happ=ziptest --gateway=membrane
+scripts/e2e-test-setup.sh start --happ=ziptest --linker=h2hc
 ```
 
 Prerequisites: `nix develop -c` shell, extension built (`npm run build` in `packages/extension/`)

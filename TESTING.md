@@ -10,7 +10,7 @@ This document covers testing procedures for the Holochain Web Conductor browser 
 | Build validation | `npm run build` | None |
 | Type checking | `npm run build --workspace=@hwc/core` | None (uses tsc) |
 | Integration tests | `npm run test:integration` | None |
-| E2E (Playwright) | See "E2E with Gateway" section | nix shell, conductor, gateway |
+| E2E (Playwright) | See "E2E with Linker" section | nix shell, conductor, linker |
 | Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
 
 ---
@@ -53,9 +53,9 @@ Test files in `packages/core/src/integration/`:
 
 ---
 
-## E2E Tests with Gateway
+## E2E Tests with Linker
 
-These tests verify the full flow: web page → browser extension → gateway → Holochain conductor network.
+These tests verify the full flow: web page → browser extension → linker → Holochain conductor network.
 
 ### Prerequisites
 
@@ -65,16 +65,16 @@ The `holochain`, `hc`, and `kitsune2-bootstrap-srv` binaries must be available. 
 nix develop -c bash
 ```
 
-### Gateway
+### Linker
 
-The project uses hc-membrane gateway which integrates directly with the kitsune2 network:
+The project uses h2hc-linker which integrates directly with the kitsune2 network:
 
-| Gateway | Repo | Mode |
-|---------|------|------|
-| `membrane` | `../hc-membrane` | Kitsune mode |
+| Linker | Repo | Mode |
+|--------|------|------|
+| `h2hc-linker` | `../h2hc-linker` | Kitsune mode |
 
 Set repo path with environment variable:
-- `HC_MEMBRANE_DIR` - Path to hc-membrane repo (default: `../hc-membrane`)
+- `H2HC_LINKER_DIR` - Path to h2hc-linker repo (default: `../h2hc-linker`)
 
 ### Test hApps
 
@@ -83,7 +83,7 @@ Two hApp fixtures are supported:
 | hApp | App ID | Source | UI Server | Tests |
 |------|--------|--------|-----------|-------|
 | ziptest | `ziptest` | `fixtures/ziptest.happ` (committed binary) | `../ziptest/ui/dist` (port 8081) | Multi-agent sync |
-| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `../mewsfeed-fishy/ui/dist` (port 8082) | Real-world hApp |
+| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `../mewsfeed-hwc/ui/dist` (port 8082) | Real-world hApp |
 
 ### Using e2e-test-setup.sh
 
@@ -99,8 +99,8 @@ The primary way to set up the E2E environment:
 
 # Other commands
 ./scripts/e2e-test-setup.sh stop     # Stop all services
-./scripts/e2e-test-setup.sh pause    # Stop gateway only (for gateway development)
-./scripts/e2e-test-setup.sh unpause  # Restart gateway
+./scripts/e2e-test-setup.sh pause    # Stop linker only (for linker development)
+./scripts/e2e-test-setup.sh unpause  # Restart linker
 ./scripts/e2e-test-setup.sh status   # Check what's running
 ./scripts/e2e-test-setup.sh clean    # Remove state files
 ```
@@ -109,7 +109,7 @@ The primary way to set up the E2E environment:
 1. Starts local kitsune2-bootstrap-srv (saves port to `/tmp/hwc-e2e/bootstrap_addr.txt`)
 2. Starts 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
 3. Waits for arc establishment (up to 90s, minimum 30s)
-4. Starts hc-membrane gateway on port 8000
+4. Starts h2hc-linker on port 8000
 5. Starts UI server (ziptest: port 8081, mewsfeed: port 8082)
 6. Initializes test data (saves dna_hash for selected hApp)
 
@@ -161,7 +161,7 @@ npx playwright test --ui
 
 Interactive HTML test pages for developer debugging (not automated CI). Located in `packages/extension/test/`:
 
-| File | Purpose | Gateway Required? | Key Features |
+| File | Purpose | Linker Required? | Key Features |
 |------|---------|-------------------|--------------|
 | `wasm-test.html` | 20+ host function tests: CRUD, links, signing, rollback | No | Self-contained, no network |
 | `test-page.html` | Basic extension API: detect, connect, install, callZome, signals | No | Extension detection flow |
@@ -171,7 +171,7 @@ Interactive HTML test pages for developer debugging (not automated CI). Located 
 **How to use**:
 
 ```bash
-# 1. Start E2E environment (for tests that need gateway)
+# 1. Start E2E environment (for tests that need linker)
 nix develop -c bash
 ./scripts/e2e-test-setup.sh start
 
@@ -202,7 +202,7 @@ python3 -m http.server 8080
 
 **Playwright extension not loading**: Check that extension is built (`npm run build`) and path is correct in test fixture. Check `.playwright-user-data-*/` directories for IndexedDB state.
 
-**Gateway connection refused**: Check that gateway is running (`./scripts/e2e-test-setup.sh status`). Check that `HC_MEMBRANE_DIR` points to correct repo and gateway is built (`cargo build --release` in hc-membrane).
+**Linker connection refused**: Check that linker is running (`./scripts/e2e-test-setup.sh status`). Check that `H2HC_LINKER_DIR` points to correct repo and linker is built (`cargo build --release` in h2hc-linker).
 
 **Arc not established**: Conductors need time to establish DHT arcs. `e2e-test-setup.sh` waits up to 90s (minimum 30s). Check conductor logs in `/tmp/hwc-e2e/*.log` for arc establishment messages.
 

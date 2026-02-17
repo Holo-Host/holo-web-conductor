@@ -1,4 +1,4 @@
-# Fishy
+# Holo Web Conductor (HWC)
 
 > Browser extension-based Holochain conductor for zero-arc nodes.
 
@@ -57,7 +57,7 @@ This checklist exists because a full session was wasted on byte-level serializat
 - **Reference sources** (all local, no web searches):
   1. Holochain 0.6: `../holochain`
   2. @holochain/client: `../holochain-client-js`
-  3. Gateway: `../hc-membrane`
+  3. Linker: `../h2hc-linker`
 
 - **Commit hygiene**: No claude co-authored messages. Use `npm` for builds. 
 
@@ -80,7 +80,7 @@ This checklist exists because a full session was wasted on byte-level serializat
 
 ## Project Overview
 
-Browser extension Holochain conductor. Zero-arc nodes that don't gossip - all data from network via gateway.
+Browser extension Holochain conductor. Zero-arc nodes that don't gossip - all data from network via linker.
 
 **Key Assumptions**:
 1. Zero-arc: no gossip, fetch all data from network (may cache content-addressable data)
@@ -104,7 +104,7 @@ packages/
 │   └── src/
 │       ├── ribosome/    # Host function implementations
 │       ├── storage/     # SQLite storage layer
-│       ├── network/     # Gateway network services
+│       ├── network/     # Linker network services
 │       └── dht/         # DhtOp generation and publishing
 ├── lair/          # Browser-based Lair keystore
 └── shared/        # Shared types and utilities
@@ -130,8 +130,8 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 2. Sending data across Chrome message port: call `serializeForTransport()` to convert Uint8Array to Array
 3. Reading from WASM memory: use `deserializeTypedFromWasm()` with a TypeValidator
 4. Writing results to WASM: use `serializeResult()` -- it wraps in `{Ok: data}` automatically
-5. Gateway HTTP responses: call `normalizeByteArraysFromJson()` to convert number arrays to Uint8Array
-6. Gateway HTTP requests: use `encodeHashToBase64()` for hashes in URLs (adds `u` prefix)
+5. Linker HTTP responses: call `normalizeByteArraysFromJson()` to convert number arrays to Uint8Array
+6. Linker HTTP requests: use `encodeHashToBase64()` for hashes in URLs (adds `u` prefix)
 7. See `ARCHITECTURE.md` "Encoding/Decoding Boundaries" table for the full map
 
 ---
@@ -142,10 +142,10 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 |------|---------|
 | `CLAUDE.md` | This file - core rules and quick context |
 | `ARCHITECTURE.md` | System architecture, data flows, encoding boundaries, decision records, host function guide |
-| `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` | Gateway evolution plan (hc-membrane), protocol unification, holochain_p2p integration |
+| `STEPS/GATEWAY_ARCHITECTURE_ANALYSIS.md` | Linker evolution plan (h2hc-linker), protocol unification, holochain_p2p integration |
 | `LESSONS_LEARNED.md` | Failed approaches archive (serialization debugging) |
 | `DEVELOPMENT.md` | Build, test, and development workflow |
-| `TESTING.md` | Testing guide (unit, integration, e2e with gateway) |
+| `TESTING.md` | Testing guide (unit, integration, e2e with linker) |
 | `SESSION.md` | Current step focus |
 | `STEPS/index.md` | Step status registry |
 | `STEPS/X_PLAN.md` | Detailed plan for step X |

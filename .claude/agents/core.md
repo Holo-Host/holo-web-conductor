@@ -1,20 +1,20 @@
 ---
 name: core
-description: Implements core conductor functionality for the fishy project - WASM runtime, host functions, serialization, storage, network cascade, DHT operations, and crypto. Use this agent for changes to packages/core/, packages/lair/, or packages/shared/.
+description: Implements core conductor functionality for the holo-web-conductor project - WASM runtime, host functions, serialization, storage, network cascade, DHT operations, and crypto. Use this agent for changes to packages/core/, packages/lair/, or packages/shared/.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
 ---
 
-# Core Conductor Agent - Fishy Project
+# Core Conductor Agent - Holo Web Conductor Project
 
-You implement core Holochain conductor functionality in the fishy browser extension project. Your domain is everything in `packages/core/`, `packages/lair/`, and `packages/shared/`.
+You implement core Holochain conductor functionality in the Holo Web Conductor browser extension project. Your domain is everything in `packages/core/`, `packages/lair/`, and `packages/shared/`.
 
 ## File Ownership
 
 **You own** (can read and edit):
 - `packages/core/src/ribosome/` - WASM runtime, host functions, serialization, validation
 - `packages/core/src/storage/` - SQLite and IndexedDB storage backends
-- `packages/core/src/network/` - Gateway HTTP/WS client, cascade pattern
+- `packages/core/src/network/` - Linker HTTP/WS client, cascade pattern
 - `packages/core/src/dht/` - DhtOp generation, publishing, record conversion
 - `packages/core/src/hash/` - Blake2b hashing, HoloHash computation
 - `packages/core/src/signing/` - Lair client injection
@@ -93,7 +93,7 @@ Register in `host-fn/index.ts`: `__hc__my_function_1: wrapHostFunction('my_funct
 - **Hashes**: Always 39 bytes (3 type prefix + 32 core + 4 DHT location). Storage may hold 32-byte raw keys; use `ensureAgentPubKey()` or `hashFrom32AndType()` to restore full format.
 - **Storage**: `StorageProvider` interface with sync methods (required for WASM host functions). SQLite backend uses SharedArrayBuffer for sync access in worker.
 - **Network**: Cascade pattern: local storage -> cache -> network (sync XHR via Atomics.wait)
-- **DHT Ops**: Generated from Records by `produceOpsFromRecord()`. Published to gateway via HTTP POST.
+- **DHT Ops**: Generated from Records by `produceOpsFromRecord()`. Published to linker via HTTP POST.
 - **Validation**: `invokeInlineValidation()` runs on pending records during `callZome()`. Calls real WASM `validate` export.
 - **Two Action converters**: `record-converter.ts` (StoredAction -> Client Action for Records/publishing) and `action-serialization.ts` (StoredAction -> wire format Action for WASM/HDK)
 

@@ -2,6 +2,8 @@
 
 > **Purpose**: Single source of truth for step completion status. Update this file when steps are completed.
 
+> **Note**: Historical steps (1-21, 23-24) were developed under the original "fishy" codename. Documentation within those step files uses the old terminology (fishy, gateway, hc-membrane). The project was renamed to **holo-web-conductor** (HWC) in Step 22.
+
 ## Quick Reference
 
 | Step | Status | Description |
@@ -34,7 +36,7 @@
 | 9.6 | ✅ | Kitsune2 Remote Signal Forwarding |
 | 9.7 | ✅ | Signal E2E Testing |
 | 10 | ✅ | Integration Testing |
-| 10.1 | ✅ | FishyAppClient Adapter |
+| 10.1 | ✅ | WebConductorAppClient Adapter |
 | 10.2 | ✅ | Remote Signal Architecture Fix |
 | 11 | ✅ | Synchronous SQLite Storage Layer |
 | 12 | ⏳ | Code Quality & Testing Improvements |
@@ -45,19 +47,19 @@
 | 13.1 | 📋 | Persistent Storage + Seed Phrase Export |
 | 13.2 | 📋 | DHT Chain Recovery |
 | 13.3 | 📋 | Convenience Features (backup file, sync) |
-| 14 | ✅ | Fishy Client Library Package |
+| 14 | ✅ | HWC Client Library Package |
 | 14.1 | ✅ | Package Setup & Migration |
 | 14.2 | ✅ | Connection Status Interface |
-| 14.3 | ✅ | Enhanced FishyAppClient |
+| 14.3 | ✅ | Enhanced WebConductorAppClient |
 | 14.4 | ✅ | Extension API Enhancements |
 | 15 | 📋 | Robust Publish Verification |
 | 16 | ✅ | E2E Debugging Automation (Playwright infrastructure) |
-| 17 | ✅ | hc-membrane 0.6.1 Integration (core complete, see notes) |
+| 17 | ✅ | h2hc-linker 0.6.1 Integration (core complete, see notes) |
 | 18 | ✅ | Zome Call Serialization |
 | 19 | ✅ | Mewsfeed E2E (merged; blocked upstream on kitsune2 timeout) |
 | 20 | ✅ | Validation Host Functions & Validate Callback |
 | 21 | ✅ | Firefox Compatibility Plan (plan doc only) |
-| 22 | 📋 | Migration to holo-host GitHub Org |
+| 22 | ⏳ | Migration to holo-host GitHub Org + Rename |
 | 23 | ✅ | Agent Activity Network Integration |
 | 24 | ✅ | Kitsune2 DHT Query Fix (resolved in 19.3/M4) |
 | Meta-1 | 📋 | Process Review (periodic) |
@@ -113,10 +115,10 @@ Playwright-based e2e test infrastructure in `packages/e2e/`:
 
 See [16_PLAN.md](./16_PLAN.md) for original design.
 
-### Step 17: hc-membrane 0.6.1 Integration (complete)
+### Step 17: h2hc-linker 0.6.1 Integration (complete)
 **Status**: Complete (all changes committed to hc-membrane branch)
 
-Integrated fishy extension with hc-membrane gateway (kitsune2 0.4.x + iroh transport).
+Integrated HWC extension with h2hc-linker (kitsune2 0.4.x + iroh transport).
 Core functionality works: agent registration, preflight exchange, publishing, get_links, cross-agent profile visibility.
 
 **Known upstream issue**: Kitsune2 query-response path broken -- blocks all real multi-node operation (see Step 24).
@@ -131,6 +133,7 @@ See [19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md](./19.3_KITSUNE_QUERY_RESPONSE_TIMEO
 
 ### Step 22: Migration to holo-host GitHub Org + Full Rename
 **Priority**: High (organizational)
+**Status**: In progress (commits 1-6 of rename)
 
 Full migration and rebrand:
 - Repos: `fishy` -> `holo-web-conductor`, `hc-membrane` -> `h2hc-linker` (Holo-To-Holochain Linker)
