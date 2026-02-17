@@ -6,7 +6,7 @@
 
 import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types";
 
-const DB_NAME = "fishy_lair";
+const DB_NAME = "hwc_lair";
 const DB_VERSION = 1;
 const STORE_NAME = "keys";
 

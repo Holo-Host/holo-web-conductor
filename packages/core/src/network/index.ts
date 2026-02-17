@@ -1,7 +1,7 @@
 /**
  * Network Module
  *
- * Provides network data retrieval functionality for fishy.
+ * Provides network data retrieval functionality for HWC.
  * Implements a cascade pattern: local storage → network cache → network.
  */
 

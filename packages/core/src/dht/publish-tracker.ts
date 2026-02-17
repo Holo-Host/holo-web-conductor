@@ -11,7 +11,7 @@ import type { ChainOp, PendingPublish, OpBasis } from "./dht-op-types";
 import { PublishStatus, ChainOpType } from "./dht-op-types";
 import { produceOpsFromRecord, computeOpBasis, getOpAction } from "./produce-ops";
 
-const DB_NAME = "fishy_publish_tracker";
+const DB_NAME = "hwc_publish_tracker";
 const DB_VERSION = 2; // v2: Changed dnaHash from number[] to dnaHashStr string for proper indexing
 
 const STORES = {

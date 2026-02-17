@@ -166,13 +166,13 @@ async function initSQLite(): Promise<void> {
       console.log('[Ribosome Worker] Installing opfs-sahpool VFS...');
       const poolUtil = await sqlite3.installOpfsSAHPoolVfs({
         name: 'opfs-sahpool',
-        directory: '/fishy-data',  // OPFS directory for our files
+        directory: '/hwc-data',  // OPFS directory for our files
         initialCapacity: 10,  // Pre-allocate 10 file handles
       });
 
       console.log('[Ribosome Worker] opfs-sahpool installed, opening database...');
-      db = new poolUtil.OpfsSAHPoolDb('/fishy-chain.sqlite3');
-      dbPath = '/fishy-chain.sqlite3';
+      db = new poolUtil.OpfsSAHPoolDb('/hwc-chain.sqlite3');
+      dbPath = '/hwc-chain.sqlite3';
       usingOpfs = true;
     }
   } catch (e) {

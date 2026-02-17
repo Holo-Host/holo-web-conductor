@@ -5,7 +5,7 @@
  * Lock state persists across browser restarts.
  */
 
-const STORAGE_KEY = "fishy_lair_lock_state";
+const STORAGE_KEY = "hwc_lair_lock_state";
 
 /**
  * Hash a passphrase using PBKDF2 (Web Crypto API)

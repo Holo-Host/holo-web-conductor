@@ -10,7 +10,7 @@
 
 import type { HappContext, DnaContext } from "@hwc/core";
 
-const DB_NAME = "fishy_happ_contexts";
+const DB_NAME = "hwc_happ_contexts";
 const DB_VERSION = 1;
 const CONTEXTS_STORE = "contexts";
 const DNA_WASM_STORE = "dna_wasm";

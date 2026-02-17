@@ -158,7 +158,7 @@ export type WireAction = Action;
 export type WireSignedActionHashed = SignedActionHashed;
 
 // ============================================================================
-// Chain and Entry Types (fishy-specific extensions)
+// Chain and Entry Types (HWC-specific extensions)
 // ============================================================================
 
 /**

@@ -96,7 +96,7 @@ async function initDatabase(): Promise<void> {
     if (vfsList.includes('opfs-sahpool')) {
       console.log('[SQLite Worker] Using opfs-sahpool VFS for sync OPFS access');
       vfsName = 'opfs-sahpool';
-      dbPath = 'fishy-chain.sqlite3';
+      dbPath = 'hwc-chain.sqlite3';
 
       // Install opfs-sahpool if needed
       if (sqlite3.installOpfsSAHPoolVfs) {
@@ -113,7 +113,7 @@ async function initDatabase(): Promise<void> {
     } else if (vfsList.includes('opfs')) {
       console.log('[SQLite Worker] Using OPFS VFS (async fallback)');
       vfsName = 'opfs';
-      dbPath = 'fishy-chain.sqlite3';
+      dbPath = 'hwc-chain.sqlite3';
     } else {
       console.warn('[SQLite Worker] OPFS not available, using in-memory database');
     }

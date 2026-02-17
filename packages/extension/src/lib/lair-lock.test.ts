@@ -93,9 +93,9 @@ describe.skip("LairLock", () => {
       await lairLock.setPassphrase("test-passphrase-123");
 
       // Check that it was saved
-      expect(mockStorage["fishy_lair_lock_state"]).toBeDefined();
-      expect(mockStorage["fishy_lair_lock_state"].passphraseHash).toBeDefined();
-      expect(mockStorage["fishy_lair_lock_state"].salt).toBeDefined();
+      expect(mockStorage["hwc_lair_lock_state"]).toBeDefined();
+      expect(mockStorage["hwc_lair_lock_state"].passphraseHash).toBeDefined();
+      expect(mockStorage["hwc_lair_lock_state"].salt).toBeDefined();
     });
 
     it("should change passphrase", async () => {
@@ -142,15 +142,15 @@ describe.skip("LairLock", () => {
     it("should persist lock state", async () => {
       await lairLock.lock();
 
-      expect(mockStorage["fishy_lair_lock_state"].isLocked).toBe(true);
+      expect(mockStorage["hwc_lair_lock_state"].isLocked).toBe(true);
     });
 
     it("should persist unlock state", async () => {
       await lairLock.lock();
       await lairLock.unlock("test-passphrase-123");
 
-      expect(mockStorage["fishy_lair_lock_state"].isLocked).toBe(false);
-      expect(mockStorage["fishy_lair_lock_state"].lastUnlocked).toBeDefined();
+      expect(mockStorage["hwc_lair_lock_state"].isLocked).toBe(false);
+      expect(mockStorage["hwc_lair_lock_state"].lastUnlocked).toBeDefined();
     });
 
     it("should throw when trying to lock without passphrase", async () => {
@@ -197,7 +197,7 @@ describe.skip("LairLock", () => {
 
       expect(await lairLock.isLocked()).toBe(false);
       expect(await lairLock.hasPassphrase()).toBe(false);
-      expect(mockStorage["fishy_lair_lock_state"]).toBeUndefined();
+      expect(mockStorage["hwc_lair_lock_state"]).toBeUndefined();
     });
   });
 });

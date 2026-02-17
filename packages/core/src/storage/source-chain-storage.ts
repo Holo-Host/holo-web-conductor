@@ -31,7 +31,7 @@ import type {
   InitZomesCompleteAction,
 } from './types';
 
-const DB_NAME = 'fishy_source_chain';
+const DB_NAME = 'hwc_source_chain';
 const DB_VERSION = 1;
 
 const STORES = {

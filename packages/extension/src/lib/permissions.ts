@@ -5,7 +5,7 @@
  * connect to the Holochain APIs exposed by the extension.
  */
 
-const STORAGE_KEY = "fishy_permissions";
+const STORAGE_KEY = "hwc_permissions";
 
 /**
  * Permission for a web origin
