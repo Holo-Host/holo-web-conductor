@@ -17,6 +17,12 @@ export type {
   NetworkFetchOptions,
   CacheEntry,
   NetworkCacheOptions,
+  AgentActivityResponse,
+  MustGetAgentActivityResponse,
+  RegisterAgentActivity,
+  ChainStatus,
+  ChainItems,
+  HighestObserved,
 } from './types';
 
 // Cache

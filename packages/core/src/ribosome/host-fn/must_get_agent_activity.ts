@@ -6,33 +6,28 @@
  * Input: MustGetAgentActivityInput { author: AgentPubKey, chain_filter: ChainFilter }
  * Output: Vec<RegisterAgentActivity> (array of { action: SignedActionHashed, cached_entry: null })
  *
- * For fishy, this queries local storage for the agent's chain and returns
- * RegisterAgentActivity ops. If the chain is not found or incomplete,
- * throws UnresolvedDependenciesError in validation context.
+ * Queries the network via gateway since fishy is a zero-arc node.
+ * Falls back to local storage if network is unavailable.
+ * In validation context, throws UnresolvedDependenciesError if data not found.
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
+import { getNetworkService } from "../../network";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { UnresolvedDependenciesError } from "../error";
 import { toHolochainAction } from "./action-serialization";
 import type { StoredAction } from "../../storage/types";
 import { validateWasmMustGetAgentActivityInput } from "../wasm-io-types";
+import type { ActionHash } from "../../types/holochain-types";
 
-/**
- * must_get_agent_activity host function implementation
- *
- * Queries local storage for the agent's chain actions and returns
- * RegisterAgentActivity-formatted results.
- */
 export const mustGetAgentActivity: HostFunctionImpl = (
   context,
   inputPtr,
   inputLen
 ) => {
   const { callContext, instance } = context;
-  const storage = getStorageProvider();
-  const [dnaHash, agentPubKey] = callContext.cellId;
+  const [dnaHash] = callContext.cellId;
 
   // Deserialize input
   const input = deserializeTypedFromWasm(
@@ -44,6 +39,8 @@ export const mustGetAgentActivity: HostFunctionImpl = (
   );
 
   const authorHash = input.author;
+  const chainFilter = input.chain_filter;
+
   console.log(
     `[HostFn] must_get_agent_activity: author=${Array.from(
       authorHash.slice(0, 4)
@@ -52,7 +49,55 @@ export const mustGetAgentActivity: HostFunctionImpl = (
       .join("")}...`
   );
 
-  // Query local storage for the agent's chain actions
+  // Extract chain_top from the chain_filter for the network request
+  let chainTop: ActionHash | null = null;
+  if (chainFilter && typeof chainFilter === "object") {
+    const cf = chainFilter as Record<string, unknown>;
+    if (cf.chain_top instanceof Uint8Array) {
+      chainTop = cf.chain_top as ActionHash;
+    }
+  }
+
+  // Try network first (zero-arc node pattern)
+  const networkService = getNetworkService();
+  if (networkService && chainTop) {
+    const response = networkService.mustGetAgentActivitySync(
+      dnaHash,
+      authorHash,
+      chainTop,
+      false, // include_cached_entries
+    );
+
+    if (response) {
+      // MustGetAgentActivityResponse is an enum:
+      // Activity { ... } | IncompleteChain | ChainTopNotFound | EmptyRange
+      if (typeof response === "object" && "Activity" in response) {
+        const activity = response.Activity;
+        // Activity contains array of RegisterAgentActivity
+        return serializeResult(instance, activity);
+      }
+
+      // Non-success responses - in validation context, throw
+      if (callContext.isValidationContext) {
+        const errorType =
+          typeof response === "string"
+            ? response
+            : Object.keys(response)[0];
+        console.log(
+          `[HostFn] must_get_agent_activity: network returned ${errorType}, throwing`
+        );
+        throw new UnresolvedDependenciesError({
+          Hashes: [authorHash],
+        });
+      }
+
+      // In normal context, return empty
+      return serializeResult(instance, []);
+    }
+  }
+
+  // Fallback: query local storage
+  const storage = getStorageProvider();
   const actions = storage.queryActions(dnaHash, authorHash, {});
 
   if (!actions || actions.length === 0) {
@@ -61,12 +106,10 @@ export const mustGetAgentActivity: HostFunctionImpl = (
         Hashes: [authorHash],
       });
     }
-    // In normal context, return empty array
     return serializeResult(instance, []);
   }
 
-  // Convert to RegisterAgentActivity format:
-  // Array of { action: SignedActionHashed, cached_entry: null }
+  // Convert to RegisterAgentActivity format
   const results = actions.map((storedAction: StoredAction) => {
     const wireAction = toHolochainAction(storedAction);
     return {

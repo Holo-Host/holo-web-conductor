@@ -442,6 +442,30 @@ export function validateWasmHashInput(input: unknown): input is Uint8Array {
 }
 
 // ============================================================================
+// GetAgentActivity Input
+// ============================================================================
+
+/**
+ * WASM GetAgentActivityInput structure
+ * Based on holochain_zome_types GetAgentActivityInput
+ */
+export interface WasmGetAgentActivityInput {
+  agent_pubkey: Uint8Array;
+  chain_query_filter: unknown;
+  activity_request: string; // "Status" | "Full"
+  get_options: unknown;
+}
+
+export function validateWasmGetAgentActivityInput(
+  input: unknown
+): input is WasmGetAgentActivityInput {
+  if (!input || typeof input !== "object") return false;
+  const i = input as Record<string, unknown>;
+  if (!(i.agent_pubkey instanceof Uint8Array)) return false;
+  return true;
+}
+
+// ============================================================================
 // MustGetAgentActivity Input
 // ============================================================================
 

@@ -20,6 +20,77 @@ import type {
   LinkTag,
 } from '../types/holochain-types';
 
+// ============================================================================
+// Agent Activity types (matching Holochain wire protocol responses)
+// ============================================================================
+
+/**
+ * Chain status for an agent's chain.
+ * Matches holochain_zome_types::query::ChainStatus
+ */
+export type ChainStatus =
+  | 'Empty'
+  | { Valid: ChainHead }
+  | { Forked: ChainFork }
+  | { Invalid: ChainHead };
+
+export interface ChainHead {
+  action_seq: number;
+  hash: ActionHash;
+}
+
+export interface ChainFork {
+  fork_seq: number;
+  first_action: ActionHash;
+  second_action: ActionHash;
+}
+
+export interface HighestObserved {
+  action_seq: number;
+  hash: ActionHash[];
+}
+
+/**
+ * Chain items in activity response.
+ * Matches holochain_types::activity::ChainItems
+ */
+export type ChainItems =
+  | { Full: any[] }
+  | { Hashes: Array<[number, ActionHash]> }
+  | 'NotRequested';
+
+/**
+ * Agent activity response from the network.
+ * Matches holochain_types::activity::AgentActivityResponse
+ */
+export interface AgentActivityResponse {
+  agent: AgentPubKey;
+  valid_activity: ChainItems;
+  rejected_activity: ChainItems;
+  status: ChainStatus;
+  highest_observed: HighestObserved | null;
+  warrants: any[];
+}
+
+/**
+ * RegisterAgentActivity from must_get_agent_activity.
+ * Matches holochain_integrity_types::op::RegisterAgentActivity
+ */
+export interface RegisterAgentActivity {
+  action: SignedActionHashed;
+  cached_entry: Entry | null;
+}
+
+/**
+ * Must-get agent activity response variants.
+ * Matches holochain_types::chain::MustGetAgentActivityResponse
+ */
+export type MustGetAgentActivityResponse =
+  | { Activity: { activity: RegisterAgentActivity[]; warrants: any[] } }
+  | 'IncompleteChain'
+  | { ChainTopNotFound: ActionHash }
+  | 'EmptyRange';
+
 /**
  * Network record - a record fetched from the network
  * This is the same as a local Record but may come from remote peers
@@ -122,6 +193,29 @@ export interface NetworkService {
     zomeIndex?: number,
     options?: NetworkFetchOptions
   ): number;
+
+  /**
+   * Fetch agent activity by agent pubkey (synchronous version)
+   * Returns null if not found or network unavailable
+   */
+  getAgentActivitySync(
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
+    activityRequest: 'status' | 'full',
+    options?: NetworkFetchOptions
+  ): AgentActivityResponse | null;
+
+  /**
+   * Fetch agent activity with must-get semantics (synchronous version)
+   * Returns null if not found or network unavailable
+   */
+  mustGetAgentActivitySync(
+    dnaHash: DnaHash,
+    agent: AgentPubKey,
+    chainTop: ActionHash,
+    includeCachedEntries: boolean,
+    options?: NetworkFetchOptions
+  ): MustGetAgentActivityResponse | null;
 
   /**
    * Check if the network service is available

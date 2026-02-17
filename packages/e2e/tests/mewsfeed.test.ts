@@ -70,6 +70,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
             if (text.includes('[create_link]') || text.includes('[get_links]') ||
                 text.includes('[create]') || text.includes('[hash]') ||
                 text.includes('Cascade') || text.includes('get_links') ||
+                text.includes('agent_activity') ||
                 text.includes('Ribosome Worker') || text.includes('handleCallZome') ||
                 text.includes('>>> ') || text.includes('<<< ')) {
               extensionLogs.push(text.substring(0, 300));
@@ -89,6 +90,7 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
           if (text.includes('[create_link]') || text.includes('[get_links]') ||
               text.includes('[create]') || text.includes('[hash]') ||
               text.includes('Cascade') || text.includes('get_links') ||
+              text.includes('agent_activity') ||
               text.includes('Ribosome Worker') || text.includes('handleCallZome') ||
               text.includes('>>> ') || text.includes('<<< ')) {
             extensionLogs.push(text.substring(0, 300));
@@ -238,6 +240,42 @@ test.describe('mewsfeed multi-agent hashtag e2e', () => {
     await createMewsfeedProfile(alice.page, 'alice');
     console.log('[test] Creating profile for bob...');
     await createMewsfeedProfile(bob.page, 'bobcat');
+
+    // --- Test get_agent_activity via get_joining_timestamp_for_agent ---
+    // This exercises the full get_agent_activity host function:
+    // fishy WASM → host_fn → SyncXHR → gateway → kitsune → conductor
+    // The zome function queries for AgentValidationPkg actions (genesis)
+    // and returns the timestamp of the first one.
+    console.log('[test] Testing get_agent_activity via get_joining_timestamp_for_agent...');
+
+    // Get Alice's agent pubkey from her cell_id
+    const aliceAgentPubKey = await alice.page.evaluate(async () => {
+      const holochain = (window as any).holochain;
+      const appInfo = await holochain.appInfo('mewsfeed');
+      if (!appInfo?.cells?.[0]) throw new Error('No mewsfeed app installed');
+      return appInfo.cells[0][1]; // cell_id[1] = agent pubkey
+    });
+    console.log('[test] Alice agent pubkey obtained:', typeof aliceAgentPubKey, JSON.stringify(aliceAgentPubKey)?.substring(0, 80));
+
+    // Call get_joining_timestamp_for_agent for Alice's own agent
+    // This calls get_agent_activity internally with ActivityRequest::Full
+    let joiningTimestamp: any = null;
+    try {
+      joiningTimestamp = await callZome(alice.page, {
+        zomeName: 'profiles',
+        fnName: 'get_joining_timestamp_for_agent',
+        payload: { input: aliceAgentPubKey, local: false },
+        appId: 'mewsfeed',
+      });
+      console.log('[test] get_joining_timestamp_for_agent result:', JSON.stringify(joiningTimestamp));
+    } catch (e: any) {
+      console.log('[test] get_joining_timestamp_for_agent ERROR:', e.message?.substring(0, 500));
+    }
+
+    // The timestamp should be non-null since Alice has genesis actions
+    // It should be a number (microseconds since epoch) or a [seconds, nanos] tuple
+    expect(joiningTimestamp, 'get_joining_timestamp_for_agent should return a timestamp for an agent with genesis actions').not.toBeNull();
+    console.log('[test] get_agent_activity verified: joining timestamp returned successfully');
 
     // After profile creation, navigate back to /feed to ensure CreateMewInput is rendered
     console.log('[test] Re-navigating alice to /feed after profile creation...');

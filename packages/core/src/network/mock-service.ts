@@ -10,8 +10,10 @@ import type {
   NetworkRecord,
   NetworkLink,
   NetworkFetchOptions,
+  AgentActivityResponse,
+  MustGetAgentActivityResponse,
 } from './types';
-import type { DnaHash, AnyDhtHash } from '../types/holochain-types';
+import type { DnaHash, AnyDhtHash, AgentPubKey, ActionHash } from '../types/holochain-types';
 
 /**
  * Convert Uint8Array to base64 for use as map key
@@ -176,6 +178,43 @@ export class MockNetworkService implements NetworkService {
     }
 
     return links.length;
+  }
+
+  getAgentActivitySync(
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
+    activityRequest: 'status' | 'full',
+    options?: NetworkFetchOptions
+  ): AgentActivityResponse | null {
+    this.callLog.push({
+      method: 'getAgentActivitySync',
+      args: [dnaHash, agentPubKey, activityRequest, options],
+    });
+
+    if (!this.available) {
+      throw new Error('Network unavailable');
+    }
+
+    return null;
+  }
+
+  mustGetAgentActivitySync(
+    dnaHash: DnaHash,
+    agent: AgentPubKey,
+    chainTop: ActionHash,
+    includeCachedEntries: boolean,
+    options?: NetworkFetchOptions
+  ): MustGetAgentActivityResponse | null {
+    this.callLog.push({
+      method: 'mustGetAgentActivitySync',
+      args: [dnaHash, agent, chainTop, includeCachedEntries, options],
+    });
+
+    if (!this.available) {
+      throw new Error('Network unavailable');
+    }
+
+    return null;
   }
 
   isAvailable(): boolean {

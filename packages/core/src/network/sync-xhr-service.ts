@@ -14,7 +14,10 @@ import type {
   NetworkLink,
   NetworkEntry,
   NetworkFetchOptions,
+  AgentActivityResponse,
+  MustGetAgentActivityResponse,
 } from './types';
+import type { AgentPubKey, ActionHash } from '../types/holochain-types';
 import type { DnaHash, AnyDhtHash, SignedActionHashed } from '../types/holochain-types';
 import { encodeHashToBase64 } from '../types/holochain-types';
 import { createLogger } from '@fishy/shared';
@@ -602,6 +605,87 @@ export class SyncXHRNetworkService implements NetworkService {
       }
       console.error(`[SyncXHR] Request failed:`, error);
       throw new Error(`Network request failed: ${error}`);
+    }
+  }
+
+  getAgentActivitySync(
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
+    activityRequest: 'status' | 'full',
+    options?: NetworkFetchOptions
+  ): AgentActivityResponse | null {
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
+    const agentB64 = this.toHolochainBase64(agentPubKey);
+    const url = `${this.gatewayUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
+    const timeout = options?.timeout ?? this.defaultTimeout;
+
+    log.debug(`Fetching agent activity: ${url}`);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, false);
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported */ }
+      xhr.setRequestHeader('Accept', 'application/json');
+      this.addAuthHeaders(xhr);
+      xhr.send();
+
+      if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText);
+        if (!data) return null;
+        return this.normalizeByteArrays(data) as AgentActivityResponse;
+      } else if (xhr.status === 404) {
+        return null;
+      } else {
+        log.error(`Agent activity error: ${xhr.status} ${xhr.statusText}`);
+        return null;
+      }
+    } catch (error) {
+      log.error(`Agent activity request failed:`, error);
+      return null;
+    }
+  }
+
+  mustGetAgentActivitySync(
+    dnaHash: DnaHash,
+    agent: AgentPubKey,
+    chainTop: ActionHash,
+    includeCachedEntries: boolean,
+    options?: NetworkFetchOptions
+  ): MustGetAgentActivityResponse | null {
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
+    const agentB64 = this.toHolochainBase64(agent);
+    const chainTopB64 = this.toHolochainBase64(chainTop);
+    const url = `${this.gatewayUrl}/dht/${dnaHashB64}/must_get_agent_activity`;
+    const timeout = options?.timeout ?? this.defaultTimeout;
+
+    log.debug(`Fetching must_get_agent_activity: ${url}`);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, false);
+      try { xhr.timeout = timeout; } catch (_) { /* sync XHR timeout not supported */ }
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      this.addAuthHeaders(xhr);
+      xhr.send(JSON.stringify({
+        agent: agentB64,
+        chain_top: chainTopB64,
+        include_cached_entries: includeCachedEntries,
+      }));
+
+      if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText);
+        if (!data) return null;
+        return this.normalizeByteArrays(data) as MustGetAgentActivityResponse;
+      } else if (xhr.status === 404) {
+        return null;
+      } else {
+        log.error(`Must get agent activity error: ${xhr.status} ${xhr.statusText}`);
+        return null;
+      }
+    } catch (error) {
+      log.error(`Must get agent activity request failed:`, error);
+      return null;
     }
   }
 

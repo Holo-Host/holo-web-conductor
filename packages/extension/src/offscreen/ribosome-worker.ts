@@ -74,7 +74,7 @@ import { callZome, type ZomeCallRequest } from '@fishy/core/ribosome';
 import { encode, decode } from '@msgpack/msgpack';
 import { SCHEMA_SQL } from '@fishy/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@fishy/core/storage';
-import { setNetworkService, type NetworkService } from '@fishy/core/network';
+import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@fishy/core/network';
 import { setLairClient } from '@fishy/core/signing';
 import type { LairClient, Ed25519PubKey, Ed25519Signature } from '@fishy/lair';
 import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@fishy/core/storage/types';
@@ -1295,6 +1295,77 @@ class ProxyNetworkService implements NetworkService {
     } catch (error) {
       console.error(`[ProxyNetwork] Request failed:`, error);
       return 0;
+    }
+  }
+
+  getAgentActivitySync(
+    dnaHash: Uint8Array,
+    agentPubKey: Uint8Array,
+    activityRequest: 'status' | 'full',
+    options?: any,
+  ): AgentActivityResponse | null {
+    if (!gatewayUrl) {
+      return null;
+    }
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
+    const agentB64 = this.toHolochainBase64(agentPubKey);
+    const url = `${gatewayUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
+    console.log(`[ProxyNetwork] Fetching agent activity: ${url}`);
+    try {
+      const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
+      if (response.status === 200) {
+        const responseText = new TextDecoder().decode(response.body);
+        const data = JSON.parse(responseText);
+        console.log(`[ProxyNetwork] Agent activity fetched, status: ${data.status}`);
+        return this.normalizeByteArrays(data) as AgentActivityResponse;
+      } else if (response.status === 404) {
+        console.log(`[ProxyNetwork] Agent activity not found (404)`);
+        return null;
+      } else {
+        console.error(`[ProxyNetwork] Agent activity error: ${response.status}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`[ProxyNetwork] Agent activity request failed:`, error);
+      return null;
+    }
+  }
+
+  mustGetAgentActivitySync(
+    dnaHash: Uint8Array,
+    agent: Uint8Array,
+    chainTop: Uint8Array,
+    includeCachedEntries: boolean,
+    options?: any,
+  ): MustGetAgentActivityResponse | null {
+    if (!gatewayUrl) {
+      return null;
+    }
+    const dnaHashB64 = this.getDnaHashB64(dnaHash);
+    const url = `${gatewayUrl}/dht/${dnaHashB64}/must_get_agent_activity`;
+    const body = JSON.stringify({
+      agent: Array.from(agent),
+      chain_top: Array.from(chainTop),
+      include_cached_entries: includeCachedEntries,
+    });
+    console.log(`[ProxyNetwork] Fetching must_get_agent_activity: ${url}`);
+    try {
+      const response = this.fetchSync('POST', url, {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      }, new TextEncoder().encode(body));
+      if (response.status === 200) {
+        const responseText = new TextDecoder().decode(response.body);
+        const data = JSON.parse(responseText);
+        console.log(`[ProxyNetwork] must_get_agent_activity fetched`);
+        return this.normalizeByteArrays(data) as MustGetAgentActivityResponse;
+      } else {
+        console.error(`[ProxyNetwork] must_get_agent_activity error: ${response.status}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
+      return null;
     }
   }
 
