@@ -5,7 +5,7 @@
  */
 
 import sodium from "libsodium-wrappers";
-import { createLogger } from '@fishy/shared';
+import { createLogger } from '@hwc/shared';
 
 const log = createLogger('Ribosome');
 import {

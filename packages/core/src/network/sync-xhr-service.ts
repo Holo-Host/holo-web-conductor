@@ -20,7 +20,7 @@ import type {
 import type { AgentPubKey, ActionHash } from '../types/holochain-types';
 import type { DnaHash, AnyDhtHash, SignedActionHashed } from '../types/holochain-types';
 import { encodeHashToBase64 } from '../types/holochain-types';
-import { createLogger } from '@fishy/shared';
+import { createLogger } from '@hwc/shared';
 
 const log = createLogger('SyncXHR');
 

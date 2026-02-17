@@ -1,5 +1,5 @@
 /**
- * @fishy/core - Core Holochain conductor functionality
+ * @hwc/core - Core Holochain conductor functionality
  *
  * This package implements the browser-based Holochain conductor,
  * including:
@@ -17,7 +17,7 @@ import type {
 } from "@holochain/client";
 
 // Re-export shared types
-export * from "@fishy/shared";
+export * from "@hwc/shared";
 
 // Re-export proper Holochain hash types from @holochain/client
 export type {

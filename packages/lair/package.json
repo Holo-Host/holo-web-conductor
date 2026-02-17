@@ -1,5 +1,5 @@
 {
-  "name": "@fishy/lair",
+  "name": "@hwc/lair",
   "version": "0.0.1",
   "private": true,
   "description": "Lair keystore implementation for browser environment",
@@ -14,7 +14,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fishy/shared": "*",
+    "@hwc/shared": "*",
     "libsodium-wrappers": "^0.8.0"
   },
   "devDependencies": {

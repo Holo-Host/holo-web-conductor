@@ -1,5 +1,5 @@
 /**
- * @fishy/lair - Browser-based Lair keystore implementation
+ * @hwc/lair - Browser-based Lair keystore implementation
  *
  * This package provides key management functionality mirroring
  * the Lair keystore for use in browser environments.

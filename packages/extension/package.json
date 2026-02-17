@@ -1,8 +1,8 @@
 {
-  "name": "@fishy/extension",
+  "name": "@hwc/extension",
   "version": "0.0.1",
   "private": true,
-  "description": "Fishy browser extension - Holochain conductor in the browser",
+  "description": "Holo Web Conductor browser extension - Holochain conductor in the browser",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -13,9 +13,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fishy/core": "*",
-    "@fishy/lair": "*",
-    "@fishy/shared": "*",
+    "@hwc/core": "*",
+    "@hwc/lair": "*",
+    "@hwc/shared": "*",
     "@holochain/client": "^0.20.1",
     "@sqlite.org/sqlite-wasm": "^3.51.1-build2",
     "libsodium-wrappers": "^0.8.0"

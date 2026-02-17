@@ -1,5 +1,5 @@
 {
-  "name": "@fishy/test-zome",
+  "name": "@hwc/test-zome",
   "version": "0.0.1",
   "private": true,
   "scripts": {

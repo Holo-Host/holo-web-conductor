@@ -45,7 +45,7 @@ if (typeof document === 'undefined') {
 }
 
 // Import schema types (these don't need document)
-import { SCHEMA_SQL, type WorkerRequest, type WorkerResponse } from '@fishy/core/storage/sqlite-schema';
+import { SCHEMA_SQL, type WorkerRequest, type WorkerResponse } from '@hwc/core/storage/sqlite-schema';
 
 // sqlite3InitModule will be dynamically imported after polyfill is set up
 let sqlite3InitModule: any = null;

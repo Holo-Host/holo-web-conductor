@@ -10,7 +10,7 @@ import {
   type ResponseMessage,
   type Message,
 } from "../lib/messaging";
-import type { EntryInfo, EncryptedExport } from "@fishy/lair";
+import type { EntryInfo, EncryptedExport } from "@hwc/lair";
 
 // ============================================================================
 // Utility Functions

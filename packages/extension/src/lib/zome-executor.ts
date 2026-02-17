@@ -9,7 +9,7 @@
  * browser-agnostic.
  */
 
-import type { ZomeCallRequest } from "@fishy/core/ribosome";
+import type { ZomeCallRequest } from "@hwc/core/ribosome";
 
 // ============================================================================
 // Types

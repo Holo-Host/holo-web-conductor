@@ -1,8 +1,8 @@
 {
-  "name": "@fishy/shared",
+  "name": "@hwc/shared",
   "version": "0.0.1",
   "private": true,
-  "description": "Shared types and utilities for Fishy",
+  "description": "Shared types and utilities for Holo Web Conductor",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

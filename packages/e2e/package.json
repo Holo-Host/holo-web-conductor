@@ -1,13 +1,13 @@
 {
-  "name": "@fishy/e2e",
+  "name": "@hwc/e2e",
   "version": "0.0.1",
   "private": true,
-  "description": "E2E test runner for Fishy browser extension",
+  "description": "E2E test runner for Holo Web Conductor browser extension",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "fishy-e2e": "./dist/index.js"
+    "hwc-e2e": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",

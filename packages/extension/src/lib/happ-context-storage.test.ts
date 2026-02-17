@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { HappContextStorage } from "./happ-context-storage";
-import type { HappContext } from "@fishy/core";
+import type { HappContext } from "@hwc/core";
 
 describe("HappContextStorage", () => {
   let storage: HappContextStorage;

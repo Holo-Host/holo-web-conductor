@@ -37,8 +37,8 @@ import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
-import { createLairClient, type EncryptedExport } from "@fishy/lair";
-import type { InstallHappRequest, HappContext } from "@fishy/core";
+import { createLairClient, type EncryptedExport } from "@hwc/lair";
+import type { InstallHappRequest, HappContext } from "@hwc/core";
 import {
   toUint8Array,
   normalizeUint8Arrays,
@@ -47,12 +47,12 @@ import {
   extractEd25519PubKey,
   PublishTracker,
   buildRecords,
-} from "@fishy/core";
+} from "@hwc/core";
 import { encodeHashToBase64, type AgentPubKey, type CellId } from "@holochain/client";
 
 // ExternIO is msgpack-encoded bytes - use Uint8Array as the underlying type
 type ExternIO = Uint8Array;
-import type { ZomeCallRequest } from "@fishy/core/ribosome";
+import type { ZomeCallRequest } from "@hwc/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";

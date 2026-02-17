@@ -208,7 +208,7 @@ function looksLikeUint8Array(obj: any): boolean {
  * Post-normalization pattern: Restore Uint8Arrays from Chrome's object serialization.
  * Chrome message passing (window.postMessage) converts Uint8Array to {0:x, 1:y, ...} objects.
  * This function recursively finds and converts them back to real Uint8Arrays.
- * Equivalent to normalizeUint8Arrays() in @fishy/core/utils/bytes.ts.
+ * Equivalent to normalizeUint8Arrays() in @hwc/core/utils/bytes.ts.
  */
 function restoreUint8Arrays(data: any): any {
   if (data === null || data === undefined) return data;

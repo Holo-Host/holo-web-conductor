@@ -2,7 +2,7 @@
  * Centralized logging utility with filterable prefixes
  *
  * Usage:
- *   import { createLogger, setLogFilter } from '@fishy/shared';
+ *   import { createLogger, setLogFilter } from '@hwc/shared';
  *   const log = createLogger('Background');
  *   log.info('message');  // [Background] message
  *   log.debug('details'); // Only shows if 'Background' matches filter

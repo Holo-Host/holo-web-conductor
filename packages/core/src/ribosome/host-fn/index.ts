@@ -6,7 +6,7 @@
 
 import { CallContext } from "../call-context";
 import { HostFunctionImpl, wrapHostFunction } from "./base";
-import { createLogger } from "@fishy/shared";
+import { createLogger } from "@hwc/shared";
 
 const log = createLogger('HostFn');
 

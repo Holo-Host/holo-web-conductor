@@ -1,5 +1,5 @@
 /**
- * @fishy/shared - Shared types and utilities for Fishy
+ * @hwc/shared - Shared types and utilities for Fishy
  *
  * This package contains common types, interfaces, and utilities
  * used across the Fishy mono-repo.

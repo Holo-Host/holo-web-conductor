@@ -1,5 +1,5 @@
 {
-  "name": "fishy",
+  "name": "holo-web-conductor",
   "version": "0.0.1",
   "private": true,
   "description": "Browser extension implementation of Holochain conductor and Lair keystore",
@@ -9,8 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "build:extension": "npm run build --workspace=@fishy/core --workspace=@fishy/lair --workspace=@fishy/shared --workspace=@fishy/extension",
-    "pretest": "npm run build --workspace=@fishy/test-zome && cp packages/test-zome/target/wasm32-unknown-unknown/release/test_zome.wasm packages/extension/test/test-zome.wasm",
+    "build:extension": "npm run build --workspace=@hwc/core --workspace=@hwc/lair --workspace=@hwc/shared --workspace=@hwc/extension",
+    "pretest": "npm run build --workspace=@hwc/test-zome && cp packages/test-zome/target/wasm32-unknown-unknown/release/test_zome.wasm packages/extension/test/test-zome.wasm",
     "test": "npm run test --workspaces",
     "test:integration": "npm run pretest && vitest run packages/core/src/ribosome/integration.test.ts",
     "test:unit": "vitest run --exclude 'packages/core/src/ribosome/integration.test.ts'",

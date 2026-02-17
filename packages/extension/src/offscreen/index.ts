@@ -17,9 +17,9 @@ import { getHappContextStorage } from "../lib/happ-context-storage";
 import {
   WebSocketNetworkService,
   type ConnectionState,
-} from "@fishy/core/network";
-import { PublishService } from "@fishy/core/dht";
-import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@fishy/core";
+} from "@hwc/core/network";
+import { PublishService } from "@hwc/core/dht";
+import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@hwc/core";
 import { encodeHashToBase64, decodeHashFromBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";

@@ -11,7 +11,7 @@ import {
   type Signature,
   sliceCore32,
 } from "@holochain/client";
-import type { LairClient, Ed25519Signature } from "@fishy/lair";
+import type { LairClient, Ed25519Signature } from "@hwc/lair";
 
 /**
  * Global Lair client instance

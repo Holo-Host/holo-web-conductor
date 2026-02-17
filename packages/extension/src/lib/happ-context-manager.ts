@@ -7,9 +7,9 @@
  * - Permission manager (authorization)
  */
 
-import type { HappContext, InstallHappRequest, CellId, DnaContext } from "@fishy/core";
+import type { HappContext, InstallHappRequest, CellId, DnaContext } from "@hwc/core";
 import { HappContextStorage, getHappContextStorage } from "./happ-context-storage";
-import { createLairClient, type ILairClient } from "@fishy/lair";
+import { createLairClient, type ILairClient } from "@hwc/lair";
 import { getPermissionManager, type PermissionManager } from "./permissions";
 import {
   unpackHappBundle,
@@ -21,10 +21,10 @@ import {
   computeWasmHash,
   type IntegrityZomeForHash,
   type DnaModifiersForHash,
-} from "@fishy/core";
+} from "@hwc/core";
 import { encodeHashToBase64, HoloHashType, hashFrom32AndType } from "@holochain/client";
 import { encode as msgpackEncode } from "@msgpack/msgpack";
-import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@fishy/core";
+import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@hwc/core";
 
 /**
  * Convert a raw Ed25519 public key (32 bytes) to an AgentPubKey HoloHash (39 bytes)

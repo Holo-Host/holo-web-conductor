@@ -1,8 +1,8 @@
 {
-  "name": "@fishy/core",
+  "name": "@hwc/core",
   "version": "0.0.1",
   "private": true,
-  "description": "Core Holochain conductor functionality for Fishy",
+  "description": "Core Holochain conductor functionality for Holo Web Conductor",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +14,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fishy/shared": "*",
+    "@hwc/shared": "*",
     "@holochain/client": "^0.20.1",
     "@msgpack/msgpack": "^3.0.0",
     "@sqlite.org/sqlite-wasm": "^3.51.1-build2",

@@ -14,7 +14,7 @@
  */
 
 import { encode } from "@msgpack/msgpack";
-import { createLogger } from "@fishy/shared";
+import { createLogger } from "@hwc/shared";
 
 import type { CallContext, PendingRecord } from "./call-context";
 import type { DnaManifestRuntime, ZomeDefinition } from "../types/bundle-types";

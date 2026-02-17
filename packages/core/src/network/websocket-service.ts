@@ -11,7 +11,7 @@
  */
 
 import { decodeHashFromBase64 } from "../types/holochain-types";
-import { createLogger } from "@fishy/shared";
+import { createLogger } from "@hwc/shared";
 
 const log = createLogger('WebSocket');
 

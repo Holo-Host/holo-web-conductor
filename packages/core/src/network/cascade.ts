@@ -26,7 +26,7 @@ import {
   type SignedActionHashed,
   type Entry,
 } from '../types/holochain-types';
-import { createLogger } from '@fishy/shared';
+import { createLogger } from '@hwc/shared';
 
 const log = createLogger('Cascade');
 

@@ -8,7 +8,7 @@
  * - Domain-based indexing for fast lookups
  */
 
-import type { HappContext, DnaContext } from "@fishy/core";
+import type { HappContext, DnaContext } from "@hwc/core";
 
 const DB_NAME = "fishy_happ_contexts";
 const DB_VERSION = 1;
@@ -156,7 +156,7 @@ export class HappContextStorage {
   /**
    * Serialize manifest for storage (convert nested WASM Uint8Arrays to Arrays)
    */
-  private serializeManifest(manifest: import('@fishy/core').DnaManifestRuntime | undefined): Record<string, unknown> | undefined {
+  private serializeManifest(manifest: import('@hwc/core').DnaManifestRuntime | undefined): Record<string, unknown> | undefined {
     if (!manifest) return undefined;
 
     return {
@@ -175,7 +175,7 @@ export class HappContextStorage {
   /**
    * Deserialize manifest from storage (convert nested WASM Arrays back to Uint8Arrays)
    */
-  private deserializeManifest(stored: Record<string, unknown> | undefined): import('@fishy/core').DnaManifestRuntime | undefined {
+  private deserializeManifest(stored: Record<string, unknown> | undefined): import('@hwc/core').DnaManifestRuntime | undefined {
     if (!stored) return undefined;
 
     const manifest = stored as {

@@ -70,14 +70,14 @@ if (typeof document === 'undefined') {
   };
 }
 
-import { callZome, type ZomeCallRequest } from '@fishy/core/ribosome';
+import { callZome, type ZomeCallRequest } from '@hwc/core/ribosome';
 import { encode, decode } from '@msgpack/msgpack';
-import { SCHEMA_SQL } from '@fishy/core/storage/sqlite-schema';
-import { setStorageProvider, type StorageProvider } from '@fishy/core/storage';
-import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@fishy/core/network';
-import { setLairClient } from '@fishy/core/signing';
-import type { LairClient, Ed25519PubKey, Ed25519Signature } from '@fishy/lair';
-import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@fishy/core/storage/types';
+import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
+import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
+import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
+import { setLairClient } from '@hwc/core/signing';
+import type { LairClient, Ed25519PubKey, Ed25519Signature } from '@hwc/lair';
+import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@hwc/core/storage/types';
 import { encodeHashToBase64 } from '@holochain/client';
 
 // Types

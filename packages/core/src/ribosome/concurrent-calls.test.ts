@@ -19,7 +19,7 @@ import { setLairClient } from "../signing";
 import { callZome, ZomeCallResult } from "./index";
 import type { ZomeCallRequest } from "./call-context";
 import type { DnaManifestRuntime } from "../types/bundle-types";
-import type { LairClient } from "@fishy/lair";
+import type { LairClient } from "@hwc/lair";
 
 import "fake-indexeddb/auto";
 
