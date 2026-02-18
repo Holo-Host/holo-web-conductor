@@ -146,7 +146,6 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 | `LESSONS_LEARNED.md` | Failed approaches archive (serialization debugging) |
 | `DEVELOPMENT.md` | Build, test, and development workflow |
 | `TESTING.md` | Testing guide (unit, integration, e2e with linker) |
-| `SESSION.md` | Current step focus |
 | `STEPS/index.md` | Step status registry |
 | `STEPS/X_PLAN.md` | Detailed plan for step X |
 | `STEPS/X_COMPLETION.md` | Completion notes for step X |
@@ -157,14 +156,12 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 
 ### Starting a New Step
 1. Create `STEPS/X_PLAN.md` with detailed sub-tasks
-2. Update `SESSION.md` to show current step
-3. Update `STEPS/index.md` status
+2. Update `STEPS/index.md` status
 
 ### Completing a Step
 1. Create `STEPS/X_COMPLETION.md` with summary, test results, issues fixed
-2. Update `SESSION.md` to next step
-3. Update `STEPS/index.md` status
-4. Commit: `docs: Step X complete`
+2. Update `STEPS/index.md` status
+3. Commit: `docs: Step X complete`
 
 ### Periodic Process Review
 Run [STEPS/META_1_PROCESS_REVIEW.md](./STEPS/META_1_PROCESS_REVIEW.md) every 2-3 major steps to:
