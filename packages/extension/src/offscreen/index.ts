@@ -865,6 +865,38 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    // Recover chain from DHT - forward to worker
+    if (message.type === "RECOVER_CHAIN") {
+      const { contextId, dnaHashes, agentPubKey } = message;
+      log.info(`[RECOVER_CHAIN] Starting recovery for context: ${contextId}`);
+
+      (async () => {
+        try {
+          await initRibosomeWorker();
+
+          const response = await sendToWorker("RECOVER_CHAIN", {
+            dnaHashes,
+            agentPubKey,
+          });
+
+          log.info(`[RECOVER_CHAIN] Complete: ${response?.recoveredCount || 0} recovered, ${response?.failedCount || 0} failed`);
+          sendResponse({
+            success: true,
+            recoveredCount: response?.recoveredCount || 0,
+            failedCount: response?.failedCount || 0,
+            errors: response?.errors || [],
+          } as any);
+        } catch (error) {
+          log.error("[RECOVER_CHAIN] Error:", error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          } as any);
+        }
+      })();
+      return true;
+    }
+
     if (message.type === "EXECUTE_ZOME_CALL") {
       const { requestId, zomeCallRequest } = message;
 

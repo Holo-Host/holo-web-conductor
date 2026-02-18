@@ -405,6 +405,72 @@ describe("ChromeOffscreenExecutor", () => {
   });
 
   // --------------------------------------------------------------------------
+  // Chain recovery
+  // --------------------------------------------------------------------------
+
+  describe("recoverChain", () => {
+    it("sends RECOVER_CHAIN message to offscreen with correct payload", async () => {
+      const executor = await createReadyExecutor();
+
+      sendMessageMock.mockResolvedValueOnce({
+        success: true,
+        recoveredCount: 5,
+        failedCount: 1,
+        errors: ["record not found for seq=3"],
+      });
+
+      const result = await executor.recoverChain(
+        "test-context",
+        [[1, 2, 3]],
+        [4, 5, 6]
+      );
+
+      expect(sendMessageMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: "offscreen",
+          type: "RECOVER_CHAIN",
+          contextId: "test-context",
+          dnaHashes: [[1, 2, 3]],
+          agentPubKey: [4, 5, 6],
+        })
+      );
+
+      expect(result).toEqual({
+        recoveredCount: 5,
+        failedCount: 1,
+        errors: ["record not found for seq=3"],
+      });
+    });
+
+    it("returns zero counts on success with no records", async () => {
+      const executor = await createReadyExecutor();
+
+      sendMessageMock.mockResolvedValueOnce({
+        success: true,
+        recoveredCount: 0,
+        failedCount: 0,
+        errors: [],
+      });
+
+      const result = await executor.recoverChain("ctx", [[1]], [2]);
+      expect(result.recoveredCount).toBe(0);
+      expect(result.failedCount).toBe(0);
+      expect(result.errors).toEqual([]);
+    });
+
+    it("throws on failure response", async () => {
+      const executor = await createReadyExecutor();
+
+      sendMessageMock.mockResolvedValueOnce({
+        success: false,
+        error: "Network unavailable",
+      });
+
+      await expect(executor.recoverChain("ctx", [[1]], [2])).rejects.toThrow("Network unavailable");
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Event callbacks
   // --------------------------------------------------------------------------
 

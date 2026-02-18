@@ -374,6 +374,64 @@
       font-size: 12px;
     }
 
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal h3 {
+      margin: 0 0 12px 0;
+    }
+
+    .progress-bar-container {
+      background: #e9ecef;
+      border-radius: 4px;
+      height: 20px;
+      margin: 12px 0;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      background: #667eea;
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease;
+      border-radius: 4px;
+    }
+
+    .progress-text {
+      font-size: 13px;
+      color: #495057;
+      margin: 8px 0;
+    }
+
+    .recovery-note {
+      font-size: 11px;
+      color: #6c757d;
+      margin-top: 8px;
+    }
+
     /* Linker status styles */
     .linker-status {
       display: flex;
@@ -445,6 +503,19 @@
         <p>Install a hApp from a web page to see it here.</p>
       </div>
       <div id="happList" class="happ-list" style="display: none;"></div>
+    </div>
+  </div>
+
+  <div id="recovery-modal" class="modal-overlay">
+    <div class="modal">
+      <h3>Recovering Chain from DHT</h3>
+      <div class="progress-bar-container">
+        <div id="recovery-progress-bar" class="progress-bar"></div>
+      </div>
+      <div id="recovery-progress-text" class="progress-text">Discovering agent activity...</div>
+      <div id="recovery-errors" class="hidden" style="color: #dc3545; font-size: 12px; margin-top: 8px;"></div>
+      <div class="recovery-note">Only published data can be recovered. Local-only data is not recoverable.</div>
+      <button id="recovery-close-btn" class="secondary hidden" style="margin-top: 12px;">Close</button>
     </div>
   </div>
 

@@ -78,6 +78,10 @@ export enum MessageType {
   PUBLISH_RETRY_FAILED = "publish_retry_failed",
   PUBLISH_ALL_RECORDS = "publish_all_records",
 
+  // Chain recovery
+  RECOVER_CHAIN = "recover_chain",
+  GET_RECOVERY_PROGRESS = "get_recovery_progress",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -130,7 +134,9 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LINKER_RECONNECT
     | MessageType.PUBLISH_GET_STATUS
     | MessageType.PUBLISH_RETRY_FAILED
-    | MessageType.PUBLISH_ALL_RECORDS;
+    | MessageType.PUBLISH_ALL_RECORDS
+    | MessageType.RECOVER_CHAIN
+    | MessageType.GET_RECOVERY_PROGRESS;
   payload?: unknown;
 }
 
@@ -316,6 +322,17 @@ export interface PublishStatusPayload {
   failed: number;
 }
 
+/**
+ * Recovery progress payload
+ */
+export interface RecoveryProgressPayload {
+  status: string;
+  totalActions: number;
+  recoveredActions: number;
+  failedActions: number;
+  errors: string[];
+}
+
 // ============================================================================
 // Response Payload Types
 // ============================================================================
@@ -431,6 +448,8 @@ export interface RequestPayloadMap {
   [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
   [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
   [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;
+  [MessageType.RECOVER_CHAIN]: ContextIdPayload;
+  [MessageType.GET_RECOVERY_PROGRESS]: ContextIdPayload;
 }
 
 /**
@@ -577,7 +596,9 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.CONNECTION_STATUS_UNSUBSCRIBE ||
     message.type === MessageType.PUBLISH_GET_STATUS ||
     message.type === MessageType.PUBLISH_RETRY_FAILED ||
-    message.type === MessageType.PUBLISH_ALL_RECORDS
+    message.type === MessageType.PUBLISH_ALL_RECORDS ||
+    message.type === MessageType.RECOVER_CHAIN ||
+    message.type === MessageType.GET_RECOVERY_PROGRESS
   );
 }
 

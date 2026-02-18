@@ -125,6 +125,15 @@ export interface ZomeExecutor {
   /** Trigger publish queue processing for the given DNAs. */
   processPublishQueue(dnaHashes: number[][]): Promise<void>;
 
+  // --- Chain recovery ---
+
+  /** Recover chain actions from the network for a hApp context. */
+  recoverChain(
+    contextId: string,
+    dnaHashes: number[][],
+    agentPubKey: number[]
+  ): Promise<{ recoveredCount: number; failedCount: number; errors: string[] }>;
+
   // --- Linker connectivity ---
 
   /** Disconnect the linker WebSocket. */

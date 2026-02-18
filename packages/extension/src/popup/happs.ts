@@ -173,6 +173,7 @@ function renderHappCard(context: HappContext): string {
             : `<button class="primary enable-btn" data-id="${context.id}">Enable</button>`
         }
         <button class="secondary debug-btn" data-id="${context.id}">Debug</button>
+        <button class="recover-btn secondary" data-context-id="${context.id}" title="Recover chain data from DHT">Recover Chain</button>
         <button class="danger uninstall-btn" data-id="${context.id}">Uninstall</button>
       </div>
 
@@ -305,6 +306,96 @@ function attachEventListeners(): void {
       const target = e.target as HTMLButtonElement;
       const contextId = target.dataset.id!;
       await republishAllRecords(contextId);
+    });
+  });
+
+  // Recover Chain buttons
+  document.querySelectorAll('.recover-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const contextId = (e.target as HTMLElement).dataset.contextId;
+      if (!contextId) return;
+
+      if (!confirm('Recover chain data from the DHT? This requires an active linker connection.')) return;
+
+      // Show recovery modal
+      const modal = document.getElementById('recovery-modal');
+      const progressBar = document.getElementById('recovery-progress-bar');
+      const progressText = document.getElementById('recovery-progress-text');
+      const errorsDiv = document.getElementById('recovery-errors');
+      const closeBtn = document.getElementById('recovery-close-btn');
+
+      if (modal) modal.classList.add('active');
+      if (progressBar) progressBar.style.width = '0%';
+      if (progressText) progressText.textContent = 'Discovering agent activity...';
+      if (errorsDiv) { errorsDiv.classList.add('hidden'); errorsDiv.textContent = ''; }
+      if (closeBtn) closeBtn.classList.add('hidden');
+
+      // Start recovery (async, long-running)
+      const recoverMessage = createRequest(MessageType.RECOVER_CHAIN, { contextId });
+      const recoverPromise = chrome.runtime.sendMessage(recoverMessage);
+
+      // Poll for progress
+      const pollInterval = setInterval(async () => {
+        try {
+          const progressMsg = createRequest(MessageType.GET_RECOVERY_PROGRESS, { contextId });
+          const progressResp = await chrome.runtime.sendMessage(progressMsg);
+          if (progressResp.type !== MessageType.ERROR && progressResp.payload) {
+            const progress = progressResp.payload as any;
+            const total = progress.totalActions || 0;
+            const recovered = progress.recoveredActions || 0;
+
+            if (total > 0) {
+              const pct = Math.round((recovered / total) * 100);
+              if (progressBar) progressBar.style.width = `${pct}%`;
+              if (progressText) progressText.textContent = `Recovered ${recovered} of ${total} actions (${pct}%)`;
+            } else if (progress.status === 'discovering') {
+              if (progressText) progressText.textContent = 'Discovering agent activity...';
+            }
+
+            if (progress.status === 'complete' || progress.status === 'error') {
+              clearInterval(pollInterval);
+            }
+          }
+        } catch {
+          // Ignore polling errors
+        }
+      }, 500);
+
+      // Wait for recovery to finish
+      try {
+        const result = await recoverPromise;
+        clearInterval(pollInterval);
+
+        if (result.type === MessageType.ERROR) {
+          if (progressText) progressText.textContent = `Recovery failed: ${(result.payload as any)?.error || 'Unknown error'}`;
+          if (progressBar) progressBar.style.width = '100%';
+          (progressBar as any).style.background = '#dc3545';
+        } else {
+          const data = result.payload as any;
+          if (progressBar) progressBar.style.width = '100%';
+          if (progressText) progressText.textContent = `Recovery complete: ${data.recoveredCount || 0} records recovered, ${data.failedCount || 0} failed`;
+
+          if (data.errors && data.errors.length > 0) {
+            if (errorsDiv) {
+              errorsDiv.textContent = `Errors: ${data.errors.join('; ')}`;
+              errorsDiv.classList.remove('hidden');
+            }
+          }
+        }
+      } catch (err) {
+        clearInterval(pollInterval);
+        if (progressText) progressText.textContent = `Error: ${err}`;
+      }
+
+      // Show close button
+      if (closeBtn) {
+        closeBtn.classList.remove('hidden');
+        closeBtn.addEventListener('click', () => {
+          if (modal) modal.classList.remove('active');
+          // Reset progress bar color
+          if (progressBar) (progressBar as any).style.background = '#667eea';
+        }, { once: true });
+      }
     });
   });
 

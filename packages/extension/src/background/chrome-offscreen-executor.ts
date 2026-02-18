@@ -270,6 +270,36 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
+  // Chain recovery
+  // ============================================================================
+
+  async recoverChain(
+    contextId: string,
+    dnaHashes: number[][],
+    agentPubKey: number[]
+  ): Promise<{ recoveredCount: number; failedCount: number; errors: string[] }> {
+    await this.ensureOffscreenDocument();
+
+    const response = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "RECOVER_CHAIN",
+      contextId,
+      dnaHashes,
+      agentPubKey,
+    });
+
+    if (!response.success) {
+      throw new Error(response.error || "Chain recovery failed");
+    }
+
+    return {
+      recoveredCount: response.recoveredCount ?? 0,
+      failedCount: response.failedCount ?? 0,
+      errors: response.errors ?? [],
+    };
+  }
+
+  // ============================================================================
   // Linker connectivity
   // ============================================================================
 
