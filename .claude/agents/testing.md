@@ -113,7 +113,7 @@ This exists because a full session was wasted investigating correct code when th
 **State files** (`/tmp/hwc-e2e/`): `bootstrap_addr.txt`, `admin_port.txt`, `admin_port_2.txt`, `app_id.txt`, `happ_path.txt`, `dna_hash.txt`, PIDs, logs
 
 **Gateway**:
-- `linker`: `../h2hc-linker/target/release/h2hc-linker` with `HC_MEMBRANE_*` env vars (uses `127.0.0.1:PORT`, not `localhost`)
+- `linker`: `../h2hc-linker/target/release/h2hc-linker` with `H2HC_LINKER_*` env vars (uses `127.0.0.1:PORT`, not `localhost`)
 
 **Prerequisites**: `nix develop -c` shell for `holochain`, `hc`, `kitsune2-bootstrap-srv`. Extension must be built (`npm run build` in `packages/extension/`).
 

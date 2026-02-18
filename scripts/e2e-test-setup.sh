@@ -477,9 +477,9 @@ start_linker() {
     log_info "Kitsune2 bootstrap: $BOOTSTRAP_URL"
     log_info "Kitsune2 relay: $RELAY_URL"
 
-    HC_MEMBRANE_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
-    HC_MEMBRANE_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
-    HC_MEMBRANE_RELAY_URL="$RELAY_URL" \
+    H2HC_LINKER_ADMIN_WS_URL="127.0.0.1:$ACTUAL_ADMIN" \
+    H2HC_LINKER_BOOTSTRAP_URL="$BOOTSTRAP_URL" \
+    H2HC_LINKER_RELAY_URL="$RELAY_URL" \
     RUST_LOG="info,h2hc_linker=debug" \
     "$LINKER_BINARY" --port "$LINKER_PORT" > linker.log 2>&1 &
 
