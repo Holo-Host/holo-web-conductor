@@ -36,5 +36,15 @@ jobs:
           workspaces: packages/test-zome
 
       - run: npm ci
-      - run: npm test
-      - run: npm run test:integration
+
+      - name: Build workspace packages for cross-references
+        run: |
+          for pkg in shared lair core; do
+            (cd packages/$pkg && npx tsc --composite false --noCheck)
+          done
+
+      - name: Unit tests
+        run: npm test --workspaces --if-present
+
+      - name: Integration tests
+        run: npm run test:integration
