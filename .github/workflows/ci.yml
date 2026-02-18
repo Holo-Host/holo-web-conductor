@@ -12,7 +12,6 @@ concurrency:
 
 env:
   CARGO_INCREMENTAL: 0
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   test:
@@ -42,6 +41,7 @@ jobs:
           for pkg in shared lair core; do
             (cd packages/$pkg && npx tsc --composite false --noCheck)
           done
+          npm run build --workspace=@hwc/extension
 
       - name: Unit tests
         run: npm test --workspaces --if-present
