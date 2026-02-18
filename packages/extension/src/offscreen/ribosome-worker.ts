@@ -76,7 +76,7 @@ import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
 import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
-import type { LairClient, Ed25519PubKey, Ed25519Signature } from '@hwc/lair';
+import type { LairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
 import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@hwc/core/storage/types';
 import { encodeHashToBase64 } from '@holochain/client';
 
@@ -873,6 +873,14 @@ class ProxyLairClient implements LairClient {
 
   async importSeed(): Promise<any> {
     throw new Error('ProxyLairClient does not support importSeed');
+  }
+
+  async exportSeedAsMnemonic(): Promise<string> {
+    throw new Error('ProxyLairClient does not support exportSeedAsMnemonic');
+  }
+
+  async importSeedFromMnemonic(): Promise<NewSeedResult> {
+    throw new Error('ProxyLairClient does not support importSeedFromMnemonic');
   }
 
   async deleteEntry(): Promise<void> {

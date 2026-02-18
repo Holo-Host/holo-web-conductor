@@ -78,6 +78,10 @@ export enum MessageType {
   PUBLISH_RETRY_FAILED = "publish_retry_failed",
   PUBLISH_ALL_RECORDS = "publish_all_records",
 
+  // Seed phrase backup/restore
+  LAIR_EXPORT_MNEMONIC = "lair_export_mnemonic",
+  LAIR_IMPORT_MNEMONIC = "lair_import_mnemonic",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -130,7 +134,9 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LINKER_RECONNECT
     | MessageType.PUBLISH_GET_STATUS
     | MessageType.PUBLISH_RETRY_FAILED
-    | MessageType.PUBLISH_ALL_RECORDS;
+    | MessageType.PUBLISH_ALL_RECORDS
+    | MessageType.LAIR_EXPORT_MNEMONIC
+    | MessageType.LAIR_IMPORT_MNEMONIC;
   payload?: unknown;
 }
 
@@ -316,6 +322,22 @@ export interface PublishStatusPayload {
   failed: number;
 }
 
+/**
+ * Export mnemonic payload
+ */
+export interface ExportMnemonicPayload {
+  tag: string;
+}
+
+/**
+ * Import mnemonic payload
+ */
+export interface ImportMnemonicPayload {
+  mnemonic: string;
+  tag: string;
+  exportable?: boolean;
+}
+
 // ============================================================================
 // Response Payload Types
 // ============================================================================
@@ -431,6 +453,8 @@ export interface RequestPayloadMap {
   [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
   [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
   [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;
+  [MessageType.LAIR_EXPORT_MNEMONIC]: ExportMnemonicPayload;
+  [MessageType.LAIR_IMPORT_MNEMONIC]: ImportMnemonicPayload;
 }
 
 /**
@@ -577,7 +601,9 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.CONNECTION_STATUS_UNSUBSCRIBE ||
     message.type === MessageType.PUBLISH_GET_STATUS ||
     message.type === MessageType.PUBLISH_RETRY_FAILED ||
-    message.type === MessageType.PUBLISH_ALL_RECORDS
+    message.type === MessageType.PUBLISH_ALL_RECORDS ||
+    message.type === MessageType.LAIR_EXPORT_MNEMONIC ||
+    message.type === MessageType.LAIR_IMPORT_MNEMONIC
   );
 }
 
