@@ -206,6 +206,39 @@ describe("messaging protocol", () => {
     });
   });
 
+  describe("LAIR_EXPORT_MNEMONIC", () => {
+    it("should create a valid request with tag", () => {
+      const request = createRequest(MessageType.LAIR_EXPORT_MNEMONIC, { tag: "test-key" });
+      expect(request.type).toBe(MessageType.LAIR_EXPORT_MNEMONIC);
+      expect((request.payload as any).tag).toBe("test-key");
+    });
+
+    it("should be recognized by isRequestMessage", () => {
+      const request = createRequest(MessageType.LAIR_EXPORT_MNEMONIC, { tag: "test" });
+      expect(isRequestMessage(request)).toBe(true);
+    });
+  });
+
+  describe("LAIR_IMPORT_MNEMONIC", () => {
+    it("should create a valid request with mnemonic and tag", () => {
+      const request = createRequest(MessageType.LAIR_IMPORT_MNEMONIC, {
+        mnemonic: "word1 word2 word3",
+        tag: "imported-key",
+        exportable: true,
+      });
+      expect(request.type).toBe(MessageType.LAIR_IMPORT_MNEMONIC);
+      expect((request.payload as any).tag).toBe("imported-key");
+    });
+
+    it("should be recognized by isRequestMessage", () => {
+      const request = createRequest(MessageType.LAIR_IMPORT_MNEMONIC, {
+        mnemonic: "test",
+        tag: "test",
+      });
+      expect(isRequestMessage(request)).toBe(true);
+    });
+  });
+
   describe("message structure validation", () => {
     it("should have required fields in request message", () => {
       const request = createRequest(MessageType.CONNECT);

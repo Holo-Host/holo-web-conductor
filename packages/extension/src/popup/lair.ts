@@ -182,7 +182,7 @@ async function updateLockState(): Promise<void> {
     }
 
     // Enable/disable other sections based on lock state
-    const sections = ["keypair-section", "sign-verify-section", "export-import-section"];
+    const sections = ["keypair-section", "sign-verify-section", "export-import-section", "seed-phrase-section"];
     sections.forEach((sectionId) => {
       const el = document.getElementById(sectionId);
       if (el) {
@@ -302,6 +302,7 @@ async function refreshKeypairList(): Promise<void> {
     console.log("[Lair UI] Received keypairs:", keypairs.length, keypairs);
     renderKeypairList();
     updateKeypairSelects();
+    populateBackupKeySelect(keypairs);
   } catch (error) {
     console.error("[Lair UI] Error refreshing keypair list:", error);
   }
@@ -419,6 +420,36 @@ function updateKeypairSelects(): void {
       exportableKeypairs
         .map((kp) => `<option value="${kp.tag}">${kp.tag}</option>`)
         .join("");
+  }
+}
+
+/**
+ * Populate the backup key select with exportable keypairs
+ */
+function populateBackupKeySelect(entries: EntryInfo[]): void {
+  const select = document.getElementById("backup-key-select") as HTMLSelectElement;
+  if (!select) return;
+  select.innerHTML = '<option value="">-- Select a key --</option>';
+  for (const entry of entries) {
+    if (entry.exportable) {
+      const option = document.createElement("option");
+      option.value = entry.tag;
+      option.textContent = entry.tag;
+      select.appendChild(option);
+    }
+  }
+}
+
+/**
+ * Show a message in the seed phrase message area
+ */
+function showSeedMessage(text: string, type: "success" | "error"): void {
+  const el = document.getElementById("seed-phrase-message");
+  if (el) {
+    el.textContent = text;
+    el.className = `message ${type}`;
+    el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 5000);
   }
 }
 
@@ -696,7 +727,7 @@ async function importKeypair(): Promise<void> {
     const response = await sendMessage(MessageType.LAIR_IMPORT_SEED, {
       encrypted,
       passphrase,
-      new_tag: newTag,
+      tag: newTag,
       exportable,
     });
 
@@ -744,6 +775,110 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Export/Import handlers
   document.getElementById("export-btn")?.addEventListener("click", exportKeypair);
   document.getElementById("import-btn")?.addEventListener("click", importKeypair);
+
+  // Seed phrase backup handler
+  document.getElementById("show-seed-phrase-btn")?.addEventListener("click", async () => {
+    const select = document.getElementById("backup-key-select") as HTMLSelectElement;
+    const tag = select?.value;
+    if (!tag) {
+      showSeedMessage("Select a key first", "error");
+      return;
+    }
+
+    try {
+      const message = createRequest(MessageType.LAIR_EXPORT_MNEMONIC, { tag });
+      const response: ResponseMessage = await chrome.runtime.sendMessage(message);
+      if (response.type === MessageType.ERROR) {
+        showSeedMessage((response.payload as any)?.error || "Export failed", "error");
+        return;
+      }
+
+      const mnemonic = (response.payload as any)?.mnemonic || response.payload;
+      if (typeof mnemonic !== "string") {
+        showSeedMessage("Unexpected response format", "error");
+        return;
+      }
+
+      const words = mnemonic.split(" ");
+      const grid = document.getElementById("seed-phrase-words");
+      if (grid) {
+        grid.innerHTML = words
+          .map(
+            (word: string, i: number) =>
+              `<div class="word"><span class="word-num">${i + 1}.</span>${word}</div>`
+          )
+          .join("");
+      }
+
+      const display = document.getElementById("seed-phrase-display");
+      if (display) display.classList.remove("hidden");
+    } catch (err) {
+      showSeedMessage(`Error: ${err}`, "error");
+    }
+  });
+
+  // Copy seed phrase to clipboard handler
+  document.getElementById("copy-seed-phrase-btn")?.addEventListener("click", () => {
+    const grid = document.getElementById("seed-phrase-words");
+    if (!grid) return;
+    const words = Array.from(grid.querySelectorAll(".word")).map((el) => {
+      // Strip the number prefix (e.g. "1.")
+      return el.textContent?.replace(/^\d+\./, "").trim() || "";
+    });
+    navigator.clipboard.writeText(words.join(" ")).then(() => {
+      showSeedMessage("Copied to clipboard", "success");
+      // Auto-hide display after 3 seconds
+      setTimeout(() => {
+        const display = document.getElementById("seed-phrase-display");
+        if (display) display.classList.add("hidden");
+      }, 3000);
+    });
+  });
+
+  // Restore key from seed phrase handler
+  document.getElementById("restore-seed-btn")?.addEventListener("click", async () => {
+    const tagInput = document.getElementById("restore-tag") as HTMLInputElement;
+    const mnemonicInput = document.getElementById("restore-mnemonic") as HTMLTextAreaElement;
+
+    const tag = tagInput?.value?.trim();
+    const mnemonic = mnemonicInput?.value?.trim();
+
+    if (!tag) {
+      showSeedMessage("Enter a tag for the restored key", "error");
+      return;
+    }
+    if (!mnemonic) {
+      showSeedMessage("Enter the 24-word seed phrase", "error");
+      return;
+    }
+
+    const words = mnemonic.split(/\s+/);
+    if (words.length !== 24) {
+      showSeedMessage(`Expected 24 words, got ${words.length}`, "error");
+      return;
+    }
+
+    try {
+      const message = createRequest(MessageType.LAIR_IMPORT_MNEMONIC, {
+        mnemonic: words.join(" "),
+        tag,
+        exportable: true,
+      });
+      const response: ResponseMessage = await chrome.runtime.sendMessage(message);
+      if (response.type === MessageType.ERROR) {
+        showSeedMessage((response.payload as any)?.error || "Import failed", "error");
+        return;
+      }
+
+      showSeedMessage("Key restored successfully", "success");
+      tagInput.value = "";
+      mnemonicInput.value = "";
+      // Refresh keypair list
+      await refreshKeypairList();
+    } catch (err) {
+      showSeedMessage(`Error: ${err}`, "error");
+    }
+  });
 
   // Initial state update
   await updateLockState();

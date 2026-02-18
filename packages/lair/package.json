@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@hwc/shared": "*",
+    "@scure/bip39": "^2.0.1",
     "libsodium-wrappers": "^0.8.0"
   },
   "devDependencies": {

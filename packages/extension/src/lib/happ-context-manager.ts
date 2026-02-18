@@ -201,7 +201,7 @@ export class HappContextManager {
       console.log(`[HappContextManager] Creating agent key: ${agentKeyTag}`);
 
       const lair = await this.getLairClient();
-      const keyResult = await lair.newSeed(agentKeyTag, false);
+      const keyResult = await lair.newSeed(agentKeyTag, true);
       // Debug: Log the raw Ed25519 key that was created
       const rawEd25519Key = keyResult.entry_info.ed25519_pub_key;
       console.log(`[HappContextManager] Created Ed25519 key (first 8 bytes): ${Array.from(rawEd25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);

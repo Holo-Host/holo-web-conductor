@@ -491,6 +491,116 @@ describe("LairClient", () => {
     });
   });
 
+  describe("exportSeedAsMnemonic", () => {
+    it("should export an exportable key as 24-word mnemonic", async () => {
+      await client.newSeed("exportable-key", true);
+
+      const mnemonic = await client.exportSeedAsMnemonic("exportable-key");
+
+      expect(mnemonic.split(" ").length).toBe(24);
+    });
+
+    it("should throw for non-exportable key", async () => {
+      await client.newSeed("locked-key", false);
+
+      await expect(client.exportSeedAsMnemonic("locked-key")).rejects.toThrow(
+        "not exportable"
+      );
+    });
+
+    it("should throw for non-existent tag", async () => {
+      await expect(client.exportSeedAsMnemonic("nope")).rejects.toThrow(
+        "not found"
+      );
+    });
+
+    it("should produce deterministic mnemonic for same key", async () => {
+      await client.newSeed("stable-key", true);
+
+      const m1 = await client.exportSeedAsMnemonic("stable-key");
+      const m2 = await client.exportSeedAsMnemonic("stable-key");
+      expect(m1).toBe(m2);
+    });
+  });
+
+  describe("importSeedFromMnemonic", () => {
+    it("should round-trip: export mnemonic then import recovers same pubkey", async () => {
+      const original = await client.newSeed("original", true);
+      const mnemonic = await client.exportSeedAsMnemonic("original");
+
+      const recovered = await client.importSeedFromMnemonic(
+        mnemonic,
+        "recovered"
+      );
+
+      expect(recovered.entry_info.ed25519_pub_key).toEqual(
+        original.entry_info.ed25519_pub_key
+      );
+      expect(recovered.entry_info.x25519_pub_key).toEqual(
+        original.entry_info.x25519_pub_key
+      );
+    });
+
+    it("should allow signing with recovered key", async () => {
+      const original = await client.newSeed("signer", true);
+      const mnemonic = await client.exportSeedAsMnemonic("signer");
+
+      const recovered = await client.importSeedFromMnemonic(
+        mnemonic,
+        "signer-recovered"
+      );
+
+      const data = new Uint8Array([10, 20, 30]);
+      const sig = await client.signByPubKey(
+        recovered.entry_info.ed25519_pub_key,
+        data
+      );
+
+      const valid = sodium.crypto_sign_verify_detached(
+        sig,
+        data,
+        original.entry_info.ed25519_pub_key
+      );
+      expect(valid).toBe(true);
+    });
+
+    it("should default to exportable=true", async () => {
+      const original = await client.newSeed("src", true);
+      const mnemonic = await client.exportSeedAsMnemonic("src");
+
+      const imported = await client.importSeedFromMnemonic(mnemonic, "dst");
+      expect(imported.entry_info.exportable).toBe(true);
+    });
+
+    it("should respect exportable=false", async () => {
+      const original = await client.newSeed("src2", true);
+      const mnemonic = await client.exportSeedAsMnemonic("src2");
+
+      const imported = await client.importSeedFromMnemonic(
+        mnemonic,
+        "dst2",
+        false
+      );
+      expect(imported.entry_info.exportable).toBe(false);
+    });
+
+    it("should throw for invalid mnemonic", async () => {
+      await expect(
+        client.importSeedFromMnemonic("not valid words", "tag")
+      ).rejects.toThrow("Invalid mnemonic");
+    });
+
+    it("should throw if tag already exists", async () => {
+      await client.newSeed("existing", true);
+      const original = await client.newSeed("src3", true);
+      const mnemonic = await client.exportSeedAsMnemonic("src3");
+
+      await expect(
+        client.importSeedFromMnemonic(mnemonic, "existing")
+      ).rejects.toThrow("already exists");
+    });
+  });
+
   describe("deleteEntry", () => {
     it("should delete an existing entry", async () => {
       await client.newSeed("to-delete");

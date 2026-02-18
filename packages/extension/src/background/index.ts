@@ -32,6 +32,8 @@ import {
   type RequestIdPayload,
   type LinkerConfigurePayload,
   type ContextIdPayload,
+  type ExportMnemonicPayload,
+  type ImportMnemonicPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
@@ -449,6 +451,12 @@ async function handleMessage(
 
       case MessageType.PUBLISH_ALL_RECORDS:
         return handlePublishAllRecords(message);
+
+      case MessageType.LAIR_EXPORT_MNEMONIC:
+        return handleLairExportMnemonic(message);
+
+      case MessageType.LAIR_IMPORT_MNEMONIC:
+        return handleLairImportMnemonic(message);
 
       default:
         return createErrorResponse(
@@ -1796,6 +1804,54 @@ async function handlePublishAllRecords(
     });
   } catch (error) {
     log.error("[PUBLISH_ALL_RECORDS] Error:", error);
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle LAIR_EXPORT_MNEMONIC request
+ * Returns 24-word BIP-39 mnemonic for the specified key
+ */
+async function handleLairExportMnemonic(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    await ensureUnlocked();
+    const { tag } = getPayload<MessageType.LAIR_EXPORT_MNEMONIC>(message);
+    if (!tag) {
+      return createErrorResponse(message.id, "tag is required");
+    }
+    const client = await getLairClient();
+    const mnemonic = await client.exportSeedAsMnemonic(tag);
+    return createSuccessResponse(message.id, { mnemonic });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle LAIR_IMPORT_MNEMONIC request
+ * Imports a key from a 24-word BIP-39 mnemonic phrase
+ */
+async function handleLairImportMnemonic(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    await ensureUnlocked();
+    const { mnemonic, tag, exportable } = getPayload<MessageType.LAIR_IMPORT_MNEMONIC>(message);
+    if (!mnemonic || !tag) {
+      return createErrorResponse(message.id, "mnemonic and tag are required");
+    }
+    const client = await getLairClient();
+    const result = await client.importSeedFromMnemonic(mnemonic, tag, exportable ?? true);
+    return createSuccessResponse(message.id, result);
+  } catch (error) {
     return createErrorResponse(
       message.id,
       error instanceof Error ? error.message : String(error)

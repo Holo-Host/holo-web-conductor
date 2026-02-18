@@ -21,6 +21,7 @@ import type {
 } from "./types";
 import type { KeyStorage } from "./storage";
 import { createKeyStorage } from "./storage";
+import { seedToMnemonic, mnemonicToSeed } from "./mnemonic";
 
 /**
  * Cached key for synchronous signing
@@ -593,6 +594,68 @@ export class LairClient implements ILairClient {
     }
 
     // Convert to X25519
+    const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
+      keypair.publicKey
+    );
+
+    const entry_info: EntryInfo = {
+      tag: newTag,
+      ed25519_pub_key: keypair.publicKey,
+      x25519_pub_key,
+      created_at: Date.now(),
+      exportable,
+    };
+
+    const stored_entry: StoredKeyEntry = {
+      info: entry_info,
+      seed: keypair.privateKey,
+    };
+
+    await this.storage.putEntry(stored_entry);
+
+    return {
+      tag: newTag,
+      entry_info,
+    };
+  }
+
+  /**
+   * Export a seed as a 24-word BIP-39 mnemonic phrase.
+   * Requires the key to be exportable. Lair must be unlocked.
+   */
+  async exportSeedAsMnemonic(tag: EntryTag): Promise<string> {
+    await this.ensureReady();
+
+    const entry = await this.storage.getEntry(tag);
+    if (!entry) {
+      throw new Error(`Tag "${tag}" not found`);
+    }
+
+    if (!entry.info.exportable) {
+      throw new Error(`Key "${tag}" is not exportable`);
+    }
+
+    const rawSeed = new Uint8Array(entry.seed.slice(0, 32));
+    return seedToMnemonic(rawSeed);
+  }
+
+  /**
+   * Import a seed from a 24-word BIP-39 mnemonic phrase.
+   * Reconstructs the Ed25519 keypair from the mnemonic entropy.
+   */
+  async importSeedFromMnemonic(
+    mnemonic: string,
+    newTag: EntryTag,
+    exportable: boolean = true
+  ): Promise<NewSeedResult> {
+    await this.ensureReady();
+
+    if (await this.storage.hasEntry(newTag)) {
+      throw new Error(`Entry with tag "${newTag}" already exists`);
+    }
+
+    const seed = mnemonicToSeed(mnemonic);
+    const keypair = sodium.crypto_sign_seed_keypair(seed);
     const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
       keypair.publicKey
     );
