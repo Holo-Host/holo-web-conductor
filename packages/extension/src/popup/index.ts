@@ -63,11 +63,12 @@ async function checkStorageStatus(): Promise<void> {
   try {
     if (navigator.storage?.persist) {
       const persisted = await navigator.storage.persist();
+      console.log(`[Popup] Persistent storage: ${persisted ? 'granted' : 'denied'}`);
       if (!persisted) {
         warningEl.classList.remove('hidden');
       }
     } else {
-      // persist() not available - show warning to be safe
+      console.log('[Popup] navigator.storage.persist() not available');
       warningEl.classList.remove('hidden');
     }
   } catch {
