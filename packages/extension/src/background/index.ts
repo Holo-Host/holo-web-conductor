@@ -75,6 +75,43 @@ const logHapp = createLogger('HappContext');
 
 log.info("Background service worker loaded");
 
+// Request persistent storage to prevent browser eviction of OPFS/IndexedDB data.
+// Runs in the background service worker so the result is available immediately
+// when the popup queries STORAGE_GET_STATUS (no need to wait for offscreen).
+async function requestPersistentStorage(): Promise<void> {
+  try {
+    if (navigator.storage?.persist) {
+      const persisted = await navigator.storage.persist();
+      const estimate = await navigator.storage.estimate();
+      log.info(`Persistent storage: ${persisted ? 'granted' : 'denied'}, ` +
+        `usage: ${estimate.usage ?? 0}, quota: ${estimate.quota ?? 0}`);
+      await chrome.storage.local.set({
+        hwc_storage_status: {
+          persisted,
+          usage: estimate.usage ?? 0,
+          quota: estimate.quota ?? 0,
+          checkedAt: Date.now(),
+        },
+      });
+    } else {
+      log.warn("navigator.storage.persist() not available");
+      await chrome.storage.local.set({
+        hwc_storage_status: {
+          persisted: false,
+          usage: 0,
+          quota: 0,
+          checkedAt: Date.now(),
+        },
+      });
+    }
+  } catch (err) {
+    log.error("Failed to request persistent storage:", err);
+  }
+}
+
+// Fire-and-forget at startup
+requestPersistentStorage().catch(console.error);
+
 // ============================================================================
 // ZomeExecutor - abstraction over offscreen document / WASM execution
 // ============================================================================
