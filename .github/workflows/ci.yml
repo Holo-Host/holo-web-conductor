@@ -15,24 +15,9 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run build:extension && npm run build --workspace=@holo-host/web-conductor-client
-
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: typecheck
     steps:
       - uses: actions/checkout@v4
 
@@ -51,5 +36,5 @@ jobs:
           workspaces: packages/test-zome
 
       - run: npm ci
-      - run: npm run build:extension && npm run build --workspace=@holo-host/web-conductor-client
+      - run: npm run test:unit
       - run: npm run test:integration
