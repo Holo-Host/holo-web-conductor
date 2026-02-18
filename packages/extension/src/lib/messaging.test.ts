@@ -234,20 +234,6 @@ describe("messaging protocol", () => {
     });
   });
 
-  describe("STORAGE_GET_STATUS", () => {
-    it("should create a valid request", () => {
-      const request = createRequest(MessageType.STORAGE_GET_STATUS);
-      expect(request.type).toBe(MessageType.STORAGE_GET_STATUS);
-      expect(request.id).toBeDefined();
-      expect(request.timestamp).toBeGreaterThan(0);
-    });
-
-    it("should be recognized by isRequestMessage", () => {
-      const request = createRequest(MessageType.STORAGE_GET_STATUS);
-      expect(isRequestMessage(request)).toBe(true);
-    });
-  });
-
   describe("CONNECTION_STATUS types", () => {
     it("CONNECTION_STATUS_GET should be recognized by isRequestMessage", () => {
       const request = createRequest(MessageType.CONNECTION_STATUS_GET);

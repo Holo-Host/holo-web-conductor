@@ -78,9 +78,6 @@ export enum MessageType {
   PUBLISH_RETRY_FAILED = "publish_retry_failed",
   PUBLISH_ALL_RECORDS = "publish_all_records",
 
-  // Storage persistence status
-  STORAGE_GET_STATUS = "storage_get_status",
-
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -136,8 +133,7 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.CONNECTION_STATUS_UNSUBSCRIBE
     | MessageType.PUBLISH_GET_STATUS
     | MessageType.PUBLISH_RETRY_FAILED
-    | MessageType.PUBLISH_ALL_RECORDS
-    | MessageType.STORAGE_GET_STATUS;
+    | MessageType.PUBLISH_ALL_RECORDS;
   payload?: unknown;
 }
 
@@ -323,16 +319,6 @@ export interface PublishStatusPayload {
   failed: number;
 }
 
-/**
- * Storage persistence status payload
- */
-export interface StorageStatusPayload {
-  persisted: boolean;
-  usage: number;
-  quota: number;
-  checkedAt: number;
-}
-
 // ============================================================================
 // Response Payload Types
 // ============================================================================
@@ -451,7 +437,6 @@ export interface RequestPayloadMap {
   [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
   [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
   [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;
-  [MessageType.STORAGE_GET_STATUS]: undefined;
 }
 
 /**
@@ -598,8 +583,7 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.CONNECTION_STATUS_UNSUBSCRIBE ||
     message.type === MessageType.PUBLISH_GET_STATUS ||
     message.type === MessageType.PUBLISH_RETRY_FAILED ||
-    message.type === MessageType.PUBLISH_ALL_RECORDS ||
-    message.type === MessageType.STORAGE_GET_STATUS
+    message.type === MessageType.PUBLISH_ALL_RECORDS
   );
 }
 

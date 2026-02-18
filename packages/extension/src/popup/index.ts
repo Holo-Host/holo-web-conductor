@@ -4,8 +4,6 @@
  * Displays connection status and basic info about the active tab
  */
 
-import { MessageType, createRequest, type ResponseMessage } from "../lib/messaging";
-
 interface PopupState {
   connected: boolean;
   activeTabUrl?: string;
@@ -59,18 +57,22 @@ async function updatePopupState(): Promise<void> {
 }
 
 async function checkStorageStatus(): Promise<void> {
+  const warningEl = document.getElementById('storage-warning');
+  if (!warningEl) return;
+
   try {
-    const message = createRequest(MessageType.STORAGE_GET_STATUS);
-    const response: ResponseMessage = await chrome.runtime.sendMessage(message);
-    if (response.type !== MessageType.ERROR && response.payload) {
-      const status = response.payload as any;
-      const warningEl = document.getElementById('storage-warning');
-      if (warningEl && !status.persisted) {
+    if (navigator.storage?.persist) {
+      const persisted = await navigator.storage.persist();
+      if (!persisted) {
         warningEl.classList.remove('hidden');
       }
+    } else {
+      // persist() not available - show warning to be safe
+      warningEl.classList.remove('hidden');
     }
   } catch {
-    // Ignore errors - warning just won't show
+    // On error, show warning to be safe
+    warningEl.classList.remove('hidden');
   }
 }
 
