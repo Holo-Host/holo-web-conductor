@@ -56,6 +56,22 @@
       .nav a:hover {
         background: #0056b3;
       }
+      .warning {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffc107;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .warning a {
+        color: #856404;
+        font-weight: bold;
+      }
+      .hidden {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -65,6 +81,10 @@
     </div>
     <div class="info">
       <div id="active-page">No active page</div>
+    </div>
+    <div id="storage-warning" class="warning hidden">
+      <strong>Storage not persistent.</strong> Browser data may be cleared on extension uninstall.
+      <a href="lair.html">Back up your seed phrase</a> to protect your identity.
     </div>
     <div class="nav">
       <a href="happs.html">Installed hApps</a>

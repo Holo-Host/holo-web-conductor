@@ -931,8 +931,43 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
+// Request persistent storage to prevent browser eviction of OPFS/IndexedDB data
+async function requestPersistentStorage(): Promise<void> {
+  try {
+    if (navigator.storage?.persist) {
+      const persisted = await navigator.storage.persist();
+      const estimate = await navigator.storage.estimate();
+      log.info(`Persistent storage: ${persisted ? 'granted' : 'denied'}, ` +
+        `usage: ${estimate.usage ?? 0}, quota: ${estimate.quota ?? 0}`);
+      await chrome.storage.local.set({
+        hwc_storage_status: {
+          persisted,
+          usage: estimate.usage ?? 0,
+          quota: estimate.quota ?? 0,
+          checkedAt: Date.now(),
+        },
+      });
+    } else {
+      log.warn("navigator.storage.persist() not available");
+      await chrome.storage.local.set({
+        hwc_storage_status: {
+          persisted: false,
+          usage: 0,
+          quota: 0,
+          checkedAt: Date.now(),
+        },
+      });
+    }
+  } catch (err) {
+    log.error("Failed to request persistent storage:", err);
+  }
+}
+
 // Start worker initialization
 initRibosomeWorker().catch(console.error);
+
+// Request persistent storage (non-blocking)
+requestPersistentStorage().catch(console.error);
 
 // Notify background that offscreen document is ready
 log.info("Sending ready signal");

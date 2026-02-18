@@ -450,6 +450,9 @@ async function handleMessage(
       case MessageType.PUBLISH_ALL_RECORDS:
         return handlePublishAllRecords(message);
 
+      case MessageType.STORAGE_GET_STATUS:
+        return handleStorageGetStatus(message);
+
       default:
         return createErrorResponse(
           message.id,
@@ -1796,6 +1799,30 @@ async function handlePublishAllRecords(
     });
   } catch (error) {
     log.error("[PUBLISH_ALL_RECORDS] Error:", error);
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle STORAGE_GET_STATUS request
+ * Returns persistent storage status from chrome.storage.local
+ */
+async function handleStorageGetStatus(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const result = await chrome.storage.local.get('hwc_storage_status');
+    const status = result.hwc_storage_status || {
+      persisted: false,
+      usage: 0,
+      quota: 0,
+      checkedAt: 0,
+    };
+    return createSuccessResponse(message.id, status);
+  } catch (error) {
     return createErrorResponse(
       message.id,
       error instanceof Error ? error.message : String(error)
