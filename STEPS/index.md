@@ -59,7 +59,7 @@
 | 19 | ✅ | Mewsfeed E2E (merged; blocked upstream on kitsune2 timeout) |
 | 20 | ✅ | Validation Host Functions & Validate Callback |
 | 21 | ✅ | Firefox Compatibility Plan (plan doc only) |
-| 22 | ⏳ | Migration to holo-host GitHub Org + Rename |
+| 22 | ✅ | Migration to holo-host GitHub Org + Rename |
 | 23 | ✅ | Agent Activity Network Integration |
 | 24 | ✅ | Kitsune2 DHT Query Fix (resolved in 19.3/M4) |
 | Meta-1 | 📋 | Process Review (periodic) |
@@ -131,17 +131,15 @@ See [18_PLAN.md](./18_PLAN.md)
 **Status**: Complete — resolved as part of M4 milestone (kitsune-dht-ops branch, merged to main).
 See [19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md](./19.3_KITSUNE_QUERY_RESPONSE_TIMEOUT.md) for investigation details and test coverage.
 
-### Step 22: Migration to holo-host GitHub Org + Full Rename
-**Priority**: High (organizational)
-**Status**: In progress (commits 1-6 of rename)
+### Step 22: Migration to holo-host GitHub Org + Full Rename (complete)
+**Status**: Complete
 
-Full migration and rebrand:
-- Repos: `fishy` -> `holo-web-conductor`, `hc-membrane` -> `h2hc-linker` (Holo-To-Holochain Linker)
-- npm: `@zippy/fishy-client` -> `@holo-host/web-conductor-client`; `@fishy/*` -> `@hwc/*`
-- Terminology: "gateway" -> "linker" throughout both codebases
-- Extension: user-facing name "Holochain" with standard logo
-- Test apps: new branches in ziptest and mewsfeed for new client API
-- Process: GitHub Projects/Issues, CI/CD, team workflow for 2-3 contributors
+Full rename from fishy to holo-web-conductor (HWC):
+- Package names: `@fishy/*` -> `@hwc/*`, `@zippy/fishy-client` -> `@holo-host/web-conductor-client`
+- Source code: all fishy/gateway references renamed to hwc/linker
+- Extension: user-facing name "Holochain" with placeholder icons
+- Documentation: updated throughout
+- E2E: env vars renamed `HC_MEMBRANE_*` -> `H2HC_LINKER_*`
 
 See [22_PLAN.md](./22_PLAN.md)
 
