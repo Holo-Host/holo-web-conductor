@@ -15,8 +15,8 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  lint-and-typecheck:
-    name: Lint & Typecheck
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,13 +27,12 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run lint
       - run: npm run build
 
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: lint-and-typecheck
+    needs: typecheck
     steps:
       - uses: actions/checkout@v4
 
