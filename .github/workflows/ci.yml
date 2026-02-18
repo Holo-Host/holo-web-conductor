@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/test-zome
+
+      - run: npm ci
+
+      - name: Build workspace packages for cross-references
+        run: |
+          for pkg in shared lair core; do
+            (cd packages/$pkg && npx tsc --composite false --noCheck)
+          done
+          npm run build --workspace=@hwc/extension
+
+      - name: Unit tests
+        run: npm test --workspaces --if-present
+
+      - name: Integration tests
+        run: npm run test:integration
