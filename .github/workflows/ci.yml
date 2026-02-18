@@ -36,5 +36,5 @@ jobs:
           workspaces: packages/test-zome
 
       - run: npm ci
-      - run: npm run test:unit
+      - run: npm test
       - run: npm run test:integration
