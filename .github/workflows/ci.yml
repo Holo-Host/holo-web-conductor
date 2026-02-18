@@ -27,7 +27,7 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run build
+      - run: npm run build:extension && npm run build --workspace=@holo-host/web-conductor-client
 
   test:
     name: Test
@@ -51,5 +51,5 @@ jobs:
           workspaces: packages/test-zome
 
       - run: npm ci
-      - run: npm run build
+      - run: npm run build:extension && npm run build --workspace=@holo-host/web-conductor-client
       - run: npm run test:integration
