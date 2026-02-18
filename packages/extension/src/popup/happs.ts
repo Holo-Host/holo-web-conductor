@@ -367,7 +367,7 @@ function attachEventListeners(): void {
         clearInterval(pollInterval);
 
         if (result.type === MessageType.ERROR) {
-          if (progressText) progressText.textContent = `Recovery failed: ${(result.payload as any)?.error || 'Unknown error'}`;
+          if (progressText) progressText.textContent = `Recovery failed: ${(result as any).error || (result.payload as any)?.error || 'Unknown error'}`;
           if (progressBar) progressBar.style.width = '100%';
           (progressBar as any).style.background = '#dc3545';
         } else {
