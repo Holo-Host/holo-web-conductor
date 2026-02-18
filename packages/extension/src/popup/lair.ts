@@ -727,7 +727,7 @@ async function importKeypair(): Promise<void> {
     const response = await sendMessage(MessageType.LAIR_IMPORT_SEED, {
       encrypted,
       passphrase,
-      new_tag: newTag,
+      tag: newTag,
       exportable,
     });
 
