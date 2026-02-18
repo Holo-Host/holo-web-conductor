@@ -56,5 +56,29 @@ async function updatePopupState(): Promise<void> {
   }
 }
 
+async function checkStorageStatus(): Promise<void> {
+  const warningEl = document.getElementById('storage-warning');
+  if (!warningEl) return;
+
+  try {
+    if (navigator.storage?.persist) {
+      const persisted = await navigator.storage.persist();
+      console.log(`[Popup] Persistent storage: ${persisted ? 'granted' : 'denied'}`);
+      if (!persisted) {
+        warningEl.classList.remove('hidden');
+      }
+    } else {
+      console.log('[Popup] navigator.storage.persist() not available');
+      warningEl.classList.remove('hidden');
+    }
+  } catch {
+    // On error, show warning to be safe
+    warningEl.classList.remove('hidden');
+  }
+}
+
 // Update on load
-document.addEventListener("DOMContentLoaded", updatePopupState);
+document.addEventListener("DOMContentLoaded", async () => {
+  await updatePopupState();
+  await checkStorageStatus();
+});

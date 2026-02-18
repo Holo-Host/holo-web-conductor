@@ -128,6 +128,9 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LINKER_GET_STATUS
     | MessageType.LINKER_DISCONNECT
     | MessageType.LINKER_RECONNECT
+    | MessageType.CONNECTION_STATUS_GET
+    | MessageType.CONNECTION_STATUS_SUBSCRIBE
+    | MessageType.CONNECTION_STATUS_UNSUBSCRIBE
     | MessageType.PUBLISH_GET_STATUS
     | MessageType.PUBLISH_RETRY_FAILED
     | MessageType.PUBLISH_ALL_RECORDS;
@@ -428,6 +431,9 @@ export interface RequestPayloadMap {
   [MessageType.LINKER_GET_STATUS]: undefined;
   [MessageType.LINKER_DISCONNECT]: undefined;
   [MessageType.LINKER_RECONNECT]: undefined;
+  [MessageType.CONNECTION_STATUS_GET]: undefined;
+  [MessageType.CONNECTION_STATUS_SUBSCRIBE]: undefined;
+  [MessageType.CONNECTION_STATUS_UNSUBSCRIBE]: undefined;
   [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
   [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
   [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;

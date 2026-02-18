@@ -233,4 +233,11 @@ describe("messaging protocol", () => {
       expect(signal).toHaveProperty("payload");
     });
   });
+
+  describe("CONNECTION_STATUS types", () => {
+    it("CONNECTION_STATUS_GET should be recognized by isRequestMessage", () => {
+      const request = createRequest(MessageType.CONNECTION_STATUS_GET);
+      expect(isRequestMessage(request)).toBe(true);
+    });
+  });
 });
