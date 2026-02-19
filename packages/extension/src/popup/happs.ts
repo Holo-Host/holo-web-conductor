@@ -333,7 +333,7 @@ async function fetchPublishStatus(contextId: string): Promise<void> {
       return;
     }
 
-    const { pending, inFlight, failed } = response.payload;
+    const { pending, inFlight, failed } = response.payload as { pending: number; inFlight: number; failed: number };
 
     // Update the badges
     const pendingBadge = document.querySelector(
@@ -412,7 +412,7 @@ async function retryFailedPublishes(contextId: string): Promise<void> {
       throw new Error(response.error || "Failed to retry publishes");
     }
 
-    const { resetCount } = response.payload;
+    const { resetCount } = response.payload as { resetCount: number };
     showSuccess(`Reset ${resetCount} failed ops to pending`);
 
     // Refresh status
@@ -448,7 +448,7 @@ async function republishAllRecords(contextId: string): Promise<void> {
       throw new Error(response.error || "Failed to republish records");
     }
 
-    const { cellsProcessed, opsQueued, errors } = response.payload;
+    const { cellsProcessed, opsQueued, errors } = response.payload as { cellsProcessed: number; opsQueued: number; errors: string[] };
     if (errors && errors.length > 0) {
       showError(`Republished with errors: ${errors.join(", ")}`);
     } else {
@@ -475,7 +475,7 @@ async function loadHapps(): Promise<void> {
       throw new Error(response.error || "Failed to load hApps");
     }
 
-    contexts = response.payload.contexts;
+    contexts = (response.payload as any).contexts;
     renderHapps();
   } catch (error) {
     console.error("Error loading hApps:", error);

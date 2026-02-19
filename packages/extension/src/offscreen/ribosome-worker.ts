@@ -76,7 +76,7 @@ import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
 import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
-import type { LairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
+import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
 import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@hwc/core/storage/types';
 import { encodeHashToBase64 } from '@holochain/client';
 
@@ -449,16 +449,16 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  getRecord(actionHash: Uint8Array): { action: any; entry: any } | null {
+  getRecord(actionHash: Uint8Array): StoredRecord | null {
     const action = this.getAction(actionHash);
     if (!action) return null;
 
     let entry = null;
-    if (action.entryHash) {
-      entry = this.getEntry(action.entryHash);
+    if ((action as any).entryHash) {
+      entry = this.getEntry((action as any).entryHash);
     }
 
-    return { action, entry };
+    return { actionHash, action, entry: entry ?? undefined } as StoredRecord;
   }
 
   getDetails(entryHash: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array): RecordDetails | null {
@@ -754,7 +754,7 @@ const storage = new DirectSQLiteStorage();
  * Uses SharedArrayBuffers and Atomics.wait for synchronous operation
  * so that WASM can call signing synchronously.
  */
-class ProxyLairClient implements LairClient {
+class ProxyLairClient implements ILairClient {
   // Track "preloaded" keys - in our case, we always forward to background
   // but we track which keys have been registered for preloading
   private preloadedKeys = new Set<string>();
@@ -1463,15 +1463,16 @@ async function handleCallZome(payload: any): Promise<any> {
     pendingRecordsForTransport = zomeResult.pendingRecords.map(record => {
       // Convert Entry for transport - Entry is internally tagged: { entry_type: "App", entry: bytes }
       let entryForTransport: any = undefined;
-      if (record.entry && record.entry.Present) {
-        const presentEntry = record.entry.Present;
+      const recordEntry = record.entry as any;
+      if (recordEntry && recordEntry.Present) {
+        const presentEntry = recordEntry.Present;
         entryForTransport = {
           Present: {
             entry_type: presentEntry.entry_type,
             entry: Array.from(presentEntry.entry),
           }
         };
-      } else if (record.entry && record.entry.NA !== undefined) {
+      } else if (recordEntry && recordEntry.NA !== undefined) {
         entryForTransport = { NA: null };
       }
 
@@ -1531,17 +1532,17 @@ self.onmessage = async (event: MessageEvent) => {
         // Set up network buffers
         if (payload.networkSignalBuffer && payload.networkResultBuffer) {
           networkSignalBuffer = payload.networkSignalBuffer;
-          networkSignalView = new Int32Array(networkSignalBuffer);
+          networkSignalView = new Int32Array(networkSignalBuffer as unknown as ArrayBuffer);
           networkResultBuffer = payload.networkResultBuffer;
-          networkResultView = new Uint8Array(networkResultBuffer);
+          networkResultView = new Uint8Array(networkResultBuffer as unknown as ArrayBuffer);
         }
 
         // Set up sign buffers
         if (payload.signSignalBuffer && payload.signResultBuffer) {
           signSignalBuffer = payload.signSignalBuffer;
-          signSignalView = new Int32Array(signSignalBuffer);
+          signSignalView = new Int32Array(signSignalBuffer as unknown as ArrayBuffer);
           signResultBuffer = payload.signResultBuffer;
-          signResultView = new Uint8Array(signResultBuffer);
+          signResultView = new Uint8Array(signResultBuffer as unknown as ArrayBuffer);
           console.log('[Ribosome Worker] Sign buffers initialized');
         }
 
@@ -1550,7 +1551,7 @@ self.onmessage = async (event: MessageEvent) => {
         setNetworkService(networkService);
 
         // Set Lair client for signing
-        setLairClient(proxyLairClient);
+        setLairClient(proxyLairClient as any);
         console.log('[Ribosome Worker] Lair client set');
 
         result = { success: true };

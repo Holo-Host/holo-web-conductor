@@ -1234,7 +1234,7 @@ async function handleLairDeriveSeed(
     const client = await getLairClient();
     const result = await client.deriveSeed(
       srcTag,
-      srcIndex,
+      [srcIndex],
       dstTag,
       exportable ?? false
     );
@@ -1985,6 +1985,7 @@ async function handleRemoteSignal(signalData: {
     }
 
     const zomeCallRequest: ZomeCallRequest = {
+      dnaWasm: new Uint8Array(0), // Not used - offscreen fetches from storage
       cellId: [
         targetDnaHash,
         context.agentPubKey, // Local agent receives the signal
@@ -2094,7 +2095,7 @@ async function handleSignRequest(request: {
       // 39-byte AgentPubKey - extract the Ed25519 key
       ed25519PubKey = extractEd25519PubKey(pubkeyBytes);
     } else {
-      throw new Error(`Invalid public key: expected 32-byte Ed25519 or 39-byte AgentPubKey, got ${pubkeyBytes.length} bytes`);
+      throw new Error(`Invalid public key: expected 32-byte Ed25519 or 39-byte AgentPubKey, got ${(pubkeyBytes as Uint8Array).length} bytes`);
     }
 
     // Debug: Log the key being requested and list all keys in Lair

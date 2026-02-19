@@ -675,10 +675,14 @@ interface OffscreenMessage {
 
 interface OffscreenResponse {
   success: boolean;
-  requestId: string;
+  requestId?: string;
   result?: unknown;
   signals?: any[];
   error?: string;
+  disconnected?: boolean;
+  reconnected?: boolean;
+  records?: any[];
+  [key: string]: unknown;
 }
 
 /**

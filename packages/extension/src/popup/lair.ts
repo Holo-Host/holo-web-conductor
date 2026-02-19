@@ -7,6 +7,7 @@
 import {
   createRequest,
   MessageType,
+  type RequestMessage,
   type ResponseMessage,
   type Message,
 } from "../lib/messaging";
@@ -23,7 +24,7 @@ async function sendMessage(
   type: MessageType,
   payload?: unknown
 ): Promise<ResponseMessage> {
-  const request = createRequest(type, payload);
+  const request = createRequest(type as RequestMessage["type"], payload);
   return chrome.runtime.sendMessage(request);
 }
 
