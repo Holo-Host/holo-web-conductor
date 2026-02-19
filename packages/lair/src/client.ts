@@ -24,6 +24,33 @@ import { createKeyStorage } from "./storage";
 import { seedToMnemonic, mnemonicToSeed } from "./mnemonic";
 
 /**
+ * libsodium returns Uint8Array by default but the type defs don't narrow
+ * the union. This narrows with a runtime guard instead of an `as` cast.
+ */
+function asBytes(value: string | Uint8Array): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  throw new Error("Expected Uint8Array from libsodium, got string");
+}
+
+interface SodiumKeypair {
+  publicKey: Uint8Array;
+  privateKey: Uint8Array;
+  keyType: string;
+}
+
+function asKeypair(kp: {
+  publicKey: string | Uint8Array;
+  privateKey: string | Uint8Array;
+  keyType: string;
+}): SodiumKeypair {
+  return {
+    publicKey: asBytes(kp.publicKey),
+    privateKey: asBytes(kp.privateKey),
+    keyType: kp.keyType,
+  };
+}
+
+/**
  * Cached key for synchronous signing
  */
 interface PreloadedKey {
@@ -78,11 +105,11 @@ export class LairClient implements ILairClient {
     }
 
     // Generate Ed25519 keypair
-    const keypair = sodium.crypto_sign_keypair();
+    const keypair = asKeypair(sodium.crypto_sign_keypair());
 
     // Convert signing key to X25519 for encryption
-    const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
-      keypair.publicKey
+    const x25519_pub_key = asBytes(
+      sodium.crypto_sign_ed25519_pk_to_curve25519(keypair.publicKey)
     );
 
     const entry_info: EntryInfo = {
@@ -153,9 +180,7 @@ export class LairClient implements ILairClient {
     }
 
     // Sign the data
-    const signature = sodium.crypto_sign_detached(data, entry.seed);
-
-    return signature;
+    return asBytes(sodium.crypto_sign_detached(data, entry.seed));
   }
 
   /**
@@ -205,7 +230,7 @@ export class LairClient implements ILairClient {
       );
     }
 
-    return sodium.crypto_sign_detached(data, cached.privateKey);
+    return asBytes(sodium.crypto_sign_detached(data, cached.privateKey));
   }
 
   /**
@@ -280,21 +305,23 @@ export class LairClient implements ILairClient {
 
       // Derive 32 bytes for the new seed
       current_seed = new Uint8Array(
-        sodium.crypto_kdf_derive_from_key(
-          32, // subkey length
-          subkey_id,
-          context,
-          current_seed
+        asBytes(
+          sodium.crypto_kdf_derive_from_key(
+            32, // subkey length
+            subkey_id,
+            context,
+            current_seed
+          )
         )
       );
     }
 
     // Generate keypair from derived seed
-    const keypair = sodium.crypto_sign_seed_keypair(current_seed);
+    const keypair = asKeypair(sodium.crypto_sign_seed_keypair(current_seed));
 
     // Convert to X25519
-    const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
-      keypair.publicKey
+    const x25519_pub_key = asBytes(
+      sodium.crypto_sign_ed25519_pk_to_curve25519(keypair.publicKey)
     );
 
     const entry_info: EntryInfo = {
@@ -344,19 +371,16 @@ export class LairClient implements ILairClient {
     }
 
     // Convert sender's Ed25519 private key to X25519
-    const sender_x25519_secret = sodium.crypto_sign_ed25519_sk_to_curve25519(
-      sender_entry.seed
+    const sender_x25519_secret = asBytes(
+      sodium.crypto_sign_ed25519_sk_to_curve25519(sender_entry.seed)
     );
 
     // Generate nonce
-    const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
+    const nonce = asBytes(sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES));
 
     // Encrypt
-    const cipher = sodium.crypto_box_easy(
-      data,
-      nonce,
-      recipient_pub_key,
-      sender_x25519_secret
+    const cipher = asBytes(
+      sodium.crypto_box_easy(data, nonce, recipient_pub_key, sender_x25519_secret)
     );
 
     // Zero out the secret key from memory
@@ -392,16 +416,13 @@ export class LairClient implements ILairClient {
     }
 
     // Convert recipient's Ed25519 private key to X25519
-    const recipient_x25519_secret = sodium.crypto_sign_ed25519_sk_to_curve25519(
-      recipient_entry.seed
+    const recipient_x25519_secret = asBytes(
+      sodium.crypto_sign_ed25519_sk_to_curve25519(recipient_entry.seed)
     );
 
     // Decrypt
-    const decrypted = sodium.crypto_box_open_easy(
-      cipher,
-      nonce,
-      sender_pub_key,
-      recipient_x25519_secret
+    const decrypted = asBytes(
+      sodium.crypto_box_open_easy(cipher, nonce, sender_pub_key, recipient_x25519_secret)
     );
 
     // Zero out the secret key from memory
@@ -428,10 +449,10 @@ export class LairClient implements ILairClient {
     const key = new Uint8Array(entry.seed.slice(0, sodium.crypto_secretbox_KEYBYTES));
 
     // Generate nonce
-    const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+    const nonce = asBytes(sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES));
 
     // Encrypt
-    const cipher = sodium.crypto_secretbox_easy(data, nonce, key);
+    const cipher = asBytes(sodium.crypto_secretbox_easy(data, nonce, key));
 
     return { nonce, cipher };
   }
@@ -455,9 +476,7 @@ export class LairClient implements ILairClient {
     const key = new Uint8Array(entry.seed.slice(0, sodium.crypto_secretbox_KEYBYTES));
 
     // Decrypt
-    const decrypted = sodium.crypto_secretbox_open_easy(cipher, nonce, key);
-
-    return decrypted;
+    return asBytes(sodium.crypto_secretbox_open_easy(cipher, nonce, key));
   }
 
   /**
@@ -481,7 +500,7 @@ export class LairClient implements ILairClient {
     }
 
     // Generate salt for key derivation
-    const salt = sodium.randombytes_buf(16);
+    const salt = asBytes(sodium.randombytes_buf(16));
 
     // Derive encryption key from passphrase using PBKDF2 (Web Crypto API)
     const encoder = new TextEncoder();
@@ -509,11 +528,11 @@ export class LairClient implements ILairClient {
     const key = new Uint8Array(keyBuffer);
 
     // Generate nonce
-    const nonce = sodium.randombytes_buf(24);
+    const nonce = asBytes(sodium.randombytes_buf(24));
 
     // Encrypt the seed (first 32 bytes)
     const seedToEncrypt = entry.seed.slice(0, 32);
-    const cipher = sodium.crypto_secretbox_easy(seedToEncrypt, nonce, key);
+    const cipher = asBytes(sodium.crypto_secretbox_easy(seedToEncrypt, nonce, key));
 
     return {
       version: 1,
@@ -576,17 +595,15 @@ export class LairClient implements ILairClient {
     // Decrypt the seed
     let seed: Uint8Array;
     try {
-      seed = sodium.crypto_secretbox_open_easy(
-        encrypted.cipher,
-        encrypted.nonce,
-        key
+      seed = asBytes(
+        sodium.crypto_secretbox_open_easy(encrypted.cipher, encrypted.nonce, key)
       );
     } catch (error) {
       throw new Error("Failed to decrypt: incorrect passphrase or corrupted data");
     }
 
     // Regenerate keypair from seed
-    const keypair = sodium.crypto_sign_seed_keypair(seed);
+    const keypair = asKeypair(sodium.crypto_sign_seed_keypair(seed));
 
     // Verify the public key matches
     if (!sodium.memcmp(keypair.publicKey, encrypted.ed25519_pub_key)) {
@@ -594,8 +611,8 @@ export class LairClient implements ILairClient {
     }
 
     // Convert to X25519
-    const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
-      keypair.publicKey
+    const x25519_pub_key = asBytes(
+      sodium.crypto_sign_ed25519_pk_to_curve25519(keypair.publicKey)
     );
 
     const entry_info: EntryInfo = {
@@ -655,9 +672,9 @@ export class LairClient implements ILairClient {
     }
 
     const seed = mnemonicToSeed(mnemonic);
-    const keypair = sodium.crypto_sign_seed_keypair(seed);
-    const x25519_pub_key = sodium.crypto_sign_ed25519_pk_to_curve25519(
-      keypair.publicKey
+    const keypair = asKeypair(sodium.crypto_sign_seed_keypair(seed));
+    const x25519_pub_key = asBytes(
+      sodium.crypto_sign_ed25519_pk_to_curve25519(keypair.publicKey)
     );
 
     const entry_info: EntryInfo = {

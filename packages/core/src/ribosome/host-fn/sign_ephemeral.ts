@@ -9,6 +9,12 @@ import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 
+/** libsodium returns Uint8Array by default; the type defs don't narrow the union. */
+function asBytes(value: string | Uint8Array): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  throw new Error("Expected Uint8Array from libsodium, got string");
+}
+
 /**
  * Sign ephemeral result structure
  * Matches holochain_integrity_types::signature::EphemeralSignatures
@@ -39,15 +45,17 @@ export const signEphemeral: HostFunctionImpl = (context, inputPtr, inputLen) => 
   const datas = deserializeFromWasm(instance, inputPtr, inputLen) as Uint8Array[];
 
   // Generate ephemeral keypair
-  const keypair = sodium.crypto_sign_keypair();
+  const rawKeypair = sodium.crypto_sign_keypair();
+  const publicKey = asBytes(rawKeypair.publicKey);
+  const privateKey = asBytes(rawKeypair.privateKey);
 
   // Sign each data item
   const signatures = datas.map(data =>
-    sodium.crypto_sign_detached(data, keypair.privateKey)
+    asBytes(sodium.crypto_sign_detached(data, privateKey))
   );
 
   // Construct 39-byte AgentPubKey using @holochain/client utility
-  const agentPubKey = hashFrom32AndType(keypair.publicKey, HoloHashType.Agent);
+  const agentPubKey = hashFrom32AndType(publicKey, HoloHashType.Agent);
 
   const result: EphemeralSignatures = {
     key: agentPubKey,
