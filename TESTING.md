@@ -161,34 +161,31 @@ npx playwright test --ui
 
 Interactive HTML test pages for developer debugging (not automated CI). Located in `packages/extension/test/`:
 
-| File | Purpose | Linker Required? | Key Features |
-|------|---------|-------------------|--------------|
-| `wasm-test.html` | 20+ host function tests: CRUD, links, signing, rollback | No | Self-contained, no network |
-| `test-page.html` | Basic extension API: detect, connect, install, callZome, signals | No | Extension detection flow |
-| `authorization-test.html` | Authorization flow and permission management | No | Permission revocation |
-| `profiles-test.html` | Real hApp integration via WebConductorAppClient | Optional | Client library testing |
+| File | Purpose | Requirements | What You'll See |
+|------|---------|-------------|-----------------|
+| `sandbox-test.html` | Exercise all extension APIs and 20+ host functions | Extension loaded in Chrome | "Run All" button, 20+ green checks |
+| `happ-test.html` | Test WebConductorAppClient library integration | Extension loaded in Chrome | Client CRUD, connection status |
+| `authorization-test.html` | Test permission grant/revoke popup flow | Extension loaded in Chrome | Popup opens, permission persists |
 
-**How to use**:
+**Quick start** (no linker needed):
 
 ```bash
-# 1. Start E2E environment (for tests that need linker)
-nix develop -c bash
-./scripts/e2e-test-setup.sh start
-
-# 2. Build and load extension in Chrome
+# 1. Build extension
 npm run build
-# Open chrome://extensions, enable Developer mode, Load unpacked from packages/extension/dist
 
-# 3. Serve test pages (need HTTP server for module imports)
-cd packages/extension/test
-python3 -m http.server 8080
+# 2. Load extension in Chrome
+#    Open chrome://extensions, enable Developer mode, Load unpacked from packages/extension/dist
 
-# 4. Open test page
-# http://localhost:8080/wasm-test.html
-# http://localhost:8080/test-page.html
-# http://localhost:8080/profiles-test.html
-# etc.
+# 3. Serve test pages
+./scripts/serve-test-pages.sh
+
+# 4. Open test page and click "Run All"
+#    http://localhost:8080/sandbox-test.html
 ```
+
+**Shared utilities**: `packages/extension/test/lib/test-helpers.js` provides logging, status display, hash formatting, and a `TestRunner` class used by both test pages.
+
+**Test fixtures**: `test.happ`, `test.dna`, `test-zome.wasm` are pre-built from `packages/test-zome/`. Rebuild with `cd packages/test-zome && ./pack.sh`.
 
 ---
 

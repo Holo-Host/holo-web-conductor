@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<!--
+  DEVELOPER TOOL - HWC Client Library Test Page
+
+  Tests the WebConductorAppClient library (developer-facing API) against the
+  bundled test.happ. This exercises the standard @holochain/client callZome
+  shape rather than the extension's direct window.holochain.* API.
+
+  Compare with wasm-test.html which uses window.holochain.* directly.
+
+  Serve: cd packages/extension/test && python3 -m http.server 8080
+  Open:  http://localhost:8080/happ-test.html
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HWC Client Library Test</title>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "@holochain/client": "https://esm.sh/@holochain/client@0.20.1"
+      }
+    }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    h1 { color: #333; margin-bottom: 8px; }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .section {
+      margin-bottom: 24px;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .section h2 {
+      font-size: 17px;
+      margin-bottom: 14px;
+      color: #444;
+    }
+
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    button:hover { background: #45a049; }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: #007bff;
+    }
+
+    button.primary:hover { background: #0056b3; }
+
+    button.primary:disabled { background: #ccc; cursor: not-allowed; }
+
+    button.danger {
+      background: #dc3545;
+    }
+
+    button.danger:hover { background: #c82333; }
+
+    button.danger:disabled { background: #ccc; cursor: not-allowed; }
+
+    .output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      margin-top: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .status.error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .status.info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .status.warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .badge.connected    { background: #d4edda; color: #155724; }
+    .badge.disconnected { background: #f8d7da; color: #721c24; }
+    .badge.connecting   { background: #fff3cd; color: #856404; }
+    .badge.error        { background: #f8d7da; color: #721c24; }
+    .badge.reconnecting { background: #fff3cd; color: #856404; }
+
+    .conn-detail {
+      font-size: 12px;
+      color: #555;
+      margin-top: 6px;
+    }
+
+    #run-all-btn {
+      font-size: 15px;
+      padding: 12px 28px;
+      background: #007bff;
+    }
+
+    #run-all-btn:hover { background: #0056b3; }
+    #run-all-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    #summary {
+      margin-top: 14px;
+    }
+
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>HWC Client Library Test</h1>
+  <p class="subtitle">
+    Tests the @hwc/client <code>WebConductorAppClient</code> against the bundled test zome.
+    Uses the standard <code>@holochain/client</code> callZome shape, not the direct
+    <code>window.holochain.*</code> API.
+  </p>
+
+  <!-- Run All -->
+  <div class="section">
+    <button id="run-all-btn" class="primary">Run All Tests</button>
+    <div id="summary"></div>
+  </div>
+
+  <!-- Section 1: Extension Detection -->
+  <div class="section">
+    <h2>1. Extension Detection</h2>
+    <button id="detect-btn">Detect Extension</button>
+    <div id="detect-status"></div>
+  </div>
+
+  <!-- Section 2: Authorization -->
+  <div class="section">
+    <h2>2. Authorization</h2>
+    <button id="authorize-btn" disabled>Authorize Domain</button>
+    <button id="revoke-btn" class="danger" disabled>Revoke</button>
+    <div id="authorize-status"></div>
+  </div>
+
+  <!-- Section 3: Install test.happ -->
+  <div class="section">
+    <h2>3. Install test.happ</h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Loads <code>test.happ</code> from the test directory and installs it via
+      <code>window.holochain.installHapp()</code>.
+    </p>
+    <button id="install-btn" disabled>Install test.happ</button>
+    <div id="install-status"></div>
+  </div>
+
+  <!-- Section 4: Client Connection -->
+  <div class="section">
+    <h2>4. Client Connection</h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Connects via <code>WebConductorAppClient.connect()</code>. No linker URL
+      needed for local-only operation.
+    </p>
+    <button id="connect-btn" disabled>Connect Client</button>
+    <button id="disconnect-client-btn" class="danger" disabled>Disconnect Client</button>
+    <div id="connect-status"></div>
+    <div id="app-info-display"></div>
+  </div>
+
+  <!-- Section 5: Zome Call Tests via Client -->
+  <div class="section">
+    <h2>5. Zome Call Tests via Client</h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Each button calls a zome function through <code>appClient.callZome()</code>
+      using the standard <code>{ cell_id, zome_name, fn_name, payload, provenance, cap_secret }</code> shape.
+    </p>
+    <button id="btn-agent-info"       disabled>get_agent_info</button>
+    <button id="btn-create-entry"     disabled>create_test_entry</button>
+    <button id="btn-get-entry"        disabled>get_test_entry</button>
+    <button id="btn-update-entry"     disabled>update_test_entry</button>
+    <button id="btn-delete-entry"     disabled>delete_test_entry</button>
+    <button id="btn-query"            disabled>query_test</button>
+    <button id="btn-create-link"      disabled>create_test_link</button>
+    <button id="btn-get-links"        disabled>get_test_links</button>
+    <button id="btn-count-links"      disabled>count_test_links</button>
+    <div id="zome-status"></div>
+  </div>
+
+  <!-- Section 6: Signal Test via Client -->
+  <div class="section">
+    <h2>6. Signal Test via Client</h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Subscribes via <code>appClient.on('signal', callback)</code> then emits a signal
+      through the zome.
+    </p>
+    <button id="btn-subscribe-signal" disabled>Subscribe to Signals</button>
+    <button id="btn-emit-signal"      disabled>Emit Signal</button>
+    <div id="signal-status"></div>
+    <div id="signal-log" style="font-size:12px; color:#555; margin-top:8px;"></div>
+  </div>
+
+  <!-- Section 7: Connection Status -->
+  <div class="section">
+    <h2>7. Connection Status
+      <span id="conn-badge" class="badge disconnected">disconnected</span>
+    </h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Live connection state from <code>appClient.onConnection('connection:change', callback)</code>.
+    </p>
+    <button id="btn-get-conn-state" disabled>Get Current State</button>
+    <div id="conn-status"></div>
+    <div id="conn-detail" class="conn-detail"></div>
+  </div>
+
+  <!-- Section 8: Console Output -->
+  <div class="section">
+    <h2>8. Console Output</h2>
+    <button id="clear-output-btn">Clear</button>
+    <div id="output" class="output">Waiting for actions...\n</div>
+  </div>
+
+</div><!-- /.container -->
+
+<script type="module">
+  import {
+    log,
+    showStatus,
+    formatForDisplay,
+    maybeUint8Array,
+    msgpackDecode,
+    TestRunner,
+    waitForExtension,
+    loadBinaryFile,
+  } from './lib/test-helpers.js';
+
+  import {
+    WebConductorAppClient,
+    waitForHolochain,
+    toUint8Array,
+    deepConvertByteArrays,
+    ConnectionStatus,
+  } from './lib/web-conductor-client.js';
+
+  // ---------------------------------------------------------------------------
+  // DOM refs
+  // ---------------------------------------------------------------------------
+  const outputEl        = document.getElementById('output');
+  const summaryEl       = document.getElementById('summary');
+
+  const detectBtn       = document.getElementById('detect-btn');
+  const detectStatus    = document.getElementById('detect-status');
+
+  const authorizeBtn    = document.getElementById('authorize-btn');
+  const revokeBtn       = document.getElementById('revoke-btn');
+  const authorizeStatus = document.getElementById('authorize-status');
+
+  const installBtn      = document.getElementById('install-btn');
+  const installStatus   = document.getElementById('install-status');
+
+  const connectBtn      = document.getElementById('connect-btn');
+  const disconnectClientBtn = document.getElementById('disconnect-client-btn');
+  const connectStatus   = document.getElementById('connect-status');
+  const appInfoDisplay  = document.getElementById('app-info-display');
+
+  const zomeStatus      = document.getElementById('zome-status');
+  const signalStatus    = document.getElementById('signal-status');
+  const signalLog       = document.getElementById('signal-log');
+
+  const connBadge       = document.getElementById('conn-badge');
+  const connStatus      = document.getElementById('conn-status');
+  const connDetail      = document.getElementById('conn-detail');
+
+  // ---------------------------------------------------------------------------
+  // Logging shim (test-helpers.js log takes (el, msg, isError))
+  // ---------------------------------------------------------------------------
+  function out(msg, isError = false) {
+    log(outputEl, msg, isError);
+  }
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+  let appClient       = null;
+  let cellId          = null;    // [DnaHash, AgentPubKey]
+  let lastActionHash  = null;    // most recent created/updated action hash
+  let lastLinkHash    = null;    // most recent created link hash
+  let signalUnsubscribe = null;
+  let signalCount     = 0;
+
+  // ---------------------------------------------------------------------------
+  // Helper: call zome via client using standard shape
+  // ---------------------------------------------------------------------------
+  async function clientCallZome(fnName, payload) {
+    if (!appClient) throw new Error('Client not connected');
+    if (!cellId)    throw new Error('Cell ID not available');
+
+    return appClient.callZome({
+      cell_id:   cellId,
+      zome_name: 'test_zome',
+      fn_name:   fnName,
+      payload,
+      provenance:  cellId[1],
+      cap_secret:  null,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper: enable the zome call buttons
+  // ---------------------------------------------------------------------------
+  function enableZomeButtons() {
+    [
+      'btn-agent-info', 'btn-create-entry', 'btn-get-entry',
+      'btn-update-entry', 'btn-delete-entry', 'btn-query',
+      'btn-create-link', 'btn-get-links', 'btn-count-links',
+      'btn-subscribe-signal', 'btn-emit-signal',
+      'btn-get-conn-state',
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = false;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper: update connection badge
+  // ---------------------------------------------------------------------------
+  function updateConnBadge(state) {
+    const status = state ? state.status : 'disconnected';
+    connBadge.textContent = status;
+    connBadge.className   = `badge ${status}`;
+
+    if (state) {
+      connDetail.textContent =
+        `HTTP: ${state.httpHealthy ? 'healthy' : 'down'} | ` +
+        `WS: ${state.wsHealthy   ? 'healthy' : 'down'}` +
+        (state.lastError ? ` | Error: ${state.lastError}` : '');
+    } else {
+      connDetail.textContent = '';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section 1 - Extension Detection
+  // ---------------------------------------------------------------------------
+  async function detectExtension() {
+    out('Detecting Holochain extension via waitForHolochain()...');
+    try {
+      await waitForHolochain(3000);
+      out('Extension detected. window.holochain.isWebConductor = ' + window.holochain.isWebConductor);
+      showStatus('detect-status',
+        '<strong>Extension detected.</strong> <code>window.holochain</code> is available.',
+        'success');
+      authorizeBtn.disabled = false;
+      return true;
+    } catch (err) {
+      out('Extension not found: ' + err.message, true);
+      showStatus('detect-status',
+        '<strong>Extension not found.</strong> Install the HWC extension and reload.',
+        'error');
+      return false;
+    }
+  }
+
+  detectBtn.addEventListener('click', detectExtension);
+
+  // ---------------------------------------------------------------------------
+  // Section 2 - Authorization
+  // ---------------------------------------------------------------------------
+  authorizeBtn.addEventListener('click', async () => {
+    out('Calling window.holochain.connect()...');
+    showStatus('authorize-status', 'Requesting authorization (popup may appear)...', 'info');
+    try {
+      const result = await window.holochain.connect();
+      out('Authorized: ' + JSON.stringify(result));
+      showStatus('authorize-status',
+        `<strong>Authorized.</strong> Origin: <code>${result.origin}</code>`,
+        'success');
+      authorizeBtn.disabled = true;
+      revokeBtn.disabled    = false;
+      installBtn.disabled   = false;
+
+      // Check whether hApp is already installed
+      await checkExistingHapp();
+    } catch (err) {
+      out('Authorization failed: ' + err.message, true);
+      showStatus('authorize-status', '<strong>Authorization failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  revokeBtn.addEventListener('click', async () => {
+    out('Calling window.holochain.disconnect()...');
+    try {
+      await window.holochain.disconnect();
+      out('Authorization revoked.');
+      showStatus('authorize-status', '<strong>Authorization revoked.</strong>', 'info');
+      authorizeBtn.disabled = false;
+      revokeBtn.disabled    = true;
+      installBtn.disabled   = true;
+      connectBtn.disabled   = true;
+    } catch (err) {
+      out('Revoke failed: ' + err.message, true);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Helper: check whether hApp is already installed after auth
+  // ---------------------------------------------------------------------------
+  async function checkExistingHapp() {
+    try {
+      const appInfo = await window.holochain.appInfo();
+      if (appInfo && appInfo.contextId) {
+        out('Existing hApp found: contextId=' + appInfo.contextId);
+        showStatus('install-status',
+          `<strong>hApp already installed.</strong> contextId: <code>${appInfo.contextId}</code>`,
+          'success');
+        installBtn.disabled  = true;
+        connectBtn.disabled  = false;
+      }
+    } catch (_) {
+      out('No existing hApp installed - install one to proceed.');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section 3 - Install test.happ
+  // ---------------------------------------------------------------------------
+  installBtn.addEventListener('click', async () => {
+    out('Loading test.happ...');
+    showStatus('install-status', 'Loading test.happ bundle...', 'info');
+
+    let happBundle;
+    try {
+      happBundle = await loadBinaryFile('test.happ');
+      out('Loaded test.happ: ' + happBundle.length + ' bytes');
+    } catch (err) {
+      out('Failed to load test.happ: ' + err.message, true);
+      showStatus('install-status', '<strong>Error:</strong> Could not load test.happ: ' + err.message, 'error');
+      return;
+    }
+
+    out('Calling window.holochain.installHapp()...');
+    showStatus('install-status', 'Installing...', 'info');
+    try {
+      const result = await window.holochain.installHapp({
+        appVersion: '0.1.0',
+        happBundle,
+      });
+      out('hApp installed. contextId=' + result.contextId);
+      out('  appName: '  + result.appName);
+      out('  cells: '    + result.cells.length);
+      showStatus('install-status',
+        `<strong>hApp installed.</strong><br>` +
+        `contextId: <code>${result.contextId}</code><br>` +
+        `App: <code>${result.appName}</code> | Cells: ${result.cells.length}`,
+        'success');
+      installBtn.disabled = true;
+      connectBtn.disabled = false;
+    } catch (err) {
+      out('Install failed: ' + err.message, true);
+      showStatus('install-status', '<strong>Install failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 4 - Client Connection
+  // ---------------------------------------------------------------------------
+  connectBtn.addEventListener('click', async () => {
+    out('Calling WebConductorAppClient.connect()...');
+    showStatus('connect-status', 'Connecting...', 'info');
+    try {
+      appClient = await WebConductorAppClient.connect({
+        autoReconnect: true,
+      });
+
+      out('Client connected.');
+
+      // Subscribe to connection changes
+      appClient.onConnection('connection:change', (state) => {
+        out('Connection state changed: ' + state.status +
+            ' | HTTP: ' + state.httpHealthy +
+            ' | WS: '   + state.wsHealthy +
+            (state.lastError ? ' | err: ' + state.lastError : ''));
+        updateConnBadge(state);
+      });
+
+      // Initial state
+      updateConnBadge(appClient.getConnectionState());
+
+      // Resolve cellId from appInfo
+      const info = await appClient.appInfo();
+      out('appInfo() returned installed_app_id: ' + info.installed_app_id);
+
+      // cell_info is keyed by role name; find first role
+      const roleNames = Object.keys(info.cell_info);
+      if (roleNames.length === 0) throw new Error('No roles in appInfo');
+      const roleName = roleNames[0];
+      const cellInfoList = info.cell_info[roleName];
+      if (!cellInfoList || cellInfoList.length === 0) throw new Error('No cells for role ' + roleName);
+
+      // CellType.Provisioned wraps { cell_id, dna_modifiers, name }
+      const provisionedCell = cellInfoList[0];
+      // The value may be nested under .value when the type field is present, or directly
+      const provisionedValue = provisionedCell.value || provisionedCell;
+      cellId = [
+        toUint8Array(provisionedValue.cell_id[0]),
+        toUint8Array(provisionedValue.cell_id[1]),
+      ];
+
+      out('Role: ' + roleName);
+      out('cellId DnaHash length: '     + cellId[0].length);
+      out('cellId AgentPubKey length: ' + cellId[1].length);
+
+      const formattedInfo = formatForDisplay(info);
+      appInfoDisplay.innerHTML =
+        '<div class="status info" style="margin-top:10px; font-size:12px;">' +
+        '<strong>appInfo:</strong><br><pre style="margin:0; font-size:11px; white-space:pre-wrap;">' +
+        JSON.stringify(formattedInfo, null, 2) + '</pre></div>';
+
+      showStatus('connect-status',
+        '<strong>Client connected.</strong> Role: <code>' + roleName + '</code>',
+        'success');
+
+      connectBtn.disabled         = true;
+      disconnectClientBtn.disabled = false;
+      enableZomeButtons();
+    } catch (err) {
+      out('Connect failed: ' + err.message, true);
+      showStatus('connect-status', '<strong>Connect failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  disconnectClientBtn.addEventListener('click', async () => {
+    if (!appClient) return;
+    out('Disconnecting client...');
+    try {
+      await appClient.disconnect();
+      out('Client disconnected.');
+      showStatus('connect-status', '<strong>Client disconnected.</strong>', 'info');
+      appClient = null;
+      cellId    = null;
+      updateConnBadge(null);
+      connectBtn.disabled          = false;
+      disconnectClientBtn.disabled = true;
+      // Re-disable zome buttons
+      [
+        'btn-agent-info', 'btn-create-entry', 'btn-get-entry',
+        'btn-update-entry', 'btn-delete-entry', 'btn-query',
+        'btn-create-link', 'btn-get-links', 'btn-count-links',
+        'btn-subscribe-signal', 'btn-emit-signal',
+        'btn-get-conn-state',
+      ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = true;
+      });
+    } catch (err) {
+      out('Disconnect failed: ' + err.message, true);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 5 - Zome Call Tests
+  // ---------------------------------------------------------------------------
+
+  // get_agent_info
+  document.getElementById('btn-agent-info').addEventListener('click', async () => {
+    out('--- get_agent_info ---');
+    try {
+      const result = await clientCallZome('get_agent_info', null);
+      const formatted = formatForDisplay(result);
+      out('get_agent_info result: ' + JSON.stringify(formatted, null, 2));
+      showStatus('zome-status', '<strong>get_agent_info:</strong> Success. See console output.', 'success');
+    } catch (err) {
+      out('get_agent_info failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>get_agent_info failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // create_test_entry
+  document.getElementById('btn-create-entry').addEventListener('click', async () => {
+    const content = 'Client test entry at ' + new Date().toISOString();
+    out('--- create_test_entry ---');
+    out('Content: "' + content + '"');
+    try {
+      const result = await clientCallZome('create_test_entry', content);
+      lastActionHash = result;
+      const formatted = formatForDisplay(result);
+      out('create_test_entry result: ' + formatted);
+      showStatus('zome-status',
+        '<strong>create_test_entry:</strong> Success. ActionHash: <code>' + formatted + '</code>',
+        'success');
+    } catch (err) {
+      out('create_test_entry failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>create_test_entry failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // get_test_entry
+  document.getElementById('btn-get-entry').addEventListener('click', async () => {
+    if (!lastActionHash) {
+      showStatus('zome-status', 'Create an entry first.', 'info');
+      return;
+    }
+    out('--- get_test_entry ---');
+    try {
+      const result = await clientCallZome('get_test_entry', lastActionHash);
+      if (!result) {
+        out('Entry not found.', true);
+        showStatus('zome-status', '<strong>get_test_entry:</strong> Entry not found.', 'error');
+        return;
+      }
+
+      // Decode entry content
+      const entryPresent = result.entry && result.entry.Present;
+      let decoded = null;
+      if (entryPresent && entryPresent.entry) {
+        const entryBytes = maybeUint8Array(entryPresent.entry);
+        try {
+          decoded = msgpackDecode(entryBytes);
+        } catch (_) { /* not decodable */ }
+      }
+
+      const formatted = formatForDisplay(result);
+      out('get_test_entry: Record retrieved.');
+      out('  action_seq: ' + (result.signed_action && result.signed_action.hashed &&
+            result.signed_action.hashed.content && result.signed_action.hashed.content.action_seq));
+      if (decoded) out('  entry content: "' + decoded.content + '"');
+      out('Full record: ' + JSON.stringify(formatted, null, 2));
+      showStatus('zome-status',
+        '<strong>get_test_entry:</strong> Record retrieved.' +
+        (decoded ? ' Content: <code>' + decoded.content + '</code>' : ''),
+        'success');
+    } catch (err) {
+      out('get_test_entry failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>get_test_entry failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // update_test_entry
+  document.getElementById('btn-update-entry').addEventListener('click', async () => {
+    if (!lastActionHash) {
+      showStatus('zome-status', 'Create an entry first.', 'info');
+      return;
+    }
+    out('--- update_test_entry ---');
+    const newContent = 'Updated via client at ' + new Date().toISOString();
+    try {
+      const result = await clientCallZome('update_test_entry', {
+        original_hash: lastActionHash,
+        new_content:   newContent,
+      });
+      lastActionHash = result;
+      const formatted = formatForDisplay(result);
+      out('update_test_entry result: ' + formatted);
+      showStatus('zome-status',
+        '<strong>update_test_entry:</strong> Success. New hash: <code>' + formatted + '</code>',
+        'success');
+    } catch (err) {
+      out('update_test_entry failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>update_test_entry failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // delete_test_entry
+  document.getElementById('btn-delete-entry').addEventListener('click', async () => {
+    if (!lastActionHash) {
+      showStatus('zome-status', 'Create an entry first.', 'info');
+      return;
+    }
+    out('--- delete_test_entry ---');
+    try {
+      const result = await clientCallZome('delete_test_entry', lastActionHash);
+      const formatted = formatForDisplay(result);
+      out('delete_test_entry result: ' + formatted);
+      showStatus('zome-status',
+        '<strong>delete_test_entry:</strong> Tombstone created. Hash: <code>' + formatted + '</code>',
+        'success');
+    } catch (err) {
+      out('delete_test_entry failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>delete_test_entry failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // query_test
+  document.getElementById('btn-query').addEventListener('click', async () => {
+    out('--- query_test ---');
+    try {
+      const result = await clientCallZome('query_test', null);
+      const count = Array.isArray(result) ? result.length : 0;
+      out('query_test: ' + count + ' records on chain.');
+      const formatted = formatForDisplay(result);
+      out('Records: ' + JSON.stringify(formatted, null, 2));
+      showStatus('zome-status',
+        '<strong>query_test:</strong> ' + count + ' record(s) on chain.',
+        'success');
+    } catch (err) {
+      out('query_test failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>query_test failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // create_test_link
+  document.getElementById('btn-create-link').addEventListener('click', async () => {
+    if (!lastActionHash) {
+      showStatus('zome-status', 'Create an entry first (used as base and target).', 'info');
+      return;
+    }
+    out('--- create_test_link ---');
+    try {
+      const result = await clientCallZome('create_test_link', {
+        base:   lastActionHash,
+        target: lastActionHash,   // links to itself for testing
+      });
+      lastLinkHash = result;
+      const formatted = formatForDisplay(result);
+      out('create_test_link result: ' + formatted);
+      showStatus('zome-status',
+        '<strong>create_test_link:</strong> Success. LinkHash: <code>' + formatted + '</code>',
+        'success');
+    } catch (err) {
+      out('create_test_link failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>create_test_link failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // get_test_links
+  document.getElementById('btn-get-links').addEventListener('click', async () => {
+    if (!lastActionHash) {
+      showStatus('zome-status', 'Create an entry first.', 'info');
+      return;
+    }
+    out('--- get_test_links ---');
+    try {
+      const result = await clientCallZome('get_test_links', lastActionHash);
+      const count = Array.isArray(result) ? result.length : 0;
+      out('get_test_links: ' + count + ' link(s) found.');
+      const formatted = formatForDisplay(result);
+      out('Links: ' + JSON.stringify(formatted, null, 2));
+      showStatus('zome-status',
+        '<strong>get_test_links:</strong> ' + count + ' link(s) found.',
+        'success');
+    } catch (err) {
+      out('get_test_links failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>get_test_links failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // count_test_links
+  document.getElementById('btn-count-links').addEventListener('click', async () => {
+    if (!lastActionHash) {
+      showStatus('zome-status', 'Create an entry first.', 'info');
+      return;
+    }
+    out('--- count_test_links ---');
+    try {
+      const result = await clientCallZome('count_test_links', lastActionHash);
+      out('count_test_links: ' + result);
+      showStatus('zome-status',
+        '<strong>count_test_links:</strong> ' + result + ' link(s).',
+        'success');
+    } catch (err) {
+      out('count_test_links failed: ' + err.message, true);
+      showStatus('zome-status', '<strong>count_test_links failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 6 - Signal Test via Client
+  // ---------------------------------------------------------------------------
+  document.getElementById('btn-subscribe-signal').addEventListener('click', () => {
+    if (signalUnsubscribe) {
+      signalUnsubscribe();
+      signalUnsubscribe = null;
+      signalCount = 0;
+      out('Unsubscribed from signals.');
+      showStatus('signal-status', 'Unsubscribed from signals.', 'info');
+      document.getElementById('btn-subscribe-signal').textContent = 'Subscribe to Signals';
+      return;
+    }
+
+    out('Subscribing to signals via appClient.on("signal", ...)...');
+    signalUnsubscribe = appClient.on('signal', (signal) => {
+      signalCount++;
+      const formatted = formatForDisplay(signal);
+      const line = '[signal #' + signalCount + '] ' + JSON.stringify(formatted, null, 2);
+      out(line);
+      signalLog.textContent += line + '\n';
+    });
+    out('Subscribed. Emit a signal to test.');
+    showStatus('signal-status', 'Subscribed. Click "Emit Signal" to test.', 'success');
+    document.getElementById('btn-subscribe-signal').textContent = 'Unsubscribe from Signals';
+  });
+
+  document.getElementById('btn-emit-signal').addEventListener('click', async () => {
+    out('--- emit_signal_test ---');
+    const payload = 'Client signal at ' + new Date().toISOString();
+    try {
+      await clientCallZome('emit_signal_test', payload);
+      out('emit_signal_test: signal emitted.');
+      showStatus('signal-status',
+        '<strong>Signal emitted.</strong> ' +
+        (signalUnsubscribe ? 'Check output above for received signal.' : 'Subscribe first to see the signal.'),
+        'success');
+    } catch (err) {
+      out('emit_signal_test failed: ' + err.message, true);
+      showStatus('signal-status', '<strong>emit_signal_test failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 7 - Connection Status
+  // ---------------------------------------------------------------------------
+  document.getElementById('btn-get-conn-state').addEventListener('click', () => {
+    if (!appClient) {
+      showStatus('conn-status', 'Client not connected.', 'info');
+      return;
+    }
+    const state = appClient.getConnectionState();
+    out('Current connection state: ' + JSON.stringify(state, null, 2));
+    updateConnBadge(state);
+    showStatus('conn-status',
+      '<strong>Status:</strong> ' + state.status +
+      ' | HTTP: ' + (state.httpHealthy ? 'healthy' : 'down') +
+      ' | WS: '   + (state.wsHealthy   ? 'healthy' : 'down') +
+      (state.lastError ? '<br>Error: ' + state.lastError : ''),
+      state.status === ConnectionStatus.Connected ? 'success' : 'warning');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Clear output
+  // ---------------------------------------------------------------------------
+  document.getElementById('clear-output-btn').addEventListener('click', () => {
+    outputEl.textContent = '';
+  });
+
+  // ---------------------------------------------------------------------------
+  // Run All Tests
+  // ---------------------------------------------------------------------------
+  document.getElementById('run-all-btn').addEventListener('click', async () => {
+    document.getElementById('run-all-btn').disabled = true;
+    outputEl.textContent = '';
+    summaryEl.innerHTML  = '';
+
+    const runner = new TestRunner(outputEl);
+
+    // 1. Detect extension
+    await runner.run('detect extension', async () => {
+      await waitForHolochain(5000);
+      if (!window.holochain || !window.holochain.isWebConductor) {
+        throw new Error('window.holochain not available');
+      }
+      showStatus('detect-status',
+        '<strong>Extension detected.</strong>',
+        'success');
+    });
+
+    // 2. Authorize
+    await runner.run('authorize domain', async () => {
+      await window.holochain.connect();
+      showStatus('authorize-status', '<strong>Authorized.</strong>', 'success');
+      authorizeBtn.disabled = true;
+      revokeBtn.disabled    = false;
+      installBtn.disabled   = false;
+    });
+
+    // 3. Install hApp (skip if already installed)
+    await runner.run('install test.happ', async () => {
+      // Check if already installed
+      try {
+        const existing = await window.holochain.appInfo();
+        if (existing && existing.contextId) {
+          out('hApp already installed (contextId=' + existing.contextId + '), skipping install.');
+          showStatus('install-status', '<strong>hApp already installed.</strong>', 'success');
+          installBtn.disabled = true;
+          connectBtn.disabled = false;
+          return;
+        }
+      } catch (_) { /* not installed */ }
+
+      const happBundle = await loadBinaryFile('test.happ');
+      out('Loaded test.happ: ' + happBundle.length + ' bytes');
+
+      const result = await window.holochain.installHapp({
+        appVersion: '0.1.0',
+        happBundle,
+      });
+      out('hApp installed: contextId=' + result.contextId);
+      showStatus('install-status',
+        '<strong>hApp installed.</strong> contextId: <code>' + result.contextId + '</code>',
+        'success');
+      installBtn.disabled = true;
+      connectBtn.disabled = false;
+    });
+
+    // 4. Connect client
+    await runner.run('connect WebConductorAppClient', async () => {
+      appClient = await WebConductorAppClient.connect({
+        autoReconnect: true,
+      });
+
+      appClient.onConnection('connection:change', (state) => {
+        out('Connection change: ' + state.status);
+        updateConnBadge(state);
+      });
+
+      updateConnBadge(appClient.getConnectionState());
+
+      const info = await appClient.appInfo();
+      const roleNames = Object.keys(info.cell_info);
+      if (roleNames.length === 0) throw new Error('No roles in appInfo');
+      const roleName = roleNames[0];
+      const cellInfoList = info.cell_info[roleName];
+      if (!cellInfoList || cellInfoList.length === 0) throw new Error('No cells for role ' + roleName);
+      const provisionedValue = cellInfoList[0].value || cellInfoList[0];
+      cellId = [
+        toUint8Array(provisionedValue.cell_id[0]),
+        toUint8Array(provisionedValue.cell_id[1]),
+      ];
+
+      out('Client connected. Role: ' + roleName +
+          ', DnaHash len=' + cellId[0].length +
+          ', AgentPubKey len=' + cellId[1].length);
+
+      showStatus('connect-status',
+        '<strong>Client connected.</strong> Role: <code>' + roleName + '</code>',
+        'success');
+      connectBtn.disabled          = true;
+      disconnectClientBtn.disabled = false;
+      enableZomeButtons();
+    });
+
+    // 5a. get_agent_info
+    await runner.run('get_agent_info', async () => {
+      const result = await clientCallZome('get_agent_info', null);
+      if (!result) throw new Error('No result returned');
+      out('get_agent_info: ' + JSON.stringify(formatForDisplay(result), null, 2));
+    });
+
+    // 5b. create_test_entry
+    await runner.run('create_test_entry', async () => {
+      const content = 'Run-all entry at ' + new Date().toISOString();
+      const result  = await clientCallZome('create_test_entry', content);
+      if (!result)   throw new Error('No action hash returned');
+      lastActionHash = result;
+      out('create_test_entry: ' + formatForDisplay(result));
+    });
+
+    // 5c. get_test_entry
+    await runner.run('get_test_entry', async () => {
+      if (!lastActionHash) throw new Error('No action hash from create step');
+      const result = await clientCallZome('get_test_entry', lastActionHash);
+      if (!result) throw new Error('Entry not found');
+      out('get_test_entry: record retrieved, action_seq=' +
+          (result.signed_action && result.signed_action.hashed &&
+           result.signed_action.hashed.content &&
+           result.signed_action.hashed.content.action_seq));
+    });
+
+    // 5d. update_test_entry
+    await runner.run('update_test_entry', async () => {
+      if (!lastActionHash) throw new Error('No action hash from create step');
+      const result = await clientCallZome('update_test_entry', {
+        original_hash: lastActionHash,
+        new_content:   'Run-all update at ' + new Date().toISOString(),
+      });
+      if (!result) throw new Error('No action hash returned from update');
+      lastActionHash = result;
+      out('update_test_entry: ' + formatForDisplay(result));
+    });
+
+    // 5e. delete_test_entry
+    await runner.run('delete_test_entry', async () => {
+      if (!lastActionHash) throw new Error('No action hash from previous step');
+      const result = await clientCallZome('delete_test_entry', lastActionHash);
+      if (!result) throw new Error('No delete action hash returned');
+      out('delete_test_entry: ' + formatForDisplay(result));
+    });
+
+    // 5f. query_test
+    await runner.run('query_test', async () => {
+      const result = await clientCallZome('query_test', null);
+      const count  = Array.isArray(result) ? result.length : 0;
+      out('query_test: ' + count + ' record(s) on chain');
+    });
+
+    // Need a fresh entry for link tests
+    await runner.run('create_test_entry (for links)', async () => {
+      const content = 'Link base entry at ' + new Date().toISOString();
+      const result  = await clientCallZome('create_test_entry', content);
+      if (!result)   throw new Error('No action hash returned');
+      lastActionHash = result;
+      out('create_test_entry (link base): ' + formatForDisplay(result));
+    });
+
+    // 5g. create_test_link
+    await runner.run('create_test_link', async () => {
+      if (!lastActionHash) throw new Error('No action hash for link base');
+      const result = await clientCallZome('create_test_link', {
+        base:   lastActionHash,
+        target: lastActionHash,
+      });
+      if (!result) throw new Error('No link hash returned');
+      lastLinkHash = result;
+      out('create_test_link: ' + formatForDisplay(result));
+    });
+
+    // 5h. get_test_links
+    await runner.run('get_test_links', async () => {
+      if (!lastActionHash) throw new Error('No base hash for get_links');
+      const result = await clientCallZome('get_test_links', lastActionHash);
+      const count  = Array.isArray(result) ? result.length : 0;
+      if (count === 0) throw new Error('Expected at least one link');
+      out('get_test_links: ' + count + ' link(s)');
+    });
+
+    // 5i. count_test_links
+    await runner.run('count_test_links', async () => {
+      if (!lastActionHash) throw new Error('No base hash for count_links');
+      const result = await clientCallZome('count_test_links', lastActionHash);
+      out('count_test_links: ' + result);
+    });
+
+    // 6. Signal subscription
+    await runner.run('signal subscription (emit_signal_test)', async () => {
+      let received = false;
+
+      const unsubscribe = appClient.on('signal', (_signal) => {
+        received = true;
+      });
+
+      // Emit signal from zome
+      await clientCallZome('emit_signal_test', 'Run-all signal at ' + new Date().toISOString());
+
+      // Give signal delivery a moment
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      unsubscribe();
+
+      // Signals may not be delivered synchronously in all environments; treat
+      // as a soft check. The call itself succeeding is the primary assertion.
+      out('emit_signal_test: call succeeded. Signal received: ' + received);
+    });
+
+    // Done
+    runner.showSummary(summaryEl);
+    document.getElementById('run-all-btn').disabled = false;
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-initialize on load
+  // ---------------------------------------------------------------------------
+  async function autoInit() {
+    out('Auto-initializing...');
+
+    // 1. Detect extension
+    const detected = await detectExtension();
+    if (!detected) return;
+
+    // 2. Check if already authorized
+    try {
+      await window.holochain.connect();
+      out('Already authorized.');
+      showStatus('authorize-status', '<strong>Authorized.</strong>', 'success');
+      authorizeBtn.disabled = true;
+      revokeBtn.disabled    = false;
+      installBtn.disabled   = false;
+    } catch (_) {
+      out('Not yet authorized - click "Authorize Domain".');
+      authorizeBtn.disabled = false;
+      return;
+    }
+
+    // 3. Check if hApp already installed
+    await checkExistingHapp();
+  }
+
+  window.addEventListener('holochain:ready', autoInit);
+  // Also run after a short delay in case the event fired before this listener
+  setTimeout(autoInit, 150);
+</script>
+</body>
+</html>

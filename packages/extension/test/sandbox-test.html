@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<!--
+  HWC Sandbox Test Page - Consolidated manual test page for the browser extension.
+
+  Combines zome function tests and signal tests into a single page with
+  individual test buttons and a "Run All" flow.
+
+  Serve: cd packages/extension/test && python3 -m http.server 8080
+  Open:  http://localhost:8080/sandbox-test.html
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HWC Sandbox Test</title>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "@holochain/client": "https://esm.sh/@holochain/client@0.20.1"
+    }
+  }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #f0f2f5;
+      color: #333;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: white;
+      padding: 24px 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+
+    header h1 {
+      font-size: 22px;
+      color: #222;
+      margin-bottom: 6px;
+    }
+
+    header p {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .run-all-bar {
+      background: white;
+      padding: 16px 24px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn-run-all {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-run-all:hover { background: #218838; }
+    .btn-run-all:disabled { background: #aaa; cursor: not-allowed; }
+
+    #run-all-summary {
+      flex: 1;
+      min-width: 160px;
+      font-size: 14px;
+    }
+
+    .section {
+      background: white;
+      padding: 20px 24px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 18px;
+    }
+
+    .section h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .section p.desc {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    /* Buttons */
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    button:hover { background: #45a049; }
+    button:disabled { background: #bbb; cursor: not-allowed; }
+
+    button.btn-secondary {
+      background: #6c757d;
+    }
+    button.btn-secondary:hover { background: #5a6268; }
+
+    button.btn-danger {
+      background: #dc3545;
+    }
+    button.btn-danger:hover { background: #c82333; }
+
+    button.btn-test {
+      background: #0069d9;
+      font-size: 12px;
+      padding: 7px 13px;
+    }
+    button.btn-test:hover { background: #0056b3; }
+    button.btn-test:disabled { background: #bbb; cursor: not-allowed; }
+
+    /* Status badges */
+    .status {
+      padding: 9px 12px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .status.error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .status.info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .status.warning { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+
+    /* Test button grid */
+    .test-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    /* Signal log */
+    #signal-log {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+      white-space: pre-wrap;
+    }
+
+    /* Console output */
+    .output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 420px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      margin-top: 10px;
+    }
+
+    code {
+      background: #f4f4f4;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>HWC Sandbox Test</h1>
+    <p>Consolidated manual test page for the Holochain Web Conductor browser extension.
+       Tests zome functions, signals, and core extension APIs without a linker.</p>
+  </header>
+
+  <!-- Run All bar -->
+  <div class="run-all-bar">
+    <button class="btn-run-all" id="btn-run-all">Run All Tests</button>
+    <div id="run-all-summary"></div>
+  </div>
+
+  <!-- Section 1: Extension Status -->
+  <div class="section">
+    <h2>1. Extension Status</h2>
+    <button id="btn-check-extension">Check Extension</button>
+    <div id="extension-status"></div>
+  </div>
+
+  <!-- Section 2: Authorization -->
+  <div class="section">
+    <h2>2. Authorization</h2>
+    <button id="btn-connect">Connect</button>
+    <button id="btn-disconnect" class="btn-danger" disabled>Disconnect</button>
+    <div id="connect-status"></div>
+  </div>
+
+  <!-- Section 3: Install Test hApp -->
+  <div class="section">
+    <h2>3. Install Test hApp</h2>
+    <p class="desc">Load <code>test.happ</code> from the same directory and install it via the extension.</p>
+    <button id="btn-install-happ" disabled>Install test.happ</button>
+    <div id="install-status"></div>
+  </div>
+
+  <!-- Section 4: Zome Function Tests -->
+  <div class="section">
+    <h2>4. Zome Function Tests</h2>
+    <p class="desc">Each button runs its test independently. Results appear in the console output below.</p>
+    <div class="test-grid">
+      <button class="btn-test" id="btn-get-agent-info"        disabled>get_agent_info</button>
+      <button class="btn-test" id="btn-get-zome-info"         disabled>get_zome_info</button>
+      <button class="btn-test" id="btn-get-random-bytes"      disabled>get_random_bytes</button>
+      <button class="btn-test" id="btn-get-timestamp"         disabled>get_timestamp</button>
+      <button class="btn-test" id="btn-trace-message"         disabled>trace_message</button>
+      <button class="btn-test" id="btn-test-signing"          disabled>test_signing</button>
+      <button class="btn-test" id="btn-create-test-entry"     disabled>create_test_entry</button>
+      <button class="btn-test" id="btn-get-test-entry"        disabled>get_test_entry</button>
+      <button class="btn-test" id="btn-get-details-test"      disabled>get_details_test</button>
+      <button class="btn-test" id="btn-get-details-entry"     disabled>get_details_by_entry_hash</button>
+      <button class="btn-test" id="btn-update-test-entry"     disabled>update_test_entry</button>
+      <button class="btn-test" id="btn-delete-test-entry"     disabled>delete_test_entry</button>
+      <button class="btn-test" id="btn-emit-signal-test"      disabled>emit_signal_test</button>
+      <button class="btn-test" id="btn-query-test"            disabled>query_test</button>
+      <button class="btn-test" id="btn-create-test-link"      disabled>create_test_link</button>
+      <button class="btn-test" id="btn-get-test-links"        disabled>get_test_links</button>
+      <button class="btn-test" id="btn-delete-test-link"      disabled>delete_test_link</button>
+      <button class="btn-test" id="btn-count-test-links"      disabled>count_test_links</button>
+      <button class="btn-test" id="btn-create-entry-with-link" disabled>create_entry_with_link</button>
+      <button class="btn-test" id="btn-create-entry-then-fail" disabled>create_entry_then_fail</button>
+    </div>
+    <div id="zome-test-status"></div>
+  </div>
+
+  <!-- Section 5: Signal Test -->
+  <div class="section">
+    <h2>5. Signal Test</h2>
+    <p class="desc">Subscribe to signals, then trigger <code>emit_signal_test</code> to see them arrive.</p>
+    <button id="btn-subscribe"  disabled>Subscribe</button>
+    <button id="btn-unsubscribe" class="btn-secondary" disabled>Unsubscribe</button>
+    <button id="btn-trigger-signal" class="btn-test" disabled>Trigger Signal</button>
+    <div id="signal-status"></div>
+    <div>
+      <strong style="font-size:13px;">Signals received: <span id="signal-count">0</span></strong>
+      <div id="signal-log">No signals yet.</div>
+    </div>
+  </div>
+
+  <!-- Section 6: Console Output -->
+  <div class="section">
+    <h2>6. Console Output</h2>
+    <div id="output" class="output">Waiting for actions...</div>
+  </div>
+
+</div><!-- .container -->
+
+<script type="module">
+import {
+  log,
+  showStatus,
+  formatForDisplay,
+  maybeUint8Array,
+  msgpackDecode,
+  TestRunner,
+  waitForExtension,
+  loadBinaryFile,
+  bytesToHex
+} from './lib/test-helpers.js';
+
+// ---------------------------------------------------------------------------
+// Module-scope state (used by individual button handlers)
+// ---------------------------------------------------------------------------
+
+const outputEl = document.getElementById('output');
+
+/** Shared wrapper so callers don't need to pass outputEl each time. */
+function logMsg(msg, isError = false) {
+  log(outputEl, msg, isError);
+}
+
+let contextId = null;
+let lastCreatedHash = null;
+let lastLinkHash = null;
+
+// ---------------------------------------------------------------------------
+// Button enable/disable helpers
+// ---------------------------------------------------------------------------
+
+const ZOME_BTN_IDS = [
+  'btn-get-agent-info', 'btn-get-zome-info', 'btn-get-random-bytes',
+  'btn-get-timestamp', 'btn-trace-message', 'btn-test-signing',
+  'btn-create-test-entry', 'btn-get-test-entry', 'btn-get-details-test',
+  'btn-get-details-entry', 'btn-update-test-entry', 'btn-delete-test-entry',
+  'btn-emit-signal-test', 'btn-query-test',
+  'btn-create-test-link', 'btn-get-test-links', 'btn-delete-test-link',
+  'btn-count-test-links', 'btn-create-entry-with-link', 'btn-create-entry-then-fail'
+];
+
+function enableZomeBtns(enabled) {
+  for (const id of ZOME_BTN_IDS) {
+    document.getElementById(id).disabled = !enabled;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Section 1: Extension Status
+// ---------------------------------------------------------------------------
+
+async function doCheckExtension() {
+  logMsg('Checking for Holochain extension...');
+
+  if (typeof window.holochain === 'undefined') {
+    logMsg('Extension not found. Load the extension and reload this page.', true);
+    showStatus('extension-status', 'Extension not found. Install the extension and reload.', 'error');
+    return false;
+  }
+
+  logMsg(`Extension detected. version=${window.holochain.version}`);
+  showStatus('extension-status',
+    `<strong>Extension found.</strong> window.holochain is available. version=${window.holochain.version}`,
+    'success');
+  return true;
+}
+
+document.getElementById('btn-check-extension').addEventListener('click', async () => {
+  const found = await doCheckExtension();
+  if (!found) return;
+
+  // Attempt silent connect to detect existing authorization
+  try {
+    await window.holochain.connect();
+    logMsg('Already authorized.');
+    document.getElementById('btn-connect').disabled = true;
+    document.getElementById('btn-disconnect').disabled = false;
+    document.getElementById('btn-install-happ').disabled = false;
+    showStatus('connect-status', '<strong>Already authorized.</strong>', 'success');
+
+    // Check for existing hApp
+    await tryLoadExistingHapp();
+  } catch {
+    logMsg('Not yet authorized - click Connect.');
+    document.getElementById('btn-connect').disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Section 2: Authorization
+// ---------------------------------------------------------------------------
+
+document.getElementById('btn-connect').addEventListener('click', async () => {
+  logMsg('Requesting authorization...');
+  try {
+    const response = await window.holochain.connect();
+    logMsg(`Authorized. origin=${response.origin}`);
+    contextId = null;
+    showStatus('connect-status', `<strong>Authorized.</strong> Origin: ${response.origin}`, 'success');
+    document.getElementById('btn-connect').disabled = true;
+    document.getElementById('btn-disconnect').disabled = false;
+    document.getElementById('btn-install-happ').disabled = false;
+
+    // Check for an existing hApp so buttons light up without reinstalling
+    await tryLoadExistingHapp();
+  } catch (err) {
+    logMsg(`Authorization failed: ${err.message}`, true);
+    showStatus('connect-status', `<strong>Authorization failed:</strong> ${err.message}`, 'error');
+  }
+});
+
+document.getElementById('btn-disconnect').addEventListener('click', async () => {
+  logMsg('Revoking authorization...');
+  try {
+    await window.holochain.disconnect();
+    logMsg('Authorization revoked.');
+    contextId = null;
+    showStatus('connect-status', '<strong>Authorization revoked.</strong>', 'info');
+    document.getElementById('btn-connect').disabled = false;
+    document.getElementById('btn-disconnect').disabled = true;
+    document.getElementById('btn-install-happ').disabled = true;
+    enableZomeBtns(false);
+    document.getElementById('btn-subscribe').disabled = true;
+  } catch (err) {
+    logMsg(`Disconnect failed: ${err.message}`, true);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helper: check if a hApp is already installed and set contextId
+// ---------------------------------------------------------------------------
+
+async function tryLoadExistingHapp() {
+  try {
+    const appInfo = await window.holochain.appInfo();
+    if (appInfo && appInfo.contextId) {
+      contextId = appInfo.contextId;
+      logMsg(`Found existing hApp. contextId=${contextId} app=${appInfo.appName} v${appInfo.appVersion}`);
+      showStatus('install-status',
+        `<strong>hApp already installed.</strong><br>
+         Context ID: <code>${contextId}</code><br>
+         App: ${appInfo.appName} v${appInfo.appVersion}`,
+        'success');
+      enableZomeBtns(true);
+      document.getElementById('btn-subscribe').disabled = false;
+    }
+  } catch {
+    logMsg('No existing hApp found - install one to enable zome tests.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Section 3: Install Test hApp
+// ---------------------------------------------------------------------------
+
+document.getElementById('btn-install-happ').addEventListener('click', async () => {
+  logMsg('Loading test.happ...');
+  showStatus('install-status', 'Loading bundle...', 'info');
+
+  let happBundle;
+  try {
+    happBundle = await loadBinaryFile('test.happ');
+    logMsg(`Loaded test.happ (${happBundle.length} bytes).`);
+  } catch (err) {
+    logMsg(`Failed to load test.happ: ${err.message}`, true);
+    showStatus('install-status', `<strong>Error:</strong> Could not load test.happ - ${err.message}`, 'error');
+    return;
+  }
+
+  logMsg('Installing hApp...');
+  try {
+    const response = await window.holochain.installHapp({ appVersion: '0.1.0', happBundle });
+    contextId = response.contextId;
+    logMsg(`hApp installed. contextId=${contextId} app=${response.appName} cells=${response.cells.length}`);
+    showStatus('install-status',
+      `<strong>hApp installed.</strong><br>
+       App: <code>${response.appName}</code><br>
+       Context ID: <code>${contextId}</code><br>
+       Cells: ${response.cells.length}`,
+      'success');
+    enableZomeBtns(true);
+    document.getElementById('btn-subscribe').disabled = false;
+  } catch (err) {
+    logMsg(`Installation failed: ${err.message}`, true);
+    showStatus('install-status', `<strong>Installation failed:</strong> ${err.message}`, 'error');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Section 4: Zome Function Tests
+// Each test function returns a result on success or throws on failure.
+// ---------------------------------------------------------------------------
+
+async function callZome(fnName, payload) {
+  if (!contextId) throw new Error('No contextId - install hApp first');
+  return window.holochain.callZome({
+    contextId,
+    zome: 'test_zome',
+    function: fnName,
+    payload
+  });
+}
+
+// ---------- Individual test implementations ----------
+
+async function testGetAgentInfo() {
+  const result = await callZome('get_agent_info', null);
+  const formatted = formatForDisplay(result);
+  logMsg(`get_agent_info: ${JSON.stringify(formatted, null, 2)}`);
+  return result;
+}
+
+async function testGetZomeInfo() {
+  const result = await callZome('get_zome_info', null);
+  logMsg(`get_zome_info: ${JSON.stringify(result, null, 2)}`);
+  return result;
+}
+
+async function testGetRandomBytes() {
+  const result = await callZome('get_random_bytes', null);
+  const bytes = Array.isArray(result) ? result : Array.from(Object.values(result));
+  if (bytes.length === 0) throw new Error('Got empty byte array');
+  logMsg(`get_random_bytes: ${bytes.length} bytes. First 16: [${bytes.slice(0, 16).join(',')}]`);
+  return bytes;
+}
+
+async function testGetTimestamp() {
+  const result = await callZome('get_timestamp', null);
+  logMsg(`get_timestamp raw: ${JSON.stringify(result)}`);
+
+  let microseconds, secs, nanos;
+  if (typeof result === 'number') {
+    microseconds = result;
+  } else if (result && result.secs !== undefined) {
+    secs = result.secs;
+    nanos = result.nanos || 0;
+    microseconds = secs * 1_000_000 + Math.floor(nanos / 1000);
+  } else if (Array.isArray(result) && result.length === 2) {
+    secs = result[0];
+    nanos = result[1] || 0;
+    microseconds = secs * 1_000_000 + Math.floor(nanos / 1000);
+  } else {
+    throw new Error(`Unexpected timestamp format: ${JSON.stringify(result)}`);
+  }
+
+  if (secs === undefined) {
+    secs = Math.floor(microseconds / 1_000_000);
+    nanos = (microseconds % 1_000_000) * 1000;
+  }
+
+  const date = new Date(secs * 1000 + Math.floor(nanos / 1_000_000));
+  logMsg(`get_timestamp: secs=${secs} nanos=${nanos} -> ${date.toISOString()}`);
+  return date;
+}
+
+async function testTraceMessage() {
+  await callZome('trace_message', 'Hello from sandbox-test.html!');
+  logMsg('trace_message: sent. Check background console for [TRACE][test_zome] message.');
+  return true;
+}
+
+async function testSigning() {
+  const result = await callZome('test_signing', null);
+  logMsg(`test_signing: verified=${result}`);
+  if (!result) throw new Error('Signature verification returned false');
+  return result;
+}
+
+async function testCreateTestEntry() {
+  const content = 'Test entry ' + new Date().toISOString();
+  const result = await callZome('create_test_entry', content);
+  lastCreatedHash = result;
+  const formatted = formatForDisplay(result);
+  logMsg(`create_test_entry: ActionHash=${formatted}`);
+  return result;
+}
+
+async function testGetTestEntry(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('get_test_entry', hash);
+  if (!result) throw new Error('Entry not found');
+
+  const entryPresent = result.entry && result.entry.Present;
+  if (!entryPresent) throw new Error('Entry has no Present content');
+
+  const entryBytes = maybeUint8Array(entryPresent.entry);
+  const decoded = msgpackDecode(entryBytes);
+  logMsg(`get_test_entry: seq=${result.signed_action.hashed.content.action_seq} content="${decoded.content}"`);
+  return result;
+}
+
+async function testGetDetailsTest(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('get_details_test', hash);
+  const formatted = formatForDisplay(result);
+
+  // Decode entry bytes if present
+  if (formatted && formatted.content && formatted.content.record && formatted.content.record.entry &&
+      formatted.content.record.entry.Present && formatted.content.record.entry.Present.entry) {
+    let entryBytes = formatted.content.record.entry.Present.entry;
+    if (Array.isArray(entryBytes)) entryBytes = new Uint8Array(entryBytes);
+    try {
+      formatted.content.record.entry.Present.entry = msgpackDecode(entryBytes);
+    } catch { /* leave raw if decode fails */ }
+  }
+
+  logMsg(`get_details_test: type=${formatted && formatted.type}`);
+  logMsg(JSON.stringify(formatted, null, 2));
+  return result;
+}
+
+async function testGetDetailsByEntryHash(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+
+  // Get the record to extract its entry_hash
+  const record = await callZome('get_test_entry', hash);
+  if (!record) throw new Error('Record not found when extracting entry_hash');
+
+  const entryHash = record.signed_action && record.signed_action.hashed &&
+                    record.signed_action.hashed.content &&
+                    record.signed_action.hashed.content.entry_hash;
+  if (!entryHash) throw new Error('Record has no entry_hash (action may not create entries)');
+
+  logMsg(`get_details_by_entry_hash: entry_hash=${formatForDisplay(entryHash)}`);
+
+  const result = await callZome('get_details_by_entry_hash', entryHash);
+  const formatted = formatForDisplay(result);
+
+  // Decode entry bytes if present
+  if (formatted && formatted.content && formatted.content.entry && formatted.content.entry.entry) {
+    let entryBytes = formatted.content.entry.entry;
+    if (Array.isArray(entryBytes)) entryBytes = new Uint8Array(entryBytes);
+    try { formatted.content.entry.entry = msgpackDecode(entryBytes); } catch { /* leave raw */ }
+  }
+
+  const detailType = (result && result.type) || (formatted && formatted.type);
+  logMsg(`get_details_by_entry_hash: type=${detailType} actions=${
+    (formatted && formatted.content && formatted.content.actions && formatted.content.actions.length) || 0
+  }`);
+
+  if (detailType !== 'Entry') {
+    throw new Error(`Expected type "Entry" but got "${detailType}"`);
+  }
+  return result;
+}
+
+async function testUpdateTestEntry(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('update_test_entry', {
+    original_hash: hash,
+    new_content: 'Updated entry ' + new Date().toISOString()
+  });
+  // Update module-scope state so subsequent individual-button tests see the new hash
+  lastCreatedHash = result;
+  logMsg(`update_test_entry: new ActionHash=${formatForDisplay(result)}`);
+  return result;
+}
+
+async function testDeleteTestEntry(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('delete_test_entry', hash);
+  logMsg(`delete_test_entry: delete ActionHash=${formatForDisplay(result)}`);
+  return result;
+}
+
+async function testEmitSignalTest() {
+  const result = await callZome('emit_signal_test', 'Test signal ' + new Date().toISOString());
+  logMsg(`emit_signal_test: result=${JSON.stringify(result)}`);
+  return result;
+}
+
+async function testQueryTest() {
+  const result = await callZome('query_test', null);
+  const count = Array.isArray(result) ? result.length : 0;
+  logMsg(`query_test: found ${count} records on chain`);
+  return result;
+}
+
+async function testCreateTestLink(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('create_test_link', { base: hash, target: hash });
+  lastLinkHash = result;
+  logMsg(`create_test_link: LinkHash=${formatForDisplay(result)}`);
+  return result;
+}
+
+async function testGetTestLinks(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('get_test_links', hash);
+  const count = Array.isArray(result) ? result.length : 0;
+  logMsg(`get_test_links: found ${count} link(s)`);
+  return result;
+}
+
+async function testDeleteTestLink(linkHashOverride) {
+  const hash = linkHashOverride ?? lastLinkHash;
+  if (!hash) throw new Error('No link hash - run create_test_link first');
+  const result = await callZome('delete_test_link', hash);
+  logMsg(`delete_test_link: delete ActionHash=${formatForDisplay(result)}`);
+  return result;
+}
+
+async function testCountTestLinks(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first');
+  const result = await callZome('count_test_links', hash);
+  logMsg(`count_test_links: count=${result}`);
+  return result;
+}
+
+async function testCreateEntryWithLink(hashOverride) {
+  const hash = hashOverride ?? lastCreatedHash;
+  if (!hash) throw new Error('No entry hash - run create_test_entry first (used as link target)');
+
+  // Get chain seq before
+  const infoBefore = await callZome('get_agent_info', null);
+  const seqBefore = infoBefore && infoBefore.chain_head && infoBefore.chain_head[1];
+  logMsg(`create_entry_with_link: chain seq before=${seqBefore}`);
+
+  const result = await callZome('create_entry_with_link', hash);
+  const [entryHash, linkHash] = result;
+  logMsg(`create_entry_with_link: entryHash=${formatForDisplay(entryHash)} linkHash=${formatForDisplay(linkHash)}`);
+
+  // Verify chain advanced by 2
+  const infoAfter = await callZome('get_agent_info', null);
+  const seqAfter = infoAfter && infoAfter.chain_head && infoAfter.chain_head[1];
+  const delta = seqAfter - seqBefore;
+  logMsg(`create_entry_with_link: chain seq after=${seqAfter} delta=${delta} (expected 2)`);
+
+  // Verify entry exists
+  const entry = await callZome('get_test_entry', entryHash);
+  if (!entry) throw new Error('Entry not found after atomic create_entry_with_link');
+  logMsg('create_entry_with_link: entry verified in storage');
+
+  // Verify link exists
+  const links = await callZome('get_test_links', entryHash);
+  const linkCount = Array.isArray(links) ? links.length : 0;
+  if (linkCount === 0) throw new Error('Link not found after atomic create_entry_with_link');
+  logMsg(`create_entry_with_link: link verified (${linkCount} link(s) from new entry)`);
+
+  return result;
+}
+
+async function testCreateEntryThenFail() {
+  // Get chain seq before
+  const infoBefore = await callZome('get_agent_info', null);
+  const seqBefore = infoBefore && infoBefore.chain_head && infoBefore.chain_head[1];
+  logMsg(`create_entry_then_fail: chain seq before=${seqBefore}`);
+
+  // This call MUST throw - that is the success case
+  try {
+    await callZome('create_entry_then_fail', null);
+    throw new Error('create_entry_then_fail should have thrown but succeeded');
+  } catch (err) {
+    if (err.message === 'create_entry_then_fail should have thrown but succeeded') {
+      throw err;
+    }
+    logMsg(`create_entry_then_fail: threw as expected - "${err.message}"`);
+  }
+
+  // Chain should NOT have advanced
+  const infoAfter = await callZome('get_agent_info', null);
+  const seqAfter = infoAfter && infoAfter.chain_head && infoAfter.chain_head[1];
+  logMsg(`create_entry_then_fail: chain seq after=${seqAfter}`);
+
+  if (seqBefore !== seqAfter) {
+    throw new Error(`Chain advanced from ${seqBefore} to ${seqAfter} - rollback failed`);
+  }
+
+  logMsg('create_entry_then_fail: chain unchanged - rollback confirmed');
+  return true;
+}
+
+// ---------- Wire individual buttons ----------
+
+function wireZomeButton(btnId, statusId, label, fn) {
+  document.getElementById(btnId).addEventListener('click', async () => {
+    logMsg(`--- ${label} ---`);
+    showStatus(statusId || 'zome-test-status', `Running ${label}...`, 'info');
+    try {
+      await fn();
+      showStatus(statusId || 'zome-test-status', `<strong>${label}:</strong> passed.`, 'success');
+    } catch (err) {
+      logMsg(`${label} failed: ${err.message}`, true);
+      showStatus(statusId || 'zome-test-status', `<strong>${label} failed:</strong> ${err.message}`, 'error');
+    }
+  });
+}
+
+wireZomeButton('btn-get-agent-info',        'zome-test-status', 'get_agent_info',          testGetAgentInfo);
+wireZomeButton('btn-get-zome-info',         'zome-test-status', 'get_zome_info',            testGetZomeInfo);
+wireZomeButton('btn-get-random-bytes',      'zome-test-status', 'get_random_bytes',         testGetRandomBytes);
+wireZomeButton('btn-get-timestamp',         'zome-test-status', 'get_timestamp',            testGetTimestamp);
+wireZomeButton('btn-trace-message',         'zome-test-status', 'trace_message',            testTraceMessage);
+wireZomeButton('btn-test-signing',          'zome-test-status', 'test_signing',             testSigning);
+wireZomeButton('btn-create-test-entry',     'zome-test-status', 'create_test_entry',        testCreateTestEntry);
+wireZomeButton('btn-get-test-entry',        'zome-test-status', 'get_test_entry',           testGetTestEntry);
+wireZomeButton('btn-get-details-test',      'zome-test-status', 'get_details_test',         testGetDetailsTest);
+wireZomeButton('btn-get-details-entry',     'zome-test-status', 'get_details_by_entry_hash',testGetDetailsByEntryHash);
+wireZomeButton('btn-update-test-entry',     'zome-test-status', 'update_test_entry',        testUpdateTestEntry);
+wireZomeButton('btn-delete-test-entry',     'zome-test-status', 'delete_test_entry',        testDeleteTestEntry);
+wireZomeButton('btn-emit-signal-test',      'zome-test-status', 'emit_signal_test',         testEmitSignalTest);
+wireZomeButton('btn-query-test',            'zome-test-status', 'query_test',               testQueryTest);
+wireZomeButton('btn-create-test-link',      'zome-test-status', 'create_test_link',         testCreateTestLink);
+wireZomeButton('btn-get-test-links',        'zome-test-status', 'get_test_links',           testGetTestLinks);
+wireZomeButton('btn-delete-test-link',      'zome-test-status', 'delete_test_link',         testDeleteTestLink);
+wireZomeButton('btn-count-test-links',      'zome-test-status', 'count_test_links',         testCountTestLinks);
+wireZomeButton('btn-create-entry-with-link','zome-test-status', 'create_entry_with_link',   testCreateEntryWithLink);
+wireZomeButton('btn-create-entry-then-fail','zome-test-status', 'create_entry_then_fail',   testCreateEntryThenFail);
+
+// ---------------------------------------------------------------------------
+// Section 5: Signal Test
+// ---------------------------------------------------------------------------
+
+let signalUnsubscribe = null;
+let signalCount = 0;
+
+document.getElementById('btn-subscribe').addEventListener('click', () => {
+  if (!window.holochain || typeof window.holochain.on !== 'function') {
+    logMsg('window.holochain.on not available', true);
+    return;
+  }
+  logMsg('Subscribing to signals...');
+  const countEl = document.getElementById('signal-count');
+  const signalLogEl = document.getElementById('signal-log');
+
+  signalUnsubscribe = window.holochain.on('signal', (signal) => {
+    signalCount++;
+    countEl.textContent = signalCount;
+    const ts = new Date().toLocaleTimeString();
+    const formatted = formatForDisplay(signal);
+    signalLogEl.textContent += `[${ts}] Signal #${signalCount}:\n${JSON.stringify(formatted, null, 2)}\n\n`;
+    signalLogEl.scrollTop = signalLogEl.scrollHeight;
+    logMsg(`Signal #${signalCount} received.`);
+  });
+
+  showStatus('signal-status', '<strong>Subscribed to signals.</strong>', 'success');
+  document.getElementById('btn-subscribe').disabled = true;
+  document.getElementById('btn-unsubscribe').disabled = false;
+  document.getElementById('btn-trigger-signal').disabled = false;
+});
+
+document.getElementById('btn-unsubscribe').addEventListener('click', () => {
+  if (signalUnsubscribe) {
+    signalUnsubscribe();
+    signalUnsubscribe = null;
+  }
+  logMsg('Signal subscription cancelled.');
+  showStatus('signal-status', 'Unsubscribed.', 'info');
+  document.getElementById('btn-subscribe').disabled = false;
+  document.getElementById('btn-unsubscribe').disabled = true;
+  document.getElementById('btn-trigger-signal').disabled = true;
+});
+
+document.getElementById('btn-trigger-signal').addEventListener('click', async () => {
+  logMsg('Triggering signal via emit_signal_test...');
+  try {
+    await testEmitSignalTest();
+    logMsg('Signal trigger call completed.');
+  } catch (err) {
+    logMsg(`Signal trigger failed: ${err.message}`, true);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Run All Tests
+// ---------------------------------------------------------------------------
+
+document.getElementById('btn-run-all').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-run-all');
+  const summaryEl = document.getElementById('run-all-summary');
+  btn.disabled = true;
+  summaryEl.innerHTML = '<span style="color:#666">Running...</span>';
+  logMsg('=== Run All Tests ===');
+
+  const runner = new TestRunner(outputEl);
+
+  // Local state for this run - does not affect module-scope state used by individual buttons
+  let runContextId = null;
+  let runEntryHash = null;
+  let runLinkHash = null;
+
+  // Helper that scopes callZome to runContextId
+  async function runCallZome(fnName, payload) {
+    if (!runContextId) throw new Error('No contextId for run-all flow');
+    return window.holochain.callZome({ contextId: runContextId, zome: 'test_zome', function: fnName, payload });
+  }
+
+  // 1. Wait for extension
+  await runner.run('waitForExtension', async () => {
+    await waitForExtension(3000);
+  });
+
+  // 2. Connect (authorize)
+  await runner.run('connect', async () => {
+    await window.holochain.connect();
+  });
+
+  // 3. Install hApp or reuse existing
+  await runner.run('installHapp (or reuse)', async () => {
+    // Try existing first
+    try {
+      const appInfo = await window.holochain.appInfo();
+      if (appInfo && appInfo.contextId) {
+        runContextId = appInfo.contextId;
+        logMsg(`run-all: reusing existing hApp contextId=${runContextId}`);
+        return;
+      }
+    } catch { /* no existing hApp */ }
+
+    // Install fresh
+    const happBundle = await loadBinaryFile('test.happ');
+    const response = await window.holochain.installHapp({ appVersion: '0.1.0', happBundle });
+    runContextId = response.contextId;
+    logMsg(`run-all: installed hApp contextId=${runContextId}`);
+  });
+
+  // If we don't have a contextId by now, abort remaining tests
+  if (!runContextId) {
+    summaryEl.innerHTML = '<span style="color:#721c24">Could not get contextId - aborting.</span>';
+    btn.disabled = false;
+    return;
+  }
+
+  // 4-23: Zome function tests in sequence
+  await runner.run('get_agent_info', async () => {
+    const r = await runCallZome('get_agent_info', null);
+    logMsg(`run-all get_agent_info: ${JSON.stringify(formatForDisplay(r), null, 2)}`);
+  });
+
+  await runner.run('get_zome_info', async () => {
+    const r = await runCallZome('get_zome_info', null);
+    logMsg(`run-all get_zome_info: name=${r && r.name}`);
+  });
+
+  await runner.run('get_random_bytes', async () => {
+    const r = await runCallZome('get_random_bytes', null);
+    const bytes = Array.isArray(r) ? r : Array.from(Object.values(r));
+    if (bytes.length === 0) throw new Error('Empty byte array');
+    logMsg(`run-all get_random_bytes: ${bytes.length} bytes`);
+  });
+
+  await runner.run('get_timestamp', async () => {
+    const r = await runCallZome('get_timestamp', null);
+    let microseconds;
+    if (typeof r === 'number') {
+      microseconds = r;
+    } else if (r && r.secs !== undefined) {
+      microseconds = r.secs * 1_000_000 + Math.floor((r.nanos || 0) / 1000);
+    } else if (Array.isArray(r) && r.length === 2) {
+      microseconds = r[0] * 1_000_000 + Math.floor((r[1] || 0) / 1000);
+    } else {
+      throw new Error(`Unexpected timestamp format: ${JSON.stringify(r)}`);
+    }
+    logMsg(`run-all get_timestamp: ${microseconds} us`);
+  });
+
+  await runner.run('trace_message', async () => {
+    await runCallZome('trace_message', 'run-all trace');
+    logMsg('run-all trace_message: sent');
+  });
+
+  await runner.run('test_signing', async () => {
+    const r = await runCallZome('test_signing', null);
+    if (!r) throw new Error('Signature verification returned false');
+    logMsg(`run-all test_signing: verified=${r}`);
+  });
+
+  await runner.run('create_test_entry', async () => {
+    const r = await runCallZome('create_test_entry', 'run-all entry ' + new Date().toISOString());
+    runEntryHash = r;
+    logMsg(`run-all create_test_entry: ActionHash=${formatForDisplay(r)}`);
+  });
+
+  await runner.run('get_test_entry', async () => {
+    if (!runEntryHash) throw new Error('No entry hash from create_test_entry');
+    const r = await runCallZome('get_test_entry', runEntryHash);
+    if (!r) throw new Error('Entry not found');
+    const entryPresent = r.entry && r.entry.Present;
+    if (!entryPresent) throw new Error('Entry has no Present content');
+    const decoded = msgpackDecode(maybeUint8Array(entryPresent.entry));
+    logMsg(`run-all get_test_entry: content="${decoded.content}"`);
+  });
+
+  await runner.run('get_details_test', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    const r = await runCallZome('get_details_test', runEntryHash);
+    const t = (r && r.type) || 'unknown';
+    logMsg(`run-all get_details_test: type=${t}`);
+  });
+
+  await runner.run('get_details_by_entry_hash', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    // Get the record to extract entry_hash
+    const rec = await runCallZome('get_test_entry', runEntryHash);
+    if (!rec) throw new Error('Record not found');
+    const entryHash = rec.signed_action && rec.signed_action.hashed &&
+                      rec.signed_action.hashed.content &&
+                      rec.signed_action.hashed.content.entry_hash;
+    if (!entryHash) throw new Error('No entry_hash in signed_action');
+    const r = await runCallZome('get_details_by_entry_hash', entryHash);
+    const t = (r && r.type);
+    if (t !== 'Entry') throw new Error(`Expected type "Entry", got "${t}"`);
+    logMsg(`run-all get_details_by_entry_hash: type=${t}`);
+  });
+
+  await runner.run('update_test_entry', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    const r = await runCallZome('update_test_entry', {
+      original_hash: runEntryHash,
+      new_content: 'run-all updated ' + new Date().toISOString()
+    });
+    runEntryHash = r; // track updated hash
+    logMsg(`run-all update_test_entry: new ActionHash=${formatForDisplay(r)}`);
+  });
+
+  await runner.run('delete_test_entry', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    const r = await runCallZome('delete_test_entry', runEntryHash);
+    logMsg(`run-all delete_test_entry: delete ActionHash=${formatForDisplay(r)}`);
+  });
+
+  await runner.run('emit_signal_test', async () => {
+    const r = await runCallZome('emit_signal_test', 'run-all signal');
+    logMsg(`run-all emit_signal_test: result=${JSON.stringify(r)}`);
+  });
+
+  await runner.run('query_test', async () => {
+    const r = await runCallZome('query_test', null);
+    const count = Array.isArray(r) ? r.length : 0;
+    logMsg(`run-all query_test: ${count} records`);
+  });
+
+  // Create a fresh entry for link tests (the previous one was deleted)
+  await runner.run('create_test_entry (for links)', async () => {
+    const r = await runCallZome('create_test_entry', 'run-all link-base ' + new Date().toISOString());
+    runEntryHash = r;
+    logMsg(`run-all create_test_entry (links): ActionHash=${formatForDisplay(r)}`);
+  });
+
+  await runner.run('create_test_link', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    const r = await runCallZome('create_test_link', { base: runEntryHash, target: runEntryHash });
+    runLinkHash = r;
+    logMsg(`run-all create_test_link: LinkHash=${formatForDisplay(r)}`);
+  });
+
+  await runner.run('get_test_links', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    const r = await runCallZome('get_test_links', runEntryHash);
+    const count = Array.isArray(r) ? r.length : 0;
+    if (count === 0) throw new Error('Expected at least one link');
+    logMsg(`run-all get_test_links: ${count} link(s)`);
+  });
+
+  await runner.run('delete_test_link', async () => {
+    if (!runLinkHash) throw new Error('No link hash');
+    const r = await runCallZome('delete_test_link', runLinkHash);
+    logMsg(`run-all delete_test_link: delete ActionHash=${formatForDisplay(r)}`);
+  });
+
+  await runner.run('count_test_links', async () => {
+    if (!runEntryHash) throw new Error('No entry hash');
+    const r = await runCallZome('count_test_links', runEntryHash);
+    logMsg(`run-all count_test_links: count=${r}`);
+  });
+
+  await runner.run('create_entry_with_link (atomic)', async () => {
+    if (!runEntryHash) throw new Error('No entry hash for link target');
+    const r = await runCallZome('create_entry_with_link', runEntryHash);
+    const [eHash, lHash] = r;
+    logMsg(`run-all create_entry_with_link: entry=${formatForDisplay(eHash)} link=${formatForDisplay(lHash)}`);
+    // Verify entry persisted
+    const entry = await runCallZome('get_test_entry', eHash);
+    if (!entry) throw new Error('Entry not found after atomic create');
+    // Verify link persisted
+    const links = await runCallZome('get_test_links', eHash);
+    if (!Array.isArray(links) || links.length === 0) throw new Error('Link not found after atomic create');
+  });
+
+  await runner.run('create_entry_then_fail (rollback)', async () => {
+    const infoBefore = await runCallZome('get_agent_info', null);
+    const seqBefore = infoBefore && infoBefore.chain_head && infoBefore.chain_head[1];
+
+    let threw = false;
+    try {
+      await runCallZome('create_entry_then_fail', null);
+    } catch {
+      threw = true;
+    }
+    if (!threw) throw new Error('Expected zome call to throw but it succeeded');
+
+    const infoAfter = await runCallZome('get_agent_info', null);
+    const seqAfter = infoAfter && infoAfter.chain_head && infoAfter.chain_head[1];
+    if (seqBefore !== seqAfter) {
+      throw new Error(`Chain advanced ${seqBefore} -> ${seqAfter} - rollback failed`);
+    }
+    logMsg(`run-all create_entry_then_fail: rollback confirmed (chain stayed at seq ${seqAfter})`);
+  });
+
+  // Show summary
+  runner.showSummary(summaryEl);
+  logMsg('=== Run All Tests complete ===');
+  btn.disabled = false;
+});
+
+// ---------------------------------------------------------------------------
+// Auto-initialization on page load
+// ---------------------------------------------------------------------------
+
+window.addEventListener('load', () => {
+  setTimeout(async () => {
+    logMsg('Auto-detecting extension...');
+    const found = await doCheckExtension();
+    if (!found) return;
+
+    // Try silent connect to detect existing authorization
+    try {
+      await window.holochain.connect();
+      logMsg('Auto-init: already authorized.');
+      document.getElementById('btn-connect').disabled = true;
+      document.getElementById('btn-disconnect').disabled = false;
+      document.getElementById('btn-install-happ').disabled = false;
+      showStatus('connect-status', '<strong>Already authorized.</strong>', 'success');
+      await tryLoadExistingHapp();
+    } catch {
+      logMsg('Auto-init: not authorized. Click Connect to authorize.');
+      document.getElementById('btn-connect').disabled = false;
+    }
+  }, 500);
+});
+</script>
+</body>
+</html>
