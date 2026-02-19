@@ -99,6 +99,18 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
           return false;
         }
 
+        if (rawMessage.type === "RECOVER_CHAIN_PROGRESS") {
+          const { contextId, progress } = rawMessage;
+          if (contextId && progress) {
+            chrome.storage.local.set({
+              [`hwc_recovery_progress_${contextId}`]: progress,
+            }).catch((err) => {
+              console.warn("Failed to write recovery progress:", err);
+            });
+          }
+          return false;
+        }
+
         // Unknown internal message
         return false;
       }

@@ -99,6 +99,9 @@ let nextRequestId = 1;
 let linkerUrl: string = '';
 let sessionToken: string | null = null;
 
+// Recovery context tracking (for progress forwarding)
+let activeRecoveryContextId: string | null = null;
+
 
 // Publish service for DHT publishing
 let publishService: PublishService | null = null;
@@ -200,6 +203,22 @@ function handleWorkerMessage(event: MessageEvent): void {
   // Handle remote signals from worker (fire-and-forget)
   if (type === 'SEND_REMOTE_SIGNALS') {
     handleSendRemoteSignals(event.data);
+    return;
+  }
+
+  // Forward recovery progress to background so the popup can poll it
+  if (type === 'RECOVER_CHAIN_PROGRESS') {
+    const progress = event.data.progress;
+    if (progress && activeRecoveryContextId) {
+      chrome.runtime.sendMessage({
+        target: 'background',
+        type: 'RECOVER_CHAIN_PROGRESS',
+        contextId: activeRecoveryContextId,
+        progress,
+      }).catch(() => {
+        // Background may not be listening yet; safe to ignore
+      });
+    }
     return;
   }
 
@@ -868,6 +887,7 @@ chrome.runtime.onMessage.addListener(
     // Recover chain from DHT - forward to worker
     if (message.type === "RECOVER_CHAIN") {
       const { contextId, dnaHashes, agentPubKey } = message;
+      activeRecoveryContextId = contextId;
       log.info(`[RECOVER_CHAIN] Starting recovery for context: ${contextId}`);
 
       (async () => {

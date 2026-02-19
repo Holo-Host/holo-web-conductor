@@ -471,6 +471,51 @@ describe("ChromeOffscreenExecutor", () => {
   });
 
   // --------------------------------------------------------------------------
+  // Recovery progress forwarding
+  // --------------------------------------------------------------------------
+
+  describe("recovery progress forwarding", () => {
+    it("writes RECOVER_CHAIN_PROGRESS to chrome.storage.local", async () => {
+      const _executor = new ChromeOffscreenExecutor();
+
+      await simulateOffscreenMessage({
+        target: "background",
+        type: "RECOVER_CHAIN_PROGRESS",
+        contextId: "test-ctx-123",
+        progress: {
+          status: "fetching",
+          totalActions: 10,
+          recoveredActions: 3,
+          failedActions: 0,
+          errors: [],
+        },
+      });
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        "hwc_recovery_progress_test-ctx-123": {
+          status: "fetching",
+          totalActions: 10,
+          recoveredActions: 3,
+          failedActions: 0,
+          errors: [],
+        },
+      });
+    });
+
+    it("ignores RECOVER_CHAIN_PROGRESS without contextId", async () => {
+      const _executor = new ChromeOffscreenExecutor();
+
+      await simulateOffscreenMessage({
+        target: "background",
+        type: "RECOVER_CHAIN_PROGRESS",
+        progress: { status: "fetching" },
+      });
+
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Event callbacks
   // --------------------------------------------------------------------------
 

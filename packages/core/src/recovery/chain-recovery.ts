@@ -6,6 +6,8 @@
  */
 
 import type { NetworkService, NetworkRecord, NetworkEntry } from '../network/types';
+import type { StorageProvider } from '../storage/storage-provider';
+import type { StoredAction, StoredEntry } from '../storage/types';
 import { createLogger } from '@hwc/shared';
 
 const log = createLogger('ChainRecovery');
@@ -273,4 +275,155 @@ export function recoverChainFromDHT(
 
   // Should not be reached given the ChainItems union, but satisfy TypeScript.
   throw new Error(`Unexpected valid_activity variant: ${JSON.stringify(validActivity)}`);
+}
+
+// ============================================================================
+// Storage write helpers
+// ============================================================================
+
+/**
+ * Ensure a value is a Uint8Array. If it's already one, return it; if it's an
+ * Array (from JSON round-trip), wrap it.
+ */
+function toBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (Array.isArray(value)) return new Uint8Array(value);
+  return new Uint8Array(0);
+}
+
+/**
+ * Build a StoredAction from a RecoveredRecord's signed_action content.
+ *
+ * This maps the Holochain wire format (snake_case, content-embedded fields)
+ * to the StoredAction format used by the storage layer.
+ */
+export function buildStorageAction(
+  record: RecoveredRecord,
+  fallbackAgent: Uint8Array
+): StoredAction {
+  const signedAction = record.signedAction;
+  const content = signedAction?.hashed?.content;
+  if (!content) {
+    throw new Error(`Missing action content for seq=${record.actionSeq}`);
+  }
+
+  const signature = signedAction?.signature
+    ? toBytes(signedAction.signature)
+    : new Uint8Array(64);
+
+  const author = content.author ? toBytes(content.author) : fallbackAgent;
+
+  const prevActionHash = content.prev_action
+    ? toBytes(content.prev_action)
+    : null;
+
+  const entryHash = content.entry_hash
+    ? toBytes(content.entry_hash)
+    : undefined;
+
+  return {
+    actionHash: record.actionHash,
+    actionSeq: record.actionSeq,
+    author,
+    timestamp: record.timestamp,
+    prevActionHash,
+    actionType: content.type,
+    signature,
+    entryHash,
+    entryType: content.entry_type,
+    originalActionHash: content.original_action_address
+      ? toBytes(content.original_action_address) : undefined,
+    originalEntryHash: content.original_entry_address
+      ? toBytes(content.original_entry_address) : undefined,
+    deletesActionHash: content.deletes_address
+      ? toBytes(content.deletes_address) : undefined,
+    deletesEntryHash: content.deletes_entry_address
+      ? toBytes(content.deletes_entry_address) : undefined,
+    baseAddress: content.base_address
+      ? toBytes(content.base_address) : undefined,
+    targetAddress: content.target_address
+      ? toBytes(content.target_address) : undefined,
+    zomeIndex: content.zome_index ?? content.zome_id,
+    linkType: content.link_type,
+    tag: content.tag ? toBytes(content.tag) : undefined,
+    linkAddAddress: undefined,
+    dnaHash: content.type === 'Dna' && content.hash
+      ? toBytes(content.hash) : undefined,
+    membraneProof: undefined,
+  } as StoredAction;
+}
+
+/**
+ * Build a StoredEntry from a RecoveredRecord's entry data.
+ * Returns null if the record has no entry or no entryHash.
+ */
+export function buildStorageEntry(
+  record: RecoveredRecord,
+  entryHash: Uint8Array | undefined
+): StoredEntry | null {
+  if (!record.entry || !entryHash) return null;
+
+  const entryContent = record.entry.entry
+    ? toBytes(record.entry.entry)
+    : toBytes(record.entry);
+
+  const content = record.signedAction?.hashed?.content;
+
+  return {
+    entryHash,
+    entryContent,
+    entryType: record.entry.entry_type || content?.entry_type,
+  };
+}
+
+/**
+ * Store recovered records into the storage layer.
+ *
+ * This is the logic previously inlined in ribosome-worker.ts RECOVER_CHAIN
+ * handler, extracted so it can be tested without a web worker.
+ *
+ * @returns counts of recovered/failed records and any error messages
+ */
+export function storeRecoveredRecords(
+  records: RecoveredRecord[],
+  storage: StorageProvider,
+  dnaHash: Uint8Array,
+  agentPubKey: Uint8Array
+): { recoveredCount: number; failedCount: number; errors: string[] } {
+  let recoveredCount = 0;
+  let failedCount = 0;
+  const errors: string[] = [];
+
+  for (const record of records) {
+    try {
+      const storageAction = buildStorageAction(record, agentPubKey);
+
+      storage.putAction(storageAction, dnaHash, agentPubKey);
+
+      // entryHash lives on EntryAction variants (Create/Update), not the base union
+      const entryHash = record.signedAction?.hashed?.content?.entry_hash
+        ? toBytes(record.signedAction.hashed.content.entry_hash)
+        : undefined;
+      const entry = buildStorageEntry(record, entryHash);
+      if (entry) {
+        storage.putEntry(entry, dnaHash, agentPubKey);
+      }
+
+      storage.updateChainHead(
+        dnaHash,
+        agentPubKey,
+        record.actionSeq,
+        record.actionHash,
+        record.timestamp
+      );
+
+      recoveredCount++;
+    } catch (err) {
+      const msg = `Failed to store record seq=${record.actionSeq}: ${err instanceof Error ? err.message : String(err)}`;
+      errors.push(msg);
+      failedCount++;
+    }
+  }
+
+  return { recoveredCount, failedCount, errors };
 }

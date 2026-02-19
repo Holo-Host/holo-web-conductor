@@ -77,7 +77,7 @@ import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
 import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
 import type { LairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
-import { recoverChainFromDHT } from '@hwc/core/recovery';
+import { recoverChainFromDHT, storeRecoveredRecords } from '@hwc/core/recovery';
 import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@hwc/core/storage/types';
 import { encodeHashToBase64 } from '@holochain/client';
 
@@ -1666,115 +1666,11 @@ self.onmessage = async (event: MessageEvent) => {
 
           allErrors.push(...dnaErrors);
 
-          // Store recovered records
-          for (const record of records) {
-            try {
-              // Extract action content from the signed_action
-              const signedAction = record.signedAction;
-              const content = signedAction?.hashed?.content;
-              if (!content) {
-                allErrors.push(`Missing action content for seq=${record.actionSeq}`);
-                totalFailed++;
-                continue;
-              }
-
-              // Build storage action from the signed action content
-              const actionHash = record.actionHash;
-              const signature = signedAction?.signature
-                ? (signedAction.signature instanceof Uint8Array
-                    ? signedAction.signature
-                    : new Uint8Array(signedAction.signature))
-                : new Uint8Array(64);
-
-              const author = content.author
-                ? (content.author instanceof Uint8Array
-                    ? content.author
-                    : new Uint8Array(content.author))
-                : agentBytes;
-
-              const prevActionHash = content.prev_action
-                ? (content.prev_action instanceof Uint8Array
-                    ? content.prev_action
-                    : new Uint8Array(content.prev_action))
-                : null;
-
-              const entryHash = content.entry_hash
-                ? (content.entry_hash instanceof Uint8Array
-                    ? content.entry_hash
-                    : new Uint8Array(content.entry_hash))
-                : undefined;
-
-              const storageAction = {
-                actionHash,
-                actionSeq: record.actionSeq,
-                author,
-                timestamp: record.timestamp,
-                prevActionHash,
-                actionType: content.type,
-                signature,
-                entryHash,
-                entryType: content.entry_type,
-                originalActionHash: content.original_action_address
-                  ? new Uint8Array(content.original_action_address) : undefined,
-                originalEntryHash: content.original_entry_address
-                  ? new Uint8Array(content.original_entry_address) : undefined,
-                deletesActionHash: content.deletes_address
-                  ? new Uint8Array(content.deletes_address) : undefined,
-                deletesEntryHash: content.deletes_entry_address
-                  ? new Uint8Array(content.deletes_entry_address) : undefined,
-                baseAddress: content.base_address
-                  ? new Uint8Array(content.base_address) : undefined,
-                targetAddress: content.target_address
-                  ? new Uint8Array(content.target_address) : undefined,
-                zomeIndex: content.zome_index ?? content.zome_id,
-                linkType: content.link_type,
-                tag: content.tag ? new Uint8Array(content.tag) : undefined,
-                linkAddAddress: undefined,
-                dnaHash: content.type === 'Dna' && content.hash
-                  ? new Uint8Array(content.hash) : undefined,
-                membraneProof: undefined,
-              };
-
-              storage.putAction(storageAction, dnaHashBytes, agentBytes);
-
-              // Store entry if present
-              if (record.entry && entryHash) {
-                const entryContent = record.entry.entry
-                  ? (record.entry.entry instanceof Uint8Array
-                      ? record.entry.entry
-                      : new Uint8Array(record.entry.entry))
-                  : (record.entry instanceof Uint8Array
-                      ? record.entry
-                      : new Uint8Array(record.entry));
-
-                storage.putEntry(
-                  {
-                    entryHash,
-                    entryContent,
-                    entryType: record.entry.entry_type || content.entry_type,
-                  },
-                  dnaHashBytes,
-                  agentBytes
-                );
-              }
-
-              // Update chain head
-              storage.updateChainHead(
-                dnaHashBytes,
-                agentBytes,
-                record.actionSeq,
-                actionHash,
-                record.timestamp
-              );
-
-              totalRecovered++;
-            } catch (err) {
-              const msg = `Failed to store record seq=${record.actionSeq}: ${err instanceof Error ? err.message : String(err)}`;
-              console.error('[Ribosome Worker]', msg);
-              allErrors.push(msg);
-              totalFailed++;
-            }
-          }
+          // Store recovered records using the shared helper
+          const storeResult = storeRecoveredRecords(records, storage, dnaHashBytes, agentBytes);
+          totalRecovered += storeResult.recoveredCount;
+          totalFailed += storeResult.failedCount;
+          allErrors.push(...storeResult.errors);
         }
 
         console.log(`[Ribosome Worker] Recovery complete: ${totalRecovered} recovered, ${totalFailed} failed`);
