@@ -21,10 +21,10 @@ import type { EntryInfo, EncryptedExport } from "@hwc/lair";
  * Send a message to the background service worker
  */
 async function sendMessage(
-  type: MessageType,
+  type: RequestMessage["type"],
   payload?: unknown
 ): Promise<ResponseMessage> {
-  const request = createRequest(type as RequestMessage["type"], payload);
+  const request = createRequest(type, payload);
   return chrome.runtime.sendMessage(request);
 }
 
@@ -790,11 +790,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       const message = createRequest(MessageType.LAIR_EXPORT_MNEMONIC, { tag });
       const response: ResponseMessage = await chrome.runtime.sendMessage(message);
       if (response.type === MessageType.ERROR) {
-        showSeedMessage((response.payload as any)?.error || "Export failed", "error");
+        showSeedMessage((response.payload as { error?: string })?.error || "Export failed", "error");
         return;
       }
 
-      const mnemonic = (response.payload as any)?.mnemonic || response.payload;
+      const mnemonic = (response.payload as { mnemonic?: string })?.mnemonic || response.payload;
       if (typeof mnemonic !== "string") {
         showSeedMessage("Unexpected response format", "error");
         return;
@@ -867,7 +867,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
       const response: ResponseMessage = await chrome.runtime.sendMessage(message);
       if (response.type === MessageType.ERROR) {
-        showSeedMessage((response.payload as any)?.error || "Import failed", "error");
+        showSeedMessage((response.payload as { error?: string })?.error || "Import failed", "error");
         return;
       }
 

@@ -8,6 +8,7 @@ import {
   MessageType,
   createRequest,
   type ResponseMessage,
+  type PublishStatusPayload,
 } from "../lib/messaging";
 
 interface HappContext {
@@ -333,7 +334,7 @@ async function fetchPublishStatus(contextId: string): Promise<void> {
       return;
     }
 
-    const { pending, inFlight, failed } = response.payload as { pending: number; inFlight: number; failed: number };
+    const { pending, inFlight, failed } = response.payload as PublishStatusPayload;
 
     // Update the badges
     const pendingBadge = document.querySelector(
@@ -475,7 +476,7 @@ async function loadHapps(): Promise<void> {
       throw new Error(response.error || "Failed to load hApps");
     }
 
-    contexts = (response.payload as any).contexts;
+    contexts = (response.payload as { contexts: HappContext[] }).contexts;
     renderHapps();
   } catch (error) {
     console.error("Error loading hApps:", error);

@@ -18,7 +18,7 @@ import type {
   RecordDetails,
   EntryDetails,
 } from './types';
-import type { EntryHash, ActionHash, DnaHash, AgentPubKey } from '@holochain/client';
+import type { EntryHash, ActionHash, DnaHash, AgentPubKey, AnyDhtHash } from '@holochain/client';
 
 /**
  * Storage provider interface
@@ -37,31 +37,31 @@ export interface StorageProvider {
   isTransactionActive(): boolean;
 
   // Chain head operations (sync)
-  getChainHead(dnaHash: Uint8Array, agentPubKey: Uint8Array): ChainHead | null;
+  getChainHead(dnaHash: DnaHash, agentPubKey: AgentPubKey): ChainHead | null;
   updateChainHead(
-    dnaHash: Uint8Array,
-    agentPubKey: Uint8Array,
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
     actionSeq: number,
-    actionHash: Uint8Array,
+    actionHash: ActionHash,
     timestamp: bigint
   ): void;
 
   // Action operations (sync)
-  putAction(action: Action, dnaHash: Uint8Array, agentPubKey: Uint8Array): void;
-  getAction(actionHash: Uint8Array): Action | null;
+  putAction(action: Action, dnaHash: DnaHash, agentPubKey: AgentPubKey): void;
+  getAction(actionHash: ActionHash): Action | null;
   queryActions(
-    dnaHash: Uint8Array,
-    agentPubKey: Uint8Array,
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
     filter?: { actionType?: string }
   ): Action[];
-  getActionByEntryHash(entryHash: Uint8Array): Action | null;
+  getActionByEntryHash(entryHash: EntryHash): Action | null;
 
   // Entry operations (sync)
-  putEntry(entry: StoredEntry, dnaHash: Uint8Array, agentPubKey: Uint8Array): void;
-  getEntry(entryHash: Uint8Array): StoredEntry | null;
+  putEntry(entry: StoredEntry, dnaHash: DnaHash, agentPubKey: AgentPubKey): void;
+  getEntry(entryHash: EntryHash): StoredEntry | null;
 
   // Record operations (sync)
-  getRecord(actionHash: Uint8Array): StoredRecord | null;
+  getRecord(actionHash: ActionHash): StoredRecord | null;
   /** Get details for an entry hash (returns RecordDetails for backward compat) */
   getDetails(
     entryHash: EntryHash,
@@ -76,17 +76,17 @@ export interface StorageProvider {
   ): EntryDetails | null;
 
   // Link operations (sync)
-  putLink(link: Link, dnaHash: Uint8Array, agentPubKey: Uint8Array): void;
+  putLink(link: Link, dnaHash: DnaHash, agentPubKey: AgentPubKey): void;
   getLinks(
-    baseAddress: Uint8Array,
-    dnaHash: Uint8Array,
-    agentPubKey: Uint8Array,
+    baseAddress: AnyDhtHash,
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
     linkType?: number
   ): Link[];
-  deleteLink(createLinkHash: Uint8Array, deleteHash: Uint8Array): void;
+  deleteLink(createLinkHash: ActionHash, deleteHash: ActionHash): void;
 
   // Pre-loading (optional - only needed for IndexedDB implementation)
-  preloadChainForCell?(dnaHash: Uint8Array, agentPubKey: Uint8Array): Promise<void>;
+  preloadChainForCell?(dnaHash: DnaHash, agentPubKey: AgentPubKey): Promise<void>;
 
   // Utility
   clear(): void | Promise<void>;

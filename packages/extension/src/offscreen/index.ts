@@ -516,8 +516,8 @@ function transportedRecordToRecord(transported: any): HolochainRecord {
           entry: new Uint8Array(presentEntry.entry),
         }
       };
-    } else if (transported.entry.NA !== undefined) {
-      entry = { NA: null };
+    } else if (transported.entry.NotApplicable !== undefined) {
+      entry = { NotApplicable: undefined };
     }
   }
 
@@ -682,7 +682,9 @@ interface OffscreenResponse {
   disconnected?: boolean;
   reconnected?: boolean;
   records?: any[];
-  [key: string]: unknown;
+  state?: string;
+  isConnected?: boolean;
+  registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
 }
 
 /**
@@ -763,7 +765,7 @@ chrome.runtime.onMessage.addListener(
         state: wsService?.getState() || "disconnected",
         isConnected: wsService?.isConnected() || false,
         registrations: wsService?.getRegistrations() || [],
-      } as any);
+      });
       return true;
     }
 

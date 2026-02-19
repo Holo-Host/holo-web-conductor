@@ -11,17 +11,17 @@ import {
   type Signature,
   sliceCore32,
 } from "@holochain/client";
-import type { LairClient, Ed25519Signature } from "@hwc/lair";
+import type { ILairClient, Ed25519Signature } from "@hwc/lair";
 
 /**
  * Global Lair client instance
  */
-let lairClient: LairClient | null = null;
+let lairClient: ILairClient | null = null;
 
 /**
  * Set the Lair client to use for signing
  */
-export function setLairClient(client: LairClient): void {
+export function setLairClient(client: ILairClient): void {
   lairClient = client;
 }
 
@@ -29,7 +29,7 @@ export function setLairClient(client: LairClient): void {
  * Get the current Lair client
  * @throws Error if no client has been set
  */
-export function getLairClient(): LairClient {
+export function getLairClient(): ILairClient {
   if (!lairClient) {
     throw new Error(
       "[LairClient] No Lair client set. Call setLairClient() first."
