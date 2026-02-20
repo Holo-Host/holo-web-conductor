@@ -176,7 +176,8 @@
   <p class="subtitle">
     Tests the @hwc/client <code>WebConductorAppClient</code> against the bundled test zome.
     Uses the standard <code>@holochain/client</code> callZome shape, not the direct
-    <code>window.holochain.*</code> API.
+    <code>window.holochain.*</code> API. No running linker needed -- local operations
+    work fine with the linker status showing as disconnected.
   </p>
 
   <!-- Run All -->
@@ -215,8 +216,8 @@
   <div class="section">
     <h2>4. Client Connection</h2>
     <p style="font-size:13px; color:#666; margin-bottom:10px;">
-      Connects via <code>WebConductorAppClient.connect()</code>. No linker URL
-      needed for local-only operation.
+      Connects via <code>WebConductorAppClient.connect()</code>. A default linker URL
+      is configured under the hood; the linker does not need to be running for local operations.
     </p>
     <button id="connect-btn" disabled>Connect Client</button>
     <button id="disconnect-client-btn" class="danger" disabled>Disconnect Client</button>
@@ -262,7 +263,11 @@
       <span id="conn-badge" class="badge disconnected">disconnected</span>
     </h2>
     <p style="font-size:13px; color:#666; margin-bottom:10px;">
-      Live connection state from <code>appClient.onConnection('connection:change', callback)</code>.
+      Tracks both the extension connection and linker health via
+      <code>appClient.onConnection('connection:change', callback)</code>.
+      The badge reflects overall status (connected = extension link is up).
+      HTTP/WS detail shows linker health -- "down" and "fetch failed" are
+      normal when no linker is running; local zome operations still work.
     </p>
     <button id="btn-get-conn-state" disabled>Get Current State</button>
     <div id="conn-status"></div>
@@ -520,11 +525,16 @@
   // ---------------------------------------------------------------------------
   // Section 4 - Client Connection
   // ---------------------------------------------------------------------------
+  // Default linker URL satisfies configureNetwork() requirement.
+  // The linker does not need to be running for local operations.
+  const DEFAULT_LINKER_URL = 'http://localhost:8000';
+
   connectBtn.addEventListener('click', async () => {
     out('Calling WebConductorAppClient.connect()...');
     showStatus('connect-status', 'Connecting...', 'info');
     try {
       appClient = await WebConductorAppClient.connect({
+        linkerUrl: DEFAULT_LINKER_URL,
         autoReconnect: true,
       });
 
@@ -950,6 +960,7 @@
     // 4. Connect client
     await runner.run('connect WebConductorAppClient', async () => {
       appClient = await WebConductorAppClient.connect({
+        linkerUrl: DEFAULT_LINKER_URL,
         autoReconnect: true,
       });
 

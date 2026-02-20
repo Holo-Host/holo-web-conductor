@@ -666,7 +666,7 @@ async function testDeleteTestEntry(hashOverride) {
 
 async function testEmitSignalTest() {
   const result = await callZome('emit_signal_test', 'Test signal ' + new Date().toISOString());
-  logMsg(`emit_signal_test: result=${JSON.stringify(result)}`);
+  logMsg('emit_signal_test: signal emitted (subscribe in Section 5 to see it arrive)');
   return result;
 }
 
@@ -1025,7 +1025,7 @@ document.getElementById('btn-run-all').addEventListener('click', async () => {
 
   await runner.run('emit_signal_test', async () => {
     const r = await runCallZome('emit_signal_test', 'run-all signal');
-    logMsg(`run-all emit_signal_test: result=${JSON.stringify(r)}`);
+    logMsg('run-all emit_signal_test: signal emitted');
   });
 
   await runner.run('query_test', async () => {
