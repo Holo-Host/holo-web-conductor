@@ -331,8 +331,9 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   // ============================================================================
 
   private async hasOffscreenDocument(): Promise<boolean> {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+    const runtime = chrome.runtime as any;
+    const contexts = await runtime.getContexts({
+      contextTypes: [runtime.ContextType.OFFSCREEN_DOCUMENT],
       documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
     });
     return contexts.length > 0;

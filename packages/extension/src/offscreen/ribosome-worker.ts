@@ -74,11 +74,11 @@ import { callZome, type ZomeCallRequest } from '@hwc/core/ribosome';
 import { encode, decode } from '@msgpack/msgpack';
 import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
-import { setNetworkService, type NetworkService, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
+import { setNetworkService, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
-import type { LairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
-import type { Action, StoredEntry, StoredRecord, ChainHead, Link, RecordDetails } from '@hwc/core/storage/types';
-import { encodeHashToBase64 } from '@holochain/client';
+import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
+import { isEntryAction, type Action, type StoredEntry, type StoredRecord, type ChainHead, type Link, type RecordDetails, type EntryDetails, type EntryDhtStatus, type CreateAction, type UpdateAction, type DeleteAction } from '@hwc/core/storage/types';
+import { encodeHashToBase64, type ActionHash, type EntryHash, type DnaHash, type AgentPubKey, type AnyDhtHash } from '@holochain/client';
 
 // Types
 interface WorkerMessage {
@@ -126,7 +126,7 @@ let nextNetworkRequestId = 1;
 // Key: base64-encoded DNA hash, Value: Uint8Array of WASM
 const wasmCache = new Map<string, Uint8Array>();
 
-function getWasmCacheKey(dnaHash: Uint8Array | number[]): string {
+function getWasmCacheKey(dnaHash: DnaHash | number[]): string {
   const bytes = Array.isArray(dnaHash) ? dnaHash : Array.from(dnaHash);
   return btoa(String.fromCharCode(...bytes));
 }
@@ -210,14 +210,14 @@ class DirectSQLiteStorage implements StorageProvider {
   private currentCellId: string = '';
   private inTransaction: boolean = false;
 
-  private getCellId(dnaHash: Uint8Array, agentPubKey: Uint8Array): string {
+  private getCellId(dnaHash: DnaHash, agentPubKey: AgentPubKey): string {
     const dnaB64 = btoa(String.fromCharCode(...toBytes(dnaHash)!));
     const agentB64 = btoa(String.fromCharCode(...toBytes(agentPubKey)!));
     return `${dnaB64}:${agentB64}`;
   }
 
   // Used to set context before zome call
-  setCellContext(dnaHash: Uint8Array, agentPubKey: Uint8Array): void {
+  setCellContext(dnaHash: DnaHash, agentPubKey: AgentPubKey): void {
     this.currentCellId = this.getCellId(dnaHash, agentPubKey);
   }
 
@@ -246,7 +246,7 @@ class DirectSQLiteStorage implements StorageProvider {
     return this.inTransaction;
   }
 
-  getChainHead(dnaHash: Uint8Array, agentPubKey: Uint8Array): ChainHead | null {
+  getChainHead(dnaHash: DnaHash, agentPubKey: AgentPubKey): ChainHead | null {
     const cellId = this.getCellId(dnaHash, agentPubKey);
     const stmt = db.prepare('SELECT action_seq, action_hash, timestamp FROM chain_heads WHERE cell_id = ?');
     try {
@@ -266,7 +266,7 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  updateChainHead(dnaHash: Uint8Array, agentPubKey: Uint8Array, actionSeq: number, actionHash: Uint8Array, timestamp: bigint): void {
+  updateChainHead(dnaHash: DnaHash, agentPubKey: AgentPubKey, actionSeq: number, actionHash: ActionHash, timestamp: bigint): void {
     const cellId = this.getCellId(dnaHash, agentPubKey);
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO chain_heads (cell_id, action_seq, action_hash, timestamp)
@@ -280,7 +280,7 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  putAction(action: any, dnaHash: Uint8Array, agentPubKey: Uint8Array): void {
+  putAction(action: any, dnaHash: DnaHash, agentPubKey: AgentPubKey): void {
     const cellId = this.getCellId(dnaHash, agentPubKey);
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO actions (
@@ -322,7 +322,7 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  getAction(actionHash: Uint8Array): any | null {
+  getAction(actionHash: ActionHash): Action | null {
     const stmt = db.prepare('SELECT * FROM actions WHERE action_hash = ?');
     try {
       stmt.bind([toBytes(actionHash)]);
@@ -335,9 +335,9 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  queryActions(dnaHash: Uint8Array, agentPubKey: Uint8Array, filter?: { actionType?: string }): any[] {
+  queryActions(dnaHash: DnaHash, agentPubKey: AgentPubKey, filter?: { actionType?: string }): Action[] {
     const cellId = this.getCellId(dnaHash, agentPubKey);
-    const results: any[] = [];
+    const results: Action[] = [];
 
     let sql = 'SELECT * FROM actions WHERE cell_id = ?';
     const params: any[] = [cellId];
@@ -365,9 +365,9 @@ class DirectSQLiteStorage implements StorageProvider {
    * Get all records (actions + entries) for a cell
    * Used for republishing all data to the DHT
    */
-  getAllRecords(dnaHash: Uint8Array, agentPubKey: Uint8Array): Array<{ action: any; entry: any | null }> {
+  getAllRecords(dnaHash: DnaHash, agentPubKey: AgentPubKey): Array<{ action: Action; entry: StoredEntry | null }> {
     const cellId = this.getCellId(dnaHash, agentPubKey);
-    const records: Array<{ action: any; entry: any | null }> = [];
+    const records: Array<{ action: Action; entry: StoredEntry | null }> = [];
 
     // Get all actions for this cell, ordered by sequence
     const stmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? ORDER BY action_seq');
@@ -377,8 +377,8 @@ class DirectSQLiteStorage implements StorageProvider {
         const action = this.rowToAction(stmt.get({}));
 
         // Get entry if this action has one
-        let entry = null;
-        if (action.entryHash) {
+        let entry: StoredEntry | null = null;
+        if (isEntryAction(action)) {
           entry = this.getEntry(action.entryHash);
         }
 
@@ -391,7 +391,7 @@ class DirectSQLiteStorage implements StorageProvider {
     return records;
   }
 
-  getActionByEntryHash(entryHash: Uint8Array): any | null {
+  getActionByEntryHash(entryHash: EntryHash): Action | null {
     const stmt = db.prepare('SELECT * FROM actions WHERE entry_hash = ? ORDER BY action_seq ASC LIMIT 1');
     try {
       stmt.bind([toBytes(entryHash)]);
@@ -404,7 +404,7 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  putEntry(entry: { entryHash: Uint8Array; entryContent: Uint8Array; entryType: any }, dnaHash: Uint8Array, agentPubKey: Uint8Array): void {
+  putEntry(entry: { entryHash: EntryHash; entryContent: Uint8Array; entryType: any }, dnaHash: DnaHash, agentPubKey: AgentPubKey): void {
     const cellId = this.getCellId(dnaHash, agentPubKey);
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO entries (entry_hash, cell_id, entry_content, entry_type)
@@ -422,7 +422,7 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  getEntry(entryHash: Uint8Array): { entryHash: Uint8Array; entryContent: Uint8Array; entryType: any } | null {
+  getEntry(entryHash: EntryHash): { entryHash: EntryHash; entryContent: Uint8Array; entryType: any } | null {
     const stmt = db.prepare('SELECT entry_hash, entry_content, entry_type FROM entries WHERE entry_hash = ?');
     try {
       stmt.bind([toBytes(entryHash)]);
@@ -449,24 +449,24 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  getRecord(actionHash: Uint8Array): { action: any; entry: any } | null {
+  getRecord(actionHash: ActionHash): StoredRecord | null {
     const action = this.getAction(actionHash);
     if (!action) return null;
 
     let entry = null;
-    if (action.entryHash) {
+    if (isEntryAction(action)) {
       entry = this.getEntry(action.entryHash);
     }
 
-    return { action, entry };
+    return { actionHash, action, entry: entry ?? undefined } as StoredRecord;
   }
 
-  getDetails(entryHash: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array): RecordDetails | null {
+  getDetails(entryHash: EntryHash, dnaHash: DnaHash, agentPubKey: AgentPubKey): RecordDetails | null {
     // Get all actions that reference this entry hash
     const cellId = this.getCellId(dnaHash, agentPubKey);
-    let originatingAction: any = null;
-    const updateActions: any[] = [];
-    const deleteActions: any[] = [];
+    let originatingAction: Action | null = null;
+    const updateActions: Array<{ updateHash: Uint8Array; updateAction: UpdateAction }> = [];
+    const deleteActions: Array<{ deleteHash: Uint8Array; deleteAction: DeleteAction }> = [];
 
     // Find creates and updates that have this entry hash
     const stmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND entry_hash = ?');
@@ -507,10 +507,12 @@ class DirectSQLiteStorage implements StorageProvider {
       updateStmt.bind([cellId, 'Update', toBytes(entryHash)]);
       while (updateStmt.step()) {
         const action = this.rowToAction(updateStmt.get({}));
-        updateActions.push({
-          updateHash: action.actionHash,
-          updateAction: action,
-        });
+        if (action.actionType === 'Update') {
+          updateActions.push({
+            updateHash: action.actionHash,
+            updateAction: action,
+          });
+        }
       }
     } finally {
       updateStmt.finalize();
@@ -522,10 +524,12 @@ class DirectSQLiteStorage implements StorageProvider {
       deleteStmt.bind([cellId, 'Delete', toBytes(entryHash)]);
       while (deleteStmt.step()) {
         const action = this.rowToAction(deleteStmt.get({}));
-        deleteActions.push({
-          deleteHash: action.actionHash,
-          deleteAction: action,
-        });
+        if (action.actionType === 'Delete') {
+          deleteActions.push({
+            deleteHash: action.actionHash,
+            deleteAction: action,
+          });
+        }
       }
     } finally {
       deleteStmt.finalize();
@@ -544,7 +548,7 @@ class DirectSQLiteStorage implements StorageProvider {
     };
   }
 
-  getEntryDetails(entryHash: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array): any | null {
+  getEntryDetails(entryHash: EntryHash, dnaHash: DnaHash, agentPubKey: AgentPubKey): EntryDetails | null {
     const cellId = this.getCellId(dnaHash, agentPubKey);
 
     // Get the entry itself
@@ -555,7 +559,7 @@ class DirectSQLiteStorage implements StorageProvider {
     }
 
     // Find all Create/Update actions that produced this entry hash
-    const actions: Array<{ actionHash: Uint8Array; action: any }> = [];
+    const actions: Array<{ actionHash: ActionHash; action: CreateAction | UpdateAction }> = [];
     const stmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND entry_hash = ?');
     try {
       stmt.bind([cellId, toBytes(entryHash)]);
@@ -570,26 +574,30 @@ class DirectSQLiteStorage implements StorageProvider {
     }
 
     // Find updates that have originalEntryHash pointing to this entry
-    const updates: Array<{ updateHash: Uint8Array; updateAction: any }> = [];
+    const updates: Array<{ updateHash: ActionHash; updateAction: UpdateAction }> = [];
     const updateStmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND action_type = ? AND original_entry_hash = ?');
     try {
       updateStmt.bind([cellId, 'Update', toBytes(entryHash)]);
       while (updateStmt.step()) {
         const action = this.rowToAction(updateStmt.get({}));
-        updates.push({ updateHash: action.actionHash, updateAction: action });
+        if (action.actionType === 'Update') {
+          updates.push({ updateHash: action.actionHash, updateAction: action });
+        }
       }
     } finally {
       updateStmt.finalize();
     }
 
     // Find deletes targeting this entry
-    const deletes: Array<{ deleteHash: Uint8Array; deleteAction: any }> = [];
+    const deletes: Array<{ deleteHash: ActionHash; deleteAction: DeleteAction }> = [];
     const deleteStmt = db.prepare('SELECT * FROM actions WHERE cell_id = ? AND action_type = ? AND deletes_entry_hash = ?');
     try {
       deleteStmt.bind([cellId, 'Delete', toBytes(entryHash)]);
       while (deleteStmt.step()) {
         const action = this.rowToAction(deleteStmt.get({}));
-        deletes.push({ deleteHash: action.actionHash, deleteAction: action });
+        if (action.actionType === 'Delete') {
+          deletes.push({ deleteHash: action.actionHash, deleteAction: action });
+        }
       }
     } finally {
       deleteStmt.finalize();
@@ -597,7 +605,7 @@ class DirectSQLiteStorage implements StorageProvider {
 
     // Determine entry DHT status
     // Live if there are no deletes, Dead if there are deletes
-    const entryDhtStatus = deletes.length > 0 ? 'Dead' : 'Live';
+    const entryDhtStatus: EntryDhtStatus = deletes.length > 0 ? 'Dead' : 'Live';
 
     console.log('[SQLiteStorage.getEntryDetails] Found entry details', {
       actionsCount: actions.length,
@@ -616,7 +624,7 @@ class DirectSQLiteStorage implements StorageProvider {
     };
   }
 
-  putLink(link: any, dnaHash: Uint8Array, agentPubKey: Uint8Array): void {
+  putLink(link: any, dnaHash: DnaHash, agentPubKey: AgentPubKey): void {
     const cellId = this.getCellId(dnaHash, agentPubKey);
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO links (
@@ -644,9 +652,9 @@ class DirectSQLiteStorage implements StorageProvider {
     }
   }
 
-  getLinks(baseAddress: Uint8Array, dnaHash: Uint8Array, agentPubKey: Uint8Array, linkType?: number): any[] {
+  getLinks(baseAddress: AnyDhtHash, dnaHash: DnaHash, agentPubKey: AgentPubKey, linkType?: number): Link[] {
     const cellId = this.getCellId(dnaHash, agentPubKey);
-    const results: any[] = [];
+    const results: Link[] = [];
 
     let sql = 'SELECT * FROM links WHERE cell_id = ? AND base_address = ? AND deleted = 0';
     const params: any[] = [cellId, toBytes(baseAddress)];
@@ -670,6 +678,7 @@ class DirectSQLiteStorage implements StorageProvider {
           linkType: row.link_type,
           tag: row.tag ? new Uint8Array(row.tag) : new Uint8Array(),
           author: new Uint8Array(row.author),
+          deleted: false,
         });
       }
     } finally {
@@ -678,7 +687,7 @@ class DirectSQLiteStorage implements StorageProvider {
     return results;
   }
 
-  deleteLink(createLinkHash: Uint8Array, deleteHash: Uint8Array): void {
+  deleteLink(createLinkHash: ActionHash, deleteHash: ActionHash): void {
     const stmt = db.prepare('UPDATE links SET deleted = 1, delete_hash = ? WHERE create_link_hash = ?');
     try {
       stmt.bind([toBytes(deleteHash), toBytes(createLinkHash)]);
@@ -695,7 +704,7 @@ class DirectSQLiteStorage implements StorageProvider {
     db.exec('DELETE FROM chain_heads');
   }
 
-  private rowToAction(row: any): any {
+  private rowToAction(row: any): Action {
     return {
       actionHash: new Uint8Array(row.action_hash),
       actionSeq: row.action_seq,
@@ -754,7 +763,7 @@ const storage = new DirectSQLiteStorage();
  * Uses SharedArrayBuffers and Atomics.wait for synchronous operation
  * so that WASM can call signing synchronously.
  */
-class ProxyLairClient implements LairClient {
+class ProxyLairClient implements ILairClient {
   // Track "preloaded" keys - in our case, we always forward to background
   // but we track which keys have been registered for preloading
   private preloadedKeys = new Set<string>();
@@ -939,7 +948,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Get DNA hash as base64 string
    */
-  private getDnaHashB64(dnaHash: Uint8Array): string {
+  private getDnaHashB64(dnaHash: DnaHash): string {
     return encodeHashToBase64(dnaHash);
   }
 
@@ -953,7 +962,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Build URL for fetching a record
    */
-  private buildRecordUrl(dnaHash: Uint8Array, hash: Uint8Array): string {
+  private buildRecordUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
     return `${linkerUrl}/dht/${dnaHashB64}/record/${hashB64}`;
@@ -962,7 +971,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Build URL for fetching details
    */
-  private buildDetailsUrl(dnaHash: Uint8Array, hash: Uint8Array): string {
+  private buildDetailsUrl(dnaHash: DnaHash, hash: AnyDhtHash): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const hashB64 = this.toHolochainBase64(hash);
     return `${linkerUrl}/dht/${dnaHashB64}/details/${hashB64}`;
@@ -971,7 +980,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Build URL for fetching links
    */
-  private buildLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number): string {
+  private buildLinksUrl(dnaHash: DnaHash, baseAddress: AnyDhtHash, linkType?: number, zomeIndex?: number): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
@@ -988,7 +997,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Build URL for counting links
    */
-  private buildCountLinksUrl(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number): string {
+  private buildCountLinksUrl(dnaHash: DnaHash, baseAddress: AnyDhtHash, linkType?: number, zomeIndex?: number): string {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const baseB64 = this.toHolochainBase64(baseAddress);
     const params = new URLSearchParams();
@@ -1031,7 +1040,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Parse record response from linker
    */
-  private parseRecordResponse(responseText: string): any | null {
+  private parseRecordResponse(responseText: string): NetworkRecord | null {
     try {
       const data = JSON.parse(responseText);
       if (!data || !data.signed_action) {
@@ -1051,14 +1060,12 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Parse entry from linker response
    */
-  private parseEntry(data: unknown): any {
-    if (!data) {
-      // Rust RecordEntry::NA - unit variant serializes as string "NA" in msgpack
-      return 'NA';
+  private parseEntry(data: unknown): NetworkEntry {
+    if (!data || data === 'NA' || data === 'NotApplicable') {
+      return 'NotApplicable';
     }
-    if (data === 'Hidden' || data === 'NotStored' || data === 'NA') {
-      return data;
-    }
+    if (data === 'Hidden') return 'Hidden';
+    if (data === 'NotStored') return 'NotStored';
     const record = data as Record<string, unknown>;
     if (record.Present !== undefined) {
       return { Present: this.normalizeByteArrays(record.Present) };
@@ -1076,7 +1083,7 @@ class ProxyNetworkService implements NetworkService {
    * Linker returns hashes as JSON arrays (e.g., [132, 41, 36, ...])
    * NOT as base64 strings. Use normalizeByteArrays to convert.
    */
-  private parseLinksResponse(responseText: string, baseAddress?: Uint8Array): any[] {
+  private parseLinksResponse(responseText: string, baseAddress?: AnyDhtHash): NetworkLink[] {
     try {
       const data = JSON.parse(responseText);
 
@@ -1117,7 +1124,7 @@ class ProxyNetworkService implements NetworkService {
    * - author, timestamp, action_seq, prev_action, target_address,
    *   zome_index, link_type, tag, signature, validation_status, weight
    */
-  private parseWireLinkOps(wireOps: { creates: any[]; deletes?: any[] }, baseAddress?: Uint8Array): any[] {
+  private parseWireLinkOps(wireOps: { creates: any[]; deletes?: any[] }, baseAddress?: AnyDhtHash): NetworkLink[] {
     if (!wireOps.creates || wireOps.creates.length === 0) {
       return [];
     }
@@ -1158,7 +1165,7 @@ class ProxyNetworkService implements NetworkService {
   /**
    * Compute a unique hash for a create link action based on prev_action and action_seq
    */
-  private computeCreateLinkHash(prevAction: Uint8Array, actionSeq: number): Uint8Array {
+  private computeCreateLinkHash(prevAction: ActionHash, actionSeq: number): ActionHash {
     const hash = new Uint8Array(39);
     // ActionHash prefix
     hash[0] = 132;
@@ -1186,7 +1193,7 @@ class ProxyNetworkService implements NetworkService {
 
   // NetworkService interface methods
 
-  getRecordSync(dnaHash: Uint8Array, hash: Uint8Array, options?: any): any | null {
+  getRecordSync(dnaHash: DnaHash, hash: AnyDhtHash, options?: any): NetworkRecord | null {
     if (!linkerUrl) {
       return null;
     }
@@ -1215,7 +1222,7 @@ class ProxyNetworkService implements NetworkService {
     }
   }
 
-  getLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number, options?: any): any[] {
+  getLinksSync(dnaHash: DnaHash, baseAddress: AnyDhtHash, linkType?: number, zomeIndex?: number, options?: any): NetworkLink[] {
     if (!linkerUrl) {
       return [];
     }
@@ -1244,7 +1251,7 @@ class ProxyNetworkService implements NetworkService {
     }
   }
 
-  getDetailsSync(dnaHash: Uint8Array, hash: Uint8Array, options?: any): any | null {
+  getDetailsSync(dnaHash: DnaHash, hash: AnyDhtHash, options?: any): any | null {
     if (!linkerUrl) {
       return null;
     }
@@ -1273,7 +1280,7 @@ class ProxyNetworkService implements NetworkService {
     }
   }
 
-  countLinksSync(dnaHash: Uint8Array, baseAddress: Uint8Array, linkType?: number, zomeIndex?: number, options?: any): number {
+  countLinksSync(dnaHash: DnaHash, baseAddress: AnyDhtHash, linkType?: number, zomeIndex?: number, options?: any): number {
     if (!linkerUrl) {
       return 0;
     }
@@ -1307,8 +1314,8 @@ class ProxyNetworkService implements NetworkService {
   }
 
   getAgentActivitySync(
-    dnaHash: Uint8Array,
-    agentPubKey: Uint8Array,
+    dnaHash: DnaHash,
+    agentPubKey: AgentPubKey,
     activityRequest: 'status' | 'full',
     options?: any,
   ): AgentActivityResponse | null {
@@ -1340,9 +1347,9 @@ class ProxyNetworkService implements NetworkService {
   }
 
   mustGetAgentActivitySync(
-    dnaHash: Uint8Array,
-    agent: Uint8Array,
-    chainTop: Uint8Array,
+    dnaHash: DnaHash,
+    agent: AgentPubKey,
+    chainTop: ActionHash,
     includeCachedEntries: boolean,
     options?: any,
   ): MustGetAgentActivityResponse | null {
@@ -1418,9 +1425,9 @@ async function handleCallZome(payload: any): Promise<any> {
   console.log(`[Ribosome Worker] >>> handleCallZome START: ${zome}::${fn}`);
 
   // Set cell context for storage
-  const cellIdBytes: [Uint8Array, Uint8Array] = [
-    new Uint8Array(cellId[0]),
-    new Uint8Array(cellId[1]),
+  const cellIdBytes: [DnaHash, AgentPubKey] = [
+    new Uint8Array(cellId[0]) as DnaHash,
+    new Uint8Array(cellId[1]) as AgentPubKey,
   ];
   storage.setCellContext(cellIdBytes[0], cellIdBytes[1]);
   const afterSetContext = performance.now();
@@ -1463,16 +1470,24 @@ async function handleCallZome(payload: any): Promise<any> {
     pendingRecordsForTransport = zomeResult.pendingRecords.map(record => {
       // Convert Entry for transport - Entry is internally tagged: { entry_type: "App", entry: bytes }
       let entryForTransport: any = undefined;
-      if (record.entry && record.entry.Present) {
-        const presentEntry = record.entry.Present;
+      const recordEntry = record.entry;
+      // recordEntry can be an object ({ Present: ... }, { NotApplicable: null }) or
+      // a string ("NA", "Hidden", "NotStored") from msgpack deserialization.
+      // The `in` operator only works on objects, so check typeof first.
+      if (recordEntry && typeof recordEntry === 'object' && 'Present' in recordEntry) {
+        const presentEntry = recordEntry.Present;
+        // Narrow entry content: App entries have Uint8Array, Agent entries have AgentPubKey (also Uint8Array)
+        const entryBytes = presentEntry.entry instanceof Uint8Array
+          ? Array.from(presentEntry.entry)
+          : presentEntry.entry;
         entryForTransport = {
           Present: {
             entry_type: presentEntry.entry_type,
-            entry: Array.from(presentEntry.entry),
+            entry: entryBytes,
           }
         };
-      } else if (record.entry && record.entry.NA !== undefined) {
-        entryForTransport = { NA: null };
+      } else if (recordEntry && typeof recordEntry === 'object' && 'NotApplicable' in recordEntry) {
+        entryForTransport = { NotApplicable: null };
       }
 
       return {
@@ -1530,23 +1545,27 @@ self.onmessage = async (event: MessageEvent) => {
 
         // Set up network buffers
         if (payload.networkSignalBuffer && payload.networkResultBuffer) {
-          networkSignalBuffer = payload.networkSignalBuffer;
-          networkSignalView = new Int32Array(networkSignalBuffer);
-          networkResultBuffer = payload.networkResultBuffer;
-          networkResultView = new Uint8Array(networkResultBuffer);
+          const nsb: SharedArrayBuffer = payload.networkSignalBuffer;
+          const nrb: SharedArrayBuffer = payload.networkResultBuffer;
+          networkSignalBuffer = nsb;
+          networkSignalView = new Int32Array(nsb);
+          networkResultBuffer = nrb;
+          networkResultView = new Uint8Array(nrb);
         }
 
         // Set up sign buffers
         if (payload.signSignalBuffer && payload.signResultBuffer) {
-          signSignalBuffer = payload.signSignalBuffer;
-          signSignalView = new Int32Array(signSignalBuffer);
-          signResultBuffer = payload.signResultBuffer;
-          signResultView = new Uint8Array(signResultBuffer);
+          const ssb: SharedArrayBuffer = payload.signSignalBuffer;
+          const srb: SharedArrayBuffer = payload.signResultBuffer;
+          signSignalBuffer = ssb;
+          signSignalView = new Int32Array(ssb);
+          signResultBuffer = srb;
+          signResultView = new Uint8Array(srb);
           console.log('[Ribosome Worker] Sign buffers initialized');
         }
 
         // Set storage provider for ribosome
-        setStorageProvider(storage as any);
+        setStorageProvider(storage);
         setNetworkService(networkService);
 
         // Set Lair client for signing
@@ -1586,8 +1605,8 @@ self.onmessage = async (event: MessageEvent) => {
       case 'GET_ALL_RECORDS': {
         // Get all records for a cell - used for republishing
         const { dnaHash: dnaHashArr, agentPubKey: agentPubKeyArr } = payload;
-        const dnaHashBytes = new Uint8Array(dnaHashArr);
-        const agentPubKeyBytes = new Uint8Array(agentPubKeyArr);
+        const dnaHashBytes = new Uint8Array(dnaHashArr) as DnaHash;
+        const agentPubKeyBytes = new Uint8Array(agentPubKeyArr) as AgentPubKey;
 
         console.log('[Ribosome Worker] Getting all records for republishing');
         const records = storage.getAllRecords(dnaHashBytes, agentPubKeyBytes);
@@ -1605,27 +1624,19 @@ self.onmessage = async (event: MessageEvent) => {
             };
           }
 
-          // Convert action for transport - need to convert all Uint8Array fields and BigInt timestamp
-          const actionForTransport = {
-            ...record.action,
-            // Convert BigInt timestamp to string (Chrome can't serialize BigInt)
-            timestamp: record.action.timestamp?.toString() || '0',
-            actionHash: record.action.actionHash ? Array.from(record.action.actionHash) : null,
-            author: record.action.author ? Array.from(record.action.author) : null,
-            prevActionHash: record.action.prevActionHash ? Array.from(record.action.prevActionHash) : null,
-            signature: record.action.signature ? Array.from(record.action.signature) : null,
-            entryHash: record.action.entryHash ? Array.from(record.action.entryHash) : null,
-            originalActionHash: record.action.originalActionHash ? Array.from(record.action.originalActionHash) : null,
-            originalEntryHash: record.action.originalEntryHash ? Array.from(record.action.originalEntryHash) : null,
-            deletesActionHash: record.action.deletesActionHash ? Array.from(record.action.deletesActionHash) : null,
-            deletesEntryHash: record.action.deletesEntryHash ? Array.from(record.action.deletesEntryHash) : null,
-            baseAddress: record.action.baseAddress ? Array.from(record.action.baseAddress) : null,
-            targetAddress: record.action.targetAddress ? Array.from(record.action.targetAddress) : null,
-            tag: record.action.tag ? Array.from(record.action.tag) : null,
-            linkAddAddress: record.action.linkAddAddress ? Array.from(record.action.linkAddAddress) : null,
-            dnaHash: record.action.dnaHash ? Array.from(record.action.dnaHash) : null,
-            membraneProof: record.action.membraneProof ? Array.from(record.action.membraneProof) : null,
-          };
+          // Convert action for transport - convert Uint8Array to Array and BigInt to string
+          // for Chrome message passing compatibility.
+          // rowToAction creates flat objects with all fields; variant-specific fields are undefined.
+          const actionForTransport: Record<string, unknown> = { ...record.action };
+          actionForTransport.timestamp = record.action.timestamp?.toString() || '0';
+          for (const key of Object.keys(actionForTransport)) {
+            const value = actionForTransport[key];
+            if (value instanceof Uint8Array) {
+              actionForTransport[key] = Array.from(value);
+            } else if (value === undefined) {
+              actionForTransport[key] = null;
+            }
+          }
 
           return { action: actionForTransport, entry: entryForTransport };
         });

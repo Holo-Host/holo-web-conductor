@@ -174,6 +174,30 @@ From `CLAUDE.md`:
 - **Package Manager**: npm (workspaces)
 - **Browser**: Chrome MV3 (primary), Firefox (secondary)
 
+## Type Safety
+
+TypeScript strict mode is enabled project-wide. The type system is a primary defense against serialization and boundary bugs -- not just a developer convenience.
+
+### Typecheck pipeline
+
+```bash
+# Typecheck all packages (runs tsc --noEmit for each)
+npm run typecheck
+
+# This also runs automatically as part of:
+npm test
+```
+
+Vitest uses esbuild for speed, which **strips types without checking them**. This means a test suite can pass with type errors present. The `npm run typecheck` step (which runs before tests via `npm test`) catches these. If you run vitest directly (e.g., `npx vitest run`), you bypass typechecking entirely.
+
+### Rules for contributors and AI agents
+
+- **No `as any` in production code.** Define a named type instead. If the shape doesn't match an existing type, create one that documents the actual shape.
+- **No `as any` in test code without justification.** Use `Pick<T, ...>`, typed factory functions, or proper mocks. The only acceptable use is global patching (`window as any`, `globalThis as any`) with a brief comment.
+- **Type return values explicitly.** Functions that return data from WASM, network, or message boundaries must declare their return type. Don't rely on inference from casted internals.
+- **Use `@holochain/client` types.** `EntryHash`, `ActionHash`, `AgentPubKey`, `DnaHash`, `Record`, `Action`, `CellId` -- these exist and are well-defined. Prefer them over `Uint8Array` or custom equivalents.
+- **Run `npm run typecheck` before marking work complete.** Type errors are real errors.
+
 ## Architecture Decisions
 
 ### Why IIFE for Scripts?

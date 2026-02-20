@@ -8,7 +8,7 @@ This document covers testing procedures for the Holochain Web Conductor browser 
 |-----------|---------|--------------|
 | Unit tests (vitest) | `npm test` | None |
 | Build validation | `npm run build` | None |
-| Type checking | `npm run build --workspace=@hwc/core` | None (uses tsc) |
+| Type checking | `npm run typecheck` | None (tsc --noEmit all packages) |
 | Integration tests | `npm run test:integration` | None |
 | E2E (Playwright) | See "E2E with Linker" section | nix shell, conductor, linker |
 | Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
@@ -30,7 +30,7 @@ This runs Vitest tests across all packages:
 - `packages/lair` - 1 test file (~25 tests): Key management
 - `packages/shared` - 1 test file: Shared utilities
 
-**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are NOT caught by `npm test`. Run `tsc` separately via `npm run build --workspace=@hwc/core` to check types.
+**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are not caught by vitest alone. However, `npm test` runs `npm run typecheck` (tsc --noEmit across all packages) before running vitest, so type errors will fail the pipeline. If you run vitest directly (e.g., `npx vitest run`), you bypass typechecking -- always use `npm test` or run `npm run typecheck` separately.
 
 **Known issues**:
 - Some tests need libsodium; may fail with "No secure random number generator found" when run in isolation

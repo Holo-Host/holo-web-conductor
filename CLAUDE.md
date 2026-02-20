@@ -54,6 +54,20 @@ This checklist exists because a full session was wasted on byte-level serializat
 
 - **Strong typing**: Use TypeScript types for WASM boundaries. Match Holochain's serde format (internally tagged enums: `{"type": "create", ...}`)
 
+- **Type safety is load-bearing** (READ CAREFULLY):
+  Types in this project exist to catch real bugs -- wrong hash sizes, missing fields, shape mismatches at serialization boundaries. Suppressing type errors defeats the purpose. Rules:
+
+  1. **`as any` is a defect in production code.** If the type system can't express the shape, create a named type or interface that documents the actual shape. Never silence the compiler to make it build faster.
+  2. **`as unknown as T` requires a comment** explaining why the intermediate shapes are compatible. If you can't explain it, the cast is wrong.
+  3. **Type the return values, not just the inputs.** When a host function, zome call, or message handler returns data, the return type must be defined. If `@holochain/client` defines the type, use it. If the wire format diverges from the client type, create a named wire-format type (e.g., `HolochainWireAction`) with a comment noting the divergence -- don't silently cast through `unknown`.
+  4. **Narrow payload types with discriminated unions.** Message payloads must not be accessed via `(payload as any).field`. Define discriminated union types for message payloads and use type guards or switch/case narrowing.
+  5. **Run `npm run typecheck` before considering code complete.** Vitest uses esbuild which strips types without checking them. Type errors are invisible in `npm test` alone -- the typecheck step catches them. A green test suite with type errors is not green.
+  6. **Test code is code.** Type assertions in tests hide the exact class of bugs that types catch. Specific rules for tests:
+     - For partial mocks: use `Pick<T, 'needed' | 'fields'>` or create typed test factory functions -- not `{} as any`.
+     - For return value assertions: define the expected return type and assert against it. `(result as any).field` means the test cannot catch a field rename or shape change.
+     - For global patching (`window`, `globalThis`): `as any` is acceptable with a one-line comment (e.g., `// browser global not in test types`).
+  7. **Never add `// @ts-ignore` or `// @ts-expect-error` without a ticket or TODO** linking to the upstream issue that makes it necessary.
+
 - **Reference sources** (all local, no web searches):
   1. Holochain 0.6: `../holochain`
   2. @holochain/client: `../holochain-client-js`
