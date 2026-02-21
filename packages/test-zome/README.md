@@ -26,7 +26,7 @@ This compiles to WASM and copies to `../extension/test/test-zome.wasm`.
 
 ## Testing
 
-Open `../extension/test/wasm-test.html` in a browser with the Fishy extension loaded.
+Open `../extension/test/sandbox-test.html` in a browser with the extension loaded.
 
 ## Functions
 

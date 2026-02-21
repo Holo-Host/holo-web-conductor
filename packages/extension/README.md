@@ -63,23 +63,12 @@ Runs unit tests with Vitest.
 
 After loading the extension:
 
-1. Open `packages/extension/test/test-page.html` in your browser
-2. The page should detect the extension automatically
-3. Click the buttons to test various functionality:
-   - **Connect**: Establishes connection with extension
-   - **Disconnect**: Closes connection
-   - **Get App Info**: Requests app information (mock response)
-   - **Call Zome**: Calls a zome function (mock response)
+1. Serve test pages: `./scripts/serve-test-pages.sh` (from repo root)
+2. Open `http://localhost:8080/sandbox-test.html`
+3. Click "Run All" to exercise all extension APIs and host functions
+4. All tests should show green checks
 
-### Expected Behavior
-
-- Extension detection should succeed
-- Connect should return `{connected: true, url: "..."}`
-- Disconnect should return `{disconnected: true}`
-- App Info should return a mock response
-- Zome Call should return a mock response
-
-All messages should show in the test log on the page.
+See also `happ-test.html` (WebConductorAppClient integration) and `authorization-test.html` (permission popup flow).
 
 ## Architecture
 
@@ -124,7 +113,9 @@ All messages should show in the test log on the page.
 - `src/lib/messaging.test.ts` - Message protocol tests (18 tests)
 - `src/build-validation.test.ts` - Build validation tests (16 tests)
 - `manifest.json` - Extension manifest (MV3)
-- `test/test-page.html` - Integration test page
+- `test/sandbox-test.html` - Extension API test page (all host functions)
+- `test/happ-test.html` - WebConductorAppClient integration test page
+- `test/authorization-test.html` - Permission popup flow test page
 - `vite.config.ts` - Build configuration
 
 ## API

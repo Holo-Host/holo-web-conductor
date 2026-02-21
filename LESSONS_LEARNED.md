@@ -596,7 +596,7 @@ describe('Real WASM Integration', () => {
 
 **Purpose**: Verify serialization in real browser environment
 
-**Test Page**: `packages/extension/test/wasm-test.html` (already exists)
+**Test Page**: `packages/extension/test/sandbox-test.html`
 
 **Manual Test Cases**:
 1. Load extension in Chrome
