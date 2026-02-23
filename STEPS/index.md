@@ -62,6 +62,7 @@
 | 22 | ✅ | Migration to holo-host GitHub Org + Rename |
 | 23 | ✅ | Agent Activity Network Integration |
 | 24 | ✅ | Kitsune2 DHT Query Fix (resolved in 19.3/M4) |
+| 25 | ⏳ | Linker Record Response Format Fix |
 | CI | ✅ | GitHub Actions CI for HWC and h2hc-linker |
 | Meta-1 | 📋 | Process Review (periodic) |
 
