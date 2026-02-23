@@ -7,7 +7,7 @@
 
 import type { NetworkService, NetworkRecord, NetworkEntry } from '../network/types';
 import type { StorageProvider } from '../storage/storage-provider';
-import type { StoredAction, StoredEntry } from '../storage/types';
+import type { StoredAction, StoredEntry, AppEntryType } from '../storage/types';
 import type { SerializableAction } from '../types/holochain-serialization';
 import { serializeAction } from '../types/holochain-serialization';
 import { createLogger } from '@hwc/shared';
@@ -413,6 +413,75 @@ export function verifyActionSignature(record: RecoveredRecord): boolean {
 }
 
 /**
+ * Convert wire-format entry_type to storage-format entryType.
+ *
+ * Wire format (from linker/DHT):
+ *   { App: { entry_index: N, zome_index: M, visibility: "Public" } }
+ *   or "AgentPubKey" / "CapClaim" / "CapGrant"
+ *
+ * Storage format (AppEntryType):
+ *   { zome_id: M, entry_index: N }
+ *   or null (for agent entries)
+ */
+function wireEntryTypeToStorage(wireEntryType: unknown): AppEntryType | null {
+  if (!wireEntryType) return null;
+
+  // String variants: "AgentPubKey", "CapClaim", "CapGrant"
+  if (typeof wireEntryType === 'string') return null;
+
+  // Wire format: { App: { entry_index, zome_index, visibility } }
+  if (typeof wireEntryType === 'object' && wireEntryType !== null) {
+    const obj = wireEntryType as Record<string, unknown>;
+    if ('App' in obj && typeof obj.App === 'object' && obj.App !== null) {
+      const app = obj.App as Record<string, unknown>;
+      return {
+        zome_id: app.zome_index as number,
+        entry_index: app.entry_index as number,
+      };
+    }
+    // Already in storage format (has zome_id directly)
+    if ('zome_id' in obj && 'entry_index' in obj) {
+      return wireEntryType as AppEntryType;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Convert wire-format entry_type to StoredEntry entryType.
+ *
+ * StoredEntry expects: AppEntryType | 'Agent' | 'CapClaim' | 'CapGrant'
+ *
+ * The entry-level entry_type from the linker is a simple string ("App", "Agent")
+ * while the action-level entry_type is the nested object.
+ * We try the entry-level first, then fall back to the action-level.
+ */
+function wireEntryTypeToStoredEntryType(
+  entryLevelType: unknown,
+  actionLevelType: unknown
+): AppEntryType | 'Agent' | 'CapClaim' | 'CapGrant' {
+  // Entry-level: string like "Agent", "CapClaim", "CapGrant"
+  if (typeof entryLevelType === 'string') {
+    if (entryLevelType === 'Agent' || entryLevelType === 'CapClaim' || entryLevelType === 'CapGrant') {
+      return entryLevelType;
+    }
+    // "App" string means we need the AppEntryType from the action
+  }
+
+  // Action-level: wire format { App: { entry_index, zome_index, visibility } }
+  const appType = wireEntryTypeToStorage(actionLevelType);
+  if (appType) return appType;
+
+  // Entry-level might also be the wire-format object (fallback)
+  const appTypeFromEntry = wireEntryTypeToStorage(entryLevelType);
+  if (appTypeFromEntry) return appTypeFromEntry;
+
+  // Default to Agent if we can't determine
+  return 'Agent';
+}
+
+/**
  * Build a StoredAction from a RecoveredRecord's signed_action content.
  *
  * This maps the Holochain wire format (snake_case, content-embedded fields)
@@ -451,7 +520,7 @@ export function buildStorageAction(
     actionType: content.type,
     signature,
     entryHash,
-    entryType: content.entry_type,
+    entryType: wireEntryTypeToStorage(content.entry_type),
     originalActionHash: content.original_action_address
       ? toBytes(content.original_action_address) : undefined,
     originalEntryHash: content.original_entry_address
@@ -493,7 +562,7 @@ export function buildStorageEntry(
   return {
     entryHash,
     entryContent,
-    entryType: record.entry.entry_type || content?.entry_type,
+    entryType: wireEntryTypeToStoredEntryType(record.entry.entry_type, content?.entry_type),
   };
 }
 

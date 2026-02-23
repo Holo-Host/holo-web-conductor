@@ -385,6 +385,25 @@ describe('buildStorageAction', () => {
 
     expect(action.signature).toEqual(new Uint8Array(64));
   });
+
+  it('converts wire-format entry_type { App: { ... } } to storage format { zome_id, entry_index }', () => {
+    const record = makeCreateRecord(1);
+    // Simulate wire format from linker
+    (record.signedAction.hashed.content as any).entry_type = {
+      App: { entry_index: 3, zome_index: 1, visibility: 'Public' },
+    };
+    const action = buildStorageAction(record, agentPubKey);
+
+    expect((action as any).entryType).toEqual({ zome_id: 1, entry_index: 3 });
+  });
+
+  it('converts wire-format "AgentPubKey" entry_type to null', () => {
+    const record = makeCreateRecord(1);
+    (record.signedAction.hashed.content as any).entry_type = 'AgentPubKey';
+    const action = buildStorageAction(record, agentPubKey);
+
+    expect((action as any).entryType).toBeNull();
+  });
 });
 
 // ============================================================================
@@ -442,6 +461,39 @@ describe('buildStorageEntry', () => {
     expect(result).not.toBeNull();
     expect(result!.entryContent).toBeInstanceOf(Uint8Array);
     expect(result!.entryContent).toEqual(new Uint8Array([1, 2, 3, 4]));
+  });
+
+  it('converts wire-format entry_type { App: { entry_index, zome_index, visibility } } to storage format', () => {
+    const entryHash = mockEntryHash(10);
+    const record = makeCreateRecord(1, { entryHash });
+    // Simulate wire format from linker/DHT
+    record.entry = {
+      entry_type: 'App',
+      entry: new Uint8Array([5, 6, 7]),
+    };
+    (record.signedAction.hashed.content as any).entry_type = {
+      App: { entry_index: 2, zome_index: 0, visibility: 'Public' },
+    };
+
+    const result = buildStorageEntry(record, entryHash);
+
+    expect(result).not.toBeNull();
+    expect(result!.entryType).toEqual({ zome_id: 0, entry_index: 2 });
+  });
+
+  it('converts wire-format "AgentPubKey" entry_type to Agent string', () => {
+    const entryHash = mockEntryHash(10);
+    const record = makeCreateRecord(1, { entryHash });
+    record.entry = {
+      entry_type: 'Agent',
+      entry: new Uint8Array([8, 9]),
+    };
+    (record.signedAction.hashed.content as any).entry_type = 'AgentPubKey';
+
+    const result = buildStorageEntry(record, entryHash);
+
+    expect(result).not.toBeNull();
+    expect(result!.entryType).toBe('Agent');
   });
 });
 
