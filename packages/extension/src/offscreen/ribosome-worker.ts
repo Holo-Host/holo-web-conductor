@@ -1642,6 +1642,8 @@ self.onmessage = async (event: MessageEvent) => {
 
         let totalRecovered = 0;
         let totalFailed = 0;
+        let totalVerified = 0;
+        let totalUnverified = 0;
         const allErrors: string[] = [];
 
         for (const dnaHashArr of recoverDnaHashes) {
@@ -1670,11 +1672,13 @@ self.onmessage = async (event: MessageEvent) => {
           const storeResult = storeRecoveredRecords(records, storage, dnaHashBytes, agentBytes);
           totalRecovered += storeResult.recoveredCount;
           totalFailed += storeResult.failedCount;
+          totalVerified += storeResult.verifiedCount;
+          totalUnverified += storeResult.unverifiedCount;
           allErrors.push(...storeResult.errors);
         }
 
-        console.log(`[Ribosome Worker] Recovery complete: ${totalRecovered} recovered, ${totalFailed} failed`);
-        result = { recoveredCount: totalRecovered, failedCount: totalFailed, errors: allErrors };
+        console.log(`[Ribosome Worker] Recovery complete: ${totalRecovered} recovered, ${totalFailed} failed, ${totalVerified} verified, ${totalUnverified} unverified`);
+        result = { recoveredCount: totalRecovered, failedCount: totalFailed, verifiedCount: totalVerified, unverifiedCount: totalUnverified, errors: allErrors };
         break;
       }
 

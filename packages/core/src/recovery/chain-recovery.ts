@@ -8,7 +8,10 @@
 import type { NetworkService, NetworkRecord, NetworkEntry } from '../network/types';
 import type { StorageProvider } from '../storage/storage-provider';
 import type { StoredAction, StoredEntry } from '../storage/types';
+import type { SerializableAction } from '../types/holochain-serialization';
+import { serializeAction } from '../types/holochain-serialization';
 import { createLogger } from '@hwc/shared';
+import sodium from 'libsodium-wrappers';
 
 const log = createLogger('ChainRecovery');
 
@@ -291,6 +294,124 @@ function toBytes(value: unknown): Uint8Array {
   return new Uint8Array(0);
 }
 
+// ============================================================================
+// Signature verification
+// ============================================================================
+
+/**
+ * Normalize action content from wire format to SerializableAction.
+ *
+ * After JSON round-trip through the linker, byte fields (hashes, tags) may be
+ * plain Arrays instead of Uint8Array. Msgpack encodes these differently
+ * (array type vs bin type), so we must normalize before serialization.
+ */
+function normalizeActionContent(content: any): SerializableAction {
+  const result: any = { type: content.type };
+
+  if (content.author) result.author = toBytes(content.author);
+  if (content.timestamp !== undefined) result.timestamp = Number(content.timestamp);
+  if (content.action_seq !== undefined) result.action_seq = content.action_seq;
+  if (content.prev_action) result.prev_action = toBytes(content.prev_action);
+
+  switch (content.type) {
+    case 'Dna':
+      result.hash = toBytes(content.hash);
+      break;
+    case 'AgentValidationPkg':
+      result.membrane_proof = content.membrane_proof
+        ? toBytes(content.membrane_proof)
+        : undefined;
+      break;
+    case 'InitZomesComplete':
+      break;
+    case 'Create':
+      result.entry_type = content.entry_type;
+      result.entry_hash = toBytes(content.entry_hash);
+      result.weight = content.weight ?? { bucket_id: 0, units: 0, rate_bytes: 0 };
+      break;
+    case 'Update':
+      result.original_action_address = toBytes(content.original_action_address);
+      result.original_entry_address = toBytes(content.original_entry_address);
+      result.entry_type = content.entry_type;
+      result.entry_hash = toBytes(content.entry_hash);
+      result.weight = content.weight ?? { bucket_id: 0, units: 0, rate_bytes: 0 };
+      break;
+    case 'Delete':
+      result.deletes_address = toBytes(content.deletes_address);
+      result.deletes_entry_address = toBytes(content.deletes_entry_address);
+      result.weight = content.weight ?? { bucket_id: 0, units: 0 };
+      break;
+    case 'CreateLink':
+      result.base_address = toBytes(content.base_address);
+      result.target_address = toBytes(content.target_address);
+      result.zome_index = content.zome_index;
+      result.link_type = content.link_type;
+      result.tag = content.tag ? toBytes(content.tag) : new Uint8Array(0);
+      result.weight = content.weight ?? { bucket_id: 0, units: 0 };
+      break;
+    case 'DeleteLink':
+      result.base_address = toBytes(content.base_address);
+      result.link_add_address = toBytes(content.link_add_address);
+      break;
+    default:
+      throw new Error(`Unknown action type for normalization: ${content.type}`);
+  }
+
+  return result as SerializableAction;
+}
+
+/**
+ * Verify the Ed25519 signature on a recovered action.
+ *
+ * Returns true if valid, false if invalid or unverifiable.
+ * Verification failure does not prevent storage -- recovery prioritizes
+ * data availability over strict integrity enforcement.
+ *
+ * Requires libsodium to be initialized (sodium.ready).
+ */
+export function verifyActionSignature(record: RecoveredRecord): boolean {
+  const signedAction = record.signedAction;
+  const content = signedAction?.hashed?.content;
+  const signature = signedAction?.signature;
+
+  if (!content || !signature) {
+    log.warn(`Cannot verify sig for seq=${record.actionSeq}: missing content or signature`);
+    return false;
+  }
+
+  const author = content.author;
+  if (!author) {
+    log.warn(`Cannot verify sig for seq=${record.actionSeq}: missing author`);
+    return false;
+  }
+
+  const authorBytes = toBytes(author);
+  if (authorBytes.length < 35) {
+    log.warn(`Cannot verify sig for seq=${record.actionSeq}: author too short (${authorBytes.length})`);
+    return false;
+  }
+  const rawPubKey = authorBytes.slice(3, 35);
+
+  const sigBytes = toBytes(signature);
+  if (sigBytes.length !== 64) {
+    log.warn(`Cannot verify sig for seq=${record.actionSeq}: signature length ${sigBytes.length} != 64`);
+    return false;
+  }
+
+  try {
+    const action = normalizeActionContent(content);
+    const serializedBytes = serializeAction(action);
+    const valid = sodium.crypto_sign_verify_detached(sigBytes, serializedBytes, rawPubKey);
+    if (!valid) {
+      log.warn(`Invalid signature for seq=${record.actionSeq}`);
+    }
+    return valid;
+  } catch (err) {
+    log.warn(`Signature verification error for seq=${record.actionSeq}: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
 /**
  * Build a StoredAction from a RecoveredRecord's signed_action content.
  *
@@ -382,20 +503,35 @@ export function buildStorageEntry(
  * This is the logic previously inlined in ribosome-worker.ts RECOVER_CHAIN
  * handler, extracted so it can be tested without a web worker.
  *
- * @returns counts of recovered/failed records and any error messages
+ * Each record's signature is verified before storage. Verification failures
+ * are logged but do NOT prevent storage -- recovery prioritizes data
+ * availability. The caller can inspect verifiedCount/unverifiedCount to
+ * decide whether to warn the user.
+ *
+ * @returns counts of recovered/failed/verified records and any error messages
  */
 export function storeRecoveredRecords(
   records: RecoveredRecord[],
   storage: StorageProvider,
   dnaHash: Uint8Array,
   agentPubKey: Uint8Array
-): { recoveredCount: number; failedCount: number; errors: string[] } {
+): { recoveredCount: number; failedCount: number; verifiedCount: number; unverifiedCount: number; errors: string[] } {
   let recoveredCount = 0;
   let failedCount = 0;
+  let verifiedCount = 0;
+  let unverifiedCount = 0;
   const errors: string[] = [];
 
   for (const record of records) {
     try {
+      // Verify signature (non-blocking -- still stores on failure)
+      const verified = verifyActionSignature(record);
+      if (verified) {
+        verifiedCount++;
+      } else {
+        unverifiedCount++;
+      }
+
       const storageAction = buildStorageAction(record, agentPubKey);
 
       storage.putAction(storageAction, dnaHash, agentPubKey);
@@ -425,5 +561,5 @@ export function storeRecoveredRecords(
     }
   }
 
-  return { recoveredCount, failedCount, errors };
+  return { recoveredCount, failedCount, verifiedCount, unverifiedCount, errors };
 }

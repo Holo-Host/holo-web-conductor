@@ -3,6 +3,7 @@ export {
   storeRecoveredRecords,
   buildStorageAction,
   buildStorageEntry,
+  verifyActionSignature,
   type RecoveryProgress,
   type ProgressCallback,
   type RecoveredRecord,
