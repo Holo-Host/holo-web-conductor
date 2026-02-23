@@ -49,12 +49,9 @@ npm run test:watch
 
 ### Testing the Extension
 1. Load extension (see above)
-2. Open `packages/extension/test/test-page.html`
-3. Verify:
-   - Extension detected
-   - Connect button works
-   - All API calls succeed
-   - No console errors
+2. Serve test pages: `./scripts/serve-test-pages.sh`
+3. Open `http://localhost:8080/sandbox-test.html`
+4. Click "Run All" and verify all tests pass
 
 ## Project Structure
 
