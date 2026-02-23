@@ -12,6 +12,11 @@
 
 import { decodeHashFromBase64 } from "../types/holochain-types";
 import { createLogger } from "@hwc/shared";
+import {
+  AgentInfoFields,
+  validateAgentInfo,
+  serializeAgentInfoCanonical,
+} from "./agent-info-validator";
 
 const log = createLogger('WebSocket');
 
@@ -68,10 +73,10 @@ export type ServerMessage =
   | { type: "pong" }
   | { type: "error"; message: string }
   | {
-      type: "sign_request";
+      type: "sign_agent_info";
       request_id: string;
-      agent_pubkey: string; // base64-encoded agent public key
-      message: string; // base64-encoded message to sign
+      agent_pubkey: string; // HoloHash base64-encoded agent public key
+      agent_info: AgentInfoFields; // structured agent info for validation
     };
 
 /**
@@ -101,12 +106,13 @@ export type SignalCallback = (signal: {
 export type StateCallback = (state: ConnectionState) => void;
 
 /**
- * Sign callback - called when the linker requests a signature
- * The callback should return a base64-encoded signature or throw an error
+ * Sign callback - called when the linker requests a signature.
+ * Receives the agent public key and the bytes to sign (constructed locally
+ * from validated agent info, not raw bytes from the linker).
  */
 export type SignCallback = (request: {
   agent_pubkey: Uint8Array; // decoded from base64
-  message: Uint8Array; // decoded from base64
+  message: Uint8Array; // canonical JSON bytes constructed locally
 }) => Promise<Uint8Array>;
 
 /**
@@ -392,8 +398,8 @@ export class WebSocketNetworkService {
           console.error("[WebSocketService] Server error:", message.message);
           break;
 
-        case "sign_request":
-          this.handleSignRequest(message);
+        case "sign_agent_info":
+          this.handleSignAgentInfo(message);
           break;
       }
     } catch (error) {
@@ -483,10 +489,17 @@ export class WebSocketNetworkService {
     }
   }
 
-  private handleSignRequest(
-    message: Extract<ServerMessage, { type: "sign_request" }>
+  /**
+   * Handle sign_agent_info: transparent signing protocol.
+   *
+   * Validates the structured agent info fields, constructs the canonical
+   * JSON locally, and signs that. The extension never signs opaque data
+   * from the linker.
+   */
+  private handleSignAgentInfo(
+    message: Extract<ServerMessage, { type: "sign_agent_info" }>
   ): void {
-    log.debug(`Sign request ${message.request_id} for agent ${message.agent_pubkey.substring(0, 20)}...`);
+    log.debug(`Sign agent info request ${message.request_id} for agent ${message.agent_pubkey.substring(0, 20)}...`);
 
     if (!this.signCallback) {
       console.error("[WebSocketService] No sign callback registered");
@@ -498,36 +511,47 @@ export class WebSocketNetworkService {
       return;
     }
 
-    // Decode fields
-    // agent_pubkey is a HoloHash string (e.g., "uhCAk...") - use decodeHashFromBase64
-    // message is URL-safe base64 encoded - convert to standard base64 for atob
-    let agentPubkey: Uint8Array;
-    let messageBytes: Uint8Array;
+    // Build set of registered spaces for this agent (base64url-no-pad encoded)
+    // Currently not available in a directly usable form, so pass undefined
+    // to skip space validation. The agent_pubkey check is the critical one.
+    const registeredSpaces: Set<string> | undefined = undefined;
 
-    try {
-      // agent_pubkey is a HoloHash string (e.g., "uhCAk...")
-      agentPubkey = decodeHashFromBase64(message.agent_pubkey);
+    // Validate the agent info fields
+    const validation = validateAgentInfo(
+      message.agent_info,
+      message.agent_pubkey,
+      registeredSpaces,
+    );
 
-      // Convert URL-safe base64 to standard base64 before decoding
-      const standardBase64 = message.message
-        .replace(/-/g, "+")
-        .replace(/_/g, "/");
-      // Add padding if needed
-      const padded =
-        standardBase64 +
-        "=".repeat((4 - (standardBase64.length % 4)) % 4);
-      messageBytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-    } catch (error) {
-      console.error("[WebSocketService] Failed to decode sign request:", error);
+    if (!validation.valid) {
+      console.error(`[WebSocketService] Agent info validation failed: ${validation.error}`);
       this.send({
         type: "sign_response",
         request_id: message.request_id,
-        error: `Failed to decode request: ${error}`,
+        error: `Agent info validation failed: ${validation.error}`,
       });
       return;
     }
 
-    // Call the sign callback asynchronously
+    // Construct canonical JSON locally from the validated fields
+    const canonicalJson = serializeAgentInfoCanonical(message.agent_info);
+    const messageBytes = new TextEncoder().encode(canonicalJson);
+
+    // Decode agent pubkey
+    let agentPubkey: Uint8Array;
+    try {
+      agentPubkey = decodeHashFromBase64(message.agent_pubkey);
+    } catch (error) {
+      console.error("[WebSocketService] Failed to decode agent_pubkey:", error);
+      this.send({
+        type: "sign_response",
+        request_id: message.request_id,
+        error: `Failed to decode agent_pubkey: ${error}`,
+      });
+      return;
+    }
+
+    // Sign the locally-constructed canonical JSON bytes
     this.signCallback({
       agent_pubkey: agentPubkey,
       message: messageBytes,
