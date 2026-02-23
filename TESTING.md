@@ -8,7 +8,7 @@ This document covers testing procedures for the Holochain Web Conductor browser 
 |-----------|---------|--------------|
 | Unit tests (vitest) | `npm test` | None |
 | Build validation | `npm run build` | None |
-| Type checking | `npm run build --workspace=@hwc/core` | None (uses tsc) |
+| Type checking | `npm run typecheck` | None (tsc --noEmit all packages) |
 | Integration tests | `npm run test:integration` | None |
 | E2E (Playwright) | See "E2E with Linker" section | nix shell, conductor, linker |
 | Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
@@ -30,7 +30,7 @@ This runs Vitest tests across all packages:
 - `packages/lair` - 1 test file (~25 tests): Key management
 - `packages/shared` - 1 test file: Shared utilities
 
-**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are NOT caught by `npm test`. Run `tsc` separately via `npm run build --workspace=@hwc/core` to check types.
+**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are not caught by vitest alone. However, `npm test` runs `npm run typecheck` (tsc --noEmit across all packages) before running vitest, so type errors will fail the pipeline. If you run vitest directly (e.g., `npx vitest run`), you bypass typechecking -- always use `npm test` or run `npm run typecheck` separately.
 
 **Known issues**:
 - Some tests need libsodium; may fail with "No secure random number generator found" when run in isolation
@@ -161,34 +161,31 @@ npx playwright test --ui
 
 Interactive HTML test pages for developer debugging (not automated CI). Located in `packages/extension/test/`:
 
-| File | Purpose | Linker Required? | Key Features |
-|------|---------|-------------------|--------------|
-| `wasm-test.html` | 20+ host function tests: CRUD, links, signing, rollback | No | Self-contained, no network |
-| `test-page.html` | Basic extension API: detect, connect, install, callZome, signals | No | Extension detection flow |
-| `authorization-test.html` | Authorization flow and permission management | No | Permission revocation |
-| `profiles-test.html` | Real hApp integration via WebConductorAppClient | Optional | Client library testing |
+| File | Purpose | Requirements | What You'll See |
+|------|---------|-------------|-----------------|
+| `sandbox-test.html` | Exercise all extension APIs and 20+ host functions | Extension loaded in Chrome | "Run All" button, 20+ green checks |
+| `happ-test.html` | Test WebConductorAppClient library integration | Extension loaded in Chrome | Client CRUD, connection status |
+| `authorization-test.html` | Test permission grant/revoke popup flow | Extension loaded in Chrome | Popup opens, permission persists |
 
-**How to use**:
+**Quick start** (no linker needed):
 
 ```bash
-# 1. Start E2E environment (for tests that need linker)
-nix develop -c bash
-./scripts/e2e-test-setup.sh start
-
-# 2. Build and load extension in Chrome
+# 1. Build extension
 npm run build
-# Open chrome://extensions, enable Developer mode, Load unpacked from packages/extension/dist
 
-# 3. Serve test pages (need HTTP server for module imports)
-cd packages/extension/test
-python3 -m http.server 8080
+# 2. Load extension in Chrome
+#    Open chrome://extensions, enable Developer mode, Load unpacked from packages/extension/dist
 
-# 4. Open test page
-# http://localhost:8080/wasm-test.html
-# http://localhost:8080/test-page.html
-# http://localhost:8080/profiles-test.html
-# etc.
+# 3. Serve test pages
+./scripts/serve-test-pages.sh
+
+# 4. Open test page and click "Run All"
+#    http://localhost:8080/sandbox-test.html
 ```
+
+**Shared utilities**: `packages/extension/test/lib/test-helpers.js` provides logging, status display, hash formatting, and a `TestRunner` class used by both test pages.
+
+**Test fixtures**: `test.happ`, `test.dna`, `test-zome.wasm` are pre-built from `packages/test-zome/`. Rebuild with `cd packages/test-zome && ./pack.sh`.
 
 ---
 

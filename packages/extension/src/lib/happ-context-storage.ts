@@ -191,12 +191,13 @@ export class HappContextStorage {
       integrity_zomes: manifest.integrity_zomes.map(z => ({
         ...z,
         wasm: z.wasm ? new Uint8Array(z.wasm as number[]) : undefined,
+        entryDefs: z.entryDefs as Array<{ id: string; visibility: string }> | undefined,
       })),
       coordinator_zomes: manifest.coordinator_zomes.map(z => ({
         ...z,
         wasm: z.wasm ? new Uint8Array(z.wasm as number[]) : undefined,
       })),
-    };
+    } as import('@hwc/core').DnaManifestRuntime;
   }
 
   /**

@@ -21,21 +21,30 @@ declare global {
     hwcLogFilter?: string;
   }
   var hwcLogFilter: string | undefined;
-  // Chrome extension API (optional - only available in extension contexts)
-  var chrome: {
-    storage?: {
-      local?: {
-        get: (keys: string[]) => Promise<Record<string, unknown>>;
-        set: (items: Record<string, unknown>) => Promise<void>;
-      };
+}
+
+// Minimal chrome API type for use in shared package (which cannot depend on @types/chrome).
+// Extension code gets full types from @types/chrome; this only covers what logger.ts needs.
+interface ChromeForLogger {
+  storage?: {
+    local?: {
+      get: (keys: string[]) => Promise<Record<string, unknown>>;
+      set: (items: Record<string, unknown>) => Promise<void>;
     };
-    runtime?: {
-      sendMessage: (message: unknown) => Promise<void>;
-      onMessage?: {
-        addListener: (callback: (message: unknown) => void) => void;
-      };
+  };
+  runtime?: {
+    sendMessage: (message: unknown) => Promise<void>;
+    onMessage?: {
+      addListener: (callback: (message: unknown) => void) => void;
     };
-  } | undefined;
+  };
+}
+
+function getChromeApi(): ChromeForLogger | undefined {
+  if (typeof globalThis !== 'undefined' && 'chrome' in globalThis) {
+    return (globalThis as Record<string, unknown>).chrome as ChromeForLogger;
+  }
+  return undefined;
 }
 
 // Message type for log filter changes
@@ -48,25 +57,27 @@ if (typeof globalThis !== 'undefined' && globalThis.hwcLogFilter === undefined) 
 
 // Load filter from storage on init (for persistence across restarts)
 // Only in extension contexts where chrome.storage is available
-if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
-  chrome.storage.local.get(['hwcLogFilter']).then((result: Record<string, unknown>) => {
-    if (typeof result.hwcLogFilter === 'string') {
-      globalThis.hwcLogFilter = result.hwcLogFilter;
-    }
-  }).catch(() => {});
-}
-
-// Listen for filter changes from other contexts via runtime messaging
-// Only in extension contexts where chrome.runtime is available
-if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
-  chrome.runtime.onMessage.addListener((message: unknown) => {
-    if (message && typeof message === 'object' && 'type' in message && 'filter' in message) {
-      const msg = message as { type: string; filter: string };
-      if (msg.type === LOG_FILTER_MESSAGE_TYPE) {
-        globalThis.hwcLogFilter = msg.filter;
+{
+  const chromeApi = getChromeApi();
+  if (chromeApi?.storage?.local) {
+    chromeApi.storage.local.get(['hwcLogFilter']).then((result: Record<string, unknown>) => {
+      if (typeof result.hwcLogFilter === 'string') {
+        globalThis.hwcLogFilter = result.hwcLogFilter;
       }
-    }
-  });
+    }).catch(() => {});
+  }
+
+  // Listen for filter changes from other contexts via runtime messaging
+  if (chromeApi?.runtime?.onMessage) {
+    chromeApi.runtime.onMessage.addListener((message: unknown) => {
+      if (message && typeof message === 'object' && 'type' in message && 'filter' in message) {
+        const msg = message as { type: string; filter: string };
+        if (msg.type === LOG_FILTER_MESSAGE_TYPE) {
+          globalThis.hwcLogFilter = msg.filter;
+        }
+      }
+    });
+  }
 }
 
 /**
@@ -91,15 +102,16 @@ export function setLogFilter(filter: string): void {
   globalThis.hwcLogFilter = filter;
   console.log(`[Logger] Filter set to: ${filter === '*' ? 'all' : filter === '' ? 'none' : filter}`);
 
-  if (typeof chrome !== 'undefined') {
+  const chromeApi = getChromeApi();
+  if (chromeApi) {
     // Persist to storage for persistence across restarts
-    if (chrome.storage?.local) {
-      chrome.storage.local.set({ hwcLogFilter: filter }).catch(() => {});
+    if (chromeApi.storage?.local) {
+      chromeApi.storage.local.set({ hwcLogFilter: filter }).catch(() => {});
     }
 
     // Broadcast to all extension contexts via runtime messaging
-    if (chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: LOG_FILTER_MESSAGE_TYPE, filter }).catch(() => {});
+    if (chromeApi.runtime?.sendMessage) {
+      chromeApi.runtime.sendMessage({ type: LOG_FILTER_MESSAGE_TYPE, filter }).catch(() => {});
     }
   }
 }

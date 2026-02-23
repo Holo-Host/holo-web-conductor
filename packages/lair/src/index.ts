@@ -36,4 +36,7 @@ export { IndexedDBKeyStorage, createKeyStorage } from "./storage";
 // Export client
 export { LairClient, createLairClient } from "./client";
 
+// Export mnemonic (seed phrase backup/recovery)
+export { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from "./mnemonic";
+
 export const VERSION = "0.0.1";

@@ -248,6 +248,25 @@ export interface LairClient {
   ): Promise<NewSeedResult>;
 
   /**
+   * Export a seed as a 24-word BIP-39 mnemonic phrase.
+   * @param tag - Tag of the entry to export
+   * @throws Error if the entry is not exportable
+   */
+  exportSeedAsMnemonic(tag: EntryTag): Promise<string>;
+
+  /**
+   * Import a seed from a 24-word BIP-39 mnemonic phrase.
+   * @param mnemonic - Space-separated 24-word mnemonic
+   * @param newTag - Tag for the imported entry
+   * @param exportable - Whether the imported key should be exportable (default true)
+   */
+  importSeedFromMnemonic(
+    mnemonic: string,
+    newTag: EntryTag,
+    exportable?: boolean
+  ): Promise<NewSeedResult>;
+
+  /**
    * Delete an entry from the keystore
    * @param tag - Tag of the entry to delete
    */

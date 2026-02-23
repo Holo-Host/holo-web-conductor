@@ -184,6 +184,59 @@
       .hidden {
         display: none;
       }
+      .seed-phrase-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin: 10px 0;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        font-family: monospace;
+        font-size: 13px;
+      }
+      .seed-phrase-grid .word {
+        padding: 4px 6px;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        text-align: center;
+      }
+      .seed-phrase-grid .word-num {
+        color: #6c757d;
+        font-size: 10px;
+        margin-right: 2px;
+      }
+      .warning-box {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffc107;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      .info-text {
+        font-size: 12px;
+        color: #6c757d;
+        margin: 4px 0 8px 0;
+      }
+      .message {
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      .message.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .message.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
     </style>
   </head>
   <body>
@@ -322,6 +375,46 @@
       <button id="import-btn">Import</button>
       <div id="import-error" class="error hidden"></div>
       <div id="import-success" class="success hidden"></div>
+    </div>
+
+    <!-- Seed Phrase Backup & Restore Section -->
+    <div id="seed-phrase-section" class="section disabled">
+      <h2>Seed Phrase Backup &amp; Restore</h2>
+
+      <div class="form-group">
+        <h3>Backup Seed Phrase</h3>
+        <p class="info-text">Export a keypair as a 24-word seed phrase for backup. Only exportable keys can be backed up.</p>
+        <div class="form-group">
+          <label>Select Key Tag:</label>
+          <select id="backup-key-select">
+            <option value="">-- Select a key --</option>
+          </select>
+        </div>
+        <button id="show-seed-phrase-btn">Show Seed Phrase</button>
+        <div id="seed-phrase-display" class="hidden">
+          <div class="warning-box">Do not share these words. Anyone with this phrase can control your identity.</div>
+          <div id="seed-phrase-words" class="seed-phrase-grid"></div>
+          <button id="copy-seed-phrase-btn" class="secondary">Copy to Clipboard</button>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="form-group">
+        <h3>Restore from Seed Phrase</h3>
+        <p class="info-text">Import a previously backed-up seed phrase to restore your identity.</p>
+        <div class="form-group">
+          <label>Tag for restored key:</label>
+          <input type="text" id="restore-tag" placeholder="e.g., my-recovered-key" />
+        </div>
+        <div class="form-group">
+          <label>Seed Phrase (24 words):</label>
+          <textarea id="restore-mnemonic" rows="3" placeholder="Enter your 24-word seed phrase, separated by spaces"></textarea>
+        </div>
+        <button id="restore-seed-btn">Restore Key</button>
+      </div>
+
+      <div id="seed-phrase-message" class="hidden"></div>
     </div>
 
     <script type="module" src="./lair.ts"></script>

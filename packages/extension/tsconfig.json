@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "types": ["vitest/globals", "chrome"],
+    "paths": {
+      "libsodium-wrappers": ["../../node_modules/@types/libsodium-wrappers"],
+      "@hwc/core/*": ["../core/src/*"],
+      "@hwc/core": ["../core/src"],
+      "@hwc/shared": ["../shared/src"],
+      "@hwc/lair": ["../lair/src"]
+    }
   },
   "include": ["src/**/*"],
   "references": [
