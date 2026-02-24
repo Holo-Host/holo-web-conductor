@@ -130,9 +130,20 @@ export interface HappContext {
   installedAt: number;
   lastUsed: number;
 
-  /** Whether this context is enabled */
+  /** Whether this context is enabled (derived from status for backward compat) */
   enabled: boolean;
+
+  /** App lifecycle status */
+  status: HappContextStatus;
 }
+
+/**
+ * hApp lifecycle status
+ * - 'enabled': Normal operation, zome calls allowed
+ * - 'disabled': Manually disabled by user
+ * - 'awaitingMemproofs': Installed with deferred membrane proofs; genesis not yet run
+ */
+export type HappContextStatus = 'enabled' | 'disabled' | 'awaitingMemproofs';
 
 /**
  * DNA context within a hApp
@@ -166,6 +177,9 @@ export interface InstallHappRequest {
 
   /** .happ bundle bytes (gzipped MessagePack) */
   happBundle: Uint8Array;
+
+  /** Membrane proofs keyed by role name (optional) */
+  membraneProofs?: Record<string, Uint8Array>;
 }
 
 export const VERSION = "0.0.1";

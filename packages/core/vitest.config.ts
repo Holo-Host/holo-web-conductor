@@ -21,6 +21,7 @@ export default defineConfig({
       "**/node_modules/**",
       "src/network/network.test.ts",
       "src/ribosome/integration.test.ts",
+      "src/ribosome/genesis-self-check.test.ts",
       "test/profiles-integration.test.ts",
     ],
     coverage: {

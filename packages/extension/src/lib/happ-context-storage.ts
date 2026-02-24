@@ -8,7 +8,7 @@
  * - Domain-based indexing for fast lookups
  */
 
-import type { HappContext, DnaContext } from "@hwc/core";
+import type { HappContext, HappContextStatus, DnaContext } from "@hwc/core";
 
 const DB_NAME = "hwc_happ_contexts";
 const DB_VERSION = 1;
@@ -29,6 +29,8 @@ interface StorableContext {
   installedAt: number;
   lastUsed: number;
   enabled: boolean;
+  /** App lifecycle status - optional for backward compat with pre-existing stored contexts */
+  status?: HappContextStatus;
 }
 
 /**
@@ -221,13 +223,18 @@ export class HappContextStorage {
       installedAt: context.installedAt,
       lastUsed: context.lastUsed,
       enabled: context.enabled,
+      status: context.status,
     };
   }
 
   /**
    * Convert storable format to HappContext (Array → Uint8Array)
+   *
+   * Backward compatibility: older stored contexts may not have a `status` field.
+   * In that case, derive status from `enabled` to maintain existing behavior.
    */
   private fromStorable(stored: StorableContext): HappContext {
+    const status: HappContextStatus = stored.status ?? (stored.enabled ? 'enabled' : 'disabled');
     return {
       id: stored.id,
       domain: stored.domain,
@@ -245,6 +252,7 @@ export class HappContextStorage {
       installedAt: stored.installedAt,
       lastUsed: stored.lastUsed,
       enabled: stored.enabled,
+      status,
     };
   }
 

@@ -34,6 +34,7 @@ import {
   type ContextIdPayload,
   type ExportMnemonicPayload,
   type ImportMnemonicPayload,
+  type ProvideMemproofsPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
@@ -359,6 +360,9 @@ async function handleMessage(
 
       case MessageType.DISABLE_HAPP:
         return handleDisableHapp(message, sender);
+
+      case MessageType.PROVIDE_MEMPROOFS:
+        return handleProvideMemproofs(message, sender);
 
       // Lair lock/unlock operations
       case MessageType.LAIR_GET_LOCK_STATE:
@@ -791,6 +795,7 @@ async function handleAppInfo(
       cells: happContextManager.getCellIds(context),
       installedAt: context.installedAt,
       enabled: context.enabled,
+      status: context.status,
       dnaProperties,
     });
   } catch (error) {
@@ -827,10 +832,20 @@ async function handleInstallHapp(
     }
 
     // Convert serialized Uint8Array back to actual Uint8Array
+    // Normalize membrane proofs if provided
+    let membraneProofs: Record<string, Uint8Array> | undefined;
+    if (request.membraneProofs) {
+      membraneProofs = {};
+      for (const [role, proof] of Object.entries(request.membraneProofs)) {
+        membraneProofs[role] = toUint8Array(proof);
+      }
+    }
+
     const normalizedRequest: InstallHappRequest = {
       appName: request.appName,
       appVersion: request.appVersion,
       happBundle: toUint8Array(request.happBundle),
+      membraneProofs,
     };
 
     const context = await happContextManager.installHapp(origin, normalizedRequest);
@@ -900,6 +915,7 @@ async function handleListHapps(
         installedAt: context.installedAt,
         lastUsed: context.lastUsed,
         enabled: context.enabled,
+        status: context.status,
         dnaCount: context.dnas.length,
       })),
     });
@@ -953,6 +969,52 @@ async function handleDisableHapp(
     logHapp.info(`Disabled context ${contextId}`);
 
     return createSuccessResponse(message.id, { disabled: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PROVIDE_MEMPROOFS requests
+ * Provides membrane proofs for an app in awaitingMemproofs state,
+ * triggering genesis with the provided proofs.
+ */
+async function handleProvideMemproofs(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const { contextId, memproofs } = getPayload<MessageType.PROVIDE_MEMPROOFS>(message);
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+    if (!memproofs || Object.keys(memproofs).length === 0) {
+      return createErrorResponse(message.id, "memproofs are required");
+    }
+
+    // Normalize Uint8Arrays from Chrome message passing
+    const normalizedMemproofs: Record<string, Uint8Array> = {};
+    for (const [role, proof] of Object.entries(memproofs)) {
+      normalizedMemproofs[role] = toUint8Array(proof);
+    }
+
+    // provideMemproofs transitions state and triggers genesis
+    const updatedContext = await happContextManager.provideMemproofs(contextId, normalizedMemproofs);
+    logHapp.info(`Membrane proofs provided for ${contextId}, status: ${updatedContext.status}`);
+
+    // Register agents with linker now that genesis is complete
+    registerContextAgentsWithLinker(updatedContext).catch((err) => {
+      logLinker.warn("Failed to register agents with linker after memproof:", err);
+    });
+
+    return createSuccessResponse(message.id, {
+      contextId: updatedContext.id,
+      status: updatedContext.status,
+      enabled: updatedContext.enabled,
+    });
   } catch (error) {
     return createErrorResponse(
       message.id,

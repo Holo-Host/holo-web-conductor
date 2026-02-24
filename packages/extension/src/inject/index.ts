@@ -36,6 +36,10 @@ interface HolochainAPI {
     bundle: Uint8Array | number[];
     installedAppId?: string;
   }): Promise<any>;
+  provideMemproofs(params: {
+    contextId?: string;
+    memproofs: Record<string, Uint8Array | number[]>;
+  }): Promise<any>;
   on(event: "signal", callback: (signal: any) => void): () => void;
   configureNetwork(config: { linkerUrl: string }): Promise<any>;
   getNetworkStatus(): Promise<any>;
@@ -295,6 +299,7 @@ const holochainAPI: HolochainAPI = {
   async installApp(request: {
     bundle: Uint8Array | number[];
     installedAppId?: string;
+    membraneProofs?: Record<string, Uint8Array | number[]>;
   }): Promise<any> {
     // Convert bundle to happBundle format expected by background
     const happBundle = Array.isArray(request.bundle)
@@ -304,7 +309,15 @@ const holochainAPI: HolochainAPI = {
     return sendToContentScript("install_happ", {
       happBundle: Array.from(happBundle),
       appName: request.installedAppId,
+      membraneProofs: request.membraneProofs,
     });
+  },
+
+  async provideMemproofs(params: {
+    contextId?: string;
+    memproofs: Record<string, Uint8Array | number[]>;
+  }): Promise<any> {
+    return sendToContentScript("provide_memproofs", params);
   },
 
   async configureNetwork(config: { linkerUrl: string }): Promise<any> {
