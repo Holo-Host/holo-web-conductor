@@ -99,6 +99,9 @@ let nextRequestId = 1;
 let linkerUrl: string = '';
 let sessionToken: string | null = null;
 
+// Recovery context tracking (for progress forwarding)
+let activeRecoveryContextId: string | null = null;
+
 
 // Publish service for DHT publishing
 let publishService: PublishService | null = null;
@@ -200,6 +203,22 @@ function handleWorkerMessage(event: MessageEvent): void {
   // Handle remote signals from worker (fire-and-forget)
   if (type === 'SEND_REMOTE_SIGNALS') {
     handleSendRemoteSignals(event.data);
+    return;
+  }
+
+  // Forward recovery progress to background so the popup can poll it
+  if (type === 'RECOVER_CHAIN_PROGRESS') {
+    const progress = event.data.progress;
+    if (progress && activeRecoveryContextId) {
+      chrome.runtime.sendMessage({
+        target: 'background',
+        type: 'RECOVER_CHAIN_PROGRESS',
+        contextId: activeRecoveryContextId,
+        progress,
+      }).catch(() => {
+        // Background may not be listening yet; safe to ignore
+      });
+    }
     return;
   }
 
@@ -658,6 +677,7 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
   return {
     result: result.result,
     signals: result.signals || [],
+    didWrite: (result.pendingRecords && result.pendingRecords.length > 0) || false,
   };
 }
 
@@ -871,11 +891,48 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    // Recover chain from DHT - forward to worker
+    if (message.type === "RECOVER_CHAIN") {
+      const { contextId, dnaHashes, agentPubKey } = message;
+      activeRecoveryContextId = contextId;
+      log.info(`[RECOVER_CHAIN] Starting recovery for context: ${contextId}`);
+
+      (async () => {
+        try {
+          await initRibosomeWorker();
+
+          const response = await sendToWorker("RECOVER_CHAIN", {
+            dnaHashes,
+            agentPubKey,
+          });
+
+          log.info(`[RECOVER_CHAIN] Complete: ${response?.recoveredCount || 0} recovered, ${response?.failedCount || 0} failed, ${response?.verifiedCount || 0} verified`);
+          // Chrome message passing response -- fields not in OffscreenResponse interface
+          // but consumed by ChromeOffscreenExecutor.recoverChain() which reads raw response
+          sendResponse({
+            success: true,
+            recoveredCount: response?.recoveredCount || 0,
+            failedCount: response?.failedCount || 0,
+            verifiedCount: response?.verifiedCount || 0,
+            unverifiedCount: response?.unverifiedCount || 0,
+            errors: response?.errors || [],
+          });
+        } catch (error) {
+          log.error("[RECOVER_CHAIN] Error:", error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+    }
+
     if (message.type === "EXECUTE_ZOME_CALL") {
       const { requestId, zomeCallRequest } = message;
 
       executeZomeCall(zomeCallRequest)
-        .then(({ result, signals }) => {
+        .then(({ result, signals, didWrite }) => {
           // Unwrap Ok/Err and decode the inner msgpack value
           // holochain-client API returns the unwrapped value, not {Ok: ...}
           let unwrappedResult = result;
@@ -919,6 +976,7 @@ chrome.runtime.onMessage.addListener(
             requestId,
             result: transportResult,
             signals: transportSignals,
+            didWrite: didWrite || false,
           });
         })
         .catch((error) => {

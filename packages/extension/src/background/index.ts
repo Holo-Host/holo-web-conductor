@@ -452,6 +452,12 @@ async function handleMessage(
       case MessageType.PUBLISH_ALL_RECORDS:
         return handlePublishAllRecords(message);
 
+      case MessageType.RECOVER_CHAIN:
+        return handleRecoverChain(message);
+
+      case MessageType.GET_RECOVERY_PROGRESS:
+        return handleGetRecoveryProgress(message);
+
       case MessageType.LAIR_EXPORT_MNEMONIC:
         return handleLairExportMnemonic(message);
 
@@ -671,7 +677,7 @@ async function handleCallZome(
 
     // Execute via offscreen document (which can make sync XHR calls)
     // The offscreen document fetches WASM/manifest from IndexedDB
-    const { result: transportSafeResult, signals } = await executor.executeZomeCall(context.id, zomeCallRequest);
+    const { result: transportSafeResult, signals, didWrite } = await executor.executeZomeCall(context.id, zomeCallRequest);
     const afterOffscreen = performance.now();
     logZome.trace(`Result from offscreen:`, typeof transportSafeResult);
 
@@ -718,6 +724,11 @@ async function handleCallZome(
       } else {
         logSignal.warn("No tab ID available for signal delivery");
       }
+    }
+
+    // Seal recovery on first chain-writing zome call after recovery
+    if (didWrite && context.recoverySealed === false) {
+      await happContextManager.sealRecovery(context.id);
     }
 
     // Update last used timestamp
@@ -1804,6 +1815,103 @@ async function handlePublishAllRecords(
     });
   } catch (error) {
     log.error("[PUBLISH_ALL_RECORDS] Error:", error);
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle RECOVER_CHAIN request
+ * Triggers DHT chain recovery for a hApp context via the offscreen worker
+ */
+async function handleRecoverChain(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { contextId } = getPayload<MessageType.RECOVER_CHAIN>(message);
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+
+    const context = await happContextManager.getContext(contextId);
+    if (!context) {
+      return createErrorResponse(message.id, `HApp context not found: ${contextId}`);
+    }
+
+    if (context.recoverySealed) {
+      return createErrorResponse(message.id,
+        "Recovery is sealed: new data has been written since recovery. Re-running would fork the chain.");
+    }
+
+    if (!linkerConfig) {
+      return createErrorResponse(message.id, "Linker is not configured");
+    }
+
+    // Initialize recovery progress
+    await chrome.storage.local.set({
+      [`hwc_recovery_progress_${contextId}`]: {
+        status: 'discovering',
+        totalActions: 0,
+        recoveredActions: 0,
+        failedActions: 0,
+        errors: [],
+      },
+    });
+
+    // Ensure executor is ready
+    await executor.initialize();
+
+    // Forward to offscreen for worker execution
+    const dnaHashes = context.dnas.map(d => Array.from(toUint8Array(d.hash)));
+    const agentPubKey = Array.from(toUint8Array(context.agentPubKey));
+
+    const result = await executor.recoverChain(contextId, dnaHashes, agentPubKey);
+
+    // Update final progress
+    await chrome.storage.local.set({
+      [`hwc_recovery_progress_${contextId}`]: {
+        status: 'complete',
+        ...result,
+      },
+    });
+
+    // Mark recovery as run (opens retry window, will seal on first write)
+    await happContextManager.markRecoveryRun(contextId);
+
+    return createSuccessResponse(message.id, result);
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle GET_RECOVERY_PROGRESS request
+ * Returns current recovery progress from chrome.storage.local
+ */
+async function handleGetRecoveryProgress(
+  message: RequestMessage
+): Promise<ResponseMessage> {
+  try {
+    const { contextId } = getPayload<MessageType.GET_RECOVERY_PROGRESS>(message);
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+
+    const result = await chrome.storage.local.get(`hwc_recovery_progress_${contextId}`);
+    const progress = result[`hwc_recovery_progress_${contextId}`] || {
+      status: 'idle',
+      totalActions: 0,
+      recoveredActions: 0,
+      failedActions: 0,
+      errors: [],
+    };
+    return createSuccessResponse(message.id, progress);
+  } catch (error) {
     return createErrorResponse(
       message.id,
       error instanceof Error ? error.message : String(error)

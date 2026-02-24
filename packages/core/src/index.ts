@@ -132,6 +132,14 @@ export interface HappContext {
 
   /** Whether this context is enabled */
   enabled: boolean;
+
+  /**
+   * Recovery seal state:
+   * - undefined: never recovered
+   * - false: recovery run, no writes yet (retry allowed)
+   * - true: writes occurred post-recovery (recovery permanently blocked)
+   */
+  recoverySealed?: boolean;
 }
 
 /**

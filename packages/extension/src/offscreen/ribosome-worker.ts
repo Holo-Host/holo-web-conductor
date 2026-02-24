@@ -77,13 +77,14 @@ import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
 import { setNetworkService, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
 import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@hwc/lair';
+import { recoverChainFromDHT, storeRecoveredRecords } from '@hwc/core/recovery';
 import { isEntryAction, type Action, type StoredEntry, type StoredRecord, type ChainHead, type Link, type RecordDetails, type EntryDetails, type EntryDhtStatus, type CreateAction, type UpdateAction, type DeleteAction } from '@hwc/core/storage/types';
 import { encodeHashToBase64, type ActionHash, type EntryHash, type DnaHash, type AgentPubKey, type AnyDhtHash } from '@holochain/client';
 
 // Types
 interface WorkerMessage {
   id: number;
-  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK';
+  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN';
   payload?: any;
 }
 
@@ -1642,6 +1643,53 @@ self.onmessage = async (event: MessageEvent) => {
         });
 
         result = { records: recordsForTransport };
+        break;
+      }
+
+      case 'RECOVER_CHAIN': {
+        // Recover chain data from DHT for all DNAs of a hApp context
+        const { dnaHashes: recoverDnaHashes, agentPubKey: recoverAgentKey } = payload;
+        const agentBytes = new Uint8Array(recoverAgentKey);
+
+        let totalRecovered = 0;
+        let totalFailed = 0;
+        let totalVerified = 0;
+        let totalUnverified = 0;
+        const allErrors: string[] = [];
+
+        for (const dnaHashArr of recoverDnaHashes) {
+          const dnaHashBytes = new Uint8Array(dnaHashArr);
+          console.log(`[Ribosome Worker] Recovering chain for DNA ${encodeHashToBase64(dnaHashBytes).substring(0, 15)}...`);
+
+          // Set cell context for storage writes
+          storage.setCellContext(dnaHashBytes, agentBytes);
+
+          const { records, errors: dnaErrors } = recoverChainFromDHT(
+            dnaHashBytes,
+            agentBytes,
+            networkService,
+            (progress) => {
+              // Fire-and-forget progress update to offscreen
+              self.postMessage({
+                type: 'RECOVER_CHAIN_PROGRESS',
+                progress,
+              });
+            }
+          );
+
+          allErrors.push(...dnaErrors);
+
+          // Store recovered records using the shared helper
+          const storeResult = storeRecoveredRecords(records, storage, dnaHashBytes, agentBytes);
+          totalRecovered += storeResult.recoveredCount;
+          totalFailed += storeResult.failedCount;
+          totalVerified += storeResult.verifiedCount;
+          totalUnverified += storeResult.unverifiedCount;
+          allErrors.push(...storeResult.errors);
+        }
+
+        console.log(`[Ribosome Worker] Recovery complete: ${totalRecovered} recovered, ${totalFailed} failed, ${totalVerified} verified, ${totalUnverified} unverified`);
+        result = { recoveredCount: totalRecovered, failedCount: totalFailed, verifiedCount: totalVerified, unverifiedCount: totalUnverified, errors: allErrors };
         break;
       }
 

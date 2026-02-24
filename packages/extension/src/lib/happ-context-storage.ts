@@ -29,6 +29,7 @@ interface StorableContext {
   installedAt: number;
   lastUsed: number;
   enabled: boolean;
+  recoverySealed?: boolean;
 }
 
 /**
@@ -221,6 +222,7 @@ export class HappContextStorage {
       installedAt: context.installedAt,
       lastUsed: context.lastUsed,
       enabled: context.enabled,
+      recoverySealed: context.recoverySealed,
     };
   }
 
@@ -245,6 +247,7 @@ export class HappContextStorage {
       installedAt: stored.installedAt,
       lastUsed: stored.lastUsed,
       enabled: stored.enabled,
+      recoverySealed: stored.recoverySealed,
     };
   }
 

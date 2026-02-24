@@ -340,6 +340,7 @@ export interface AgentContext {
   context: BrowserContext;
   page: Page;
   userDataDir: string;
+  extensionId: string;
 }
 
 /**
@@ -414,6 +415,7 @@ export async function createAgentContext(agentName: string): Promise<AgentContex
     context,
     page,
     userDataDir,
+    extensionId,
   };
 }
 
@@ -1058,4 +1060,288 @@ export async function waitForHashtagResult(
   }
 
   throw new Error(`Timeout waiting for "${mewTextFragment}" on #${tag} after ${timeout}ms`);
+}
+
+// ============================================================================
+// Chain Recovery E2E Helpers
+// ============================================================================
+
+/**
+ * Open an extension popup page (e.g., lair.html, happs.html) in a new tab.
+ * Returns the page for interaction. Caller is responsible for closing it.
+ */
+export async function openPopupPage(
+  agent: AgentContext,
+  pageName: string
+): Promise<Page> {
+  const url = `chrome-extension://${agent.extensionId}/popup/${pageName}`;
+  const page = await agent.context.newPage();
+  await page.goto(url);
+  await page.waitForLoadState('domcontentloaded');
+  return page;
+}
+
+/**
+ * Ensure the lair keystore is unlocked on the given lair popup page.
+ * Handles three states: no passphrase set, locked, or already unlocked.
+ * Uses LAIR_PASSPHRASE as a fixed passphrase for e2e tests.
+ */
+const LAIR_PASSPHRASE = 'e2e-test-passphrase-12345678';
+
+async function ensureLairUnlocked(lairPage: Page, agentName: string): Promise<void> {
+  // Wait for the page JS to run and update lock state
+  // The lair page calls updateLockState() on DOMContentLoaded which is async
+  console.log(`[${agentName}] Waiting for lair lock state to render...`);
+
+  // Wait for one of the three state sections to become visible
+  await lairPage.waitForFunction(() => {
+    const setup = document.getElementById('passphrase-setup');
+    const unlock = document.getElementById('unlock-section');
+    const lock = document.getElementById('lock-section');
+    return (setup && !setup.classList.contains('hidden')) ||
+           (unlock && !unlock.classList.contains('hidden')) ||
+           (lock && !lock.classList.contains('hidden'));
+  }, { timeout: 15000 });
+
+  // Debug: log current state
+  const state = await lairPage.evaluate(() => {
+    const setup = document.getElementById('passphrase-setup');
+    const unlock = document.getElementById('unlock-section');
+    const lock = document.getElementById('lock-section');
+    return {
+      setupVisible: setup ? !setup.classList.contains('hidden') : false,
+      unlockVisible: unlock ? !unlock.classList.contains('hidden') : false,
+      lockVisible: lock ? !lock.classList.contains('hidden') : false,
+    };
+  });
+  console.log(`[${agentName}] Lair state: setup=${state.setupVisible} unlock=${state.unlockVisible} locked=${state.lockVisible}`);
+
+  if (state.lockVisible) {
+    console.log(`[${agentName}] Lair already unlocked`);
+    return;
+  }
+
+  if (state.setupVisible) {
+    console.log(`[${agentName}] Lair needs passphrase setup`);
+    await lairPage.fill('#new-passphrase', LAIR_PASSPHRASE);
+    await lairPage.click('#set-passphrase-btn');
+    await lairPage.waitForFunction(() => {
+      const lock = document.getElementById('lock-section');
+      return lock && !lock.classList.contains('hidden');
+    }, { timeout: 15000 });
+    console.log(`[${agentName}] Lair passphrase set and unlocked`);
+    return;
+  }
+
+  if (state.unlockVisible) {
+    console.log(`[${agentName}] Lair locked, unlocking...`);
+    await lairPage.fill('#unlock-passphrase', LAIR_PASSPHRASE);
+    await lairPage.click('#unlock-btn');
+    await lairPage.waitForFunction(() => {
+      const lock = document.getElementById('lock-section');
+      return lock && !lock.classList.contains('hidden');
+    }, { timeout: 15000 });
+    console.log(`[${agentName}] Lair unlocked`);
+    return;
+  }
+
+  throw new Error(`[${agentName}] Could not determine lair lock state`);
+}
+
+/**
+ * Export an agent key via the lair popup UI.
+ * Returns the encrypted JSON string for later import.
+ */
+export async function exportAgentKey(
+  agent: AgentContext,
+  keyTag: string,
+  passphrase: string
+): Promise<string> {
+  console.log(`[${agent.name}] Exporting key "${keyTag}"...`);
+  const lairPage = await openPopupPage(agent, 'lair.html');
+
+  // Capture console from lair page for debugging
+  lairPage.on('console', (msg) => {
+    console.log(`[${agent.name}:lair:${msg.type()}] ${msg.text()}`);
+  });
+
+  try {
+    // Ensure lair is unlocked first
+    await ensureLairUnlocked(lairPage, agent.name);
+
+    // Wait for keypair list to load (refresh happens after unlock)
+    await lairPage.waitForSelector('#export-keypair', { timeout: 10000 });
+    await lairPage.waitForTimeout(1000);
+
+    // Debug: log available options
+    const options = await lairPage.locator('#export-keypair option').allTextContents();
+    console.log(`[${agent.name}] Export keypair options: ${JSON.stringify(options)}`);
+
+    // Select the key tag in the export dropdown
+    await lairPage.selectOption('#export-keypair', keyTag);
+
+    // Set passphrase for encrypted export
+    await lairPage.fill('#export-passphrase', passphrase);
+
+    // Click export
+    await lairPage.click('#export-btn');
+
+    // Wait for export result
+    await lairPage.waitForSelector('#export-result:not(.hidden)', { timeout: 10000 });
+    const encryptedJson = await lairPage.textContent('#export-result');
+
+    if (!encryptedJson) {
+      throw new Error('Export result was empty');
+    }
+
+    console.log(`[${agent.name}] Key exported (${encryptedJson.length} chars)`);
+    return encryptedJson;
+  } finally {
+    await lairPage.close();
+  }
+}
+
+/**
+ * Import an agent key via the lair popup UI.
+ */
+export async function importAgentKey(
+  agent: AgentContext,
+  encryptedJson: string,
+  passphrase: string,
+  tag: string
+): Promise<void> {
+  console.log(`[${agent.name}] Importing key as "${tag}"...`);
+  const lairPage = await openPopupPage(agent, 'lair.html');
+
+  // Capture console from lair page for debugging
+  lairPage.on('console', (msg) => {
+    console.log(`[${agent.name}:lair-import:${msg.type()}] ${msg.text()}`);
+  });
+
+  try {
+    // Ensure lair is unlocked first
+    await ensureLairUnlocked(lairPage, agent.name);
+
+    // Wait for import section to be available (not disabled)
+    await lairPage.waitForSelector('#export-import-section:not(.disabled)', { timeout: 10000 });
+
+    // Fill import fields
+    await lairPage.fill('#import-data', encryptedJson);
+    await lairPage.fill('#import-passphrase', passphrase);
+    await lairPage.fill('#import-tag', tag);
+
+    // Check exportable checkbox
+    const isChecked = await lairPage.isChecked('#import-exportable');
+    if (!isChecked) {
+      await lairPage.check('#import-exportable');
+    }
+
+    // Click import
+    await lairPage.click('#import-btn');
+
+    // Wait for either success or error
+    await lairPage.waitForFunction(() => {
+      const success = document.getElementById('import-success');
+      const error = document.getElementById('import-error');
+      return (success && !success.classList.contains('hidden')) ||
+             (error && !error.classList.contains('hidden'));
+    }, { timeout: 15000 });
+
+    // Check which appeared
+    const errorVisible = await lairPage.locator('#import-error:not(.hidden)').isVisible().catch(() => false);
+    if (errorVisible) {
+      const errorText = await lairPage.textContent('#import-error') || 'unknown error';
+      throw new Error(`Key import failed: ${errorText}`);
+    }
+
+    console.log(`[${agent.name}] Key imported successfully`);
+  } finally {
+    await lairPage.close();
+  }
+}
+
+/**
+ * Uninstall a hApp via the happs popup UI.
+ * Handles the confirm dialog automatically.
+ */
+export async function uninstallHappViaPopup(agent: AgentContext): Promise<void> {
+  console.log(`[${agent.name}] Uninstalling hApp via popup...`);
+  const happsPage = await openPopupPage(agent, 'happs.html');
+
+  try {
+    // Wait for hApp cards to load
+    await happsPage.waitForSelector('.happ-card', { timeout: 15000 });
+
+    // Auto-accept the confirm dialog
+    happsPage.on('dialog', async (dialog) => {
+      console.log(`[${agent.name}] Confirm dialog: ${dialog.message()}`);
+      await dialog.accept();
+    });
+
+    // Click uninstall on the first hApp
+    await happsPage.click('.uninstall-btn');
+
+    // Wait for the hApp card to disappear
+    await happsPage.waitForSelector('#emptyState', { timeout: 10000 });
+    console.log(`[${agent.name}] hApp uninstalled`);
+  } finally {
+    await happsPage.close();
+  }
+}
+
+/**
+ * Trigger chain recovery via the happs popup UI.
+ * Waits for recovery to complete and returns the result counts.
+ */
+export async function triggerChainRecovery(
+  agent: AgentContext,
+  timeout = 120000
+): Promise<{ recovered: number; failed: number }> {
+  console.log(`[${agent.name}] Triggering chain recovery...`);
+  const happsPage = await openPopupPage(agent, 'happs.html');
+
+  try {
+    // Wait for hApp cards to load
+    await happsPage.waitForSelector('.happ-card', { timeout: 15000 });
+
+    // Auto-accept the confirm dialog
+    happsPage.on('dialog', async (dialog) => {
+      console.log(`[${agent.name}] Confirm dialog: ${dialog.message()}`);
+      await dialog.accept();
+    });
+
+    // Click Recover Chain button
+    await happsPage.click('.recover-btn');
+
+    // Wait for recovery modal to appear
+    await happsPage.waitForSelector('#recovery-modal.active', { timeout: 10000 });
+    console.log(`[${agent.name}] Recovery modal visible`);
+
+    // Wait for completion text
+    await happsPage.waitForFunction(
+      () => {
+        const text = document.getElementById('recovery-progress-text')?.textContent || '';
+        return text.includes('Recovery complete') || text.includes('Recovery failed');
+      },
+      { timeout }
+    );
+
+    const progressText = await happsPage.textContent('#recovery-progress-text') || '';
+    console.log(`[${agent.name}] Recovery result: ${progressText}`);
+
+    // Parse result counts
+    const match = progressText.match(/(\d+) records recovered, (\d+) failed/);
+    const recovered = match ? parseInt(match[1], 10) : 0;
+    const failed = match ? parseInt(match[2], 10) : 0;
+
+    // Close modal
+    const closeBtn = happsPage.locator('#recovery-close-btn');
+    if (await closeBtn.isVisible()) {
+      await closeBtn.click();
+    }
+
+    return { recovered, failed };
+  } finally {
+    await happsPage.close();
+  }
 }

@@ -267,6 +267,31 @@ describe("messaging protocol", () => {
     });
   });
 
+  describe("RECOVER_CHAIN", () => {
+    it("should create a valid request with contextId", () => {
+      const request = createRequest(MessageType.RECOVER_CHAIN, { contextId: "test-context" });
+      expect(request.type).toBe(MessageType.RECOVER_CHAIN);
+      expect((request.payload as any).contextId).toBe("test-context");
+    });
+
+    it("should be recognized by isRequestMessage", () => {
+      const request = createRequest(MessageType.RECOVER_CHAIN, { contextId: "ctx" });
+      expect(isRequestMessage(request)).toBe(true);
+    });
+  });
+
+  describe("GET_RECOVERY_PROGRESS", () => {
+    it("should create a valid request with contextId", () => {
+      const request = createRequest(MessageType.GET_RECOVERY_PROGRESS, { contextId: "test-context" });
+      expect(request.type).toBe(MessageType.GET_RECOVERY_PROGRESS);
+    });
+
+    it("should be recognized by isRequestMessage", () => {
+      const request = createRequest(MessageType.GET_RECOVERY_PROGRESS, { contextId: "ctx" });
+      expect(isRequestMessage(request)).toBe(true);
+    });
+  });
+
   describe("CONNECTION_STATUS types", () => {
     it("CONNECTION_STATUS_GET should be recognized by isRequestMessage", () => {
       const request = createRequest(MessageType.CONNECTION_STATUS_GET);

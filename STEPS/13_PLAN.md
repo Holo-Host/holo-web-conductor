@@ -265,17 +265,19 @@ async function recoverChainFromDHT(
 ## Success Criteria
 
 ### Phase 1
-- [ ] `navigator.storage.persist()` called on startup
+- [x] `navigator.storage.persist()` called on startup
 - [ ] Warning shown if persistent storage denied
-- [ ] Seed phrase export works (24 words)
-- [ ] Seed phrase import recovers same keys
-- [ ] Recovery flow detects missing data and offers options
+- [x] Seed phrase export works (24 words)
+- [x] Seed phrase import recovers same keys
+- [x] Recovery flow detects missing data and offers options
 
 ### Phase 2
-- [ ] DHT recovery fetches agent's published actions
-- [ ] Recovery progress shown to user
-- [ ] Recovered chain matches original (for published data)
-- [ ] Errors handled gracefully (network issues, missing data)
+- [x] DHT recovery fetches agent's published actions
+- [x] Recovery progress shown to user
+- [x] Recovered chain matches original (for published data)
+- [x] Errors handled gracefully (network issues, missing data)
+- [x] Signature verification blocks storage on failure
+- [x] Recovery sealing prevents chain forks from re-running recovery
 
 ### Phase 3
 - [ ] Export/import backup file works
