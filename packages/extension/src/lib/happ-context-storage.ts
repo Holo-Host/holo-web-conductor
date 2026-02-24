@@ -31,6 +31,7 @@ interface StorableContext {
   enabled: boolean;
   /** App lifecycle status - optional for backward compat with pre-existing stored contexts */
   status?: HappContextStatus;
+  recoverySealed?: boolean;
 }
 
 /**
@@ -224,6 +225,7 @@ export class HappContextStorage {
       lastUsed: context.lastUsed,
       enabled: context.enabled,
       status: context.status,
+      recoverySealed: context.recoverySealed,
     };
   }
 
@@ -253,6 +255,7 @@ export class HappContextStorage {
       lastUsed: stored.lastUsed,
       enabled: stored.enabled,
       status,
+      recoverySealed: stored.recoverySealed,
     };
   }
 

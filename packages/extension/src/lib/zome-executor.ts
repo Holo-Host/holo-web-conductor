@@ -36,6 +36,18 @@ export interface MinimalZomeCallRequest {
 export interface ZomeCallResult {
   result: unknown;
   signals: any[];
+  didWrite?: boolean;
+}
+
+/**
+ * Result from a chain recovery operation.
+ */
+export interface RecoveryResult {
+  recoveredCount: number;
+  failedCount: number;
+  verifiedCount: number;
+  unverifiedCount: number;
+  errors: string[];
 }
 
 /**
@@ -124,6 +136,15 @@ export interface ZomeExecutor {
 
   /** Trigger publish queue processing for the given DNAs. */
   processPublishQueue(dnaHashes: number[][]): Promise<void>;
+
+  // --- Chain recovery ---
+
+  /** Recover chain actions from the network for a hApp context. */
+  recoverChain(
+    contextId: string,
+    dnaHashes: number[][],
+    agentPubKey: number[]
+  ): Promise<{ recoveredCount: number; failedCount: number; errors: string[] }>;
 
   // --- Linker connectivity ---
 

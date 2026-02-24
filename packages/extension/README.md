@@ -145,10 +145,23 @@ if (window.holochain?.isWebConductor) {
 }
 ```
 
-## Next Steps
+## Releasing
 
-See `CLAUDE.md` for the complete implementation plan. Step 1 establishes the foundation for:
-- **Step 2**: Lair keystore implementation
-- **Step 3**: Authorization mechanism
-- **Step 4**: hApp context creation
-- **Step 5+**: WASM execution and conductor functionality
+Releases are triggered by pushing a git tag from the repository root:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This runs the GitHub Actions release workflow which:
+1. Builds the extension (`npm run build:extension`)
+2. Runs tests as a sanity check
+3. Packages a Chrome `.zip` and a Firefox `.zip` (with gecko ID patched into manifest)
+4. Creates a GitHub Release with both artifacts
+
+Tags containing `-` (e.g., `v0.1.0-rc.1`) are marked as prereleases.
+
+See [COMPATIBILITY.md](../../COMPATIBILITY.md) for version compatibility with [h2hc-linker](https://github.com/Holo-Host/h2hc-linker).
+
+

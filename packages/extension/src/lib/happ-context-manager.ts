@@ -196,15 +196,22 @@ export class HappContextManager {
         resources: appBundle.resources.size,
       });
 
-      // 4. Create or get agent key for this domain
+      // 4. Create or reuse agent key for this domain
       const agentKeyTag = `${domain}:agent`;
-      console.log(`[HappContextManager] Creating agent key: ${agentKeyTag}`);
+      console.log(`[HappContextManager] Creating/reusing agent key: ${agentKeyTag}`);
 
       const lair = await this.getLairClient();
-      const keyResult = await lair.newSeed(agentKeyTag, true);
-      // Debug: Log the raw Ed25519 key that was created
-      const rawEd25519Key = keyResult.entry_info.ed25519_pub_key;
-      console.log(`[HappContextManager] Created Ed25519 key (first 8 bytes): ${Array.from(rawEd25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+      let rawEd25519Key: Uint8Array;
+
+      const existingEntry = await lair.getEntry(agentKeyTag);
+      if (existingEntry) {
+        console.log(`[HappContextManager] Reusing existing key: ${agentKeyTag}`);
+        rawEd25519Key = existingEntry.ed25519_pub_key;
+      } else {
+        const keyResult = await lair.newSeed(agentKeyTag, true);
+        rawEd25519Key = keyResult.entry_info.ed25519_pub_key;
+      }
+      console.log(`[HappContextManager] Ed25519 key (first 8 bytes): ${Array.from(rawEd25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
       // Wrap raw Ed25519 key (32 bytes) as AgentPubKey HoloHash (39 bytes)
       const agentPubKey = wrapAsAgentPubKey(rawEd25519Key);
       console.log(`[HappContextManager] Wrapped as AgentPubKey (first 8 bytes): ${Array.from(agentPubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
@@ -465,6 +472,35 @@ export class HappContextManager {
     console.log(`[HappContextManager] Membrane proofs provided for context ${contextId} - status set to 'enabled'`);
 
     return context;
+  }
+
+  /**
+   * Mark that recovery has been run for a context.
+   * Sets recoverySealed to false (recovery window open, retry allowed).
+   * No-op if already sealed (prevents reopening after writes).
+   */
+  async markRecoveryRun(contextId: string): Promise<void> {
+    await this.ensureReady();
+    const context = await this.storage.getContext(contextId);
+    if (!context) return;
+    if (context.recoverySealed === true) return;
+    context.recoverySealed = false;
+    await this.storage.putContext(context);
+    console.log(`[HappContextManager] Recovery run marked for context ${contextId}`);
+  }
+
+  /**
+   * Seal recovery for a context (permanently block further recovery).
+   * Called on first chain-writing zome call after recovery.
+   */
+  async sealRecovery(contextId: string): Promise<void> {
+    await this.ensureReady();
+    const context = await this.storage.getContext(contextId);
+    if (!context) return;
+    if (context.recoverySealed === true) return;
+    context.recoverySealed = true;
+    await this.storage.putContext(context);
+    console.log(`[HappContextManager] Recovery sealed for context ${contextId}`);
   }
 
   /**

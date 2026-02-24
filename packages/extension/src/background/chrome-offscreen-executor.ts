@@ -13,6 +13,7 @@ import type {
   ZomeExecutor,
   MinimalZomeCallRequest,
   ZomeCallResult,
+  RecoveryResult,
   WsStateInfo,
   RemoteSignalData,
   SignRequestData,
@@ -95,6 +96,18 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
                 sendResponse({ success: false, error: String(error) });
               });
             return true; // Async response
+          }
+          return false;
+        }
+
+        if (rawMessage.type === "RECOVER_CHAIN_PROGRESS") {
+          const { contextId, progress } = rawMessage;
+          if (contextId && progress) {
+            chrome.storage.local.set({
+              [`hwc_recovery_progress_${contextId}`]: progress,
+            }).catch((err) => {
+              console.warn("Failed to write recovery progress:", err);
+            });
           }
           return false;
         }
@@ -235,6 +248,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
     return {
       result: response.result,
       signals: response.signals || [],
+      didWrite: response.didWrite || false,
     };
   }
 
@@ -267,6 +281,38 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
       type: "PROCESS_PUBLISH_QUEUE",
       dnaHashes,
     });
+  }
+
+  // ============================================================================
+  // Chain recovery
+  // ============================================================================
+
+  async recoverChain(
+    contextId: string,
+    dnaHashes: number[][],
+    agentPubKey: number[]
+  ): Promise<RecoveryResult> {
+    await this.ensureOffscreenDocument();
+
+    const response = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "RECOVER_CHAIN",
+      contextId,
+      dnaHashes,
+      agentPubKey,
+    });
+
+    if (!response.success) {
+      throw new Error(response.error || "Chain recovery failed");
+    }
+
+    return {
+      recoveredCount: response.recoveredCount ?? 0,
+      failedCount: response.failedCount ?? 0,
+      verifiedCount: response.verifiedCount ?? 0,
+      unverifiedCount: response.unverifiedCount ?? 0,
+      errors: response.errors ?? [],
+    };
   }
 
   // ============================================================================

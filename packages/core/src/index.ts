@@ -135,6 +135,14 @@ export interface HappContext {
 
   /** App lifecycle status */
   status: HappContextStatus;
+
+  /**
+   * Recovery seal state:
+   * - undefined: never recovered
+   * - false: recovery run, no writes yet (retry allowed)
+   * - true: writes occurred post-recovery (recovery permanently blocked)
+   */
+  recoverySealed?: boolean;
 }
 
 /**
