@@ -174,7 +174,10 @@ function renderHappCard(context: HappContext): string {
             : `<button class="primary enable-btn" data-id="${context.id}">Enable</button>`
         }
         <button class="secondary debug-btn" data-id="${context.id}">Debug</button>
-        <button class="recover-btn secondary" data-context-id="${context.id}" title="Recover chain data from DHT">Recover Chain</button>
+        ${context.recoverySealed !== true
+          ? `<button class="recover-btn secondary" data-context-id="${context.id}" title="Recover chain data from DHT">Recover Chain</button>`
+          : ''
+        }
         <button class="danger uninstall-btn" data-id="${context.id}">Uninstall</button>
       </div>
 

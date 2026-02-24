@@ -426,6 +426,35 @@ export class HappContextManager {
   }
 
   /**
+   * Mark that recovery has been run for a context.
+   * Sets recoverySealed to false (recovery window open, retry allowed).
+   * No-op if already sealed (prevents reopening after writes).
+   */
+  async markRecoveryRun(contextId: string): Promise<void> {
+    await this.ensureReady();
+    const context = await this.storage.getContext(contextId);
+    if (!context) return;
+    if (context.recoverySealed === true) return;
+    context.recoverySealed = false;
+    await this.storage.putContext(context);
+    console.log(`[HappContextManager] Recovery run marked for context ${contextId}`);
+  }
+
+  /**
+   * Seal recovery for a context (permanently block further recovery).
+   * Called on first chain-writing zome call after recovery.
+   */
+  async sealRecovery(contextId: string): Promise<void> {
+    await this.ensureReady();
+    const context = await this.storage.getContext(contextId);
+    if (!context) return;
+    if (context.recoverySealed === true) return;
+    context.recoverySealed = true;
+    await this.storage.putContext(context);
+    console.log(`[HappContextManager] Recovery sealed for context ${contextId}`);
+  }
+
+  /**
    * List all contexts
    */
   async listContexts(): Promise<HappContext[]> {

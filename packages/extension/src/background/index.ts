@@ -677,7 +677,7 @@ async function handleCallZome(
 
     // Execute via offscreen document (which can make sync XHR calls)
     // The offscreen document fetches WASM/manifest from IndexedDB
-    const { result: transportSafeResult, signals } = await executor.executeZomeCall(context.id, zomeCallRequest);
+    const { result: transportSafeResult, signals, didWrite } = await executor.executeZomeCall(context.id, zomeCallRequest);
     const afterOffscreen = performance.now();
     logZome.trace(`Result from offscreen:`, typeof transportSafeResult);
 
@@ -724,6 +724,11 @@ async function handleCallZome(
       } else {
         logSignal.warn("No tab ID available for signal delivery");
       }
+    }
+
+    // Seal recovery on first chain-writing zome call after recovery
+    if (didWrite && context.recoverySealed === false) {
+      await happContextManager.sealRecovery(context.id);
     }
 
     // Update last used timestamp
@@ -1835,6 +1840,11 @@ async function handleRecoverChain(
       return createErrorResponse(message.id, `HApp context not found: ${contextId}`);
     }
 
+    if (context.recoverySealed) {
+      return createErrorResponse(message.id,
+        "Recovery is sealed: new data has been written since recovery. Re-running would fork the chain.");
+    }
+
     if (!linkerConfig) {
       return createErrorResponse(message.id, "Linker is not configured");
     }
@@ -1866,6 +1876,9 @@ async function handleRecoverChain(
         ...result,
       },
     });
+
+    // Mark recovery as run (opens retry window, will seal on first write)
+    await happContextManager.markRecoveryRun(contextId);
 
     return createSuccessResponse(message.id, result);
   } catch (error) {

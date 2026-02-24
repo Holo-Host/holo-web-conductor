@@ -247,6 +247,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
     return {
       result: response.result,
       signals: response.signals || [],
+      didWrite: response.didWrite || false,
     };
   }
 

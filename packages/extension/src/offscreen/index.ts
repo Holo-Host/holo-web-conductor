@@ -677,6 +677,7 @@ async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ resul
   return {
     result: result.result,
     signals: result.signals || [],
+    didWrite: (result.pendingRecords && result.pendingRecords.length > 0) || false,
   };
 }
 
@@ -927,7 +928,7 @@ chrome.runtime.onMessage.addListener(
       const { requestId, zomeCallRequest } = message;
 
       executeZomeCall(zomeCallRequest)
-        .then(({ result, signals }) => {
+        .then(({ result, signals, didWrite }) => {
           // Unwrap Ok/Err and decode the inner msgpack value
           // holochain-client API returns the unwrapped value, not {Ok: ...}
           let unwrappedResult = result;
@@ -971,6 +972,7 @@ chrome.runtime.onMessage.addListener(
             requestId,
             result: transportResult,
             signals: transportSignals,
+            didWrite: didWrite || false,
           });
         })
         .catch((error) => {

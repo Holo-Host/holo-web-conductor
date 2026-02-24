@@ -36,6 +36,7 @@ export interface MinimalZomeCallRequest {
 export interface ZomeCallResult {
   result: unknown;
   signals: any[];
+  didWrite?: boolean;
 }
 
 /**
