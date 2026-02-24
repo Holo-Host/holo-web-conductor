@@ -9,6 +9,7 @@ import type { NetworkService, NetworkRecord, NetworkEntry } from '../network/typ
 import type { StorageProvider } from '../storage/storage-provider';
 import type { StoredAction, StoredEntry, AppEntryType } from '../storage/types';
 import type { SerializableAction } from '../types/holochain-serialization';
+import type { SignedActionHashed, Entry, Action } from '../types/holochain-types';
 import { serializeAction } from '../types/holochain-serialization';
 import { createLogger } from '@hwc/shared';
 import sodium from 'libsodium-wrappers';
@@ -38,11 +39,61 @@ export type ProgressCallback = (progress: RecoveryProgress) => void;
 export interface RecoveredRecord {
   actionHash: Uint8Array;
   /** The signed_action from the NetworkRecord */
-  signedAction: any;
+  signedAction: SignedActionHashed;
   /** Entry data when NetworkEntry is { Present: ... }, otherwise null */
-  entry: any | null;
+  entry: Entry | null;
   actionSeq: number;
   timestamp: bigint;
+}
+
+// ============================================================================
+// Internal types
+// ============================================================================
+
+/**
+ * Flat view of Action content for generic cross-variant processing.
+ *
+ * The @holochain/client Action type is a discriminated union where variant-specific
+ * fields (entry_hash, base_address, etc.) only exist on their respective variants.
+ * Recovery functions like buildStorageAction() process all variants uniformly by
+ * conditionally reading each field. This type represents the union of all possible
+ * fields as optional, avoiding verbose per-variant narrowing while remaining explicit
+ * about the access pattern.
+ *
+ * Wire-format note: after JSON round-trip through the linker, byte fields may be
+ * plain Arrays instead of Uint8Array. The toBytes() helper normalizes both.
+ */
+type FlatActionFields = {
+  type: string;
+  author: Uint8Array | number[];
+  timestamp: number | bigint;
+  action_seq?: number;
+  prev_action?: Uint8Array | number[];
+  hash?: Uint8Array | number[];          // Dna
+  entry_type?: unknown;                   // Create/Update - wire format diverges from client
+  entry_hash?: Uint8Array | number[];     // Create/Update
+  original_action_address?: Uint8Array | number[];  // Update
+  original_entry_address?: Uint8Array | number[];   // Update
+  deletes_address?: Uint8Array | number[];           // Delete
+  deletes_entry_address?: Uint8Array | number[];     // Delete
+  base_address?: Uint8Array | number[];   // CreateLink/DeleteLink
+  target_address?: Uint8Array | number[]; // CreateLink
+  zome_index?: number;                    // CreateLink
+  zome_id?: number;                       // storage-format alias for zome_index
+  link_type?: number;                     // CreateLink
+  tag?: Uint8Array | number[];            // CreateLink
+  link_add_address?: Uint8Array | number[]; // DeleteLink
+  membrane_proof?: Uint8Array | number[]; // AgentValidationPkg
+  weight?: unknown;                       // Create/Update/Delete/CreateLink
+};
+
+/**
+ * Cast Action to FlatActionFields for cross-variant field access.
+ * Safe because FlatActionFields is a documented superset of all Action variants
+ * with variant-specific fields marked optional.
+ */
+function flatAction(content: Action): FlatActionFields {
+  return content as unknown as FlatActionFields;
 }
 
 // ============================================================================
@@ -55,11 +106,8 @@ export interface RecoveredRecord {
  * signed_action.hashed.content, which is an internally-tagged enum
  * { type: "Create", action_seq: N, ... }.
  */
-function seqFromSignedAction(signedAction: any): number {
-  const content = signedAction?.hashed?.content;
-  if (content === null || content === undefined) {
-    return 0;
-  }
+function seqFromSignedAction(signedAction: SignedActionHashed): number {
+  const content = flatAction(signedAction.hashed.content);
   // The action_seq field is present on all non-Dna actions; Dna is always seq 0.
   return typeof content.action_seq === 'number' ? content.action_seq : 0;
 }
@@ -68,12 +116,8 @@ function seqFromSignedAction(signedAction: any): number {
  * Extract the timestamp from a signedAction.
  * Timestamp is in microseconds since epoch, stored as a number or bigint.
  */
-function timestampFromSignedAction(signedAction: any): bigint {
-  const content = signedAction?.hashed?.content;
-  if (content === null || content === undefined) {
-    return BigInt(0);
-  }
-  const ts = content.timestamp;
+function timestampFromSignedAction(signedAction: SignedActionHashed): bigint {
+  const ts = signedAction.hashed.content.timestamp;
   if (typeof ts === 'bigint') return ts;
   if (typeof ts === 'number') return BigInt(ts);
   return BigInt(0);
@@ -83,8 +127,8 @@ function timestampFromSignedAction(signedAction: any): bigint {
  * Extract the action hash from a signedAction.
  * It lives in signed_action.hashed.hash.
  */
-function hashFromSignedAction(signedAction: any): Uint8Array {
-  const hash = signedAction?.hashed?.hash;
+function hashFromSignedAction(signedAction: SignedActionHashed): Uint8Array {
+  const hash = signedAction.hashed.hash;
   if (hash instanceof Uint8Array) return hash;
   // If converted from JSON it may be an Array
   if (Array.isArray(hash)) return new Uint8Array(hash);
@@ -94,9 +138,9 @@ function hashFromSignedAction(signedAction: any): Uint8Array {
 /**
  * Unwrap a NetworkEntry to its payload, or return null.
  */
-function entryPayload(entry: NetworkEntry): any | null {
+function entryPayload(entry: NetworkEntry): Entry | null {
   if (typeof entry === 'object' && entry !== null && 'Present' in entry) {
-    return (entry as { Present: any }).Present;
+    return entry.Present;
   }
   return null;
 }
@@ -305,8 +349,8 @@ function toBytes(value: unknown): Uint8Array {
  * plain Arrays instead of Uint8Array. Msgpack encodes these differently
  * (array type vs bin type), so we must normalize before serialization.
  */
-function normalizeActionContent(content: any): SerializableAction {
-  const result: any = { type: content.type };
+function normalizeActionContent(content: FlatActionFields): SerializableAction {
+  const result: Record<string, unknown> = { type: content.type };
 
   if (content.author) result.author = toBytes(content.author);
   if (content.timestamp !== undefined) result.timestamp = Number(content.timestamp);
@@ -357,22 +401,24 @@ function normalizeActionContent(content: any): SerializableAction {
       throw new Error(`Unknown action type for normalization: ${content.type}`);
   }
 
-  return result as SerializableAction;
+  // result is built field-by-field matching the SerializableAction discriminated union,
+  // but TypeScript can't verify the correspondence through Record<string, unknown>.
+  return result as unknown as SerializableAction;
 }
 
 /**
  * Verify the Ed25519 signature on a recovered action.
  *
  * Returns true if valid, false if invalid or unverifiable.
- * Verification failure does not prevent storage -- recovery prioritizes
- * data availability over strict integrity enforcement.
+ * Callers must treat false as a hard failure -- unverified records must not
+ * be stored.
  *
  * Requires libsodium to be initialized (sodium.ready).
  */
 export function verifyActionSignature(record: RecoveredRecord): boolean {
   const signedAction = record.signedAction;
-  const content = signedAction?.hashed?.content;
-  const signature = signedAction?.signature;
+  const content = flatAction(signedAction.hashed.content);
+  const signature = signedAction.signature;
 
   if (!content || !signature) {
     log.warn(`Cannot verify sig for seq=${record.actionSeq}: missing content or signature`);
@@ -492,14 +538,13 @@ export function buildStorageAction(
   fallbackAgent: Uint8Array
 ): StoredAction {
   const signedAction = record.signedAction;
-  const content = signedAction?.hashed?.content;
-  if (!content) {
+  if (!signedAction.hashed.content) {
     throw new Error(`Missing action content for seq=${record.actionSeq}`);
   }
+  const content = flatAction(signedAction.hashed.content);
 
-  const signature = signedAction?.signature
-    ? toBytes(signedAction.signature)
-    : new Uint8Array(64);
+  const sigBytes = toBytes(signedAction.signature);
+  const signature = sigBytes.length === 64 ? sigBytes : new Uint8Array(64);
 
   const author = content.author ? toBytes(content.author) : fallbackAgent;
 
@@ -557,12 +602,12 @@ export function buildStorageEntry(
     ? toBytes(record.entry.entry)
     : toBytes(record.entry);
 
-  const content = record.signedAction?.hashed?.content;
+  const content = flatAction(record.signedAction.hashed.content);
 
   return {
     entryHash,
     entryContent,
-    entryType: wireEntryTypeToStoredEntryType(record.entry.entry_type, content?.entry_type),
+    entryType: wireEntryTypeToStoredEntryType(record.entry.entry_type, content.entry_type),
   };
 }
 
@@ -572,10 +617,8 @@ export function buildStorageEntry(
  * This is the logic previously inlined in ribosome-worker.ts RECOVER_CHAIN
  * handler, extracted so it can be tested without a web worker.
  *
- * Each record's signature is verified before storage. Verification failures
- * are logged but do NOT prevent storage -- recovery prioritizes data
- * availability. The caller can inspect verifiedCount/unverifiedCount to
- * decide whether to warn the user.
+ * All signatures are verified before any records are stored. If any signature
+ * fails verification, the entire operation aborts with zero records stored.
  *
  * @returns counts of recovered/failed/verified records and any error messages
  */
@@ -583,31 +626,39 @@ export function storeRecoveredRecords(
   records: RecoveredRecord[],
   storage: StorageProvider,
   dnaHash: Uint8Array,
-  agentPubKey: Uint8Array
+  agentPubKey: Uint8Array,
+  verify: (record: RecoveredRecord) => boolean = verifyActionSignature
 ): { recoveredCount: number; failedCount: number; verifiedCount: number; unverifiedCount: number; errors: string[] } {
   let recoveredCount = 0;
   let failedCount = 0;
-  let verifiedCount = 0;
-  let unverifiedCount = 0;
   const errors: string[] = [];
 
+  // Phase 1: Verify all signatures before storing anything.
+  // If any signature is invalid, abort entirely -- no records stored.
+  for (const record of records) {
+    const verified = verify(record);
+    if (!verified) {
+      return {
+        recoveredCount: 0,
+        failedCount: records.length,
+        verifiedCount: 0,
+        unverifiedCount: 1,
+        errors: [`Signature verification failed for action seq=${record.actionSeq}. Recovery aborted -- no records stored.`],
+      };
+    }
+  }
+
+  // Phase 2: All signatures verified -- store records
   for (const record of records) {
     try {
-      // Verify signature (non-blocking -- still stores on failure)
-      const verified = verifyActionSignature(record);
-      if (verified) {
-        verifiedCount++;
-      } else {
-        unverifiedCount++;
-      }
-
       const storageAction = buildStorageAction(record, agentPubKey);
 
       storage.putAction(storageAction, dnaHash, agentPubKey);
 
       // entryHash lives on EntryAction variants (Create/Update), not the base union
-      const entryHash = record.signedAction?.hashed?.content?.entry_hash
-        ? toBytes(record.signedAction.hashed.content.entry_hash)
+      const actionFields = flatAction(record.signedAction.hashed.content);
+      const entryHash = actionFields.entry_hash
+        ? toBytes(actionFields.entry_hash)
         : undefined;
       const entry = buildStorageEntry(record, entryHash);
       if (entry) {
@@ -630,5 +681,5 @@ export function storeRecoveredRecords(
     }
   }
 
-  return { recoveredCount, failedCount, verifiedCount, unverifiedCount, errors };
+  return { recoveredCount, failedCount, verifiedCount: records.length, unverifiedCount: 0, errors };
 }

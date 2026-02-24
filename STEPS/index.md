@@ -43,9 +43,9 @@
 | 12.1 | ✅ | Unified Encoding Documentation |
 | 12.2 | ⏳ | DHT Publishing Debug Panel |
 | 12.3 | ⏳ | Test Audit |
-| 13 | 📋 | Storage Backup & Recovery |
-| 13.1 | 📋 | Persistent Storage + Seed Phrase Export |
-| 13.2 | 📋 | DHT Chain Recovery |
+| 13 | ⏳ | Storage Backup & Recovery |
+| 13.1 | ✅ | Persistent Storage + Seed Phrase Export |
+| 13.2 | ✅ | DHT Chain Recovery |
 | 13.3 | 📋 | Convenience Features (backup file, sync) |
 | 14 | ✅ | HWC Client Library Package |
 | 14.1 | ✅ | Package Setup & Migration |

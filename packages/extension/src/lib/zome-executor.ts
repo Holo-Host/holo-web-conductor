@@ -40,6 +40,17 @@ export interface ZomeCallResult {
 }
 
 /**
+ * Result from a chain recovery operation.
+ */
+export interface RecoveryResult {
+  recoveredCount: number;
+  failedCount: number;
+  verifiedCount: number;
+  unverifiedCount: number;
+  errors: string[];
+}
+
+/**
  * WebSocket state as reported by the executor.
  */
 export interface WsStateInfo {

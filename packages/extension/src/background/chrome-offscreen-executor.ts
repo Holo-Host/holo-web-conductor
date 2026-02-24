@@ -13,6 +13,7 @@ import type {
   ZomeExecutor,
   MinimalZomeCallRequest,
   ZomeCallResult,
+  RecoveryResult,
   WsStateInfo,
   RemoteSignalData,
   SignRequestData,
@@ -290,7 +291,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
     contextId: string,
     dnaHashes: number[][],
     agentPubKey: number[]
-  ): Promise<{ recoveredCount: number; failedCount: number; errors: string[] }> {
+  ): Promise<RecoveryResult> {
     await this.ensureOffscreenDocument();
 
     const response = await chrome.runtime.sendMessage({
@@ -308,6 +309,8 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
     return {
       recoveredCount: response.recoveredCount ?? 0,
       failedCount: response.failedCount ?? 0,
+      verifiedCount: response.verifiedCount ?? 0,
+      unverifiedCount: response.unverifiedCount ?? 0,
       errors: response.errors ?? [],
     };
   }

@@ -21,6 +21,23 @@ interface HappContext {
   lastUsed: number;
   enabled: boolean;
   dnaCount: number;
+  recoverySealed?: boolean;
+}
+
+interface RecoveryProgress {
+  status: 'discovering' | 'fetching' | 'complete' | 'error';
+  totalActions: number;
+  recoveredActions: number;
+  failedActions: number;
+  errors: string[];
+}
+
+interface RecoveryResult {
+  recoveredCount: number;
+  failedCount: number;
+  verifiedCount: number;
+  unverifiedCount: number;
+  errors: string[];
 }
 
 let contexts: HappContext[] = [];
@@ -344,7 +361,7 @@ function attachEventListeners(): void {
           const progressMsg = createRequest(MessageType.GET_RECOVERY_PROGRESS, { contextId });
           const progressResp = await chrome.runtime.sendMessage(progressMsg);
           if (progressResp.type !== MessageType.ERROR && progressResp.payload) {
-            const progress = progressResp.payload as any;
+            const progress = progressResp.payload as RecoveryProgress;
             const total = progress.totalActions || 0;
             const recovered = progress.recoveredActions || 0;
 
@@ -371,13 +388,16 @@ function attachEventListeners(): void {
         clearInterval(pollInterval);
 
         if (result.type === MessageType.ERROR) {
-          if (progressText) progressText.textContent = `Recovery failed: ${(result as any).error || (result.payload as any)?.error || 'Unknown error'}`;
+          const errorMsg = (result as ResponseMessage).payload
+            ? String((result as ResponseMessage).payload)
+            : 'Unknown error';
+          if (progressText) progressText.textContent = `Recovery failed: ${errorMsg}`;
           if (progressBar) progressBar.style.width = '100%';
-          (progressBar as any).style.background = '#dc3545';
+          if (progressBar) (progressBar as HTMLElement).style.background = '#dc3545';
         } else {
-          const data = result.payload as any;
+          const data = result.payload as RecoveryResult;
           if (progressBar) progressBar.style.width = '100%';
-          if (progressText) progressText.textContent = `Recovery complete: ${data.recoveredCount || 0} records recovered, ${data.failedCount || 0} failed`;
+          if (progressText) progressText.textContent = `Recovery complete: ${data.recoveredCount || 0} records recovered (${data.verifiedCount || 0} verified), ${data.failedCount || 0} failed`;
 
           if (data.errors && data.errors.length > 0) {
             if (errorsDiv) {

@@ -15,6 +15,8 @@ import {
 } from './chain-recovery';
 import { serializeAction, type SerializableAction } from '../types/holochain-serialization';
 import { HoloHashType, hashFrom32AndType } from '../hash';
+import type { StorageProvider } from '../storage/storage-provider';
+import type { SignedActionHashed } from '../types/holochain-types';
 
 // ============================================================================
 // Setup
@@ -50,18 +52,20 @@ function signedRecord(action: SerializableAction, actionHash?: Uint8Array): Reco
   const serializedBytes = serializeAction(action);
   const signature = sodium.crypto_sign_detached(serializedBytes, keyPair.privateKey);
   const hash = actionHash ?? mockHash(HoloHashType.Action, 42);
-  const seq = (action as any).action_seq ?? 0;
-  const ts = (action as any).timestamp ?? 0;
+  const seq = 'action_seq' in action ? (action.action_seq ?? 0) : 0;
+  const ts = action.timestamp ?? 0;
 
   return {
     actionHash: hash,
+    // SerializableAction is structurally compatible with Action at runtime
+    // (same field names), but uses different TS types (string vs ActionType enum).
     signedAction: {
       hashed: {
         hash,
         content: action,
       },
       signature,
-    },
+    } as unknown as SignedActionHashed,
     entry: null,
     actionSeq: seq,
     timestamp: BigInt(ts),
@@ -293,12 +297,14 @@ describe('verifyActionSignature', () => {
     };
     const record = signedRecord(action);
 
-    // Simulate JSON round-trip: Uint8Array fields become plain Arrays
-    const content = record.signedAction.hashed.content;
-    content.author = Array.from(content.author) as any;
-    content.prev_action = Array.from(content.prev_action) as any;
-    content.entry_hash = Array.from(content.entry_hash) as any;
-    record.signedAction.signature = Array.from(record.signedAction.signature) as any;
+    // Simulate JSON round-trip: Uint8Array fields become plain Arrays.
+    // Use mutable record views since the wire format has number[] not Uint8Array.
+    const content = record.signedAction.hashed.content as unknown as Record<string, unknown>;
+    content.author = Array.from(action.author);
+    content.prev_action = Array.from(action.prev_action);
+    content.entry_hash = Array.from(action.entry_hash);
+    const signed = record.signedAction as unknown as Record<string, unknown>;
+    signed.signature = Array.from(record.signedAction.signature);
 
     expect(verifyActionSignature(record)).toBe(true);
   });
@@ -333,7 +339,7 @@ describe('storeRecoveredRecords verification counts', () => {
     const dnaHash = mockHash(HoloHashType.Dna, 1);
     const result = storeRecoveredRecords(
       [validRecord],
-      createMockStorage() as any,
+      createMockStorage() as StorageProvider,
       dnaHash,
       agentPubKey
     );
@@ -343,7 +349,7 @@ describe('storeRecoveredRecords verification counts', () => {
     expect(result.unverifiedCount).toBe(0);
   });
 
-  it('counts unverified when signature is invalid', () => {
+  it('aborts with zero records stored when signature is invalid', () => {
     const action: SerializableAction = {
       type: 'Dna',
       author: agentPubKey,
@@ -351,24 +357,26 @@ describe('storeRecoveredRecords verification counts', () => {
       hash: mockHash(HoloHashType.Dna, 1),
     };
     const record = signedRecord(action);
-    // Tamper
+    // Tamper with signature
     record.signedAction.signature[0] ^= 0xff;
 
     const dnaHash = mockHash(HoloHashType.Dna, 1);
     const result = storeRecoveredRecords(
       [record],
-      createMockStorage() as any,
+      createMockStorage() as StorageProvider,
       dnaHash,
       agentPubKey
     );
 
-    // Still stored (data availability > strict integrity)
-    expect(result.recoveredCount).toBe(1);
+    // Entire operation aborted -- no records stored
+    expect(result.recoveredCount).toBe(0);
+    expect(result.failedCount).toBe(1);
     expect(result.verifiedCount).toBe(0);
     expect(result.unverifiedCount).toBe(1);
+    expect(result.errors[0]).toContain('Signature verification failed');
   });
 
-  it('stores record even when verification fails', () => {
+  it('does not store records when verification fails', () => {
     const action: SerializableAction = {
       type: 'Create',
       author: agentPubKey,
@@ -387,8 +395,9 @@ describe('storeRecoveredRecords verification counts', () => {
     storage.putAction = () => { putActionCalled = true; };
 
     const dnaHash = mockHash(HoloHashType.Dna, 1);
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as StorageProvider, dnaHash, agentPubKey);
 
-    expect(putActionCalled).toBe(true);
+    // Signature verification failed -- putAction should NOT have been called
+    expect(putActionCalled).toBe(false);
   });
 });

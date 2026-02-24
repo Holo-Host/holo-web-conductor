@@ -16,6 +16,43 @@ import {
 } from './chain-recovery';
 import { HoloHashType, hashFrom32AndType } from '../hash';
 import type { StorageProvider } from '../storage/storage-provider';
+import type { StoredAction, StoredEntry } from '../storage/types';
+import type { SignedActionHashed, Entry } from '../types/holochain-types';
+
+/** Always-pass verification for storage path tests (verification tested in verify-signature.test.ts). */
+const alwaysVerify = () => true;
+
+/**
+ * Cast wire-format signed action data to SignedActionHashed for test construction.
+ *
+ * Wire format from the linker diverges from @holochain/client types:
+ * - type field uses string literals ("Create") not ActionType enum (ActionType.Create)
+ * - timestamp is bigint (microseconds) not number
+ * - entry_type uses storage format { zome_id, entry_index } not wire { App: {...} }
+ * These divergences are handled by recovery code via flatAction() and toBytes().
+ */
+function wireSignedAction(data: Record<string, unknown>): SignedActionHashed {
+  return data as unknown as SignedActionHashed;
+}
+
+/** Cast wire-format entry data to Entry for test construction. */
+function wireEntry(data: Record<string, unknown>): Entry {
+  return data as unknown as Entry;
+}
+
+/**
+ * Get mutable wire-format content from a SignedActionHashed for test mutations.
+ * Test data is constructed via wireSignedAction() so the runtime object is a plain
+ * JS object -- this cast lets tests modify fields to simulate wire-format edge cases.
+ */
+function mutableContent(signedAction: SignedActionHashed): Record<string, unknown> {
+  return signedAction.hashed.content as unknown as Record<string, unknown>;
+}
+
+/** Get mutable view of SignedActionHashed for test mutations (e.g., replacing signature). */
+function mutableSigned(signedAction: SignedActionHashed): Record<string, unknown> {
+  return signedAction as unknown as Record<string, unknown>;
+}
 
 // ============================================================================
 // Test helpers
@@ -68,7 +105,7 @@ function makeCreateRecord(seq: number, opts?: {
 
   return {
     actionHash,
-    signedAction: {
+    signedAction: wireSignedAction({
       hashed: {
         hash: actionHash,
         content: {
@@ -82,8 +119,8 @@ function makeCreateRecord(seq: number, opts?: {
         },
       },
       signature: new Uint8Array(64).fill(0xab),
-    },
-    entry: { entry_type: entryType, entry: entryData },
+    }),
+    entry: wireEntry({ entry_type: entryType, entry: entryData }),
     actionSeq: seq,
     timestamp: BigInt(seq) * BigInt(1_000_000),
   };
@@ -103,7 +140,7 @@ function makeUpdateRecord(seq: number, opts: {
 
   return {
     actionHash,
-    signedAction: {
+    signedAction: wireSignedAction({
       hashed: {
         hash: actionHash,
         content: {
@@ -119,8 +156,8 @@ function makeUpdateRecord(seq: number, opts: {
         },
       },
       signature: new Uint8Array(64).fill(0xcd),
-    },
-    entry: { entry_type: { zome_id: 0, entry_index: 1 }, entry: entryData },
+    }),
+    entry: wireEntry({ entry_type: { zome_id: 0, entry_index: 1 }, entry: entryData }),
     actionSeq: seq,
     timestamp: BigInt(seq) * BigInt(1_000_000),
   };
@@ -138,7 +175,7 @@ function makeDeleteRecord(seq: number, opts: {
 
   return {
     actionHash,
-    signedAction: {
+    signedAction: wireSignedAction({
       hashed: {
         hash: actionHash,
         content: {
@@ -152,7 +189,7 @@ function makeDeleteRecord(seq: number, opts: {
         },
       },
       signature: new Uint8Array(64).fill(0xef),
-    },
+    }),
     entry: null,
     actionSeq: seq,
     timestamp: BigInt(seq) * BigInt(1_000_000),
@@ -173,7 +210,7 @@ function makeCreateLinkRecord(seq: number, opts: {
 
   return {
     actionHash,
-    signedAction: {
+    signedAction: wireSignedAction({
       hashed: {
         hash: actionHash,
         content: {
@@ -190,7 +227,7 @@ function makeCreateLinkRecord(seq: number, opts: {
         },
       },
       signature: new Uint8Array(64).fill(0xdd),
-    },
+    }),
     entry: null,
     actionSeq: seq,
     timestamp: BigInt(seq) * BigInt(1_000_000),
@@ -204,7 +241,7 @@ function makeDnaRecord(): RecoveredRecord {
   const actionHash = mockActionHash(250);
   return {
     actionHash,
-    signedAction: {
+    signedAction: wireSignedAction({
       hashed: {
         hash: actionHash,
         content: {
@@ -216,7 +253,7 @@ function makeDnaRecord(): RecoveredRecord {
         },
       },
       signature: new Uint8Array(64).fill(0x11),
-    },
+    }),
     entry: null,
     actionSeq: 0,
     timestamp: BigInt(1_000_000),
@@ -229,7 +266,8 @@ function makeDnaRecord(): RecoveredRecord {
 function makeBrokenRecord(seq: number): RecoveredRecord {
   return {
     actionHash: mockActionHash(seq + 200),
-    signedAction: { hashed: { hash: mockActionHash(seq + 200), content: null } },
+    // Intentionally malformed: null content to test error handling
+    signedAction: wireSignedAction({ hashed: { hash: mockActionHash(seq + 200), content: null } }),
     entry: null,
     actionSeq: seq,
     timestamp: BigInt(0),
@@ -237,25 +275,36 @@ function makeBrokenRecord(seq: number): RecoveredRecord {
 }
 
 /**
- * Create a mock StorageProvider with vi.fn() for all methods we care about.
+ * Flat view of StoredAction for test assertions.
+ * StoredAction is a discriminated union, but buildStorageAction returns objects
+ * with all fields (undefined for non-applicable variants). This type lets tests
+ * assert variant-specific fields without per-variant narrowing.
+ */
+type FlatStoredAction = StoredAction & Record<string, unknown>;
+
+/**
+ * Partial mock of StorageProvider for recovery tests.
+ * Only implements putAction/putEntry/updateChainHead (the methods storeRecoveredRecords uses).
+ * Cast to StorageProvider at call sites.
  */
 function createMockStorage() {
-  const actions: any[] = [];
-  const entries: any[] = [];
-  let chainHead: any = null;
+  const actions: StoredAction[] = [];
+  const entries: StoredEntry[] = [];
+  let chainHead: { actionSeq: number; actionHash: Uint8Array; timestamp: bigint } | null = null;
 
   return {
-    putAction: vi.fn((action: any) => { actions.push(action); }),
-    putEntry: vi.fn((entry: any) => { entries.push(entry); }),
-    updateChainHead: vi.fn((_dna, _agent, seq, hash, ts) => {
+    putAction: vi.fn((action: StoredAction, _dna?: Uint8Array, _agent?: Uint8Array) => { actions.push(action); }),
+    putEntry: vi.fn((entry: StoredEntry, _dna?: Uint8Array, _agent?: Uint8Array) => { entries.push(entry); }),
+    updateChainHead: vi.fn((_dna: Uint8Array, _agent: Uint8Array, seq: number, hash: Uint8Array, ts: bigint) => {
       chainHead = { actionSeq: seq, actionHash: hash, timestamp: ts };
     }),
-    // Expose captured data for assertions
     getStoredActions: () => actions,
     getStoredEntries: () => entries,
     getChainHead: () => chainHead,
   };
 }
+
+type MockStorageType = ReturnType<typeof createMockStorage>;
 
 // ============================================================================
 // buildStorageAction tests
@@ -282,8 +331,8 @@ describe('buildStorageAction', () => {
     const record = makeCreateRecord(3, { entryHash, entryType });
     const action = buildStorageAction(record, agentPubKey);
 
-    expect((action as any).entryHash).toEqual(entryHash);
-    expect((action as any).entryType).toEqual(entryType);
+    expect((action as FlatStoredAction).entryHash).toEqual(entryHash);
+    expect((action as FlatStoredAction).entryType).toEqual(entryType);
   });
 
   it('maps Update action with original hashes', () => {
@@ -296,8 +345,8 @@ describe('buildStorageAction', () => {
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.actionType).toBe('Update');
-    expect((action as any).originalActionHash).toEqual(origAction);
-    expect((action as any).originalEntryHash).toEqual(origEntry);
+    expect((action as FlatStoredAction).originalActionHash).toEqual(origAction);
+    expect((action as FlatStoredAction).originalEntryHash).toEqual(origEntry);
   });
 
   it('maps Delete action with deletes hashes', () => {
@@ -310,8 +359,8 @@ describe('buildStorageAction', () => {
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.actionType).toBe('Delete');
-    expect((action as any).deletesActionHash).toEqual(deletesAction);
-    expect((action as any).deletesEntryHash).toEqual(deletesEntry);
+    expect((action as FlatStoredAction).deletesActionHash).toEqual(deletesAction);
+    expect((action as FlatStoredAction).deletesEntryHash).toEqual(deletesEntry);
   });
 
   it('maps CreateLink action with base, target, linkType, and tag', () => {
@@ -327,10 +376,10 @@ describe('buildStorageAction', () => {
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.actionType).toBe('CreateLink');
-    expect((action as any).baseAddress).toEqual(base);
-    expect((action as any).targetAddress).toEqual(target);
-    expect((action as any).linkType).toBe(5);
-    expect((action as any).tag).toEqual(tag);
+    expect((action as FlatStoredAction).baseAddress).toEqual(base);
+    expect((action as FlatStoredAction).targetAddress).toEqual(target);
+    expect((action as FlatStoredAction).linkType).toBe(5);
+    expect((action as FlatStoredAction).tag).toEqual(tag);
   });
 
   it('maps Dna genesis action with dnaHash', () => {
@@ -338,7 +387,7 @@ describe('buildStorageAction', () => {
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.actionType).toBe('Dna');
-    expect((action as any).dnaHash).toEqual(dnaHash);
+    expect((action as FlatStoredAction).dnaHash).toEqual(dnaHash);
     expect(action.prevActionHash).toBeNull();
   });
 
@@ -352,8 +401,8 @@ describe('buildStorageAction', () => {
   it('uses fallback agent when content.author is missing', () => {
     const fallback = mockAgentPubKey(77);
     const record = makeCreateRecord(1);
-    // Remove author from content
-    record.signedAction.hashed.content.author = undefined;
+    // Remove author from content to test fallback
+    mutableContent(record.signedAction).author = undefined;
     const action = buildStorageAction(record, fallback);
 
     expect(action.author).toEqual(fallback);
@@ -362,7 +411,7 @@ describe('buildStorageAction', () => {
   it('converts Array author to Uint8Array (JSON round-trip)', () => {
     const record = makeCreateRecord(1);
     // Simulate JSON round-trip turning Uint8Array into plain Array
-    record.signedAction.hashed.content.author = Array.from(agentPubKey) as any;
+    mutableContent(record.signedAction).author = Array.from(agentPubKey);
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.author).toBeInstanceOf(Uint8Array);
@@ -371,7 +420,7 @@ describe('buildStorageAction', () => {
 
   it('converts Array signature to Uint8Array', () => {
     const record = makeCreateRecord(1);
-    record.signedAction.signature = Array.from(new Uint8Array(64).fill(0xab)) as any;
+    mutableSigned(record.signedAction).signature = Array.from(new Uint8Array(64).fill(0xab));
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.signature).toBeInstanceOf(Uint8Array);
@@ -380,7 +429,7 @@ describe('buildStorageAction', () => {
 
   it('produces a 64-byte zero signature when signature is missing', () => {
     const record = makeCreateRecord(1);
-    record.signedAction.signature = undefined;
+    mutableSigned(record.signedAction).signature = undefined;
     const action = buildStorageAction(record, agentPubKey);
 
     expect(action.signature).toEqual(new Uint8Array(64));
@@ -389,20 +438,20 @@ describe('buildStorageAction', () => {
   it('converts wire-format entry_type { App: { ... } } to storage format { zome_id, entry_index }', () => {
     const record = makeCreateRecord(1);
     // Simulate wire format from linker
-    (record.signedAction.hashed.content as any).entry_type = {
+    mutableContent(record.signedAction).entry_type = {
       App: { entry_index: 3, zome_index: 1, visibility: 'Public' },
     };
     const action = buildStorageAction(record, agentPubKey);
 
-    expect((action as any).entryType).toEqual({ zome_id: 1, entry_index: 3 });
+    expect((action as FlatStoredAction).entryType).toEqual({ zome_id: 1, entry_index: 3 });
   });
 
   it('converts wire-format "AgentPubKey" entry_type to null', () => {
     const record = makeCreateRecord(1);
-    (record.signedAction.hashed.content as any).entry_type = 'AgentPubKey';
+    mutableContent(record.signedAction).entry_type = 'AgentPubKey';
     const action = buildStorageAction(record, agentPubKey);
 
-    expect((action as any).entryType).toBeNull();
+    expect((action as FlatStoredAction).entryType).toBeNull();
   });
 });
 
@@ -442,7 +491,7 @@ describe('buildStorageEntry', () => {
     const rawEntry = new Uint8Array([99, 88, 77]);
     const record = makeCreateRecord(1, { entryHash });
     // Some entries may come as raw bytes without the { entry, entry_type } wrapper
-    record.entry = rawEntry;
+    record.entry = rawEntry as unknown as Entry;
 
     const result = buildStorageEntry(record, entryHash);
 
@@ -454,7 +503,7 @@ describe('buildStorageEntry', () => {
     const entryHash = mockEntryHash(10);
     const record = makeCreateRecord(1, { entryHash });
     // Simulate JSON round-trip
-    record.entry = { entry_type: { zome_id: 0, entry_index: 1 }, entry: [1, 2, 3, 4] };
+    record.entry = wireEntry({ entry_type: { zome_id: 0, entry_index: 1 }, entry: [1, 2, 3, 4] });
 
     const result = buildStorageEntry(record, entryHash);
 
@@ -467,11 +516,11 @@ describe('buildStorageEntry', () => {
     const entryHash = mockEntryHash(10);
     const record = makeCreateRecord(1, { entryHash });
     // Simulate wire format from linker/DHT
-    record.entry = {
+    record.entry = wireEntry({
       entry_type: 'App',
       entry: new Uint8Array([5, 6, 7]),
-    };
-    (record.signedAction.hashed.content as any).entry_type = {
+    });
+    mutableContent(record.signedAction).entry_type = {
       App: { entry_index: 2, zome_index: 0, visibility: 'Public' },
     };
 
@@ -484,11 +533,11 @@ describe('buildStorageEntry', () => {
   it('converts wire-format "AgentPubKey" entry_type to Agent string', () => {
     const entryHash = mockEntryHash(10);
     const record = makeCreateRecord(1, { entryHash });
-    record.entry = {
+    record.entry = wireEntry({
       entry_type: 'Agent',
       entry: new Uint8Array([8, 9]),
-    };
-    (record.signedAction.hashed.content as any).entry_type = 'AgentPubKey';
+    });
+    mutableContent(record.signedAction).entry_type = 'AgentPubKey';
 
     const result = buildStorageEntry(record, entryHash);
 
@@ -502,7 +551,7 @@ describe('buildStorageEntry', () => {
 // ============================================================================
 
 describe('storeRecoveredRecords', () => {
-  let storage: ReturnType<typeof createMockStorage>;
+  let storage: MockStorageType;
 
   beforeEach(() => {
     storage = createMockStorage();
@@ -511,7 +560,7 @@ describe('storeRecoveredRecords', () => {
   it('stores a single Create record: putAction + putEntry + updateChainHead', () => {
     const record = makeCreateRecord(1);
 
-    const result = storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    const result = storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     expect(result.recoveredCount).toBe(1);
     expect(result.failedCount).toBe(0);
@@ -528,7 +577,7 @@ describe('storeRecoveredRecords', () => {
       deletesEntryHash: mockEntryHash(50),
     });
 
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     expect(storage.putAction).toHaveBeenCalledTimes(1);
     expect(storage.putEntry).not.toHaveBeenCalled();
@@ -538,7 +587,7 @@ describe('storeRecoveredRecords', () => {
   it('stores multiple records in sequence, updating chain head for each', () => {
     const records = [makeCreateRecord(0), makeCreateRecord(1), makeCreateRecord(2)];
 
-    const result = storeRecoveredRecords(records, storage as any, dnaHash, agentPubKey);
+    const result = storeRecoveredRecords(records, storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     expect(result.recoveredCount).toBe(3);
     expect(storage.putAction).toHaveBeenCalledTimes(3);
@@ -557,7 +606,7 @@ describe('storeRecoveredRecords', () => {
       makeCreateRecord(2),
     ];
 
-    const result = storeRecoveredRecords(records, storage as any, dnaHash, agentPubKey);
+    const result = storeRecoveredRecords(records, storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     expect(result.recoveredCount).toBe(2);
     expect(result.failedCount).toBe(1);
@@ -573,9 +622,10 @@ describe('storeRecoveredRecords', () => {
 
     const result = storeRecoveredRecords(
       [makeCreateRecord(0)],
-      storage as any,
+      storage as unknown as StorageProvider,
       dnaHash,
-      agentPubKey
+      agentPubKey,
+      alwaysVerify
     );
 
     expect(result.recoveredCount).toBe(0);
@@ -586,7 +636,7 @@ describe('storeRecoveredRecords', () => {
   it('passes dnaHash and agentPubKey to storage methods', () => {
     const record = makeCreateRecord(1);
 
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     // putAction receives (action, dnaHash, agentPubKey)
     expect(storage.putAction.mock.calls[0][1]).toEqual(dnaHash);
@@ -604,7 +654,7 @@ describe('storeRecoveredRecords', () => {
   it('passes correct actionSeq and timestamp to updateChainHead', () => {
     const record = makeCreateRecord(7);
 
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     const [, , seq, hash, ts] = storage.updateChainHead.mock.calls[0];
     expect(seq).toBe(7);
@@ -620,9 +670,9 @@ describe('storeRecoveredRecords', () => {
       originalEntryHash: origEntry,
     });
 
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
-    const storedAction = storage.getStoredActions()[0];
+    const storedAction = storage.getStoredActions()[0] as FlatStoredAction;
     expect(storedAction.actionType).toBe('Update');
     expect(storedAction.originalActionHash).toEqual(origAction);
     expect(storedAction.originalEntryHash).toEqual(origEntry);
@@ -639,9 +689,9 @@ describe('storeRecoveredRecords', () => {
       tag,
     });
 
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
-    const storedAction = storage.getStoredActions()[0];
+    const storedAction = storage.getStoredActions()[0] as FlatStoredAction;
     expect(storedAction.actionType).toBe('CreateLink');
     expect(storedAction.baseAddress).toEqual(base);
     expect(storedAction.targetAddress).toEqual(target);
@@ -655,16 +705,16 @@ describe('storeRecoveredRecords', () => {
   it('correctly stores a Dna genesis record', () => {
     const record = makeDnaRecord();
 
-    storeRecoveredRecords([record], storage as any, dnaHash, agentPubKey);
+    storeRecoveredRecords([record], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
-    const storedAction = storage.getStoredActions()[0];
+    const storedAction = storage.getStoredActions()[0] as FlatStoredAction;
     expect(storedAction.actionType).toBe('Dna');
     expect(storedAction.dnaHash).toEqual(dnaHash);
     expect(storedAction.prevActionHash).toBeNull();
   });
 
   it('returns zero counts for empty input', () => {
-    const result = storeRecoveredRecords([], storage as any, dnaHash, agentPubKey);
+    const result = storeRecoveredRecords([], storage as unknown as StorageProvider, dnaHash, agentPubKey, alwaysVerify);
 
     expect(result.recoveredCount).toBe(0);
     expect(result.failedCount).toBe(0);

@@ -906,19 +906,23 @@ chrome.runtime.onMessage.addListener(
             agentPubKey,
           });
 
-          log.info(`[RECOVER_CHAIN] Complete: ${response?.recoveredCount || 0} recovered, ${response?.failedCount || 0} failed`);
+          log.info(`[RECOVER_CHAIN] Complete: ${response?.recoveredCount || 0} recovered, ${response?.failedCount || 0} failed, ${response?.verifiedCount || 0} verified`);
+          // Chrome message passing response -- fields not in OffscreenResponse interface
+          // but consumed by ChromeOffscreenExecutor.recoverChain() which reads raw response
           sendResponse({
             success: true,
             recoveredCount: response?.recoveredCount || 0,
             failedCount: response?.failedCount || 0,
+            verifiedCount: response?.verifiedCount || 0,
+            unverifiedCount: response?.unverifiedCount || 0,
             errors: response?.errors || [],
-          } as any);
+          });
         } catch (error) {
           log.error("[RECOVER_CHAIN] Error:", error);
           sendResponse({
             success: false,
             error: error instanceof Error ? error.message : String(error),
-          } as any);
+          });
         }
       })();
       return true;

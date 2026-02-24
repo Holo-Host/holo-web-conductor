@@ -6,7 +6,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { recoverChainFromDHT, type RecoveryProgress } from './chain-recovery';
 import { MockNetworkService } from '../network/mock-service';
 import type { NetworkRecord } from '../network/types';
+import type { SignedActionHashed } from '../types/holochain-types';
 import { HoloHashType, hashFrom32AndType } from '../hash';
+
+/**
+ * Cast wire-format signed action data to SignedActionHashed for test construction.
+ * See store-recovered.test.ts for full rationale on the wire-format divergence.
+ */
+function wireSignedAction(data: Record<string, unknown>): SignedActionHashed {
+  return data as unknown as SignedActionHashed;
+}
 
 // ============================================================================
 // Test helpers
@@ -39,7 +48,7 @@ function mockDnaHash(seed: number): Uint8Array {
 function makeNetworkRecord(actionSeq: number, hashSeed: number): NetworkRecord {
   const hash = mockActionHash(hashSeed);
   return {
-    signed_action: {
+    signed_action: wireSignedAction({
       hashed: {
         hash,
         content: {
@@ -50,8 +59,8 @@ function makeNetworkRecord(actionSeq: number, hashSeed: number): NetworkRecord {
         },
       },
       signature: new Uint8Array(64).fill(0xab),
-    },
-    entry: 'NotApplicable' as any,
+    }),
+    entry: 'NotApplicable',
   };
 }
 
@@ -59,7 +68,7 @@ function makeNetworkRecordWithEntry(actionSeq: number, hashSeed: number): Networ
   const hash = mockActionHash(hashSeed);
   const entryPayload = new Uint8Array([1, 2, 3, actionSeq]);
   return {
-    signed_action: {
+    signed_action: wireSignedAction({
       hashed: {
         hash,
         content: {
@@ -70,7 +79,7 @@ function makeNetworkRecordWithEntry(actionSeq: number, hashSeed: number): Networ
         },
       },
       signature: new Uint8Array(64).fill(0xab),
-    },
+    }),
     entry: { Present: { entry_type: 'App', entry: entryPayload } },
   };
 }
@@ -191,7 +200,7 @@ describe('recoverChainFromDHT', () => {
 
       expect(records).toHaveLength(1);
       expect(records[0].entry).not.toBeNull();
-      expect(records[0].entry.entry_type).toBe('App');
+      expect(records[0].entry!.entry_type).toBe('App');
     });
 
     it('entry is null when NetworkEntry is NotApplicable', () => {
@@ -512,7 +521,7 @@ describe('recoverChainFromDHT', () => {
       const hash0 = mockActionHash(140);
       const expectedTimestamp = BigInt(1_234_567_890_000_000);
       const record: NetworkRecord = {
-        signed_action: {
+        signed_action: wireSignedAction({
           hashed: {
             hash: hash0,
             content: {
@@ -523,8 +532,8 @@ describe('recoverChainFromDHT', () => {
             },
           },
           signature: new Uint8Array(64),
-        },
-        entry: 'NotApplicable' as any,
+        }),
+        entry: 'NotApplicable',
       };
       mockNetwork.addRecord(hash0, record);
 
@@ -545,19 +554,19 @@ describe('recoverChainFromDHT', () => {
     it('converts numeric timestamp to bigint', () => {
       const hash0 = mockActionHash(150);
       const record: NetworkRecord = {
-        signed_action: {
+        signed_action: wireSignedAction({
           hashed: {
             hash: hash0,
             content: {
               type: 'Create',
               action_seq: 0,
-              timestamp: 999_999 as any, // numeric, as it may come from JSON
+              timestamp: 999_999, // numeric, as it may come from JSON
               author: mockAgentPubKey(99),
             },
           },
           signature: new Uint8Array(64),
-        },
-        entry: 'NotApplicable' as any,
+        }),
+        entry: 'NotApplicable',
       };
       mockNetwork.addRecord(hash0, record);
 
