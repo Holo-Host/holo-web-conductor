@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build-and-release:
+    name: Build & Release Extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/test-zome
+
+      - run: npm ci
+
+      - name: Build extension
+        run: npm run build:extension
+
+      - name: Run tests
+        run: npm test --workspaces --if-present
+
+      - name: Package Chrome extension
+        run: |
+          cd packages/extension/dist
+          zip -r ../../../hwc-chrome-${{ github.ref_name }}.zip .
+
+      - name: Package Firefox extension
+        run: |
+          cp -r packages/extension/dist packages/extension/dist-firefox
+
+          node -e "
+            const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('packages/extension/dist-firefox/manifest.json', 'utf8'));
+
+            // Add Firefox gecko ID
+            manifest.browser_specific_settings = {
+              gecko: { id: 'holochain@holo.host' }
+            };
+
+            // Remove service worker module type (Firefox uses event pages)
+            if (manifest.background) {
+              delete manifest.background.type;
+            }
+
+            fs.writeFileSync('packages/extension/dist-firefox/manifest.json', JSON.stringify(manifest, null, 2));
+          "
+
+          cd packages/extension/dist-firefox
+          zip -r ../../../hwc-firefox-${{ github.ref_name }}.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            hwc-chrome-${{ github.ref_name }}.zip
+            hwc-firefox-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
