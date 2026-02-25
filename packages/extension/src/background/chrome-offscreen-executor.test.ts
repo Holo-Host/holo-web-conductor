@@ -438,6 +438,8 @@ describe("ChromeOffscreenExecutor", () => {
       expect(result).toEqual({
         recoveredCount: 5,
         failedCount: 1,
+        verifiedCount: 0,
+        unverifiedCount: 0,
         errors: ["record not found for seq=3"],
       });
     });

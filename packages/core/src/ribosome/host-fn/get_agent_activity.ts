@@ -2,7 +2,8 @@
  * get_agent_activity host function
  *
  * Returns agent activity (chain status and action hashes) for an agent.
- * Queries the network via linker since fishy is a zero-arc node.
+ * If the agent is self, reads from local source chain storage.
+ * Otherwise queries the network via linker since fishy is a zero-arc node.
  *
  * Input: GetAgentActivityInput { agent_pubkey, chain_query_filter, activity_request, get_options }
  * Output: AgentActivity { valid_activity, rejected_activity, status, highest_observed, warrants }
@@ -11,13 +12,15 @@
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getNetworkService } from "../../network";
+import { getStorageProvider } from "../../storage/storage-provider";
 import { validateWasmGetAgentActivityInput } from "../wasm-io-types";
+import { bytesEqual } from "./bytes-equal";
 import type { ChainItems } from "../../network/types";
 import type { ActionHash } from "../../types/holochain-types";
 
 export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { callContext, instance } = context;
-  const [dnaHash] = callContext.cellId;
+  const [dnaHash, selfAgent] = callContext.cellId;
 
   // Deserialize input
   const input = deserializeTypedFromWasm(
@@ -38,7 +41,13 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
       .join("")}..., request=${activityRequest}`
   );
 
-  // Query network via linker
+  // Self short-circuit: own chain activity is in local storage
+  if (bytesEqual(agentPubKey, selfAgent)) {
+    console.log("[HostFn] get_agent_activity: agent is self, querying local storage");
+    return getAgentActivityFromLocal(instance, dnaHash, selfAgent);
+  }
+
+  // Query network via linker for other agents
   const networkService = getNetworkService();
   if (!networkService) {
     console.log("[HostFn] get_agent_activity: no network service, returning empty");
@@ -81,6 +90,53 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
     warrants: response.warrants || [],
   });
 };
+
+/**
+ * Build AgentActivity response from local source chain storage.
+ */
+function getAgentActivityFromLocal(
+  instance: WebAssembly.Instance,
+  dnaHash: Uint8Array,
+  agentPubKey: Uint8Array,
+): bigint {
+  const storage = getStorageProvider();
+  const actions = storage.queryActions(dnaHash, agentPubKey, {});
+
+  if (!actions || actions.length === 0) {
+    return serializeResult(instance, {
+      valid_activity: [],
+      rejected_activity: [],
+      status: "Empty",
+      highest_observed: null,
+      warrants: [],
+    });
+  }
+
+  // Build valid_activity as [seq, actionHash] pairs, sorted by seq
+  const validActivity: Array<[number, ActionHash]> = actions
+    .map((a) => [a.actionSeq, a.actionHash] as [number, ActionHash])
+    .sort((a, b) => a[0] - b[0]);
+
+  const highest = validActivity[validActivity.length - 1];
+
+  // ChainStatus::Valid wraps ChainHead { action_seq, hash }
+  const status = highest
+    ? { Valid: { action_seq: highest[0], hash: highest[1] } }
+    : "Empty";
+
+  // HighestObserved { action_seq, hash: Vec<ActionHash> } — hash is an array
+  const highestObserved = highest
+    ? { action_seq: highest[0], hash: [highest[1]] }
+    : null;
+
+  return serializeResult(instance, {
+    valid_activity: validActivity,
+    rejected_activity: [],
+    status,
+    highest_observed: highestObserved,
+    warrants: [],
+  });
+}
 
 /**
  * Convert ChainItems (wire format) to array of [seq, hash] pairs (zome format).

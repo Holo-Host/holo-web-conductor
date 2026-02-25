@@ -10,6 +10,7 @@ import { mustGetEntry } from "./must_get_entry";
 import { mustGetAction } from "./must_get_action";
 import { mustGetValidRecord } from "./must_get_valid_record";
 import { mustGetAgentActivity } from "./must_get_agent_activity";
+import { getAgentActivity } from "./get_agent_activity";
 import { CallContext } from "../call-context";
 import { RibosomeRuntime } from "../runtime";
 import { allocatorWasmBytes } from "../test/allocator-wasm-bytes";
@@ -486,5 +487,184 @@ describe("must_get_agent_activity", () => {
       expect(error.name).toBe("UnresolvedDependenciesError");
       expect(error.dependencies.Hashes).toHaveLength(1);
     }
+  });
+
+  it("should use local storage (not network) when author is self", async () => {
+    // Use the same agent as cellId[1] (self)
+    const selfAgent = callContext.cellId[1];
+    const actionHash = await fakeActionHash();
+
+    const mockNetworkService = {
+      mustGetAgentActivitySync: vi.fn(),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    mockQueryActions.mockReturnValue([
+      {
+        actionHash,
+        actionType: "Create",
+        actionSeq: 1,
+        author: selfAgent,
+        timestamp: 1000n,
+        prevActionHash: null,
+        signature: new Uint8Array(64).fill(4),
+        entryHash: await fakeEntryHash(),
+        entryType: { zome_id: 0, entry_index: 0 },
+      },
+    ]);
+
+    const input = {
+      author: selfAgent,
+      chain_filter: {
+        chain_top: actionHash,
+        filters: { Take: 50 },
+      },
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    const resultI64 = mustGetAgentActivity(hostContext, ptr, len);
+    const resultPtr = Number(resultI64 >> 32n);
+    const resultLen = Number(resultI64 & 0xffffffffn);
+    const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+    expect(result.Ok).toBeDefined();
+    expect(result.Ok).toHaveLength(1);
+    // Network should NOT have been called
+    expect(mockNetworkService.mustGetAgentActivitySync).not.toHaveBeenCalled();
+  });
+});
+
+describe("get_agent_activity", () => {
+  let runtime: RibosomeRuntime;
+  let instance: WebAssembly.Instance;
+  let callContext: CallContext;
+  let hostContext: HostFunctionContext;
+
+  const mockQueryActions = vi.fn();
+
+  const mockStorage: Partial<StorageProvider> = {
+    queryActions: mockQueryActions,
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    setStorageProvider(mockStorage as StorageProvider);
+    setNetworkService(null);
+
+    runtime = new RibosomeRuntime();
+    const module = await runtime.compileModule(allocatorWasmBytes);
+    instance = await runtime.instantiateModule(module, {});
+
+    callContext = {
+      cellId: [
+        new Uint8Array(39).fill(100),
+        new Uint8Array(39).fill(101),
+      ],
+      zome: "test_zome",
+      fn: "test_fn",
+      payload: null,
+      provenance: new Uint8Array(39).fill(101),
+    };
+
+    hostContext = { instance, callContext };
+  });
+
+  it("should use local storage when agent is self", async () => {
+    const selfAgent = callContext.cellId[1];
+    const actionHash = await fakeActionHash();
+
+    const mockNetworkService = {
+      getAgentActivitySync: vi.fn(),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    mockQueryActions.mockReturnValue([
+      {
+        actionHash,
+        actionType: "Create",
+        actionSeq: 1,
+        author: selfAgent,
+        timestamp: 1000n,
+        prevActionHash: null,
+        signature: new Uint8Array(64).fill(1),
+        entryHash: await fakeEntryHash(),
+        entryType: { zome_id: 0, entry_index: 0 },
+      },
+    ]);
+
+    const input = {
+      agent_pubkey: selfAgent,
+      chain_query_filter: {},
+      activity_request: "Full",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    const resultI64 = getAgentActivity(hostContext, ptr, len);
+    const resultPtr = Number(resultI64 >> 32n);
+    const resultLen = Number(resultI64 & 0xffffffffn);
+    const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+    expect(result.Ok).toBeDefined();
+    expect(result.Ok.valid_activity).toHaveLength(1);
+    // ChainStatus::Valid wraps ChainHead
+    expect(result.Ok.status).toEqual({ Valid: { action_seq: 1, hash: actionHash } });
+    // HighestObserved.hash is Vec<ActionHash>
+    expect(result.Ok.highest_observed).toEqual({ action_seq: 1, hash: [actionHash] });
+    // Network should NOT have been called
+    expect(mockNetworkService.getAgentActivitySync).not.toHaveBeenCalled();
+  });
+
+  it("should return empty activity for self with no chain data", async () => {
+    const selfAgent = callContext.cellId[1];
+
+    mockQueryActions.mockReturnValue([]);
+
+    const input = {
+      agent_pubkey: selfAgent,
+      chain_query_filter: {},
+      activity_request: "Full",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    const resultI64 = getAgentActivity(hostContext, ptr, len);
+    const resultPtr = Number(resultI64 >> 32n);
+    const resultLen = Number(resultI64 & 0xffffffffn);
+    const result = deserializeFromWasm(instance, resultPtr, resultLen);
+
+    expect(result.Ok).toBeDefined();
+    expect(result.Ok.valid_activity).toEqual([]);
+    expect(result.Ok.status).toBe("Empty");
+  });
+
+  it("should use network for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+
+    const mockNetworkService = {
+      getAgentActivitySync: vi.fn().mockReturnValue({
+        valid_activity: "NotRequested",
+        rejected_activity: "NotRequested",
+        status: "Valid",
+        highest_observed: null,
+        warrants: [],
+      }),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    const input = {
+      agent_pubkey: otherAgent,
+      chain_query_filter: {},
+      activity_request: "Status",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    getAgentActivity(hostContext, ptr, len);
+
+    // Network SHOULD have been called for non-self agent
+    expect(mockNetworkService.getAgentActivitySync).toHaveBeenCalled();
+    // Local storage should NOT have been queried
+    expect(mockQueryActions).not.toHaveBeenCalled();
   });
 });
