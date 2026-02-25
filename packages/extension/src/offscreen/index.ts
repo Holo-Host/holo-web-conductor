@@ -600,7 +600,7 @@ async function publishPendingRecords(
 /**
  * Execute a zome call via the ribosome worker
  */
-async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ result: unknown; signals: any[] }> {
+async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ result: unknown; signals: any[]; didWrite: boolean }> {
   const perfStart = performance.now();
   logZome.info(`Executing zome call: ${request.zome}::${request.fn}`);
 
@@ -705,6 +705,12 @@ interface OffscreenResponse {
   state?: string;
   isConnected?: boolean;
   registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
+  didWrite?: boolean;
+  recoveredCount?: number;
+  failedCount?: number;
+  verifiedCount?: number;
+  unverifiedCount?: number;
+  errors?: string[];
 }
 
 /**
