@@ -35,6 +35,12 @@ interface HolochainAPI {
   installApp(request: {
     bundle: Uint8Array | number[];
     installedAppId?: string;
+    membraneProofs?: Record<string, Uint8Array | number[]>;
+    agentKeyTag?: string;
+  }): Promise<any>;
+  provideMemproofs(params: {
+    contextId?: string;
+    memproofs: Record<string, Uint8Array | number[]>;
   }): Promise<any>;
   on(event: "signal", callback: (signal: any) => void): () => void;
   configureNetwork(config: { linkerUrl: string }): Promise<any>;
@@ -87,7 +93,7 @@ function normalizeForPostMessage(data: any): any {
 }
 
 // Send message to content script via postMessage
-function sendToContentScript(type: string, payload: any): Promise<any> {
+function sendToContentScript(type: string, payload: any, timeoutMs = 30000): Promise<any> {
   return new Promise((resolve, reject) => {
     const id = generateId();
 
@@ -109,14 +115,13 @@ function sendToContentScript(type: string, payload: any): Promise<any> {
       "*"
     );
 
-    // Timeout after 30 seconds
     setTimeout(() => {
       const callbacks = pendingRequests.get(id);
       if (callbacks) {
         pendingRequests.delete(id);
         callbacks.reject(new Error("Request timeout"));
       }
-    }, 30000);
+    }, timeoutMs);
   });
 }
 
@@ -295,6 +300,8 @@ const holochainAPI: HolochainAPI = {
   async installApp(request: {
     bundle: Uint8Array | number[];
     installedAppId?: string;
+    membraneProofs?: Record<string, Uint8Array | number[]>;
+    agentKeyTag?: string;
   }): Promise<any> {
     // Convert bundle to happBundle format expected by background
     const happBundle = Array.isArray(request.bundle)
@@ -304,7 +311,17 @@ const holochainAPI: HolochainAPI = {
     return sendToContentScript("install_happ", {
       happBundle: Array.from(happBundle),
       appName: request.installedAppId,
+      membraneProofs: request.membraneProofs,
+      agentKeyTag: request.agentKeyTag,
     });
+  },
+
+  async provideMemproofs(params: {
+    contextId?: string;
+    memproofs: Record<string, Uint8Array | number[]>;
+  }): Promise<any> {
+    // 120s: first-run genesis compiles 2.2MB WASM + 4 Lair sign operations
+    return sendToContentScript("provide_memproofs", params, 120000);
   },
 
   async configureNetwork(config: { linkerUrl: string }): Promise<any> {

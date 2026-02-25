@@ -1,0 +1,15 @@
+---
+manifest_version: "0"
+name: test-dna-memproof
+
+integrity:
+  network_seed: "00000000-0000-0000-0000-000000000001"
+  # The progenitor property is injected by pack-memproof.sh
+  # It will contain the 39-byte AgentPubKey of the authorizer
+  properties: {}
+  zomes:
+    - name: test_zome
+      path: test_zome.wasm
+
+coordinator:
+  zomes: []

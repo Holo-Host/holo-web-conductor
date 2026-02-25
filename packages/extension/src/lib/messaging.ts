@@ -61,6 +61,7 @@ export enum MessageType {
   LIST_HAPPS = "list_happs",
   ENABLE_HAPP = "enable_happ",
   DISABLE_HAPP = "disable_happ",
+  PROVIDE_MEMPROOFS = "provide_memproofs",
 
   // Linker Configuration (for network requests via h2hc-linker)
   LINKER_CONFIGURE = "linker_configure",
@@ -132,6 +133,7 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LIST_HAPPS
     | MessageType.ENABLE_HAPP
     | MessageType.DISABLE_HAPP
+    | MessageType.PROVIDE_MEMPROOFS
     | MessageType.LINKER_CONFIGURE
     | MessageType.LINKER_GET_STATUS
     | MessageType.LINKER_DISCONNECT
@@ -213,6 +215,15 @@ export interface AppInfoPayload {
  */
 export interface InstallHappPayload {
   happBundle: Uint8Array;
+  membraneProofs?: Record<string, Uint8Array | number[]>;
+}
+
+/**
+ * Provide membrane proofs payload
+ */
+export interface ProvideMemproofsPayload {
+  contextId: string;
+  memproofs: Record<string, Uint8Array>;
 }
 
 /**
@@ -466,6 +477,7 @@ export interface RequestPayloadMap {
   [MessageType.LIST_HAPPS]: undefined;
   [MessageType.ENABLE_HAPP]: ContextIdPayload;
   [MessageType.DISABLE_HAPP]: ContextIdPayload;
+  [MessageType.PROVIDE_MEMPROOFS]: ProvideMemproofsPayload;
   [MessageType.LINKER_CONFIGURE]: LinkerConfigurePayload;
   [MessageType.LINKER_GET_STATUS]: undefined;
   [MessageType.LINKER_DISCONNECT]: undefined;
@@ -617,6 +629,7 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.LIST_HAPPS ||
     message.type === MessageType.ENABLE_HAPP ||
     message.type === MessageType.DISABLE_HAPP ||
+    message.type === MessageType.PROVIDE_MEMPROOFS ||
     message.type === MessageType.LINKER_CONFIGURE ||
     message.type === MessageType.LINKER_GET_STATUS ||
     message.type === MessageType.LINKER_DISCONNECT ||

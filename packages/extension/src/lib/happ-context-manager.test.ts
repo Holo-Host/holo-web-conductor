@@ -205,6 +205,162 @@ describe("HappContextManager", () => {
 
       expect(context.agentKeyTag).toBe("https://myapp.com:agent");
     });
+
+    it("should use agentKeyTag override when provided", async () => {
+      const domain = "https://keytag.com";
+      await permissions.grantPermission(domain);
+
+      const request: InstallHappRequest = {
+        happBundle: createMockHappBundle(),
+        agentKeyTag: "my-custom-agent-tag",
+      };
+
+      const context = await manager.installHapp(domain, request);
+
+      expect(context.agentKeyTag).toBe("my-custom-agent-tag");
+      // Should NOT have created the default domain-scoped key
+      const entries = await lair.listEntries();
+      expect(entries.some((e) => e.tag === "my-custom-agent-tag")).toBe(true);
+      expect(entries.some((e) => e.tag === `${domain}:agent`)).toBe(false);
+    });
+
+    it("should reuse pre-existing Lair key when agentKeyTag matches existing entry", async () => {
+      const domain = "https://reuse-key.com";
+      await permissions.grantPermission(domain);
+
+      // Pre-create a key in Lair under a custom tag (simulates a key created externally)
+      const preExistingResult = await lair.newSeed("pre-existing-key", true);
+      const preExistingPubKey = preExistingResult.entry_info.ed25519_pub_key;
+
+      const request: InstallHappRequest = {
+        happBundle: createMockHappBundle(),
+        agentKeyTag: "pre-existing-key",
+      };
+
+      const context = await manager.installHapp(domain, request);
+
+      // The same raw Ed25519 key should be wrapped into the AgentPubKey
+      // The 32-byte raw key sits at bytes [3..35] of the 39-byte HoloHash
+      const rawFromContext = context.agentPubKey.slice(3, 35);
+      expect(rawFromContext).toEqual(preExistingPubKey);
+    });
+
+    it("should park context as awaitingMemproofs when allow_deferred_memproofs=true and no proofs provided", async () => {
+      const domain = "https://deferred.com";
+      await permissions.grantPermission(domain);
+
+      // Override mock to return a deferred-memproof manifest
+      vi.mocked(bundle.unpackHappBundle).mockReturnValueOnce({
+        manifest: {
+          name: "deferred-app",
+          allow_deferred_memproofs: true,
+          roles: [{ name: "test-role", dna: { path: "test.dna" } }],
+        },
+        resources: new Map([["test.dna", new Uint8Array([1, 2, 3, 4])]]),
+      } as any);
+
+      const request: InstallHappRequest = {
+        happBundle: createMockHappBundle(),
+      };
+
+      const context = await manager.installHapp(domain, request);
+
+      expect(context.status).toBe("awaitingMemproofs");
+      expect(context.enabled).toBe(false);
+    });
+
+    it("should still park as awaitingMemproofs when allow_deferred_memproofs=true even if memproofs are provided", async () => {
+      // installHapp always parks when deferred; the background handler runs genesis
+      // immediately if proofs are present (one-step install flow).
+      const domain = "https://onestep.com";
+      await permissions.grantPermission(domain);
+
+      vi.mocked(bundle.unpackHappBundle).mockReturnValueOnce({
+        manifest: {
+          name: "onestep-app",
+          allow_deferred_memproofs: true,
+          roles: [{ name: "test-role", dna: { path: "test.dna" } }],
+        },
+        resources: new Map([["test.dna", new Uint8Array([1, 2, 3, 4])]]),
+      } as any);
+
+      const request: InstallHappRequest = {
+        happBundle: createMockHappBundle(),
+        membraneProofs: { "test-role": new Uint8Array(64).fill(0xab) },
+      };
+
+      const context = await manager.installHapp(domain, request);
+
+      // installHapp always parks; background handler will call completeMemproofs
+      // after running genesis with the provided proofs
+      expect(context.status).toBe("awaitingMemproofs");
+      expect(context.enabled).toBe(false);
+    });
+  });
+
+  describe("Membrane proof state machine", () => {
+    async function installDeferredApp(domain: string): Promise<HappContext> {
+      await permissions.grantPermission(domain);
+      vi.mocked(bundle.unpackHappBundle).mockReturnValueOnce({
+        manifest: {
+          name: "deferred-app",
+          allow_deferred_memproofs: true,
+          roles: [{ name: "test-role", dna: { path: "test.dna" } }],
+        },
+        resources: new Map([["test.dna", new Uint8Array([1, 2, 3, 4])]]),
+      } as any);
+      return manager.installHapp(domain, { happBundle: createMockHappBundle() });
+    }
+
+    it("provideMemproofs validates context is in awaitingMemproofs state", async () => {
+      const context = await installDeferredApp("https://memproof1.com");
+      expect(context.status).toBe("awaitingMemproofs");
+
+      // provideMemproofs should return the context unchanged (background runs genesis)
+      const returned = await manager.provideMemproofs(context.id, {
+        "test-role": new Uint8Array(64).fill(0xab),
+      });
+      expect(returned.id).toBe(context.id);
+      expect(returned.status).toBe("awaitingMemproofs"); // still parked until completeMemproofs
+    });
+
+    it("provideMemproofs throws when context is not in awaitingMemproofs state", async () => {
+      const domain = "https://memproof2.com";
+      await permissions.grantPermission(domain);
+      const context = await manager.installHapp(domain, { happBundle: createMockHappBundle() });
+      expect(context.status).toBe("enabled");
+
+      await expect(
+        manager.provideMemproofs(context.id, { "test-role": new Uint8Array(64) })
+      ).rejects.toThrow();
+    });
+
+    it("completeMemproofs transitions awaitingMemproofs to enabled", async () => {
+      const context = await installDeferredApp("https://memproof3.com");
+      expect(context.status).toBe("awaitingMemproofs");
+
+      const updated = await manager.completeMemproofs(context.id);
+
+      expect(updated.status).toBe("enabled");
+      expect(updated.enabled).toBe(true);
+
+      // Persisted
+      const stored = await manager.getContext(context.id);
+      expect(stored!.status).toBe("enabled");
+    });
+
+    it("completeMemproofs is idempotent when context is already enabled", async () => {
+      const domain = "https://memproof4.com";
+      await permissions.grantPermission(domain);
+      const context = await manager.installHapp(domain, { happBundle: createMockHappBundle() });
+      expect(context.status).toBe("enabled");
+
+      // completeMemproofs does not guard source state — calling on an already-enabled
+      // context is a no-op (re-sets enabled=true, which is already true)
+      const result = await manager.completeMemproofs(context.id);
+      expect(result.status).toBe("enabled");
+      expect(result.enabled).toBe(true);
+    });
   });
 
   describe("Get context", () => {

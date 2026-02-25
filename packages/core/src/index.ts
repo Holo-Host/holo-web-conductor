@@ -130,8 +130,11 @@ export interface HappContext {
   installedAt: number;
   lastUsed: number;
 
-  /** Whether this context is enabled */
+  /** Whether this context is enabled (derived from status for backward compat) */
   enabled: boolean;
+
+  /** App lifecycle status */
+  status: HappContextStatus;
 
   /**
    * Recovery seal state:
@@ -141,6 +144,14 @@ export interface HappContext {
    */
   recoverySealed?: boolean;
 }
+
+/**
+ * hApp lifecycle status
+ * - 'enabled': Normal operation, zome calls allowed
+ * - 'disabled': Manually disabled by user
+ * - 'awaitingMemproofs': Installed with deferred membrane proofs; genesis not yet run
+ */
+export type HappContextStatus = 'enabled' | 'disabled' | 'awaitingMemproofs';
 
 /**
  * DNA context within a hApp
@@ -174,6 +185,17 @@ export interface InstallHappRequest {
 
   /** .happ bundle bytes (gzipped MessagePack) */
   happBundle: Uint8Array;
+
+  /** Membrane proofs keyed by role name (optional) */
+  membraneProofs?: Record<string, Uint8Array>;
+
+  /**
+   * Lair key tag for a pre-existing agent key to use as this cell's agent.
+   * When provided, the key stored under this tag is used instead of the
+   * auto-generated domain-scoped key (${domain}:agent).
+   * Use this when the membrane proof was created for a specific pre-existing key.
+   */
+  agentKeyTag?: string;
 }
 
 export const VERSION = "0.0.1";

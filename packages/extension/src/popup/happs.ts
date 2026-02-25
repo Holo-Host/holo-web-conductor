@@ -20,6 +20,7 @@ interface HappContext {
   installedAt: number;
   lastUsed: number;
   enabled: boolean;
+  status?: 'enabled' | 'disabled' | 'awaitingMemproofs';
   dnaCount: number;
   recoverySealed?: boolean;
 }
@@ -139,9 +140,10 @@ async function copyToClipboard(text: string, element: HTMLElement): Promise<void
  * Render hApp card
  */
 function renderHappCard(context: HappContext): string {
-  const statusClass = context.enabled ? "enabled" : "disabled";
-  const statusText = context.enabled ? "Enabled" : "Disabled";
-  const disabledClass = context.enabled ? "" : "disabled";
+  const status = context.status || (context.enabled ? 'enabled' : 'disabled');
+  const statusClass = status === 'enabled' ? "enabled" : status === 'awaitingMemproofs' ? "awaiting" : "disabled";
+  const statusText = status === 'enabled' ? "Enabled" : status === 'awaitingMemproofs' ? "Awaiting Memproof" : "Disabled";
+  const disabledClass = status === 'enabled' ? "" : "disabled";
 
   return `
     <div class="happ-card ${disabledClass}" data-id="${context.id}">
@@ -186,9 +188,11 @@ function renderHappCard(context: HappContext): string {
 
       <div class="happ-actions">
         ${
-          context.enabled
-            ? `<button class="secondary disable-btn" data-id="${context.id}">Disable</button>`
-            : `<button class="primary enable-btn" data-id="${context.id}">Enable</button>`
+          status === 'awaitingMemproofs'
+            ? `<button class="primary provide-memproof-btn" data-id="${context.id}">Provide Memproof</button>`
+            : status === 'enabled'
+              ? `<button class="secondary disable-btn" data-id="${context.id}">Disable</button>`
+              : `<button class="primary enable-btn" data-id="${context.id}">Enable</button>`
         }
         <button class="secondary debug-btn" data-id="${context.id}">Debug</button>
         ${context.recoverySealed !== true
@@ -327,6 +331,15 @@ function attachEventListeners(): void {
       const target = e.target as HTMLButtonElement;
       const contextId = target.dataset.id!;
       await republishAllRecords(contextId);
+    });
+  });
+
+  // Provide Memproof buttons
+  document.querySelectorAll(".provide-memproof-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const target = e.target as HTMLButtonElement;
+      const contextId = target.dataset.id!;
+      await showMemproofDialog(contextId);
     });
   });
 
@@ -652,6 +665,76 @@ async function uninstallHapp(contextId: string): Promise<void> {
   } catch (error) {
     console.error("Error uninstalling hApp:", error);
     showError(error instanceof Error ? error.message : "Failed to uninstall hApp");
+  }
+}
+
+/**
+ * Show membrane proof input dialog for a context
+ */
+async function showMemproofDialog(contextId: string): Promise<void> {
+  const context = contexts.find((c) => c.id === contextId);
+  if (!context) return;
+
+  const appName = context.appName || "Unnamed hApp";
+
+  // Simple prompt for base64 or hex-encoded proof bytes
+  const input = prompt(
+    `Enter membrane proof for "${appName}":\n\n` +
+    `Paste base64-encoded or hex-encoded proof bytes.`
+  );
+
+  if (!input || input.trim() === "") return;
+
+  const trimmed = input.trim();
+
+  // Try to decode as base64 first, then hex
+  let proofBytes: Uint8Array;
+  try {
+    if (/^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+      // Base64
+      const binary = atob(trimmed);
+      proofBytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        proofBytes[i] = binary.charCodeAt(i);
+      }
+    } else if (/^[0-9a-fA-F]+$/.test(trimmed)) {
+      // Hex
+      const bytes = trimmed.match(/.{1,2}/g)!;
+      proofBytes = new Uint8Array(bytes.map((b) => parseInt(b, 16)));
+    } else {
+      showError("Invalid format. Use base64 or hex encoding.");
+      return;
+    }
+  } catch (e) {
+    showError("Failed to decode proof bytes.");
+    return;
+  }
+
+  try {
+    // Send all proofs under a single "default" role key
+    // In a real flow, the page API would provide role-specific proofs
+    const memproofs: Record<string, Uint8Array> = { default: proofBytes };
+    const message = createRequest(MessageType.PROVIDE_MEMPROOFS, {
+      contextId,
+      memproofs,
+    });
+    const response: ResponseMessage = await chrome.runtime.sendMessage(message);
+
+    if (response.type === MessageType.ERROR) {
+      throw new Error(response.error || "Failed to provide membrane proof");
+    }
+
+    // Update local state
+    const ctx = contexts.find((c) => c.id === contextId);
+    if (ctx) {
+      ctx.status = "enabled";
+      ctx.enabled = true;
+    }
+    renderHapps();
+    showSuccess("Membrane proof accepted");
+  } catch (error) {
+    console.error("Error providing membrane proof:", error);
+    showError(error instanceof Error ? error.message : "Failed to provide membrane proof");
   }
 }
 

@@ -23,6 +23,10 @@ export interface HolochainAPI {
   callZome(params: CallZomeParams): Promise<unknown>;
   appInfo(installedAppId?: string): Promise<WebConductorAppInfo | null>;
   installApp(request: InstallAppRequest): Promise<void>;
+  provideMemproofs(params: {
+    contextId?: string;
+    memproofs: Record<string, Uint8Array | number[]>;
+  }): Promise<void>;
 
   // Signal handling
   on(event: 'signal', callback: (signal: unknown) => void): () => void;
@@ -66,6 +70,7 @@ export interface CallZomeParams {
 export interface InstallAppRequest {
   bundle: Uint8Array | number[];
   installedAppId?: string;
+  membraneProofs?: Record<string, Uint8Array | number[]>;
 }
 
 /**
@@ -77,6 +82,8 @@ export interface WebConductorAppInfo {
   cells: Array<[Uint8Array | number[], Uint8Array | number[]]>;
   /** DNA properties keyed by DNA name (raw objects from manifest) */
   dnaProperties?: Record<string, Record<string, unknown>>;
+  /** App status: 'enabled' | 'disabled' | 'awaitingMemproofs' */
+  status?: string;
 }
 
 declare global {

@@ -47,12 +47,14 @@ export interface GenesisResult {
  * @param storage - Source chain storage instance
  * @param dnaHash - DNA hash for this cell
  * @param agentPubKey - Agent public key for this cell
+ * @param membraneProof - Optional membrane proof bytes for the AgentValidationPkg
  * @returns GenesisResult with initialized flag and pending records for publishing
  */
 export async function initializeGenesis(
   storage: SourceChainStorage,
   dnaHash: Uint8Array,
-  agentPubKey: Uint8Array
+  agentPubKey: Uint8Array,
+  membraneProof?: Uint8Array
 ): Promise<GenesisResult> {
   console.log('[Genesis] Checking if chain needs initialization...');
 
@@ -110,7 +112,7 @@ export async function initializeGenesis(
     timestamp: timestampMicros,
     action_seq: 1,
     prev_action: dnaActionHash,
-    // membrane_proof is optional
+    membrane_proof: membraneProof,
   });
   const agentValidationActionHash = computeActionHashV2(agentValidationSerializableAction);
 
@@ -122,7 +124,7 @@ export async function initializeGenesis(
     prevActionHash: dnaActionHash,
     actionType: 'AgentValidationPkg',
     signature: signSerializedAction(agentValidationSerializableAction),
-    // membraneProof is optional
+    membraneProof,
   };
 
   await storage.putAction(agentValidationAction, dnaHash, agentPubKey);

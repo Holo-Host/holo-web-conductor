@@ -1,0 +1,17 @@
+---
+manifest_version: "0"
+name: test-zome-memproof-happ
+description: Test hApp with membrane proof (progenitor-gated)
+allow_deferred_memproofs: true
+
+roles:
+  - name: test-role
+    provisioning:
+      strategy: create
+      deferred: false
+    dna:
+      path: test-dna-memproof.dna
+      modifiers:
+        network_seed: "test-memproof-seed"
+        properties: {}
+      clone_limit: 0
