@@ -16,12 +16,11 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
-    // Exclude tests that use vi.mock which doesn't work with the alias (hoisting issue)
     exclude: [
       "**/node_modules/**",
-      "src/network/network.test.ts",
+      // Run by separate CI step (npm run test:integration) to avoid double-execution
       "src/ribosome/integration.test.ts",
-      "src/ribosome/genesis-self-check.test.ts",
+      // Fails due to libsodium signing initialization in callZome path — needs signing mock
       "test/profiles-integration.test.ts",
     ],
     coverage: {

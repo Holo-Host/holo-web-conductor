@@ -18,7 +18,6 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     exclude: [
       "**/node_modules/**",
-      "src/lib/lair-lock.test.ts",
     ],
   },
 });
