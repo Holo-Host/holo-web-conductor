@@ -17,6 +17,7 @@ import { getNetworkService } from "../../network";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { UnresolvedDependenciesError } from "../error";
 import { toHolochainAction } from "./action-serialization";
+import { bytesEqual } from "./bytes-equal";
 import type { StoredAction } from "../../storage/types";
 import { validateWasmMustGetAgentActivityInput } from "../wasm-io-types";
 import type { ActionHash } from "../../types/holochain-types";
@@ -27,7 +28,7 @@ export const mustGetAgentActivity: HostFunctionImpl = (
   inputLen
 ) => {
   const { callContext, instance } = context;
-  const [dnaHash] = callContext.cellId;
+  const [dnaHash, selfAgent] = callContext.cellId;
 
   // Deserialize input
   const input = deserializeTypedFromWasm(
@@ -49,6 +50,14 @@ export const mustGetAgentActivity: HostFunctionImpl = (
       .join("")}...`
   );
 
+  // Self short-circuit: own chain activity is in local storage
+  if (bytesEqual(authorHash, selfAgent)) {
+    console.log("[HostFn] must_get_agent_activity: author is self, querying local storage");
+    const storage = getStorageProvider();
+    const actions = storage.queryActions(dnaHash, authorHash, {});
+    return buildLocalResult(instance, callContext, actions, authorHash);
+  }
+
   // Extract chain_top from the chain_filter for the network request
   let chainTop: ActionHash | null = null;
   if (chainFilter && typeof chainFilter === "object") {
@@ -58,7 +67,7 @@ export const mustGetAgentActivity: HostFunctionImpl = (
     }
   }
 
-  // Try network first (zero-arc node pattern)
+  // Try network first (zero-arc node pattern) for other agents
   const networkService = getNetworkService();
   if (networkService && chainTop) {
     const response = networkService.mustGetAgentActivitySync(
@@ -96,10 +105,23 @@ export const mustGetAgentActivity: HostFunctionImpl = (
     }
   }
 
-  // Fallback: query local storage
+  // Fallback: query local storage (for non-self agents when network unavailable)
   const storage = getStorageProvider();
   const actions = storage.queryActions(dnaHash, authorHash, {});
 
+  return buildLocalResult(instance, callContext, actions, authorHash);
+};
+
+/**
+ * Build RegisterAgentActivity[] result from local storage actions.
+ * Shared by both self short-circuit and network-unavailable fallback paths.
+ */
+function buildLocalResult(
+  instance: WebAssembly.Instance,
+  callContext: { isValidationContext?: boolean },
+  actions: StoredAction[],
+  authorHash: Uint8Array,
+): bigint {
   if (!actions || actions.length === 0) {
     if (callContext.isValidationContext) {
       throw new UnresolvedDependenciesError({
@@ -109,7 +131,6 @@ export const mustGetAgentActivity: HostFunctionImpl = (
     return serializeResult(instance, []);
   }
 
-  // Convert to RegisterAgentActivity format
   const results = actions.map((storedAction: StoredAction) => {
     const wireAction = toHolochainAction(storedAction);
     return {
@@ -125,4 +146,4 @@ export const mustGetAgentActivity: HostFunctionImpl = (
   });
 
   return serializeResult(instance, results);
-};
+}
