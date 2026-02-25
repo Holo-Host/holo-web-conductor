@@ -256,6 +256,42 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   // Records & publishing
   // ============================================================================
 
+  async runGenesis(
+    cellId: [number[], number[]],
+    dnaWasm: number[],
+    dnaManifest: unknown,
+    membraneProof: number[] | null,
+  ): Promise<{ pendingRecords: any[] }> {
+    await this.ensureOffscreenDocument();
+
+    // MV3 service workers are terminated after 30s of no Chrome API calls.
+    // Worker initialization (WASM + SQLite compilation) can take 10-30s with no
+    // SIGN_REQUEST events to keep us alive. Ping chrome.storage every 20s so Chrome
+    // doesn't kill us before the offscreen sends its sendResponse.
+    const keepAlive = setInterval(() => {
+      chrome.storage.local.get('__hwc_genesis_keepalive');
+    }, 20000);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "RUN_GENESIS",
+        cellId,
+        dnaWasm,
+        dnaManifest,
+        membraneProof,
+      });
+
+      if (!response || !response.success) {
+        throw new Error(response?.error || "genesis_self_check failed");
+      }
+
+      return { pendingRecords: response.pendingRecords || [] };
+    } finally {
+      clearInterval(keepAlive);
+    }
+  }
+
   async getAllRecords(dnaHash: number[], agentPubKey: number[]): Promise<{ records: any[] }> {
     await this.ensureOffscreenDocument();
 

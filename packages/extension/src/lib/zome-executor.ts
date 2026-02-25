@@ -137,6 +137,19 @@ export interface ZomeExecutor {
   /** Trigger publish queue processing for the given DNAs. */
   processPublishQueue(dnaHashes: number[][]): Promise<void>;
 
+  // --- Genesis ---
+
+  /**
+   * Run genesis_self_check + initializeGenesis for a cell with the given membrane proof.
+   * Throws if genesis_self_check returns Invalid.
+   */
+  runGenesis(
+    cellId: [number[], number[]],
+    dnaWasm: number[],
+    dnaManifest: unknown,
+    membraneProof: number[] | null,
+  ): Promise<{ pendingRecords: any[] }>;
+
   // --- Chain recovery ---
 
   /** Recover chain actions from the network for a hApp context. */

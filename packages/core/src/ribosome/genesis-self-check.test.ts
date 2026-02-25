@@ -15,7 +15,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFile } from "fs/promises";
 import { resolve } from "path";
-import { encode } from "@msgpack/msgpack";
 import {
   HoloHashType,
   hashFrom32AndType,
@@ -150,12 +149,11 @@ describe("genesis_self_check integration", () => {
     const manifest = buildManifest(authorizerAgentPubKey);
     const cellId: [Uint8Array, Uint8Array] = [dnaHash, agentPubKey];
 
-    // Create garbage 64-byte proof (random bytes, not a valid signature)
-    const garbageProof = new Uint8Array(64);
-    for (let i = 0; i < 64; i++) garbageProof[i] = i;
-
-    // Wrap as SerializedBytes: encode the raw bytes with msgpack
-    const membraneProof = new Uint8Array(encode(garbageProof));
+    // Create garbage 64-byte proof (random bytes, not a valid signature).
+    // Pass raw bytes directly — production code puts membraneProof into selfCheckData
+    // as a Uint8Array and encodes the whole struct. No pre-encoding needed.
+    const membraneProof = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) membraneProof[i] = i;
 
     const result = await runGenesisSelfCheck(
       manifest,
@@ -171,14 +169,13 @@ describe("genesis_self_check integration", () => {
     const manifest = buildManifest(authorizerAgentPubKey);
     const cellId: [Uint8Array, Uint8Array] = [dnaHash, agentPubKey];
 
-    // Create valid membrane proof: authorizer signs the agent's 39-byte pubkey
-    const signature = sodium.crypto_sign_detached(
+    // Create valid membrane proof: authorizer signs the agent's 39-byte pubkey.
+    // Pass raw signature bytes directly — production code encodes the whole selfCheckData
+    // struct with msgpack, so the signature must NOT be pre-encoded here.
+    const membraneProof = sodium.crypto_sign_detached(
       agentPubKey,
       authorizerEd25519PrivKey
     );
-
-    // Wrap as SerializedBytes: encode the raw signature bytes with msgpack
-    const membraneProof = new Uint8Array(encode(signature));
 
     const result = await runGenesisSelfCheck(
       manifest,
@@ -193,9 +190,8 @@ describe("genesis_self_check integration", () => {
     const manifest = buildManifest(authorizerAgentPubKey);
     const cellId: [Uint8Array, Uint8Array] = [dnaHash, agentPubKey];
 
-    // Create proof with wrong length
-    const shortProof = new Uint8Array(32).fill(0xab);
-    const membraneProof = new Uint8Array(encode(shortProof));
+    // Create proof with wrong length. Pass raw bytes directly — no pre-encoding.
+    const membraneProof = new Uint8Array(32).fill(0xab);
 
     const result = await runGenesisSelfCheck(
       manifest,

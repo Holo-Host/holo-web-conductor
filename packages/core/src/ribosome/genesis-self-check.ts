@@ -16,6 +16,7 @@
  */
 
 import { encode } from "@msgpack/msgpack";
+import sodium from "libsodium-wrappers";
 import { createLogger } from "@hwc/shared";
 
 import type { CallContext } from "./call-context";
@@ -121,6 +122,11 @@ async function callGenesisSelfCheckExport(
     isValidationContext: true,
   };
 
+  // Ensure libsodium is initialized before building imports — verify_signature host
+  // function calls sodium.crypto_sign_verify_detached synchronously, which hangs if
+  // sodium.ready hasn't been awaited yet (no prior CALL_ZOME on a fresh worker).
+  await sodium.ready;
+
   // Build import object with host functions
   const instanceRef = { current: null as WebAssembly.Instance | null };
   const imports = registry.buildImportObject(instanceRef, context);
@@ -143,11 +149,15 @@ async function callGenesisSelfCheckExport(
 
   try {
     // Build GenesisSelfCheckDataV2
-    // membrane_proof is Option<Arc<SerializedBytes>>
-    // SerializedBytes uses serde_bytes so it serializes as msgpack binary.
-    // The caller passes membraneProof already as SerializedBytes content
-    // (msgpack-encoded inner bytes). Don't re-encode - msgpack will handle
-    // the Uint8Array as binary (matching serde_bytes on the Rust side).
+    // membrane_proof is Option<Arc<SerializedBytes>>. Following Holochain/volla convention,
+    // SerializedBytes inner bytes are always msgpack-encoded. The Rust zome does
+    // rmp_serde::from_slice on those bytes to recover Vec<u8> (the raw sig bytes).
+    // Pre-encode the raw proof bytes as msgpack(Vec<u8>) so Rust can decode them correctly.
+    // membrane_proof is Option<Arc<SerializedBytes>>. The Rust zome uses
+    // UnsafeBytes::from(proof).into::<Vec<u8>>() to read the raw inner bytes directly.
+    // So the membrane proof IS the raw signature bytes — no msgpack pre-encoding needed.
+    // When encode(selfCheckData) runs, the Uint8Array is encoded as msgpack bin, and
+    // Rust's SerializedBytes stores those raw bytes which UnsafeBytes then extracts.
     const selfCheckData = {
       membrane_proof: membraneProof ?? null,
       agent_key: agentPubKey,

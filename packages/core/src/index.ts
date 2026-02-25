@@ -188,6 +188,14 @@ export interface InstallHappRequest {
 
   /** Membrane proofs keyed by role name (optional) */
   membraneProofs?: Record<string, Uint8Array>;
+
+  /**
+   * Lair key tag for a pre-existing agent key to use as this cell's agent.
+   * When provided, the key stored under this tag is used instead of the
+   * auto-generated domain-scoped key (${domain}:agent).
+   * Use this when the membrane proof was created for a specific pre-existing key.
+   */
+  agentKeyTag?: string;
 }
 
 export const VERSION = "0.0.1";

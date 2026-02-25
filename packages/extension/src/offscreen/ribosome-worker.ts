@@ -84,7 +84,7 @@ import { encodeHashToBase64, type ActionHash, type EntryHash, type DnaHash, type
 // Types
 interface WorkerMessage {
   id: number;
-  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN';
+  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN' | 'RUN_GENESIS';
   payload?: any;
 }
 
@@ -1690,6 +1690,92 @@ self.onmessage = async (event: MessageEvent) => {
 
         console.log(`[Ribosome Worker] Recovery complete: ${totalRecovered} recovered, ${totalFailed} failed, ${totalVerified} verified, ${totalUnverified} unverified`);
         result = { recoveredCount: totalRecovered, failedCount: totalFailed, verifiedCount: totalVerified, unverifiedCount: totalUnverified, errors: allErrors };
+        break;
+      }
+
+      case 'RUN_GENESIS': {
+        // Run genesis_self_check then initializeGenesis with a membrane proof.
+        // Called from provideMemproofs before enabling a deferred-memproof context.
+        const { dnaWasm: genesisDnaWasm, cellId: genesisCellId, dnaManifest: genesisManifest, membraneProof: genesisProof } = payload;
+
+        const cellIdBytes: [DnaHash, AgentPubKey] = [
+          new Uint8Array(genesisCellId[0]) as DnaHash,
+          new Uint8Array(genesisCellId[1]) as AgentPubKey,
+        ];
+        const [genesisDnaHash, genesisAgentKey] = cellIdBytes;
+
+        // Load WASM into cache (same pattern as CALL_ZOME)
+        const genesisDnaHashKey = getWasmCacheKey(genesisCellId[0]);
+        let genesisWasm = wasmCache.get(genesisDnaHashKey);
+        if (!genesisWasm && genesisDnaWasm && genesisDnaWasm.length > 0) {
+          genesisWasm = new Uint8Array(genesisDnaWasm);
+          wasmCache.set(genesisDnaHashKey, genesisWasm);
+        }
+        if (!genesisWasm) {
+          throw new Error('No WASM available for genesis');
+        }
+
+        // Inject WASM into manifest integrity zomes so runGenesisSelfCheck can find it.
+        // Always use genesisWasm (reconstructed from number[] payload) — Chrome message
+        // passing corrupts Uint8Array to {0:x,1:y} plain objects, so z.wasm from the
+        // manifest cannot be used even if it looks non-empty.
+        const manifestWithWasm = genesisManifest ? {
+          ...genesisManifest,
+          integrity_zomes: (genesisManifest.integrity_zomes || []).map((z: any) => ({
+            ...z,
+            wasm: genesisWasm,
+          })),
+        } : genesisManifest;
+
+        storage.setCellContext(genesisDnaHash, genesisAgentKey);
+
+        const memproofBytes = genesisProof ? new Uint8Array(genesisProof) : undefined;
+
+        // 1. Run genesis_self_check
+        const { runGenesisSelfCheck } = await import('@hwc/core/ribosome/genesis-self-check');
+        const selfCheckResult = await runGenesisSelfCheck(manifestWithWasm, cellIdBytes, memproofBytes);
+        if (!selfCheckResult.valid) {
+          result = { valid: false, reason: selfCheckResult.reason };
+          break;
+        }
+
+        // 2. Run initializeGenesis with the membrane proof
+        const { initializeGenesis } = await import('@hwc/core/storage/genesis');
+        const genesisResult = await initializeGenesis(storage as any, genesisDnaHash, genesisAgentKey, memproofBytes);
+
+        // Convert pending records to the same signed_action transport format used by
+        // CALL_ZOME. buildRecords converts StoredRecord[] (BigInt timestamps) to
+        // HolochainRecord[] (@holochain/client format, number tuple timestamps).
+        // Uint8Arrays are then converted to number[] for Chrome message passing.
+        const { buildRecords } = await import('@hwc/core/dht');
+        const clientRecords = buildRecords(genesisResult.pendingRecords || []);
+        const genesisRecordsForTransport = clientRecords.map((record: any) => {
+          let entryForTransport: any = undefined;
+          const recordEntry = record.entry;
+          if (recordEntry && typeof recordEntry === 'object' && 'Present' in recordEntry) {
+            const presentEntry = recordEntry.Present;
+            entryForTransport = {
+              Present: {
+                entry_type: presentEntry.entry_type,
+                entry: Array.from(presentEntry.entry),
+              }
+            };
+          } else if (recordEntry && typeof recordEntry === 'object' && 'NotApplicable' in recordEntry) {
+            entryForTransport = { NotApplicable: null };
+          }
+          return {
+            signed_action: {
+              hashed: {
+                content: record.signed_action.hashed.content,
+                hash: Array.from(record.signed_action.hashed.hash),
+              },
+              signature: Array.from(record.signed_action.signature),
+            },
+            entry: entryForTransport,
+          };
+        });
+
+        result = { valid: true, pendingRecords: genesisRecordsForTransport };
         break;
       }
 

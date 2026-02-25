@@ -782,7 +782,7 @@ async function handleAppInfo(
       return createErrorResponse(message.id, `No hApp installed for ${origin}`);
     }
 
-    if (!context.enabled) {
+    if (!context.enabled && context.status !== 'awaitingMemproofs') {
       return createErrorResponse(message.id, "hApp is disabled");
     }
 
@@ -857,9 +857,37 @@ async function handleInstallHapp(
       appVersion: request.appVersion,
       happBundle: toUint8Array(request.happBundle),
       membraneProofs,
+      agentKeyTag: request.agentKeyTag,
     };
 
-    const context = await happContextManager.installHapp(origin, normalizedRequest);
+    let context = await happContextManager.installHapp(origin, normalizedRequest);
+
+    // If the app requires membrane proofs AND they were provided at install time,
+    // run genesis immediately (one-step flow) instead of requiring a second
+    // PROVIDE_MEMPROOFS call. The context was parked as awaitingMemproofs by
+    // installHapp regardless; we now complete it here.
+    if (context.status === 'awaitingMemproofs' && membraneProofs) {
+      logHapp.info(`Running genesis immediately for ${context.id} (memproofs provided at install)`);
+      await executor.initialize();
+
+      for (const dna of context.dnas) {
+        const roleName = dna.name ?? '';
+        const proof = membraneProofs[roleName];
+
+        const cellId: [number[], number[]] = [
+          Array.from(toUint8Array(dna.hash)),
+          Array.from(toUint8Array(context.agentPubKey)),
+        ];
+        const dnaWasm = Array.from(toUint8Array(dna.wasm));
+        const membraneProofArr = proof ? Array.from(proof) : null;
+
+        logHapp.info(`Running genesis for DNA "${roleName}" in context ${context.id}`);
+        await executor.runGenesis(cellId, dnaWasm, dna.manifest ?? null, membraneProofArr);
+      }
+
+      context = await happContextManager.completeMemproofs(context.id);
+      logHapp.info(`Genesis complete for ${context.id} (one-step install), status: ${context.status}`);
+    }
 
     // Register agents with linker for signal forwarding
     // Do this asynchronously - don't block the install response
@@ -872,6 +900,7 @@ async function handleInstallHapp(
       appName: context.appName,
       agentPubKey: context.agentPubKey,
       cells: happContextManager.getCellIds(context),
+      status: context.status,
     });
   } catch (error) {
     return createErrorResponse(
@@ -995,7 +1024,7 @@ async function handleDisableHapp(
  */
 async function handleProvideMemproofs(
   message: RequestMessage,
-  sender: chrome.runtime.MessageSender
+  _sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
   try {
     const { contextId, memproofs } = getPayload<MessageType.PROVIDE_MEMPROOFS>(message);
@@ -1012,9 +1041,32 @@ async function handleProvideMemproofs(
       normalizedMemproofs[role] = toUint8Array(proof);
     }
 
-    // provideMemproofs transitions state and triggers genesis
-    const updatedContext = await happContextManager.provideMemproofs(contextId, normalizedMemproofs);
-    logHapp.info(`Membrane proofs provided for ${contextId}, status: ${updatedContext.status}`);
+    // Validate state and get context info (does NOT enable the context yet)
+    const context = await happContextManager.provideMemproofs(contextId, normalizedMemproofs);
+    logHapp.info(`Running genesis for ${contextId} with ${context.dnas.length} DNA(s)`);
+
+    // Run genesis_self_check + initializeGenesis for each DNA via offscreen worker.
+    // If any DNA fails, the whole operation fails and context stays in awaitingMemproofs.
+    await executor.initialize();
+
+    for (const dna of context.dnas) {
+      const roleName = dna.name ?? '';
+      const proof = normalizedMemproofs[roleName];
+
+      const cellId: [number[], number[]] = [
+        Array.from(toUint8Array(dna.hash)),
+        Array.from(toUint8Array(context.agentPubKey)),
+      ];
+      const dnaWasm = Array.from(toUint8Array(dna.wasm));
+      const membraneProofArr = proof ? Array.from(proof) : null;
+
+      logHapp.info(`Running genesis for DNA "${roleName}" in context ${contextId}`);
+      await executor.runGenesis(cellId, dnaWasm, dna.manifest ?? null, membraneProofArr);
+    }
+
+    // All DNAs passed genesis_self_check - transition context to enabled
+    const updatedContext = await happContextManager.completeMemproofs(contextId);
+    logHapp.info(`Membrane proofs accepted for ${contextId}, status: ${updatedContext.status}`);
 
     // Register agents with linker now that genesis is complete
     registerContextAgentsWithLinker(updatedContext).catch((err) => {

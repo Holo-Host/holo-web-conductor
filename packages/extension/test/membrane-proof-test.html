@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<!--
+  DEVELOPER TOOL - Membrane Proof Test Page
+
+  Tests the membrane-proof-gated hApp installation flow:
+  1. Install test-memproof.happ (deferred membrane proofs)
+  2. App enters "awaitingMemproofs" state
+  3. Copy agent pubkey for authorizer to sign
+  4. Provide membrane proof (authorizer's signature of agent pubkey)
+  5. App transitions to "enabled"
+
+  The authorizer keypair was created from these seed words:
+    indoor clutch chicken nurse inhale close feel type school sweet
+    oyster property balcony city actual erupt before stomach ethics
+    talk pact camera lonely proud
+
+  Ed25519 pubkey (base64): c41YjAiTC4HIGu85yZaCLyKDFhYArTFZmRqYSChrzHY=
+
+  Serve: cd packages/extension/test && python3 -m http.server 8080
+  Open:  http://localhost:8080/membrane-proof-test.html
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HWC Membrane Proof Test</title>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "@holochain/client": "https://esm.sh/@holochain/client@0.20.1"
+      }
+    }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    h1 { color: #333; margin-bottom: 8px; }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .section {
+      margin-bottom: 24px;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .section h2 {
+      font-size: 17px;
+      margin-bottom: 14px;
+      color: #444;
+    }
+
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    button:hover { background: #45a049; }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: #007bff;
+    }
+    button.primary:hover { background: #0056b3; }
+    button.primary:disabled { background: #ccc; cursor: not-allowed; }
+
+    button.danger {
+      background: #dc3545;
+    }
+    button.danger:hover { background: #c82333; }
+
+    .output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      margin-top: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .status.error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .status.info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .status.warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .instructions {
+      background: #e8f4fd;
+      border: 1px solid #b8daff;
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: #004085;
+    }
+
+    .instructions h3 {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .instructions ol {
+      margin-left: 20px;
+      line-height: 1.6;
+    }
+
+    .seed-words {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 10px;
+      margin: 8px 0;
+      font-family: monospace;
+      font-size: 12px;
+      word-spacing: 4px;
+      line-height: 1.6;
+    }
+
+    .copyable {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+    }
+
+    .copyable input {
+      flex: 1;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+    }
+
+    .copyable button {
+      margin: 0;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    textarea {
+      width: 100%;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      resize: vertical;
+      min-height: 40px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Membrane Proof Test</h1>
+  <p class="subtitle">
+    Tests the deferred membrane proof flow with a progenitor-gated test hApp.
+    The DNA requires a membrane proof: the authorizer's Ed25519 signature of
+    the installing agent's 39-byte AgentPubKey.
+  </p>
+
+  <!-- Instructions -->
+  <div class="section">
+    <h2>Instructions</h2>
+    <div class="instructions">
+      <h3>Authorizer Setup (one-time, in the Lair popup)</h3>
+      <ol>
+        <li>Open the HWC extension popup, go to <strong>Lair Keystore</strong></li>
+        <li>Under <strong>Seed Phrase Restore</strong>, enter tag: <code>authorizer</code></li>
+        <li>Paste these 24 seed words:</li>
+      </ol>
+      <div class="seed-words">
+        indoor clutch chicken nurse inhale close feel type school sweet
+        oyster property balcony city actual erupt before stomach ethics
+        talk pact camera lonely proud
+      </div>
+      <p style="margin-top:8px;">
+        This restores the authorizer key with Ed25519 pubkey:
+        <code>c41YjAiTC4HIGu85yZaCLyKDFhYArTFZmRqYSChrzHY=</code>
+      </p>
+      <h3 style="margin-top:12px;">Test Flow</h3>
+      <ol>
+        <li>Detect extension and authorize domain (steps 1-2 below)</li>
+        <li>Install the membrane-proof hApp (step 3) -- app enters "awaiting memproofs" state</li>
+        <li>Copy the agent's AgentPubKey (shown after install)</li>
+        <li>In the Lair popup Sign section: select <strong>authorizer</strong> key, set Data Format to <strong>Base64 (raw bytes)</strong>, paste the AgentPubKey (base64) value, and sign</li>
+        <li>Paste the signature as the membrane proof (step 4) and submit</li>
+        <li>App should transition to "enabled" state</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- Section 1: Extension Detection -->
+  <div class="section">
+    <h2>1. Extension Detection</h2>
+    <button id="detect-btn">Detect Extension</button>
+    <div id="detect-status"></div>
+  </div>
+
+  <!-- Section 2: Authorization -->
+  <div class="section">
+    <h2>2. Authorization</h2>
+    <button id="authorize-btn" disabled>Authorize Domain</button>
+    <div id="authorize-status"></div>
+  </div>
+
+  <!-- Section 3: Install membrane-proof hApp -->
+  <div class="section">
+    <h2>3. Install Membrane-Proof hApp</h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Loads <code>test-memproof.happ</code> and installs it.
+      Because the DNA has a progenitor property and the manifest sets
+      <code>allow_deferred_memproofs: true</code>, the app will enter
+      "awaitingMemproofs" status instead of running genesis immediately.
+    </p>
+    <button id="install-btn" disabled>Install test-memproof.happ</button>
+    <div id="install-status"></div>
+
+    <div id="agent-key-section" style="display:none; margin-top:15px;">
+      <h3 style="font-size:14px; color:#444; margin-bottom:8px;">Agent Public Key</h3>
+      <p style="font-size:12px; color:#666; margin-bottom:6px;">
+        This is the installing agent's AgentPubKey (39 bytes, base64).
+        The authorizer must sign these raw bytes to produce the membrane proof.
+      </p>
+      <div class="copyable">
+        <label style="font-size:12px; white-space:nowrap;">AgentPubKey (base64):</label>
+        <input type="text" id="agent-key-b64" readonly />
+        <button id="copy-agent-key-btn" class="primary" style="white-space:nowrap;">Copy</button>
+      </div>
+      <div class="copyable">
+        <label style="font-size:12px; white-space:nowrap;">AgentPubKey (bytes):</label>
+        <input type="text" id="agent-key-bytes" readonly />
+        <button id="copy-agent-bytes-btn" class="primary" style="white-space:nowrap;">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: Provide Membrane Proof -->
+  <div class="section">
+    <h2>4. Provide Membrane Proof</h2>
+    <p style="font-size:13px; color:#666; margin-bottom:10px;">
+      Paste the authorizer's signature (base64) of the agent's raw AgentPubKey bytes.
+      In the Lair popup's Sign section: select the <strong>authorizer</strong> key,
+      set <strong>Data Format to "Base64 (raw bytes)"</strong>, paste the AgentPubKey (base64)
+      value from step 3, sign it, and copy the resulting signature here.
+    </p>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:12px; font-weight:500;">Membrane Proof (base64 signature):</label>
+      <textarea id="memproof-input" placeholder="Paste base64 signature here..." rows="2"></textarea>
+    </div>
+    <button id="provide-proof-btn" disabled>Provide Membrane Proof</button>
+    <div id="proof-status"></div>
+  </div>
+
+  <!-- Section 5: Verify Status -->
+  <div class="section">
+    <h2>5. Check App Status</h2>
+    <button id="check-status-btn" disabled>Check appInfo</button>
+    <div id="app-status"></div>
+  </div>
+
+  <!-- Console Output -->
+  <div class="section">
+    <h2>Console Output</h2>
+    <button id="clear-output-btn">Clear</button>
+    <div id="output" class="output">Waiting for actions...\n</div>
+  </div>
+
+</div><!-- /.container -->
+
+<script type="module">
+  import {
+    log,
+    showStatus,
+    formatForDisplay,
+    waitForExtension,
+    loadBinaryFile,
+  } from './lib/test-helpers.js';
+
+  import {
+    waitForHolochain,
+    toUint8Array,
+  } from './lib/web-conductor-client.js';
+
+  // ---------------------------------------------------------------------------
+  // DOM refs
+  // ---------------------------------------------------------------------------
+  const outputEl       = document.getElementById('output');
+  const detectBtn      = document.getElementById('detect-btn');
+  const authorizeBtn   = document.getElementById('authorize-btn');
+  const installBtn     = document.getElementById('install-btn');
+  const provideProofBtn = document.getElementById('provide-proof-btn');
+  const checkStatusBtn = document.getElementById('check-status-btn');
+
+  // ---------------------------------------------------------------------------
+  // Logging
+  // ---------------------------------------------------------------------------
+  function out(msg, isError = false) {
+    log(outputEl, msg, isError);
+  }
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+  let contextId = null;
+  let agentPubKey = null; // Uint8Array (39 bytes)
+
+  // ---------------------------------------------------------------------------
+  // Section 1 - Extension Detection
+  // ---------------------------------------------------------------------------
+  async function detectExtension() {
+    out('Detecting Holochain extension...');
+    try {
+      await waitForHolochain(3000);
+      out('Extension detected. window.holochain.isWebConductor = ' + window.holochain.isWebConductor);
+      showStatus('detect-status', '<strong>Extension detected.</strong>', 'success');
+      authorizeBtn.disabled = false;
+      return true;
+    } catch (err) {
+      out('Extension not found: ' + err.message, true);
+      showStatus('detect-status',
+        '<strong>Extension not found.</strong> Install the HWC extension and reload.',
+        'error');
+      return false;
+    }
+  }
+
+  detectBtn.addEventListener('click', detectExtension);
+
+  // ---------------------------------------------------------------------------
+  // Section 2 - Authorization
+  // ---------------------------------------------------------------------------
+  authorizeBtn.addEventListener('click', async () => {
+    out('Calling window.holochain.connect()...');
+    showStatus('authorize-status', 'Requesting authorization...', 'info');
+    try {
+      const result = await window.holochain.connect();
+      out('Authorized: ' + JSON.stringify(result));
+      showStatus('authorize-status',
+        '<strong>Authorized.</strong> Origin: <code>' + result.origin + '</code>',
+        'success');
+      authorizeBtn.disabled = true;
+      installBtn.disabled = false;
+      checkStatusBtn.disabled = false;
+
+      // Check if already installed
+      await checkExistingHapp();
+    } catch (err) {
+      out('Authorization failed: ' + err.message, true);
+      showStatus('authorize-status', '<strong>Authorization failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Helper: check existing hApp
+  // ---------------------------------------------------------------------------
+  async function checkExistingHapp() {
+    try {
+      const appInfo = await window.holochain.appInfo();
+      if (appInfo && appInfo.contextId) {
+        contextId = appInfo.contextId;
+        out('Existing hApp found: contextId=' + contextId + ', status=' + appInfo.status);
+
+        if (appInfo.agentPubKey) {
+          agentPubKey = toUint8Array(appInfo.agentPubKey);
+          showAgentKey();
+        }
+
+        if (appInfo.status === 'awaitingMemproofs') {
+          showStatus('install-status',
+            '<strong>hApp installed, awaiting membrane proof.</strong> contextId: <code>' + contextId + '</code>',
+            'warning');
+          installBtn.disabled = true;
+          provideProofBtn.disabled = false;
+        } else {
+          showStatus('install-status',
+            '<strong>hApp already installed and enabled.</strong> contextId: <code>' + contextId + '</code>',
+            'success');
+          installBtn.disabled = true;
+        }
+      }
+    } catch (_) {
+      out('No existing hApp installed.');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper: show agent key
+  // ---------------------------------------------------------------------------
+  function showAgentKey() {
+    if (!agentPubKey) return;
+
+    const section = document.getElementById('agent-key-section');
+    section.style.display = 'block';
+
+    // Base64 of the 39-byte AgentPubKey
+    const b64 = btoa(String.fromCharCode(...agentPubKey));
+    document.getElementById('agent-key-b64').value = b64;
+
+    // Byte array for reference
+    document.getElementById('agent-key-bytes').value = Array.from(agentPubKey).join(', ');
+  }
+
+  // Copy buttons
+  document.getElementById('copy-agent-key-btn').addEventListener('click', () => {
+    const input = document.getElementById('agent-key-b64');
+    navigator.clipboard.writeText(input.value).then(() => {
+      out('Copied AgentPubKey (base64) to clipboard.');
+    });
+  });
+
+  document.getElementById('copy-agent-bytes-btn').addEventListener('click', () => {
+    const input = document.getElementById('agent-key-bytes');
+    navigator.clipboard.writeText(input.value).then(() => {
+      out('Copied AgentPubKey (bytes) to clipboard.');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 3 - Install membrane-proof hApp
+  // ---------------------------------------------------------------------------
+  installBtn.addEventListener('click', async () => {
+    out('Loading test-memproof.happ...');
+    showStatus('install-status', 'Loading test-memproof.happ bundle...', 'info');
+
+    let happBundle;
+    try {
+      happBundle = await loadBinaryFile('test-memproof.happ');
+      out('Loaded test-memproof.happ: ' + happBundle.length + ' bytes');
+    } catch (err) {
+      out('Failed to load: ' + err.message, true);
+      showStatus('install-status', '<strong>Error:</strong> ' + err.message, 'error');
+      return;
+    }
+
+    out('Calling window.holochain.installHapp()...');
+    showStatus('install-status', 'Installing (deferred memproofs)...', 'info');
+    try {
+      const result = await window.holochain.installHapp({
+        appVersion: '0.1.0',
+        happBundle,
+        // No membraneProofs - deferred flow
+      });
+
+      contextId = result.contextId;
+      out('hApp installed. contextId=' + contextId);
+      out('  status: ' + result.status);
+      out('  appName: ' + result.appName);
+
+      if (result.agentPubKey) {
+        agentPubKey = toUint8Array(result.agentPubKey);
+        showAgentKey();
+        out('  agentPubKey: ' + btoa(String.fromCharCode(...agentPubKey)));
+      }
+
+      if (result.status === 'awaitingMemproofs') {
+        showStatus('install-status',
+          '<strong>hApp installed, awaiting membrane proof.</strong><br>' +
+          'contextId: <code>' + contextId + '</code><br>' +
+          'Status: <code>awaitingMemproofs</code> -- proceed to step 4.',
+          'warning');
+        provideProofBtn.disabled = false;
+      } else {
+        showStatus('install-status',
+          '<strong>hApp installed.</strong> Status: <code>' + result.status + '</code>',
+          'success');
+      }
+
+      installBtn.disabled = true;
+    } catch (err) {
+      out('Install failed: ' + err.message, true);
+      showStatus('install-status', '<strong>Install failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 4 - Provide Membrane Proof
+  // ---------------------------------------------------------------------------
+  provideProofBtn.addEventListener('click', async () => {
+    const proofB64 = document.getElementById('memproof-input').value.trim();
+    if (!proofB64) {
+      showStatus('proof-status', 'Paste the base64 signature first.', 'error');
+      return;
+    }
+
+    out('Decoding membrane proof from base64...');
+    let proofBytes;
+    try {
+      const binary = atob(proofB64);
+      proofBytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        proofBytes[i] = binary.charCodeAt(i);
+      }
+      out('Membrane proof: ' + proofBytes.length + ' bytes');
+    } catch (err) {
+      out('Invalid base64: ' + err.message, true);
+      showStatus('proof-status', '<strong>Invalid base64:</strong> ' + err.message, 'error');
+      return;
+    }
+
+    if (proofBytes.length !== 64) {
+      out('Warning: Expected 64-byte Ed25519 signature, got ' + proofBytes.length + ' bytes.', true);
+    }
+
+    out('Calling window.holochain.provideMemproofs()...');
+    showStatus('proof-status', 'Providing membrane proof...', 'info');
+    try {
+      // The role name for the test DNA is "test-dna-memproof"
+      const result = await window.holochain.provideMemproofs({
+        contextId: contextId,
+        memproofs: {
+          'test-dna-memproof': Array.from(proofBytes),
+        },
+      });
+      out('provideMemproofs result: ' + JSON.stringify(result));
+      showStatus('proof-status',
+        '<strong>Membrane proof accepted.</strong> App should now be enabled.',
+        'success');
+    } catch (err) {
+      out('provideMemproofs failed: ' + err.message, true);
+      showStatus('proof-status', '<strong>Failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 5 - Check Status
+  // ---------------------------------------------------------------------------
+  checkStatusBtn.addEventListener('click', async () => {
+    out('Calling window.holochain.appInfo()...');
+    try {
+      const appInfo = await window.holochain.appInfo();
+      const formatted = formatForDisplay(appInfo);
+      out('appInfo: ' + JSON.stringify(formatted, null, 2));
+
+      if (appInfo.status === 'enabled') {
+        showStatus('app-status',
+          '<strong>App status: enabled</strong> -- membrane proof was accepted.',
+          'success');
+      } else if (appInfo.status === 'awaitingMemproofs') {
+        showStatus('app-status',
+          '<strong>App status: awaitingMemproofs</strong> -- still needs membrane proof.',
+          'warning');
+      } else {
+        showStatus('app-status',
+          '<strong>App status:</strong> <code>' + appInfo.status + '</code>',
+          'info');
+      }
+    } catch (err) {
+      out('appInfo failed: ' + err.message, true);
+      showStatus('app-status', '<strong>Error:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Clear output
+  // ---------------------------------------------------------------------------
+  document.getElementById('clear-output-btn').addEventListener('click', () => {
+    outputEl.textContent = '';
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-initialize
+  // ---------------------------------------------------------------------------
+  async function autoInit() {
+    out('Auto-initializing...');
+    const detected = await detectExtension();
+    if (!detected) return;
+
+    try {
+      await window.holochain.connect();
+      out('Already authorized.');
+      showStatus('authorize-status', '<strong>Authorized.</strong>', 'success');
+      authorizeBtn.disabled = true;
+      installBtn.disabled = false;
+      checkStatusBtn.disabled = false;
+    } catch (_) {
+      out('Not yet authorized - click "Authorize Domain".');
+      authorizeBtn.disabled = false;
+      return;
+    }
+
+    await checkExistingHapp();
+  }
+
+  window.addEventListener('holochain:ready', autoInit);
+  setTimeout(autoInit, 150);
+</script>
+</body>
+</html>

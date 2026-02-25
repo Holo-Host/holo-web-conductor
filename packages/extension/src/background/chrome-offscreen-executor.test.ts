@@ -405,6 +405,91 @@ describe("ChromeOffscreenExecutor", () => {
   });
 
   // --------------------------------------------------------------------------
+  // Genesis
+  // --------------------------------------------------------------------------
+
+  describe("runGenesis", () => {
+    it("sends RUN_GENESIS to offscreen and resolves with empty pendingRecords", async () => {
+      // Offscreen responds WITHOUT pendingRecords — genesis records are already in SQLite.
+      // Including pendingRecords would cause silent message drop due to BigInt timestamps.
+      sendMessageMock.mockResolvedValue({ success: true, valid: true });
+      const executor = await createReadyExecutor();
+
+      const result = await executor.runGenesis(
+        [[1, 2, 3], [4, 5, 6]],
+        [10, 20, 30],
+        { name: "test-dna", integrity_zomes: [] },
+        null
+      );
+
+      expect(sendMessageMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: "offscreen",
+          type: "RUN_GENESIS",
+          cellId: [[1, 2, 3], [4, 5, 6]],
+          dnaWasm: [10, 20, 30],
+          membraneProof: null,
+        })
+      );
+      expect(result.pendingRecords).toEqual([]);
+    });
+
+    it("throws when offscreen returns success: false", async () => {
+      sendMessageMock.mockResolvedValue({ success: false, error: "genesis_self_check failed: Invalid membrane proof" });
+      const executor = await createReadyExecutor();
+
+      await expect(
+        executor.runGenesis([[1], [2]], [], {}, null)
+      ).rejects.toThrow("genesis_self_check failed: Invalid membrane proof");
+    });
+
+    it("throws with default message when offscreen returns null (BigInt regression guard)", async () => {
+      // Chrome extension sendResponse silently drops messages containing BigInt.
+      // If the offscreen included pendingRecords with BigInt timestamps, the background
+      // would receive null here. This test guards against that regression.
+      sendMessageMock.mockResolvedValue(null);
+      const executor = await createReadyExecutor();
+
+      await expect(
+        executor.runGenesis([[1], [2]], [], {}, null)
+      ).rejects.toThrow("genesis_self_check failed");
+    });
+
+    it("passes membraneProof as number array to offscreen", async () => {
+      sendMessageMock.mockResolvedValue({ success: true, valid: true });
+      const executor = await createReadyExecutor();
+
+      const proof = [11, 22, 33, 44];
+      await executor.runGenesis([[1], [2]], [], {}, proof);
+
+      const call = sendMessageMock.mock.calls.find(
+        (c: any[]) => c[0]?.type === "RUN_GENESIS"
+      );
+      expect(call![0].membraneProof).toEqual([11, 22, 33, 44]);
+    });
+
+    it("sets up keepalive during genesis to prevent service worker termination", async () => {
+      // MV3 service workers terminate after 30s of inactivity.
+      // runGenesis pings chrome.storage every 20s to keep the service worker alive.
+      let resolveGenesis!: (v: any) => void;
+      sendMessageMock.mockReturnValue(
+        new Promise((resolve) => { resolveGenesis = resolve; })
+      );
+      const executor = await createReadyExecutor();
+
+      const genesisPromise = executor.runGenesis([[1], [2]], [], {}, null);
+
+      // Before genesis completes, the keepalive should have fired at 20s
+      await vi.advanceTimersByTimeAsync(20001);
+      expect(chrome.storage.local.get).toHaveBeenCalled();
+
+      // Resolve genesis
+      resolveGenesis({ success: true, valid: true });
+      await genesisPromise;
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Chain recovery
   // --------------------------------------------------------------------------
 

@@ -685,6 +685,8 @@ interface OffscreenResponse {
   state?: string;
   isConnected?: boolean;
   registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
+  valid?: boolean;
+  pendingRecords?: any[];
 }
 
 /**
@@ -865,6 +867,54 @@ chrome.runtime.onMessage.addListener(
             success: false,
             error: error instanceof Error ? error.message : String(error),
             requestId: message.requestId || "process",
+          });
+        }
+      })();
+      return true;
+    }
+
+    if (message.type === "RUN_GENESIS") {
+      const { dnaWasm, cellId, dnaManifest, membraneProof } = message;
+
+      (async () => {
+        try {
+          await initRibosomeWorker();
+
+          const response = await sendToWorker("RUN_GENESIS", {
+            dnaWasm,
+            cellId,
+            dnaManifest,
+            membraneProof,
+          });
+
+          if (response.valid) {
+            // Publish genesis records to the linker (same fire-and-forget pattern as
+            // executeZomeCall). Records are in signed_action transport format (no BigInt).
+            if (response.pendingRecords && response.pendingRecords.length > 0) {
+              const dnaHash = new Uint8Array(cellId[0]) as DnaHash;
+              publishPendingRecords(response.pendingRecords, dnaHash).catch((err: unknown) => {
+                logPublish.error("[RUN_GENESIS] Background publish failed:", err);
+              });
+            }
+
+            log.info("[RUN_GENESIS] Sending success sendResponse to background");
+            // Do NOT include pendingRecords in sendResponse: even in proper transport
+            // format they may carry nested BigInt in action content fields.
+            // Records are already in SQLite and publishing is handled above.
+            sendResponse({ success: true, valid: true });
+            log.info("[RUN_GENESIS] sendResponse called (success)");
+          } else {
+            log.info("[RUN_GENESIS] Sending failure sendResponse to background:", response.reason);
+            sendResponse({
+              success: false,
+              error: response.reason || "genesis_self_check failed",
+            });
+          }
+        } catch (error) {
+          log.error("[RUN_GENESIS] Error, sending failure sendResponse:", error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
           });
         }
       })();

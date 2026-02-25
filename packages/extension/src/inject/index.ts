@@ -91,7 +91,7 @@ function normalizeForPostMessage(data: any): any {
 }
 
 // Send message to content script via postMessage
-function sendToContentScript(type: string, payload: any): Promise<any> {
+function sendToContentScript(type: string, payload: any, timeoutMs = 30000): Promise<any> {
   return new Promise((resolve, reject) => {
     const id = generateId();
 
@@ -113,14 +113,13 @@ function sendToContentScript(type: string, payload: any): Promise<any> {
       "*"
     );
 
-    // Timeout after 30 seconds
     setTimeout(() => {
       const callbacks = pendingRequests.get(id);
       if (callbacks) {
         pendingRequests.delete(id);
         callbacks.reject(new Error("Request timeout"));
       }
-    }, 30000);
+    }, timeoutMs);
   });
 }
 
@@ -317,7 +316,8 @@ const holochainAPI: HolochainAPI = {
     contextId?: string;
     memproofs: Record<string, Uint8Array | number[]>;
   }): Promise<any> {
-    return sendToContentScript("provide_memproofs", params);
+    // 120s: first-run genesis compiles 2.2MB WASM + 4 Lair sign operations
+    return sendToContentScript("provide_memproofs", params, 120000);
   },
 
   async configureNetwork(config: { linkerUrl: string }): Promise<any> {

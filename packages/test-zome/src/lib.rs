@@ -309,16 +309,11 @@ fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCallba
     })?;
 
     // Extract the 64-byte signature from MembraneProof (Arc<SerializedBytes>).
-    // MembraneProof = Arc<SerializedBytes>. The raw bytes inside are msgpack-encoded.
-    // SerializedBytes -> UnsafeBytes -> Vec<u8> gives the raw msgpack.
-    // Then rmp_serde::from_slice deserializes the msgpack bin format back to Vec<u8>.
-    let proof_raw: Vec<u8> = UnsafeBytes::from(proof.as_ref().clone()).into();
-    let proof_bytes: Vec<u8> = rmp_serde::from_slice(&proof_raw).map_err(|e| {
-        wasm_error!(WasmErrorInner::Guest(format!(
-            "Failed to deserialize membrane proof: {:?}",
-            e
-        )))
-    })?;
+    // The membrane proof IS the raw signature bytes — no extra msgpack layer.
+    // UnsafeBytes extracts the raw inner bytes of SerializedBytes directly.
+    // (volla's try_from pattern applies to struct types derived with SerializedBytes;
+    // for plain bytes we use UnsafeBytes::into() like the properties decode above.)
+    let proof_bytes: Vec<u8> = UnsafeBytes::from(proof.as_ref().clone()).into();
 
     if proof_bytes.len() != 64 {
         return Ok(ValidateCallbackResult::Invalid(format!(
