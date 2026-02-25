@@ -115,6 +115,10 @@ export const mustGetAgentActivity: HostFunctionImpl = (
 /**
  * Build RegisterAgentActivity[] result from local storage actions.
  * Shared by both self short-circuit and network-unavailable fallback paths.
+ *
+ * Rust serde contract (holochain_integrity_types::op::RegisterAgentActivity):
+ *   { action: SignedActionHashed, cached_entry: Option<Entry> }
+ *   SignedActionHashed = { hashed: { content: Action, hash: ActionHash }, signature: Bytes }
  */
 function buildLocalResult(
   instance: WebAssembly.Instance,

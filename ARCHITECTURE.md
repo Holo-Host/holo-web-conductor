@@ -1110,6 +1110,37 @@ export const my_function: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
 6. **Register new host functions** in `host-fn/index.ts` -- Map the function name (e.g., `__hc__get_1`) to the implementation.
 
+7. **Output shapes must match Rust serde format** -- When a host function builds return objects locally (as opposed to relaying network data), the JS object structure must match what the Rust WASM guest will deserialize. Common pitfalls:
+   - Rust enums with data serialize as `{"VariantName": data}`, not as bare strings (e.g., `ChainStatus::Valid(head)` → `{Valid: {action_seq, hash}}`, not `"Valid"`)
+   - Rust unit enums serialize as strings (e.g., `ChainStatus::Empty` → `"Empty"`)
+   - `Vec<T>` fields in Rust are arrays, and `Option<T>` is either the value or `null`
+   - Fields like `HighestObserved.hash: Vec<ActionHash>` require an array even for a single value
+   - When in doubt, check the Rust struct definition in `../holochain/` and test against real WASM via e2e tests
+
+### Host Function Output Types (Rust serde contracts)
+
+These are the Rust types that WASM guests deserialize. When building these objects locally in TypeScript, the shapes must match exactly.
+
+| Host Function | Rust Return Type | Serde Shape (msgpack) |
+|---|---|---|
+| `agent_info` | `AgentInfo` | `{agent_initial_pubkey: AgentPubKey, chain_head: [ActionHash, u32, i64]}` |
+| `call_info` | `CallInfo` | `{provenance, function_name, as_at: [ActionHash, u32, i64], cap_grant: {"ChainAuthor": AgentPubKey} \| {"RemoteAgent": ...}}` |
+| `dna_info` (v1) | `DnaInfoV1` | `{name, hash: DnaHash, properties: Bytes, zome_names: string[]}` |
+| `dna_info` (v2) | `DnaInfoV2` | `{name, hash: DnaHash, modifiers: {network_seed, properties: Bytes}, zome_names: string[]}` |
+| `zome_info` | `ZomeInfo` | `{name, id: u8, properties: Bytes, entry_defs: EntryDef[], extern_fns: string[], zome_types: {entries: [u8, u8[]][], links: [u8, u8[]][]}}` |
+| `get_agent_activity` | `AgentActivity` | `{valid_activity: [u32, ActionHash][], rejected_activity: [u32, ActionHash][], status: "Empty" \| {"Valid": {action_seq, hash}} \| {"Forked": {fork_seq, first_action, second_action}}, highest_observed: null \| {action_seq, hash: ActionHash[]}, warrants: []}` |
+| `must_get_agent_activity` | `Vec<RegisterAgentActivity>` | `[{action: {hashed: {content: Action, hash: ActionHash}, signature: Bytes}, cached_entry: null}]` |
+| `query` | `Vec<Record>` | `[{signed_action: {hashed: {content: Action, hash}, signature}, entry: "NA" \| "Hidden" \| {"Present": Entry}}]` |
+| `get` | `Vec<Option<Record>>` | Same as query, elements may be null |
+| `get_details` | `Vec<Option<Details>>` | Entry variant: `{type: "Entry", content: {entry, actions: SignedActionHashed[], rejected_actions, deletes, updates, entry_dht_status}}`. Record variant: `{type: "Record", content: {record, validation_status, deletes, updates}}` |
+| `get_links` | `Vec<Vec<Link>>` | `[[{target, timestamp, tag, create_link_hash, base, author, zome_index, link_type}]]` |
+| `count_links` | `u64` | number |
+
+**Key enum patterns** (Rust serde defaults to externally tagged):
+- Unit variants → `"VariantName"` (e.g., `ChainStatus::Empty` → `"Empty"`, `RecordEntry::NA` → `"NA"`)
+- Data variants → `{"VariantName": data}` (e.g., `ChainStatus::Valid(head)` → `{"Valid": {...}}`)
+- Internally tagged (with `#[serde(tag = "type")]`) → `{"type": "VariantName", ...fields}` (e.g., `Details::Entry{..}` → `{"type": "Entry", "content": {...}}`)
+
 ### Files to modify when adding a host function
 
 | File | What to add |
