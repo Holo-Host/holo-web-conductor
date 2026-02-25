@@ -35,6 +35,8 @@ interface HolochainAPI {
   installApp(request: {
     bundle: Uint8Array | number[];
     installedAppId?: string;
+    membraneProofs?: Record<string, Uint8Array | number[]>;
+    agentKeyTag?: string;
   }): Promise<any>;
   provideMemproofs(params: {
     contextId?: string;
@@ -299,6 +301,7 @@ const holochainAPI: HolochainAPI = {
     bundle: Uint8Array | number[];
     installedAppId?: string;
     membraneProofs?: Record<string, Uint8Array | number[]>;
+    agentKeyTag?: string;
   }): Promise<any> {
     // Convert bundle to happBundle format expected by background
     const happBundle = Array.isArray(request.bundle)
@@ -309,6 +312,7 @@ const holochainAPI: HolochainAPI = {
       happBundle: Array.from(happBundle),
       appName: request.installedAppId,
       membraneProofs: request.membraneProofs,
+      agentKeyTag: request.agentKeyTag,
     });
   },
 

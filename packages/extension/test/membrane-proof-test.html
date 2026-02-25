@@ -2,12 +2,20 @@
 <!--
   DEVELOPER TOOL - Membrane Proof Test Page
 
-  Tests the membrane-proof-gated hApp installation flow:
-  1. Install test-memproof.happ (deferred membrane proofs)
+  Tests two membrane-proof install flows:
+
+  Flow A (deferred, two-step):
+  1. Install test-memproof.happ without a membrane proof
   2. App enters "awaitingMemproofs" state
   3. Copy agent pubkey for authorizer to sign
   4. Provide membrane proof (authorizer's signature of agent pubkey)
   5. App transitions to "enabled"
+
+  Flow B (one-step):
+  1. Create a Lair key with a known tag via the Lair popup
+  2. Copy the public key and have the authorizer sign it
+  3. Install with the agentKeyTag + membrane proof together
+  4. App goes directly to "enabled"
 
   The authorizer keypair was created from these seed words:
     indoor clutch chicken nurse inhale close feel type school sweet
@@ -208,9 +216,9 @@
 
   <h1>Membrane Proof Test</h1>
   <p class="subtitle">
-    Tests the deferred membrane proof flow with a progenitor-gated test hApp.
-    The DNA requires a membrane proof: the authorizer's Ed25519 signature of
-    the installing agent's 39-byte AgentPubKey.
+    Tests membrane-proof-gated hApp installation. The DNA requires a membrane proof:
+    the authorizer's Ed25519 signature of the installing agent's 39-byte AgentPubKey.
+    Two flows are supported: deferred (two-step) and one-step.
   </p>
 
   <!-- Instructions -->
@@ -232,14 +240,22 @@
         This restores the authorizer key with Ed25519 pubkey:
         <code>c41YjAiTC4HIGu85yZaCLyKDFhYArTFZmRqYSChrzHY=</code>
       </p>
-      <h3 style="margin-top:12px;">Test Flow</h3>
+      <h3 style="margin-top:12px;">Flow A: Deferred (two-step)</h3>
       <ol>
         <li>Detect extension and authorize domain (steps 1-2 below)</li>
-        <li>Install the membrane-proof hApp (step 3) -- app enters "awaiting memproofs" state</li>
-        <li>Copy the agent's AgentPubKey (shown after install)</li>
-        <li>In the Lair popup Sign section: select <strong>authorizer</strong> key, set Data Format to <strong>Base64 (raw bytes)</strong>, paste the AgentPubKey (base64) value, and sign</li>
-        <li>Paste the signature as the membrane proof (step 4) and submit</li>
-        <li>App should transition to "enabled" state</li>
+        <li>Click <strong>Install (deferred)</strong> in step 3 -- app enters "awaitingMemproofs"</li>
+        <li>Copy the agent's AgentPubKey shown after install</li>
+        <li>In the Lair popup Sign section: select <strong>authorizer</strong> key, set Data Format to <strong>Base64 (raw bytes)</strong>, paste the AgentPubKey (base64), and sign</li>
+        <li>Paste the signature into step 4 and click <strong>Provide Membrane Proof</strong></li>
+        <li>App transitions to "enabled"</li>
+      </ol>
+      <h3 style="margin-top:12px;">Flow B: One-step install</h3>
+      <ol>
+        <li>Detect extension and authorize domain (steps 1-2 below)</li>
+        <li>In the Lair popup, create a new key with a known tag (e.g. <code>my-agent</code>) and note the public key</li>
+        <li>In the Lair popup Sign section: select <strong>authorizer</strong> key, set Data Format to <strong>Base64 (raw bytes)</strong>, paste the agent's pubkey (base64), and sign</li>
+        <li>In step 3 below: enter the agent key tag, paste the base64 signature into the membrane proof field, and click <strong>Install with Membrane Proof</strong></li>
+        <li>App installs and goes directly to "enabled" -- no separate memproof step needed</li>
       </ol>
     </div>
   </div>
@@ -261,14 +277,47 @@
   <!-- Section 3: Install membrane-proof hApp -->
   <div class="section">
     <h2>3. Install Membrane-Proof hApp</h2>
-    <p style="font-size:13px; color:#666; margin-bottom:10px;">
-      Loads <code>test-memproof.happ</code> and installs it.
-      Because the DNA has a progenitor property and the manifest sets
-      <code>allow_deferred_memproofs: true</code>, the app will enter
-      "awaitingMemproofs" status instead of running genesis immediately.
+    <p style="font-size:13px; color:#666; margin-bottom:14px;">
+      Loads <code>test-memproof.happ</code> from the test directory. Choose one of
+      the two install flows below.
     </p>
-    <button id="install-btn" disabled>Install test-memproof.happ</button>
-    <div id="install-status"></div>
+
+    <!-- Flow A: Deferred -->
+    <div style="border:1px solid #ddd; border-radius:6px; padding:14px; margin-bottom:14px; background:#fff;">
+      <h3 style="font-size:14px; color:#444; margin-bottom:8px;">Flow A: Deferred (two-step)</h3>
+      <p style="font-size:12px; color:#666; margin-bottom:10px;">
+        Installs without a membrane proof. App enters <code>awaitingMemproofs</code> state.
+        Copy the agent pubkey, get it signed by the authorizer, then complete in step 4.
+      </p>
+      <button id="install-btn" disabled>Install (deferred)</button>
+    </div>
+
+    <!-- Flow B: One-step -->
+    <div style="border:1px solid #ddd; border-radius:6px; padding:14px; background:#fff;">
+      <h3 style="font-size:14px; color:#444; margin-bottom:8px;">Flow B: One-step install</h3>
+      <p style="font-size:12px; color:#666; margin-bottom:10px;">
+        Install with a pre-existing Lair key and membrane proof in one shot.
+        The app goes directly to <code>enabled</code> without a separate memproof step.
+      </p>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px; font-weight:500; display:block; margin-bottom:4px;">
+          Agent Key Tag (Lair key tag, e.g. <code>my-agent</code>):
+        </label>
+        <input type="text" id="agent-key-tag-input"
+          placeholder="Tag of a pre-existing key in the Lair keystore"
+          style="width:100%; font-family:monospace; font-size:12px; padding:6px 8px; border:1px solid #ccc; border-radius:4px;" />
+      </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px; font-weight:500; display:block; margin-bottom:4px;">
+          Membrane Proof (base64 signature of the agent pubkey, signed by authorizer):
+        </label>
+        <textarea id="onestep-memproof-input" rows="2"
+          placeholder="Paste base64 signature here..."></textarea>
+      </div>
+      <button id="install-onestep-btn" disabled>Install with Membrane Proof</button>
+    </div>
+
+    <div id="install-status" style="margin-top:10px;"></div>
 
     <div id="agent-key-section" style="display:none; margin-top:15px;">
       <h3 style="font-size:14px; color:#444; margin-bottom:8px;">Agent Public Key</h3>
@@ -339,12 +388,13 @@
   // ---------------------------------------------------------------------------
   // DOM refs
   // ---------------------------------------------------------------------------
-  const outputEl       = document.getElementById('output');
-  const detectBtn      = document.getElementById('detect-btn');
-  const authorizeBtn   = document.getElementById('authorize-btn');
-  const installBtn     = document.getElementById('install-btn');
-  const provideProofBtn = document.getElementById('provide-proof-btn');
-  const checkStatusBtn = document.getElementById('check-status-btn');
+  const outputEl          = document.getElementById('output');
+  const detectBtn         = document.getElementById('detect-btn');
+  const authorizeBtn      = document.getElementById('authorize-btn');
+  const installBtn        = document.getElementById('install-btn');
+  const installOnestepBtn = document.getElementById('install-onestep-btn');
+  const provideProofBtn   = document.getElementById('provide-proof-btn');
+  const checkStatusBtn    = document.getElementById('check-status-btn');
 
   // ---------------------------------------------------------------------------
   // Logging
@@ -395,6 +445,7 @@
         'success');
       authorizeBtn.disabled = true;
       installBtn.disabled = false;
+      installOnestepBtn.disabled = false;
       checkStatusBtn.disabled = false;
 
       // Check if already installed
@@ -425,12 +476,14 @@
             '<strong>hApp installed, awaiting membrane proof.</strong> contextId: <code>' + contextId + '</code>',
             'warning');
           installBtn.disabled = true;
+          installOnestepBtn.disabled = true;
           provideProofBtn.disabled = false;
         } else {
           showStatus('install-status',
             '<strong>hApp already installed and enabled.</strong> contextId: <code>' + contextId + '</code>',
             'success');
           installBtn.disabled = true;
+          installOnestepBtn.disabled = true;
         }
       }
     } catch (_) {
@@ -521,8 +574,96 @@
       }
 
       installBtn.disabled = true;
+      installOnestepBtn.disabled = true;
     } catch (err) {
       out('Install failed: ' + err.message, true);
+      showStatus('install-status', '<strong>Install failed:</strong> ' + err.message, 'error');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Section 3 (Flow B) - One-step install with membrane proof
+  // ---------------------------------------------------------------------------
+  installOnestepBtn.addEventListener('click', async () => {
+    const agentKeyTag = document.getElementById('agent-key-tag-input').value.trim();
+    const proofB64 = document.getElementById('onestep-memproof-input').value.trim();
+
+    if (!agentKeyTag) {
+      showStatus('install-status', 'Enter the agent key tag first.', 'error');
+      return;
+    }
+    if (!proofB64) {
+      showStatus('install-status', 'Paste the base64 membrane proof first.', 'error');
+      return;
+    }
+
+    let proofBytes;
+    try {
+      const binary = atob(proofB64);
+      proofBytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) proofBytes[i] = binary.charCodeAt(i);
+      out('Membrane proof: ' + proofBytes.length + ' bytes');
+    } catch (err) {
+      out('Invalid base64: ' + err.message, true);
+      showStatus('install-status', '<strong>Invalid base64:</strong> ' + err.message, 'error');
+      return;
+    }
+
+    if (proofBytes.length !== 64) {
+      out('Warning: Expected 64-byte Ed25519 signature, got ' + proofBytes.length + ' bytes.');
+    }
+
+    out('Loading test-memproof.happ...');
+    showStatus('install-status', 'Loading test-memproof.happ bundle...', 'info');
+
+    let happBundle;
+    try {
+      happBundle = await loadBinaryFile('test-memproof.happ');
+      out('Loaded test-memproof.happ: ' + happBundle.length + ' bytes');
+    } catch (err) {
+      out('Failed to load: ' + err.message, true);
+      showStatus('install-status', '<strong>Error:</strong> ' + err.message, 'error');
+      return;
+    }
+
+    out('Calling window.holochain.installHapp() (one-step)...');
+    showStatus('install-status', 'Installing with membrane proof (one-step)...', 'info');
+    try {
+      const result = await window.holochain.installHapp({
+        appVersion: '0.1.0',
+        happBundle,
+        agentKeyTag,
+        membraneProofs: {
+          'test-dna-memproof': Array.from(proofBytes),
+        },
+      });
+
+      contextId = result.contextId;
+      out('hApp installed (one-step). contextId=' + contextId);
+      out('  status: ' + result.status);
+      out('  appName: ' + result.appName);
+
+      if (result.agentPubKey) {
+        agentPubKey = toUint8Array(result.agentPubKey);
+        showAgentKey();
+        out('  agentPubKey: ' + btoa(String.fromCharCode(...agentPubKey)));
+      }
+
+      if (result.status === 'enabled') {
+        showStatus('install-status',
+          '<strong>hApp installed and enabled (one-step).</strong><br>' +
+          'contextId: <code>' + contextId + '</code>',
+          'success');
+      } else {
+        showStatus('install-status',
+          '<strong>hApp installed.</strong> Status: <code>' + result.status + '</code>',
+          result.status === 'awaitingMemproofs' ? 'warning' : 'info');
+      }
+
+      installBtn.disabled = true;
+      installOnestepBtn.disabled = true;
+    } catch (err) {
+      out('One-step install failed: ' + err.message, true);
       showStatus('install-status', '<strong>Install failed:</strong> ' + err.message, 'error');
     }
   });
@@ -626,6 +767,7 @@
       showStatus('authorize-status', '<strong>Authorized.</strong>', 'success');
       authorizeBtn.disabled = true;
       installBtn.disabled = false;
+      installOnestepBtn.disabled = false;
       checkStatusBtn.disabled = false;
     } catch (_) {
       out('Not yet authorized - click "Authorize Domain".');
