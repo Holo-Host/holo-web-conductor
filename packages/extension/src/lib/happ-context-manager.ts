@@ -7,7 +7,7 @@
  * - Permission manager (authorization)
  */
 
-import type { HappContext, InstallHappRequest, CellId, DnaContext } from "@hwc/core";
+import type { HappContext, HappContextStatus, InstallHappRequest, CellId, DnaContext } from "@hwc/core";
 import { HappContextStorage, getHappContextStorage } from "./happ-context-storage";
 import { createLairClient, type ILairClient } from "@hwc/lair";
 import { getPermissionManager, type PermissionManager } from "./permissions";
@@ -197,7 +197,9 @@ export class HappContextManager {
       });
 
       // 4. Create or reuse agent key for this domain
-      const agentKeyTag = `${domain}:agent`;
+      // If the caller provides an agentKeyTag (pre-existing key for one-step genesis
+      // with membrane proof), use it; otherwise derive from domain.
+      const agentKeyTag = request.agentKeyTag || `${domain}:agent`;
       console.log(`[HappContextManager] Creating/reusing agent key: ${agentKeyTag}`);
 
       const lair = await this.getLairClient();
@@ -288,7 +290,23 @@ export class HappContextManager {
         throw new Error("No DNAs were successfully processed from .happ bundle");
       }
 
-      // 6. Create HappContext
+      // 6. Determine initial status
+      // When allow_deferred_memproofs=true, genesis MUST run before the context is
+      // enabled. We always park the context as awaitingMemproofs regardless of whether
+      // membrane proofs were included in this request. The background handler will
+      // immediately run genesis if proofs are provided, transitioning to enabled.
+      // This ensures the chain is always initialised before a context goes live.
+      const deferredRequested = appBundle.manifest.allow_deferred_memproofs === true;
+      const awaitingMemproofs = deferredRequested;
+
+      const status: HappContextStatus = awaitingMemproofs ? 'awaitingMemproofs' : 'enabled';
+
+      if (awaitingMemproofs) {
+        const memproofsProvided = request.membraneProofs !== undefined;
+        console.log(`[HappContextManager] App has allow_deferred_memproofs=true - context awaiting genesis (memproofs ${memproofsProvided ? 'provided, will run immediately' : 'not provided, deferred'})`);
+      }
+
+      // 7. Create HappContext
       // Generate unique context ID (UUID v4)
       const contextId = crypto.randomUUID();
       const context: HappContext = {
@@ -301,10 +319,11 @@ export class HappContextManager {
         appVersion: request.appVersion,
         installedAt: Date.now(),
         lastUsed: Date.now(),
-        enabled: true,
+        enabled: !awaitingMemproofs,
+        status,
       };
 
-      // 7. Store context
+      // 8. Store context
       await this.storage.putContext(context);
 
       console.log(`[HappContextManager] Installed hApp: ${context.appName}`, {
@@ -417,12 +436,60 @@ export class HappContextManager {
       throw new Error(`Context ${contextId} not found`);
     }
 
+    if (context.status === 'awaitingMemproofs') {
+      throw new Error('Cannot enable app that is awaiting membrane proofs. Provide membrane proofs first.');
+    }
+
     context.enabled = enabled;
+    context.status = enabled ? 'enabled' : 'disabled';
     await this.storage.putContext(context);
 
     console.log(
       `[HappContextManager] ${enabled ? "Enabled" : "Disabled"} context ${contextId}`
     );
+  }
+
+  /**
+   * Provide membrane proofs for a context that is awaiting them.
+   *
+   * Validates state and returns the context. The caller must run
+   * genesis_self_check + initializeGenesis, then call completeMemproofs()
+   * on success.
+   */
+  async provideMemproofs(contextId: string, memproofs: Record<string, Uint8Array>): Promise<HappContext> {
+    await this.ensureReady();
+
+    const context = await this.storage.getContext(contextId);
+    if (!context) {
+      throw new Error(`Context not found: ${contextId}`);
+    }
+    if (context.status !== 'awaitingMemproofs') {
+      throw new Error(`Context ${contextId} is not awaiting membrane proofs (status: ${context.status})`);
+    }
+
+    // Return context unchanged - caller runs genesis validation before enabling
+    return context;
+  }
+
+  /**
+   * Transitions the context from 'awaitingMemproofs' to 'enabled'.
+   * Called after genesis_self_check passes and initializeGenesis succeeds.
+   */
+  async completeMemproofs(contextId: string): Promise<HappContext> {
+    await this.ensureReady();
+
+    const context = await this.storage.getContext(contextId);
+    if (!context) {
+      throw new Error(`Context not found: ${contextId}`);
+    }
+
+    context.status = 'enabled';
+    context.enabled = true;
+    await this.storage.putContext(context);
+
+    console.log(`[HappContextManager] Membrane proofs accepted for context ${contextId} - status set to 'enabled'`);
+
+    return context;
   }
 
   /**

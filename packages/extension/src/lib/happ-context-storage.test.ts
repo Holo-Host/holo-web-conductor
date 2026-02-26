@@ -34,6 +34,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: true,
+        status: "enabled",
       };
 
       await storage.putContext(context);
@@ -65,6 +66,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: true,
+        status: "enabled",
       };
 
       await storage.putContext(context);
@@ -90,6 +92,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: true,
+        status: "enabled",
       };
 
       const context2: HappContext = {
@@ -101,6 +104,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: false,
+        status: "disabled",
       };
 
       await storage.putContext(context1);
@@ -121,6 +125,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: true,
+        status: "enabled",
       };
 
       await storage.putContext(context);
@@ -140,6 +145,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now() - 10000, // 10 seconds ago
         enabled: true,
+        status: "enabled",
       };
 
       await storage.putContext(context);
@@ -211,6 +217,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: true,
+        status: "enabled",
       };
 
       const context2: HappContext = {
@@ -222,6 +229,7 @@ describe("HappContextStorage", () => {
         installedAt: Date.now(),
         lastUsed: Date.now(),
         enabled: true,
+        status: "enabled",
       };
 
       await storage.putContext(context1);

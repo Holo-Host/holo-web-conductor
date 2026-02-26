@@ -1,0 +1,14 @@
+---
+manifest_version: "0"
+name: test-dna-memproof
+
+integrity:
+  network_seed: "00000000-0000-0000-0000-000000000001"
+  properties:
+    progenitor: [132,32,36,115,141,88,140,8,147,11,129,200,26,239,57,201,150,130,47,34,131,22,22,0,173,49,89,153,26,152,72,40,107,204,118,124,19,225,120]
+  zomes:
+    - name: test_zome
+      path: test_zome.wasm
+
+coordinator:
+  zomes: []

@@ -246,6 +246,102 @@ pub enum LinkTypes {
     Placeholder,
 }
 
+/// Genesis self-check callback
+///
+/// Validates agent membership before genesis records are created.
+/// Logic:
+/// - If DNA properties have no "progenitor" key -> open membrane, return Valid
+/// - If "progenitor" key exists -> require a membrane proof that is the
+///   progenitor's Ed25519 signature over the joining agent's public key bytes.
+///
+/// The membrane proof bytes are the raw 64-byte Ed25519 signature produced by
+/// the progenitor signing the new agent's AgentPubKey (39 bytes).
+///
+/// Properties format (msgpack-encoded object):
+/// { "progenitor": [u8; 39] }  -- AgentPubKey of the progenitor node
+#[hdk_extern]
+fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCallbackResult> {
+    let dna_info = dna_info()?;
+
+    // Deserialize DNA properties from SerializedBytes (msgpack) into a JSON map.
+    // SerializedBytes -> UnsafeBytes -> Vec<u8> -> rmp_serde::from_slice
+    // The TS side encodes properties as msgpack of a JS object, so array values
+    // (e.g. Uint8Array stored as number[]) come through as serde_json arrays of integers.
+    let props_bytes: Vec<u8> = UnsafeBytes::from(dna_info.modifiers.properties).into();
+    let props: std::collections::HashMap<String, serde_json::Value> =
+        rmp_serde::from_slice(&props_bytes).unwrap_or_default();
+
+    // Open membrane: no progenitor configured
+    if !props.contains_key("progenitor") {
+        return Ok(ValidateCallbackResult::Valid);
+    }
+
+    // Closed membrane: progenitor exists, membrane proof is required
+    let proof = match data.membrane_proof {
+        Some(p) => p,
+        None => {
+            return Ok(ValidateCallbackResult::Invalid(
+                "Membrane proof required but not provided".to_string(),
+            ))
+        }
+    };
+
+    // Extract progenitor AgentPubKey bytes from properties.
+    // Stored as array of u8 integers: [132, 32, 36, ...]
+    let progenitor_bytes: Vec<u8> = match props.get("progenitor") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_u64().map(|n| n as u8))
+            .collect(),
+        _ => {
+            return Ok(ValidateCallbackResult::Invalid(
+                "Progenitor key in DNA properties is not a valid byte array".to_string(),
+            ))
+        }
+    };
+
+    // Build AgentPubKey from the 39 raw bytes (3 prefix + 32 core + 4 DHT location)
+    let progenitor_key = AgentPubKey::try_from_raw_39(progenitor_bytes).map_err(|e| {
+        wasm_error!(WasmErrorInner::Guest(format!(
+            "Invalid progenitor key bytes: {:?}",
+            e
+        )))
+    })?;
+
+    // Extract the 64-byte signature from MembraneProof (Arc<SerializedBytes>).
+    // The membrane proof IS the raw signature bytes — no extra msgpack layer.
+    // UnsafeBytes extracts the raw inner bytes of SerializedBytes directly.
+    // (volla's try_from pattern applies to struct types derived with SerializedBytes;
+    // for plain bytes we use UnsafeBytes::into() like the properties decode above.)
+    let proof_bytes: Vec<u8> = UnsafeBytes::from(proof.as_ref().clone()).into();
+
+    if proof_bytes.len() != 64 {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "Membrane proof must be 64 bytes (Ed25519 signature), got {}",
+            proof_bytes.len()
+        )));
+    }
+
+    // Build Signature from the 64 proof bytes
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes.copy_from_slice(&proof_bytes);
+    let signature = Signature(sig_bytes);
+
+    // The signed data is the raw bytes of the joining agent's AgentPubKey (39 bytes).
+    // Use verify_signature_raw so the bytes are not re-serialized.
+    let agent_key_bytes: Vec<u8> = data.agent_key.get_raw_39().to_vec();
+
+    let valid = verify_signature_raw(progenitor_key, signature, agent_key_bytes)?;
+
+    if valid {
+        Ok(ValidateCallbackResult::Valid)
+    } else {
+        Ok(ValidateCallbackResult::Invalid(
+            "Membrane proof signature verification failed".to_string(),
+        ))
+    }
+}
+
 /// Validation callback (required)
 #[hdk_extern]
 fn validate(_op: Op) -> ExternResult<ValidateCallbackResult> {

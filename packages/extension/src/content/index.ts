@@ -48,6 +48,9 @@ async function sendToBackground(
 
     // Send to background
     chrome.runtime.sendMessage(message, (response: ResponseMessage) => {
+      // Check for Chrome runtime errors (e.g., service worker terminated mid-request)
+      const runtimeError = chrome.runtime.lastError;
+
       const callbacks = pendingRequests.get(message.id);
       if (!callbacks) {
         console.warn("Received response for unknown request:", message.id);
@@ -55,6 +58,14 @@ async function sendToBackground(
       }
 
       pendingRequests.delete(message.id);
+
+      if (runtimeError || !response) {
+        const errorMsg = runtimeError?.message || "Background service worker disconnected";
+        console.error("[Content] Background error:", errorMsg);
+        window.postMessage({ source: "hwc-content", id: callbacks.pageMessageId, error: errorMsg }, "*");
+        callbacks.reject(new Error(errorMsg));
+        return;
+      }
 
       // Send response back to page
       window.postMessage(

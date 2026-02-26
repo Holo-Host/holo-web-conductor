@@ -529,6 +529,26 @@ export class WebConductorAppClient implements AppClient {
     this.connection.setDisconnected();
   }
 
+  /**
+   * Provide membrane proofs for an app in 'awaitingMemproofs' state.
+   * This triggers genesis with the provided proofs.
+   *
+   * @param memproofs - Map of role_name to proof bytes
+   * @param contextId - Optional context ID (defaults to current app)
+   */
+  async provideMemproofs(
+    memproofs: Record<string, Uint8Array>,
+    contextId?: string
+  ): Promise<void> {
+    const holochain = window.holochain;
+    if (!holochain) throw new Error('Holochain extension not available');
+
+    await holochain.provideMemproofs({
+      contextId: contextId || this._installedAppId || undefined,
+      memproofs,
+    });
+  }
+
   // --- Stub implementations for methods not supported by Web Conductor ---
 
   async dumpNetworkStats(): Promise<AppDumpNetworkStatsResponse> {

@@ -12,6 +12,11 @@ import {
   type Message,
 } from "../lib/messaging";
 import type { EntryInfo, EncryptedExport } from "@hwc/lair";
+import {
+  dhtLocationFrom32,
+  HASH_TYPE_PREFIX,
+  HoloHashType,
+} from "@holochain/client";
 
 // ============================================================================
 // Utility Functions
@@ -50,6 +55,18 @@ function toBase64(data: Uint8Array | any): string {
 }
 
 /**
+ * Compute 39-byte AgentPubKey from 32-byte Ed25519 public key.
+ * Format: [132, 32, 36] prefix + 32-byte key + 4-byte DHT location
+ */
+function agentPubKeyFromEd25519(ed25519: Uint8Array): Uint8Array {
+  const key = new Uint8Array(39);
+  key.set(HASH_TYPE_PREFIX[HoloHashType.Agent], 0);
+  key.set(ed25519, 3);
+  key.set(dhtLocationFrom32(ed25519), 35);
+  return key;
+}
+
+/**
  * Convert base64 string to Uint8Array
  */
 function fromBase64(base64: string): Uint8Array {
@@ -69,6 +86,36 @@ function fromBase64(base64: string): Uint8Array {
  */
 function textToBytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
+}
+
+/**
+ * Convert hex string to Uint8Array
+ */
+function fromHex(hex: string): Uint8Array {
+  const clean = hex.replace(/\s+/g, '');
+  if (clean.length % 2 !== 0) {
+    throw new Error('Hex string must have even length');
+  }
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+/**
+ * Parse data input according to the selected format
+ */
+function parseDataInput(data: string, format: string): Uint8Array {
+  switch (format) {
+    case 'base64':
+      return fromBase64(data);
+    case 'hex':
+      return fromHex(data);
+    case 'text':
+    default:
+      return textToBytes(data);
+  }
 }
 
 /**
@@ -326,7 +373,7 @@ function renderKeypairList(): void {
     <thead>
       <tr>
         <th>Tag</th>
-        <th>Public Key (Ed25519)</th>
+        <th>AgentPubKey</th>
         <th>Created</th>
         <th>Exportable</th>
         <th>Actions</th>
@@ -335,14 +382,22 @@ function renderKeypairList(): void {
     <tbody>
       ${keypairs
         .map(
-          (kp) => `
+          (kp) => {
+            const ed25519Bytes = kp.ed25519_pub_key instanceof Uint8Array
+              ? kp.ed25519_pub_key
+              : new Uint8Array(Object.values(kp.ed25519_pub_key) as number[]);
+            const agentPubKey = agentPubKeyFromEd25519(ed25519Bytes);
+            const agentPubKeyB64 = toBase64(agentPubKey);
+            const ed25519B64 = toBase64(kp.ed25519_pub_key);
+            return `
         <tr>
           <td><strong>${kp.tag}</strong></td>
           <td class="pubkey"
-              data-pubkey="${toBase64(kp.ed25519_pub_key)}"
-              title="Click to copy: ${toBase64(kp.ed25519_pub_key)}"
+              data-agent-pubkey="${agentPubKeyB64}"
+              data-ed25519="${ed25519B64}"
+              title="Click to copy AgentPubKey (39-byte)"
               style="cursor: pointer;">
-            ${toBase64(kp.ed25519_pub_key).substring(0, 20)}...
+            ${agentPubKeyB64.substring(0, 20)}...
           </td>
           <td>${new Date(kp.created_at).toLocaleString()}</td>
           <td>
@@ -354,7 +409,8 @@ function renderKeypairList(): void {
             <button class="danger delete-btn" data-tag="${kp.tag}">Delete</button>
           </td>
         </tr>
-      `
+      `;
+          }
         )
         .join("")}
     </tbody>
@@ -363,16 +419,15 @@ function renderKeypairList(): void {
   listEl.innerHTML = "";
   listEl.appendChild(table);
 
-  // Add click handlers to public key cells
+  // Add click handlers to public key cells (copies AgentPubKey base64)
   table.querySelectorAll('.pubkey').forEach((cell) => {
     cell.addEventListener('click', async () => {
-      const pubkey = (cell as HTMLElement).dataset.pubkey;
-      if (pubkey) {
+      const agentPubKey = (cell as HTMLElement).dataset.agentPubkey;
+      if (agentPubKey) {
         try {
-          await navigator.clipboard.writeText(pubkey);
-          // Show feedback
+          await navigator.clipboard.writeText(agentPubKey);
           const originalText = cell.textContent;
-          cell.textContent = '✓ Copied!';
+          cell.textContent = '\u2713 Copied AgentPubKey!';
           setTimeout(() => {
             cell.textContent = originalText;
           }, 1000);
@@ -536,9 +591,10 @@ async function deleteKeypair(tag: string): Promise<void> {
 async function signData(): Promise<void> {
   const pubKeyBase64 = getValue("sign-keypair");
   const data = getValue("sign-data");
+  const dataFormat = getValue("sign-data-format");
 
   setVisible("sign-error", false);
-  setVisible("sign-result", false);
+  setVisible("sign-result-wrapper", false);
 
   if (!pubKeyBase64) {
     setText("sign-error", "Please select a keypair");
@@ -554,10 +610,10 @@ async function signData(): Promise<void> {
 
   try {
     const pubKey = fromBase64(pubKeyBase64);
-    const dataBytes = textToBytes(data);
+    const dataBytes = parseDataInput(data, dataFormat);
 
     const response = await sendMessage(MessageType.LAIR_SIGN, {
-      pub_key: pubKey,
+      pubKey,
       data: dataBytes,
     });
 
@@ -570,8 +626,8 @@ async function signData(): Promise<void> {
     const signature = (response.payload as { signature: Uint8Array }).signature;
     const signatureBase64 = toBase64(signature);
 
-    setText("sign-result", `Signature:\n${signatureBase64}`);
-    setVisible("sign-result", true);
+    setText("sign-result", signatureBase64);
+    setVisible("sign-result-wrapper", true);
   } catch (error) {
     setText("sign-error", String(error));
     setVisible("sign-error", true);
@@ -585,6 +641,7 @@ async function verifySignature(): Promise<void> {
   const pubKeyBase64 = getValue("verify-pubkey");
   const data = getValue("verify-data");
   const signatureBase64 = getValue("verify-signature");
+  const dataFormat = getValue("verify-data-format");
 
   setVisible("verify-error", false);
   setVisible("verify-result", false);
@@ -597,11 +654,11 @@ async function verifySignature(): Promise<void> {
 
   try {
     const pubKey = fromBase64(pubKeyBase64);
-    const dataBytes = textToBytes(data);
+    const dataBytes = parseDataInput(data, dataFormat);
     const signature = fromBase64(signatureBase64);
 
     const response = await sendMessage(MessageType.LAIR_VERIFY, {
-      pub_key: pubKey,
+      pubKey,
       data: dataBytes,
       signature,
     });
@@ -772,6 +829,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Sign/Verify handlers
   document.getElementById("sign-btn")?.addEventListener("click", signData);
   document.getElementById("verify-btn")?.addEventListener("click", verifySignature);
+
+  // Copy signature to clipboard
+  document.getElementById("sign-copy-btn")?.addEventListener("click", () => {
+    const text = document.getElementById("sign-result")?.textContent || "";
+    navigator.clipboard.writeText(text).catch(console.error);
+  });
 
   // Export/Import handlers
   document.getElementById("export-btn")?.addEventListener("click", exportKeypair);

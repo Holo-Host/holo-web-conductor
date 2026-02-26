@@ -34,6 +34,7 @@ import {
   type ContextIdPayload,
   type ExportMnemonicPayload,
   type ImportMnemonicPayload,
+  type ProvideMemproofsPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
@@ -359,6 +360,9 @@ async function handleMessage(
 
       case MessageType.DISABLE_HAPP:
         return handleDisableHapp(message, sender);
+
+      case MessageType.PROVIDE_MEMPROOFS:
+        return handleProvideMemproofs(message, sender);
 
       // Lair lock/unlock operations
       case MessageType.LAIR_GET_LOCK_STATE:
@@ -778,7 +782,7 @@ async function handleAppInfo(
       return createErrorResponse(message.id, `No hApp installed for ${origin}`);
     }
 
-    if (!context.enabled) {
+    if (!context.enabled && context.status !== 'awaitingMemproofs') {
       return createErrorResponse(message.id, "hApp is disabled");
     }
 
@@ -802,6 +806,7 @@ async function handleAppInfo(
       cells: happContextManager.getCellIds(context),
       installedAt: context.installedAt,
       enabled: context.enabled,
+      status: context.status,
       dnaProperties,
     });
   } catch (error) {
@@ -838,13 +843,51 @@ async function handleInstallHapp(
     }
 
     // Convert serialized Uint8Array back to actual Uint8Array
+    // Normalize membrane proofs if provided
+    let membraneProofs: Record<string, Uint8Array> | undefined;
+    if (request.membraneProofs) {
+      membraneProofs = {};
+      for (const [role, proof] of Object.entries(request.membraneProofs)) {
+        membraneProofs[role] = toUint8Array(proof);
+      }
+    }
+
     const normalizedRequest: InstallHappRequest = {
       appName: request.appName,
       appVersion: request.appVersion,
       happBundle: toUint8Array(request.happBundle),
+      membraneProofs,
+      agentKeyTag: request.agentKeyTag,
     };
 
-    const context = await happContextManager.installHapp(origin, normalizedRequest);
+    let context = await happContextManager.installHapp(origin, normalizedRequest);
+
+    // If the app requires membrane proofs AND they were provided at install time,
+    // run genesis immediately (one-step flow) instead of requiring a second
+    // PROVIDE_MEMPROOFS call. The context was parked as awaitingMemproofs by
+    // installHapp regardless; we now complete it here.
+    if (context.status === 'awaitingMemproofs' && membraneProofs) {
+      logHapp.info(`Running genesis immediately for ${context.id} (memproofs provided at install)`);
+      await executor.initialize();
+
+      for (const dna of context.dnas) {
+        const roleName = dna.name ?? '';
+        const proof = membraneProofs[roleName];
+
+        const cellId: [number[], number[]] = [
+          Array.from(toUint8Array(dna.hash)),
+          Array.from(toUint8Array(context.agentPubKey)),
+        ];
+        const dnaWasm = Array.from(toUint8Array(dna.wasm));
+        const membraneProofArr = proof ? Array.from(proof) : null;
+
+        logHapp.info(`Running genesis for DNA "${roleName}" in context ${context.id}`);
+        await executor.runGenesis(cellId, dnaWasm, dna.manifest ?? null, membraneProofArr);
+      }
+
+      context = await happContextManager.completeMemproofs(context.id);
+      logHapp.info(`Genesis complete for ${context.id} (one-step install), status: ${context.status}`);
+    }
 
     // Register agents with linker for signal forwarding
     // Do this asynchronously - don't block the install response
@@ -857,6 +900,7 @@ async function handleInstallHapp(
       appName: context.appName,
       agentPubKey: context.agentPubKey,
       cells: happContextManager.getCellIds(context),
+      status: context.status,
     });
   } catch (error) {
     return createErrorResponse(
@@ -911,6 +955,7 @@ async function handleListHapps(
         installedAt: context.installedAt,
         lastUsed: context.lastUsed,
         enabled: context.enabled,
+        status: context.status,
         dnaCount: context.dnas.length,
       })),
     });
@@ -964,6 +1009,75 @@ async function handleDisableHapp(
     logHapp.info(`Disabled context ${contextId}`);
 
     return createSuccessResponse(message.id, { disabled: true });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle PROVIDE_MEMPROOFS requests
+ * Provides membrane proofs for an app in awaitingMemproofs state,
+ * triggering genesis with the provided proofs.
+ */
+async function handleProvideMemproofs(
+  message: RequestMessage,
+  _sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    const { contextId, memproofs } = getPayload<MessageType.PROVIDE_MEMPROOFS>(message);
+    if (!contextId) {
+      return createErrorResponse(message.id, "contextId is required");
+    }
+    if (!memproofs || Object.keys(memproofs).length === 0) {
+      return createErrorResponse(message.id, "memproofs are required");
+    }
+
+    // Normalize Uint8Arrays from Chrome message passing
+    const normalizedMemproofs: Record<string, Uint8Array> = {};
+    for (const [role, proof] of Object.entries(memproofs)) {
+      normalizedMemproofs[role] = toUint8Array(proof);
+    }
+
+    // Validate state and get context info (does NOT enable the context yet)
+    const context = await happContextManager.provideMemproofs(contextId, normalizedMemproofs);
+    logHapp.info(`Running genesis for ${contextId} with ${context.dnas.length} DNA(s)`);
+
+    // Run genesis_self_check + initializeGenesis for each DNA via offscreen worker.
+    // If any DNA fails, the whole operation fails and context stays in awaitingMemproofs.
+    await executor.initialize();
+
+    for (const dna of context.dnas) {
+      const roleName = dna.name ?? '';
+      const proof = normalizedMemproofs[roleName];
+
+      const cellId: [number[], number[]] = [
+        Array.from(toUint8Array(dna.hash)),
+        Array.from(toUint8Array(context.agentPubKey)),
+      ];
+      const dnaWasm = Array.from(toUint8Array(dna.wasm));
+      const membraneProofArr = proof ? Array.from(proof) : null;
+
+      logHapp.info(`Running genesis for DNA "${roleName}" in context ${contextId}`);
+      await executor.runGenesis(cellId, dnaWasm, dna.manifest ?? null, membraneProofArr);
+    }
+
+    // All DNAs passed genesis_self_check - transition context to enabled
+    const updatedContext = await happContextManager.completeMemproofs(contextId);
+    logHapp.info(`Membrane proofs accepted for ${contextId}, status: ${updatedContext.status}`);
+
+    // Register agents with linker now that genesis is complete
+    registerContextAgentsWithLinker(updatedContext).catch((err) => {
+      logLinker.warn("Failed to register agents with linker after memproof:", err);
+    });
+
+    return createSuccessResponse(message.id, {
+      contextId: updatedContext.id,
+      status: updatedContext.status,
+      enabled: updatedContext.enabled,
+    });
   } catch (error) {
     return createErrorResponse(
       message.id,

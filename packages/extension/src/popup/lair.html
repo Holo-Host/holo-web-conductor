@@ -311,12 +311,23 @@
         </select>
       </div>
       <div class="form-group">
+        <label for="sign-data-format">Data Format</label>
+        <select id="sign-data-format">
+          <option value="text">UTF-8 Text</option>
+          <option value="base64">Base64 (raw bytes)</option>
+          <option value="hex">Hex (raw bytes)</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label for="sign-data">Data to Sign</label>
-        <textarea id="sign-data" placeholder="Enter text to sign"></textarea>
+        <textarea id="sign-data" placeholder="Enter text, base64, or hex to sign"></textarea>
       </div>
       <button id="sign-btn">Sign</button>
       <div id="sign-error" class="error hidden"></div>
-      <div id="sign-result" class="result-box hidden"></div>
+      <div id="sign-result-wrapper" class="hidden" style="position:relative;">
+        <div id="sign-result" class="result-box" style="padding-right:2.5rem;word-break:break-all;"></div>
+        <button id="sign-copy-btn" title="Copy to clipboard" style="position:absolute;top:4px;right:4px;padding:2px 6px;font-size:0.75rem;cursor:pointer;">Copy</button>
+      </div>
 
       <h2>Verify Signature</h2>
       <div class="form-group">
@@ -324,8 +335,16 @@
         <input type="text" id="verify-pubkey" placeholder="Paste public key" />
       </div>
       <div class="form-group">
+        <label for="verify-data-format">Data Format</label>
+        <select id="verify-data-format">
+          <option value="text">UTF-8 Text</option>
+          <option value="base64">Base64 (raw bytes)</option>
+          <option value="hex">Hex (raw bytes)</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label for="verify-data">Data</label>
-        <textarea id="verify-data" placeholder="Enter original text"></textarea>
+        <textarea id="verify-data" placeholder="Enter text, base64, or hex"></textarea>
       </div>
       <div class="form-group">
         <label for="verify-signature">Signature (base64)</label>
