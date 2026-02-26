@@ -16,7 +16,7 @@ packages/
 ```
 
 ## Documentation
-
+- [HOLOCHAIN_FOR_THE_WEB.md](./HOLOCHAIN_FOR_THE_WEB.md) — High level description and overview, minimally technical
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — System architecture, data flows, encoding boundaries, and design decisions
 - [DEVELOPMENT.md](./DEVELOPMENT.md) — Build setup, dependencies, and development workflow
 - [TESTING.md](./TESTING.md) — Testing guide (unit, integration, e2e with linker)
