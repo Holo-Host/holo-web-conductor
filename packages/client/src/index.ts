@@ -56,6 +56,24 @@ export { ReconnectionManager } from './connection/reconnect';
 export { waitForHolochain, isWebConductorAvailable } from './utils/wait-for-holochain';
 export { deepConvertByteArrays, toUint8Array, looksLikeByteArray } from './utils/byte-arrays';
 
+// Joining service client
+export {
+  JoiningClient,
+  JoinSession,
+  JoiningError,
+} from './joining';
+export type {
+  WellKnownHoloJoining,
+  JoiningServiceInfo,
+  HttpGateway,
+  AuthMethod,
+  DnaModifiers,
+  Challenge,
+  JoinCredentials,
+  ReconnectRequest,
+  ReconnectResponse,
+} from './joining';
+
 // Types
 export type { HolochainAPI, WebConductorAppInfo, CallZomeParams, InstallAppRequest } from './types';
 
