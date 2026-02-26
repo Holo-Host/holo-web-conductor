@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WebConductorAppClient } from './WebConductorAppClient';
 import { ConnectionStatus } from './connection';
+import { JoiningError } from './joining';
 import type { HolochainAPI, WebConductorAppInfo } from './types';
 
 // Extended mock type with test helpers
@@ -44,6 +45,7 @@ function createMockHolochain(overrides: Partial<HolochainAPI> = {}): MockHolocha
       }
       return () => {};
     }),
+    provideMemproofs: vi.fn().mockResolvedValue(undefined),
     configureNetwork: vi.fn().mockResolvedValue(undefined),
     getConnectionStatus: vi.fn().mockResolvedValue({
       httpHealthy: true,
@@ -400,6 +402,318 @@ describe('WebConductorAppClient', () => {
       await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
 
       expect(mockHolochain.installApp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('joining service integration', () => {
+    const JOINING_URL = 'https://joining.example.com/v1';
+    const MOCK_AGENT_KEY = new Uint8Array([132, 32, 36, ...Array(36).fill(1)]);
+    const MOCK_APP_INFO: WebConductorAppInfo = {
+      contextId: 'test-app',
+      agentPubKey: [132, 32, 36, ...Array(36).fill(1)],
+      cells: [
+        [
+          [132, 36, 36, ...Array(36).fill(2)],
+          [132, 32, 36, ...Array(36).fill(1)],
+        ],
+      ],
+    };
+
+    function jsonResponse(body: unknown, status = 200): Response {
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    function happBundleResponse(): Response {
+      return new Response(new ArrayBuffer(100), { status: 200 });
+    }
+
+    it('uses joining service when joiningServiceUrl is provided', async () => {
+      // Not installed initially
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const mockFetch = vi.fn()
+        // POST /join -> ready
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_abc', status: 'ready',
+        }, 201))
+        // GET /credentials
+        .mockResolvedValueOnce(jsonResponse({
+          linker_urls: ['wss://linker.example.com:8090'],
+          membrane_proofs: {},
+          happ_bundle_url: 'https://example.com/test.happ',
+        }))
+        // Fetch hApp bundle
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        joiningServiceUrl: JOINING_URL,
+      });
+
+      // Should have called join
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${JOINING_URL}/join`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+      // Should have configured linker from credentials
+      expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
+        linkerUrl: 'wss://linker.example.com:8090',
+      });
+      // Should have installed the app
+      expect(mockHolochain.installApp).toHaveBeenCalled();
+    });
+
+    it('handles pending challenge flow', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const challengeCallback = vi.fn().mockResolvedValue('123456');
+
+      const mockFetch = vi.fn()
+        // POST /join -> pending with email challenge
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_pending',
+          status: 'pending',
+          challenges: [{
+            id: 'ch_1', type: 'email_code',
+            description: 'Enter code', completed: false,
+          }],
+          poll_interval_ms: 100,
+        }, 201))
+        // POST /verify -> ready
+        .mockResolvedValueOnce(jsonResponse({ status: 'ready' }))
+        // GET /credentials
+        .mockResolvedValueOnce(jsonResponse({
+          linker_urls: ['wss://linker.example.com:8090'],
+          membrane_proofs: {},
+        }))
+        // Fetch hApp bundle
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        joiningServiceUrl: JOINING_URL,
+        onChallenge: challengeCallback,
+      });
+
+      expect(challengeCallback).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'ch_1', type: 'email_code' }),
+      );
+      // Verify was called
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${JOINING_URL}/join/js_pending/verify`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('throws when challenge callback is needed but not provided', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_pending',
+          status: 'pending',
+          challenges: [{
+            id: 'ch_1', type: 'email_code',
+            description: 'Enter code', completed: false,
+          }],
+        }, 201));
+
+      globalThis.fetch = mockFetch;
+
+      await expect(
+        WebConductorAppClient.connect({
+          linkerUrl: 'http://fallback:8090',
+          joiningServiceUrl: JOINING_URL,
+          // no onChallenge callback
+        }),
+      ).rejects.toThrow('onChallenge callback');
+    });
+
+    it('falls back to reconnect on agent_already_joined', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const mockFetch = vi.fn()
+        // POST /join -> 409 agent_already_joined
+        .mockResolvedValueOnce(jsonResponse(
+          { error: { code: 'agent_already_joined', message: 'Already joined' } },
+          409,
+        ))
+        // POST /reconnect -> fresh URLs
+        .mockResolvedValueOnce(jsonResponse({
+          linker_urls: ['wss://new-linker.example.com:8090'],
+          linker_urls_expire_at: '2026-12-01T00:00:00Z',
+        }))
+        // Fetch hApp bundle
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        joiningServiceUrl: JOINING_URL,
+      });
+
+      // Should have called reconnect after join failed
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${JOINING_URL}/reconnect`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+      // Should configure linker from reconnect response
+      expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
+        linkerUrl: 'wss://new-linker.example.com:8090',
+      });
+    });
+
+    it('passes claims to join request', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_abc', status: 'ready',
+        }, 201))
+        .mockResolvedValueOnce(jsonResponse({
+          linker_urls: ['wss://linker.example.com:8090'],
+          membrane_proofs: {},
+        }))
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        joiningServiceUrl: JOINING_URL,
+        claims: { email: 'test@example.com' },
+      });
+
+      const joinCall = mockFetch.mock.calls[0];
+      const joinBody = JSON.parse(joinCall[1].body);
+      expect(joinBody.claims).toEqual({ email: 'test@example.com' });
+    });
+
+    it('decodes base64 membrane proofs from credentials', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      // base64 of bytes [1, 2, 3, 4]
+      const proofBase64 = btoa(String.fromCharCode(1, 2, 3, 4));
+
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_abc', status: 'ready',
+        }, 201))
+        .mockResolvedValueOnce(jsonResponse({
+          linker_urls: ['wss://linker.example.com:8090'],
+          membrane_proofs: { 'uhC0kDnaHash': proofBase64 },
+        }))
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        joiningServiceUrl: JOINING_URL,
+      });
+
+      const installCall = (mockHolochain.installApp as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(installCall.membraneProofs).toBeDefined();
+      expect(installCall.membraneProofs['uhC0kDnaHash']).toBeInstanceOf(Uint8Array);
+      expect(Array.from(installCall.membraneProofs['uhC0kDnaHash'])).toEqual([1, 2, 3, 4]);
+    });
+
+    it('skips joining service for already-installed apps and uses config linkerUrl', async () => {
+      // App already installed
+      mockHolochain.appInfo = vi.fn().mockResolvedValue(MOCK_APP_INFO);
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://localhost:8090',
+        joiningServiceUrl: JOINING_URL,
+      });
+
+      // Should not have called join
+      expect(mockHolochain.installApp).not.toHaveBeenCalled();
+    });
+
+    it('uses direct install flow when no joining service configured', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://localhost:8090',
+        happBundlePath: './test.happ',
+      });
+
+      // Should configure linker from config directly
+      expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
+        linkerUrl: 'http://localhost:8090',
+      });
+      // Should install without joining service
+      expect(mockHolochain.installApp).toHaveBeenCalled();
+    });
+
+    it('discovers joining service from .well-known when autoDiscover is true', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const mockFetch = vi.fn()
+        // .well-known discovery
+        .mockResolvedValueOnce(jsonResponse({
+          joining_service_url: JOINING_URL,
+          happ_id: 'test-app',
+          version: '1.0',
+        }))
+        // POST /join -> ready
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_abc', status: 'ready',
+        }, 201))
+        // GET /credentials
+        .mockResolvedValueOnce(jsonResponse({
+          linker_urls: ['wss://linker.example.com:8090'],
+          membrane_proofs: {},
+        }))
+        // Fetch hApp bundle
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        autoDiscover: true,
+      });
+
+      // First fetch should be the .well-known discovery
+      expect(mockFetch.mock.calls[0][0]).toMatch(/\.well-known\/holo-joining/);
     });
   });
 

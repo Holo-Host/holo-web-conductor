@@ -71,6 +71,10 @@ export interface InstallAppRequest {
   bundle: Uint8Array | number[];
   installedAppId?: string;
   membraneProofs?: Record<string, Uint8Array | number[]>;
+  dnaModifiers?: {
+    networkSeed?: string;
+    properties?: Record<string, unknown>;
+  };
 }
 
 /**

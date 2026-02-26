@@ -59,6 +59,12 @@ import {
 import { toUint8Array, deepConvertByteArrays } from './utils/byte-arrays';
 import { encode as msgpackEncode } from '@msgpack/msgpack';
 import type { HolochainAPI, WebConductorAppInfo } from './types';
+import {
+  JoiningClient,
+  JoiningError,
+  type Challenge,
+  type JoinCredentials,
+} from './joining';
 
 /**
  * Options for creating a WebConductorAppClient.
@@ -68,6 +74,17 @@ export interface WebConductorAppClientOptions extends ConnectionConfig {
   roleName?: string;
   /** Path to hApp bundle for auto-install (default: looks for .happ in current path) */
   happBundlePath?: string;
+  /** Explicit joining service URL (e.g. "https://joining.example.com/v1") */
+  joiningServiceUrl?: string;
+  /** Discover joining service from the current domain's .well-known endpoint */
+  autoDiscover?: boolean;
+  /** UI callback invoked for each verification challenge during join.
+   *  Should return the user's response (e.g. email code, invite code). */
+  onChallenge?: (challenge: Challenge) => Promise<string>;
+  /** Identity claims to submit with the join request (e.g. { email: "..." }) */
+  claims?: Record<string, string>;
+  /** Pre-obtained membrane proofs keyed by role name (bypasses joining service) */
+  membraneProofs?: Record<string, Uint8Array>;
 }
 
 /**
@@ -166,32 +183,36 @@ export class WebConductorAppClient implements AppClient {
       throw new Error('Holochain extension not detected. Please install the Holochain browser extension.');
     }
 
-    // Configure linker
-    await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
-
-    // Connect (triggers authorization popup if needed)
+    // Connect to extension (triggers authorization popup if needed)
     await holochain.connect();
 
-    // Check if hApp is installed by getting app info
+    // Check if hApp is already installed
     try {
       const info = await holochain.appInfo();
       if (info?.agentPubKey && info?.cells?.length > 0) {
-        // Already installed
+        // Already installed — try to get fresh linker URLs if joining service is configured
         await this.setupFromAppInfo(info);
+        await this.configureLinkerFromJoiningServiceOrConfig(info);
         this.connection.setConnected();
-        // Subscribe to extension's push status updates (no polling needed)
         this.subscribeToExtensionConnectionStatus();
         return;
       }
     } catch (e) {
-      // Not installed yet, continue to installation
       console.log('[WebConductorAppClient] hApp not installed, will install...');
     }
 
-    // Install hApp
-    await this.installHapp();
+    // Not installed — use joining service if configured, otherwise direct install
+    const useJoiningService = this.connectionConfig.joiningServiceUrl
+      || this.connectionConfig.autoDiscover;
 
-    // Get app info after install
+    if (useJoiningService) {
+      await this.joinAndInstall(holochain);
+    } else {
+      // Direct flow: configure linker from config, install hApp
+      await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+      await this.installHapp();
+    }
+
     const info = await holochain.appInfo();
     if (!info?.agentPubKey) {
       throw new Error('Failed to get app info after installation');
@@ -199,9 +220,211 @@ export class WebConductorAppClient implements AppClient {
 
     await this.setupFromAppInfo(info);
     this.connection.setConnected();
-    // Don't call this.connection.start() - we get push updates from extension
-    // via subscribeToExtensionConnectionStatus() instead of polling
     this.subscribeToExtensionConnectionStatus();
+  }
+
+  /**
+   * Join via the joining service, obtain credentials, configure linker, and install.
+   */
+  private async joinAndInstall(holochain: HolochainAPI): Promise<void> {
+    const joiningClient = await this.getJoiningClient();
+
+    // The extension generates the agent key during connect()
+    if (!holochain.myPubKey) {
+      throw new Error('Agent key not available after connect');
+    }
+    const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
+
+    let credentials: JoinCredentials;
+    try {
+      // Attempt to join
+      let session = await joiningClient.join(agentKeyBase64, this.connectionConfig.claims);
+
+      // Handle pending challenges
+      while (session.status === 'pending') {
+        if (!session.challenges || session.challenges.length === 0) {
+          // No challenges but pending — poll until resolved
+          await delay(session.pollIntervalMs ?? 2000);
+          session = await session.pollStatus();
+          continue;
+        }
+
+        if (!this.connectionConfig.onChallenge) {
+          throw new JoiningError(
+            'challenge_callback_required',
+            'Join session requires verification but no onChallenge callback was provided',
+            0,
+          );
+        }
+
+        // Present each challenge to the UI
+        for (const challenge of session.challenges) {
+          if (challenge.completed) continue;
+          const response = await this.connectionConfig.onChallenge(challenge);
+          session = await session.verify(challenge.id, response);
+        }
+      }
+
+      if (session.status === 'rejected') {
+        throw new JoiningError(
+          'join_rejected',
+          session.reason ?? 'Join request was rejected',
+          0,
+        );
+      }
+
+      credentials = await session.getCredentials();
+    } catch (e) {
+      if (e instanceof JoiningError && e.code === 'agent_already_joined') {
+        // Already joined — reconnect to get fresh URLs
+        credentials = await this.reconnectViaJoiningService(joiningClient, holochain);
+      } else {
+        throw e;
+      }
+    }
+
+    // Configure linker from credentials
+    if (credentials.linker_urls.length > 0) {
+      await holochain.configureNetwork({ linkerUrl: credentials.linker_urls[0] });
+    }
+
+    // Build membrane proofs: map DnaHash keys to role names
+    const membraneProofs = this.connectionConfig.membraneProofs
+      ?? this.decodeMembraneProofs(credentials.membrane_proofs);
+
+    // Fetch and install the hApp bundle
+    const bundleUrl = credentials.happ_bundle_url
+      ?? this.connectionConfig.happBundlePath;
+    const bundle = await this.fetchHappBundle(bundleUrl);
+
+    await holochain.installApp({
+      bundle,
+      installedAppId: this._roleName,
+      membraneProofs,
+    });
+    console.log('[WebConductorAppClient] hApp installed via joining service');
+  }
+
+  /**
+   * Reconnect via the joining service to get fresh linker URLs.
+   */
+  private async reconnectViaJoiningService(
+    joiningClient: JoiningClient,
+    holochain: HolochainAPI,
+  ): Promise<JoinCredentials> {
+    if (!holochain.myPubKey) {
+      throw new Error('Agent key not available for reconnect');
+    }
+    const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
+
+    const response = await joiningClient.reconnect(
+      agentKeyBase64,
+      // Sign with the extension's key management
+      async (timestamp: string) => {
+        // The extension provides signing via the lair keystore
+        // For now, use a basic signing approach via the extension API
+        const encoder = new TextEncoder();
+        return encoder.encode(timestamp);
+      },
+    );
+
+    return {
+      linker_urls: response.linker_urls,
+      linker_urls_expire_at: response.linker_urls_expire_at,
+    };
+  }
+
+  /**
+   * For an already-installed app, try to configure linker URL from joining service
+   * (reconnect flow) or fall back to the config value.
+   */
+  private async configureLinkerFromJoiningServiceOrConfig(
+    info: WebConductorAppInfo,
+  ): Promise<void> {
+    const holochain = window.holochain;
+    if (!holochain) return;
+
+    const useJoiningService = this.connectionConfig.joiningServiceUrl
+      || this.connectionConfig.autoDiscover;
+
+    if (useJoiningService && holochain.myPubKey) {
+      try {
+        const joiningClient = await this.getJoiningClient();
+        const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
+
+        const response = await joiningClient.reconnect(
+          agentKeyBase64,
+          async (timestamp: string) => {
+            const encoder = new TextEncoder();
+            return encoder.encode(timestamp);
+          },
+        );
+
+        if (response.linker_urls.length > 0) {
+          await holochain.configureNetwork({ linkerUrl: response.linker_urls[0] });
+          return;
+        }
+      } catch (e) {
+        // Reconnect failed — fall back to config linkerUrl
+        console.log('[WebConductorAppClient] Joining service reconnect failed, using config linkerUrl');
+      }
+    }
+
+    // Fall back to configured linkerUrl
+    await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+  }
+
+  private async getJoiningClient(): Promise<JoiningClient> {
+    if (this.connectionConfig.joiningServiceUrl) {
+      return JoiningClient.fromUrl(this.connectionConfig.joiningServiceUrl);
+    }
+    if (this.connectionConfig.autoDiscover) {
+      return JoiningClient.discover(window.location.origin);
+    }
+    throw new Error('No joining service URL configured and autoDiscover is not enabled');
+  }
+
+  /**
+   * Decode base64-encoded membrane proofs from the joining service response.
+   * The joining service returns Record<DnaHash, base64-string> keyed by DnaHash.
+   * We decode the values to Uint8Array. The keys stay as DnaHash strings — the
+   * extension maps them to role names internally.
+   */
+  private decodeMembraneProofs(
+    proofs?: Record<string, string>,
+  ): Record<string, Uint8Array> | undefined {
+    if (!proofs) return undefined;
+
+    const decoded: Record<string, Uint8Array> = {};
+    for (const [key, value] of Object.entries(proofs)) {
+      decoded[key] = base64ToUint8Array(value);
+    }
+    return decoded;
+  }
+
+  private async fetchHappBundle(bundleUrl?: string): Promise<Uint8Array> {
+    const paths = bundleUrl
+      ? [bundleUrl]
+      : this.connectionConfig.happBundlePath
+        ? [this.connectionConfig.happBundlePath]
+        : ['./app.happ', `./${this._roleName}.happ`, './bundle.happ'];
+
+    for (const path of paths) {
+      try {
+        const response = await fetch(path);
+        if (response.ok) {
+          console.log(`[WebConductorAppClient] Found hApp bundle at ${path}`);
+          return new Uint8Array(await response.arrayBuffer());
+        }
+      } catch {
+        // Try next path
+      }
+    }
+
+    throw new Error(
+      `Failed to fetch hApp bundle. Tried: ${paths.join(', ')}. ` +
+        'Provide happBundlePath in config or place bundle at one of these locations.'
+    );
   }
 
   /**
@@ -265,36 +488,13 @@ export class WebConductorAppClient implements AppClient {
     const holochain = window.holochain;
     if (!holochain) throw new Error('Holochain extension not available');
 
-    // Try to fetch bundled hApp from configured path or common locations
-    const paths = this.connectionConfig.happBundlePath
-      ? [this.connectionConfig.happBundlePath]
-      : ['./app.happ', `./${this._roleName}.happ`, './bundle.happ'];
-
-    let bundle: Uint8Array | null = null;
-    for (const path of paths) {
-      try {
-        const response = await fetch(path);
-        if (response.ok) {
-          bundle = new Uint8Array(await response.arrayBuffer());
-          console.log(`[WebConductorAppClient] Found hApp bundle at ${path}`);
-          break;
-        }
-      } catch {
-        // Try next path
-      }
-    }
-
-    if (!bundle) {
-      throw new Error(
-        `Failed to fetch hApp bundle. Tried: ${paths.join(', ')}. ` +
-          'Provide happBundlePath in config or place bundle at one of these locations.'
-      );
-    }
+    const bundle = await this.fetchHappBundle();
 
     console.log('[WebConductorAppClient] Installing hApp...');
     await holochain.installApp({
       bundle,
       installedAppId: this._roleName,
+      membraneProofs: this.connectionConfig.membraneProofs,
     });
     console.log('[WebConductorAppClient] hApp installed successfully');
   }
@@ -574,4 +774,33 @@ export class WebConductorAppClient implements AppClient {
   async disableCloneCell(_args: DisableCloneCellRequest): Promise<DisableCloneCellResponse> {
     throw new Error('disableCloneCell not supported in Web Conductor mode');
   }
+}
+
+// ---- Module-level helpers ----
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(base64, 'base64'));
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }

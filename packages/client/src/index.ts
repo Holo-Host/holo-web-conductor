@@ -74,6 +74,9 @@ export type {
   ReconnectResponse,
 } from './joining';
 
+// Gateway proxy (read-only browsing before join)
+export { GatewayProxy, GatewayError, type GatewayCallZomeParams } from './gateway-proxy';
+
 // Types
 export type { HolochainAPI, WebConductorAppInfo, CallZomeParams, InstallAppRequest } from './types';
 
