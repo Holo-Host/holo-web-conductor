@@ -1,15 +1,16 @@
 /**
- * @hwc/lair - Browser-based Lair keystore implementation
+ * @holo-host/lair - Lair keystore implementation
  *
- * This package provides key management functionality mirroring
- * the Lair keystore for use in browser environments.
+ * Cryptographic key management for Holochain applications.
+ * Works in browsers (IndexedDB), Node.js servers (MemoryKeyStorage),
+ * Cloudflare Workers, and Electron apps.
  *
  * Features:
  * - Ed25519 key generation and signing
  * - X25519 encryption/decryption (crypto_box)
  * - Symmetric encryption (secret_box)
  * - Key derivation (hierarchical deterministic keys)
- * - IndexedDB persistence
+ * - Pluggable storage backends (IndexedDB, in-memory)
  * - Full libsodium compatibility
  */
 
@@ -32,11 +33,15 @@ export type {
 // Export storage
 export type { KeyStorage } from "./storage";
 export { IndexedDBKeyStorage, createKeyStorage } from "./storage";
+export { MemoryKeyStorage } from "./memory-storage";
 
 // Export client
 export { LairClient, createLairClient } from "./client";
 
+// Export seed utilities (for loading keys from external sources)
+export { seedToStoredEntry, hexToSeed } from "./seed-utils";
+
 // Export mnemonic (seed phrase backup/recovery)
 export { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from "./mnemonic";
 
-export const VERSION = "0.0.1";
+export const VERSION = "0.1.0";

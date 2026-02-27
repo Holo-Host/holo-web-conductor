@@ -9,7 +9,7 @@
 
 import type { HappContext, HappContextStatus, InstallHappRequest, CellId, DnaContext } from "@hwc/core";
 import { HappContextStorage, getHappContextStorage } from "./happ-context-storage";
-import { createLairClient, type ILairClient } from "@hwc/lair";
+import { createLairClient, type ILairClient } from "@holo-host/lair";
 import { getPermissionManager, type PermissionManager } from "./permissions";
 import {
   unpackHappBundle,

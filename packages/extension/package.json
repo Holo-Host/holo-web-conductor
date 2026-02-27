@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@hwc/core": "*",
-    "@hwc/lair": "*",
+    "@holo-host/lair": "*",
     "@hwc/shared": "*",
     "@holochain/client": "^0.20.1",
     "@sqlite.org/sqlite-wasm": "^3.51.1-build2",

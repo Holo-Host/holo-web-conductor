@@ -15,4 +15,4 @@ export {
 
 // Re-export types
 export type { Signature } from "@holochain/client";
-export type { LairClient } from "@hwc/lair";
+export type { LairClient } from "@holo-host/lair";

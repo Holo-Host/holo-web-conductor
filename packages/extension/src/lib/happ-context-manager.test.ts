@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { HappContextManager, resetHappContextManager } from "./happ-context-manager";
 import { HappContextStorage } from "./happ-context-storage";
-import { LairClient, type ILairClient } from "@hwc/lair";
+import { LairClient, type ILairClient } from "@holo-host/lair";
 import { PermissionManager } from "./permissions";
 import type { InstallHappRequest, HappContext } from "@hwc/core";
 import * as bundle from "@hwc/core";

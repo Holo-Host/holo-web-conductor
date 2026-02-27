@@ -1,11 +1,13 @@
 {
-  "name": "@hwc/lair",
-  "version": "0.0.1",
-  "private": true,
-  "description": "Lair keystore implementation for browser environment",
+  "name": "@holo-host/lair",
+  "version": "0.1.0",
+  "description": "Lair keystore implementation for Holochain applications",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -14,7 +16,6 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@hwc/shared": "*",
     "@scure/bip39": "^2.0.1",
     "libsodium-wrappers": "^0.8.0"
   },
