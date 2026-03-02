@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WebConductorAppClient } from './WebConductorAppClient';
 import { ConnectionStatus } from './connection';
-import { JoiningError } from './joining';
+import { JoiningError } from '@holo-host/joining-service/client';
 import type { HolochainAPI, WebConductorAppInfo } from './types';
 
 // Extended mock type with test helpers

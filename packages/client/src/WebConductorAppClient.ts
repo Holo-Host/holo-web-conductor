@@ -64,7 +64,7 @@ import {
   JoiningError,
   type Challenge,
   type JoinCredentials,
-} from './joining';
+} from '@holo-host/joining-service/client';
 
 /**
  * Options for creating a WebConductorAppClient.

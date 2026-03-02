@@ -56,12 +56,12 @@ export { ReconnectionManager } from './connection/reconnect';
 export { waitForHolochain, isWebConductorAvailable } from './utils/wait-for-holochain';
 export { deepConvertByteArrays, toUint8Array, looksLikeByteArray } from './utils/byte-arrays';
 
-// Joining service client
+// Joining service client (re-exported from @holo-host/joining-service/client)
 export {
   JoiningClient,
   JoinSession,
   JoiningError,
-} from './joining';
+} from '@holo-host/joining-service/client';
 export type {
   WellKnownHoloJoining,
   JoiningServiceInfo,
@@ -72,10 +72,10 @@ export type {
   JoinCredentials,
   ReconnectRequest,
   ReconnectResponse,
-} from './joining';
+} from '@holo-host/joining-service/client';
 
 // Gateway proxy (read-only browsing before join)
-export { GatewayProxy, GatewayError, type GatewayCallZomeParams } from './gateway-proxy';
+export { GatewayProxy, GatewayError, type GatewayCallZomeParams } from '@holo-host/joining-service/client';
 
 // Types
 export type { HolochainAPI, WebConductorAppInfo, CallZomeParams, InstallAppRequest } from './types';
