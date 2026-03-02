@@ -20,6 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # TODO: remove once @holo-host/joining-service is published to npm
+      - uses: actions/checkout@v4
+        with:
+          repository: Holo-Host/joining-service
+          path: ../joining-service
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
