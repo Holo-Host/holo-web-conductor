@@ -46,7 +46,7 @@ export default defineConfig({
     alias: {
       "@hwc/shared": resolve(__dirname, "../shared/src"),
       "@hwc/core": resolve(__dirname, "../core/src"),
-      "@hwc/lair": resolve(__dirname, "../lair/src"),
+      "@holo-host/lair": resolve(__dirname, "../lair/src"),
       "libsodium-wrappers": resolve(
         __dirname,
         "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
@@ -84,7 +84,7 @@ export default defineConfig({
             alias: {
               "@hwc/shared": resolve(__dirname, "../shared/src"),
               "@hwc/core": resolve(__dirname, "../core/src"),
-              "@hwc/lair": resolve(__dirname, "../lair/src"),
+              "@holo-host/lair": resolve(__dirname, "../lair/src"),
               "libsodium-wrappers": resolve(
                 __dirname,
                 "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
@@ -118,7 +118,7 @@ export default defineConfig({
             alias: {
               "@hwc/shared": resolve(__dirname, "../shared/src"),
               "@hwc/core": resolve(__dirname, "../core/src"),
-              "@hwc/lair": resolve(__dirname, "../lair/src"),
+              "@holo-host/lair": resolve(__dirname, "../lair/src"),
             },
           },
         });
@@ -171,7 +171,7 @@ export default defineConfig({
             alias: {
               "@hwc/shared": resolve(__dirname, "../shared/src"),
               "@hwc/core": resolve(__dirname, "../core/src"),
-              "@hwc/lair": resolve(__dirname, "../lair/src"),
+              "@holo-host/lair": resolve(__dirname, "../lair/src"),
               "libsodium-wrappers": resolve(
                 __dirname,
                 "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
@@ -207,7 +207,7 @@ export default defineConfig({
               alias: {
                 "@hwc/shared": resolve(__dirname, "../shared/src"),
                 "@hwc/core": resolve(__dirname, "../core/src"),
-                "@hwc/lair": resolve(__dirname, "../lair/src"),
+                "@holo-host/lair": resolve(__dirname, "../lair/src"),
               },
             },
           });
@@ -251,7 +251,7 @@ export default defineConfig({
               alias: {
                 "@hwc/shared": resolve(__dirname, "../shared/src"),
                 "@hwc/core": resolve(__dirname, "../core/src"),
-                "@hwc/lair": resolve(__dirname, "../lair/src"),
+                "@holo-host/lair": resolve(__dirname, "../lair/src"),
                 "libsodium-wrappers": resolve(
                   __dirname,
                   "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"

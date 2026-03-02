@@ -40,7 +40,7 @@ import { getLairLock } from "../lib/lair-lock";
 import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
-import { createLairClient, type EncryptedExport } from "@hwc/lair";
+import { createLairClient, type EncryptedExport } from "@holo-host/lair";
 import type { InstallHappRequest, HappContext } from "@hwc/core";
 import {
   toUint8Array,
