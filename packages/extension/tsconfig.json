@@ -9,7 +9,7 @@
       "@hwc/core/*": ["../core/src/*"],
       "@hwc/core": ["../core/src"],
       "@hwc/shared": ["../shared/src"],
-      "@hwc/lair": ["../lair/src"]
+      "@holo-host/lair": ["../lair/src"]
     }
   },
   "include": ["src/**/*"],

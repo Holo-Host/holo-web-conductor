@@ -12,7 +12,7 @@ import { SourceChainStorage } from "../storage";
 import { setLairClient } from "../signing";
 import { callZomeAsExtension } from "./test-helpers";
 import type { DnaManifestRuntime } from "../types/bundle-types";
-import type { LairClient } from "@hwc/lair";
+import type { LairClient } from "@holo-host/lair";
 
 // Set up fake-indexeddb for browser storage APIs in Node test environment
 import "fake-indexeddb/auto";

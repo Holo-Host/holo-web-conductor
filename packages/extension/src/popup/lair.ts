@@ -11,7 +11,7 @@ import {
   type ResponseMessage,
   type Message,
 } from "../lib/messaging";
-import type { EntryInfo, EncryptedExport } from "@hwc/lair";
+import type { EntryInfo, EncryptedExport } from "@holo-host/lair";
 import {
   dhtLocationFrom32,
   HASH_TYPE_PREFIX,

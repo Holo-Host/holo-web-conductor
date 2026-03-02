@@ -11,7 +11,7 @@ import {
   type Signature,
   sliceCore32,
 } from "@holochain/client";
-import type { ILairClient, Ed25519Signature } from "@hwc/lair";
+import type { ILairClient, Ed25519Signature } from "@holo-host/lair";
 
 /**
  * Global Lair client instance
