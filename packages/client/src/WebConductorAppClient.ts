@@ -323,12 +323,11 @@ export class WebConductorAppClient implements AppClient {
 
     const response = await joiningClient.reconnect(
       agentKeyBase64,
-      // Sign with the extension's key management
       async (timestamp: string) => {
-        // The extension provides signing via the lair keystore
-        // For now, use a basic signing approach via the extension API
-        const encoder = new TextEncoder();
-        return encoder.encode(timestamp);
+        if (holochain.signReconnectChallenge) {
+          return holochain.signReconnectChallenge(timestamp);
+        }
+        throw new Error('Extension does not support signReconnectChallenge — update required');
       },
     );
 
@@ -358,8 +357,10 @@ export class WebConductorAppClient implements AppClient {
         const response = await joiningClient.reconnect(
           agentKeyBase64,
           async (timestamp: string) => {
-            const encoder = new TextEncoder();
-            return encoder.encode(timestamp);
+            if (holochain.signReconnectChallenge) {
+              return holochain.signReconnectChallenge(timestamp);
+            }
+            throw new Error('Extension does not support signReconnectChallenge — update required');
           },
         );
 

@@ -60,6 +60,7 @@ function createMockHolochain(): MockHolochain {
       lastChecked: Date.now(),
     }),
     onConnectionChange: vi.fn().mockReturnValue(() => {}),
+    signReconnectChallenge: vi.fn().mockResolvedValue(new Uint8Array(64)),
   };
 
   return mock;
@@ -356,12 +357,10 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
       await server.close();
     });
 
-    it('gets 409 when agent already joined, reconnect fails without real signing', async () => {
-      // This test verifies the 409 detection works, but reconnect fails because
-      // WebConductorAppClient.reconnectViaJoiningService uses a placeholder
-      // signing function (TextEncoder.encode) instead of real ed25519 signing.
-      // TODO: Once the extension provides real lair-based signing, update this
-      // test to verify the full reconnect → fresh URLs → install flow.
+    it('gets 409 when agent already joined, reconnect fails with mock signature', async () => {
+      // This test verifies the 409→reconnect path works. The mock signReconnectChallenge
+      // returns 64 zero bytes (not a valid ed25519 signature), so the joining service
+      // rejects it. In production, the extension signs with the real lair keystore.
       const agentKey = nextAgentKey();
       const agentKeyBytes = agentKeyToBytes(agentKey);
 

@@ -57,6 +57,7 @@ function createMockHolochain(overrides: Partial<HolochainAPI> = {}): MockHolocha
       connectionStatusHandlers.add(callback);
       return () => connectionStatusHandlers.delete(callback);
     }),
+    signReconnectChallenge: vi.fn().mockResolvedValue(new Uint8Array(64)),
     // Test helper methods
     _emitSignal: (signal: unknown) => {
       signalHandlers.forEach((h) => h(signal));
