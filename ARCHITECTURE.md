@@ -4,6 +4,43 @@ A browser extension implementation of the Holochain conductor, enabling hApps to
 
 ---
 
+## Architecture for App Developers
+
+If you're building an app that uses HWC, here's what you need to know about the system:
+
+```
+┌─────────────────────┐         ┌──────────────────┐         ┌───────────────────┐
+│   Your Web App      │         │  HWC Browser     │         │  Your             │
+│                     │         │  Extension       │         │  Infrastructure   │
+│  @holo-host/        │◄───────►│                  │◄═══════►│                   │
+│  web-conductor-     │ window. │  WASM runtime    │ HTTP/WS │  Linker           │
+│  client             │holochain│  Key storage     │         │  Joining Service  │
+│                     │         │  SQLite cache    │         │  Holochain Nodes  │
+└─────────────────────┘         └──────────────────┘         └───────────────────┘
+     Browser Tab                   Browser Extension              Server(s)
+```
+
+**What runs where:**
+
+- **Browser tab** (your code): Your UI + the client library. Calls `callZome()`, receives signals, handles auth challenges. Uses `@holo-host/web-conductor-client` which is a drop-in for `@holochain/client`'s `AppClient`.
+- **Browser extension** (HWC): Runs your hApp's WASM, stores keys in IndexedDB, caches data in SQLite. Communicates with your app via `window.holochain` API. Communicates with the network via the linker.
+- **Linker server**: Relays data between the extension and Holochain conductors. The extension has no direct peer-to-peer connections.
+- **Joining service** (optional): Handles agent onboarding — verifies identity, issues membrane proofs, provides linker URLs.
+
+**Why zome calls work the same way:** The client library translates `callZome()` into extension API calls. The extension runs the actual WASM, calls host functions locally (signing, storage), and reaches out to the linker only for network operations (get, publish). From your app's perspective, it's the same `AppClient` interface.
+
+**Key difference from a local conductor:** HWC nodes are zero-arc. They don't hold DHT data for other agents and don't gossip. Every `get` that needs network data goes through the linker. This means reads are network-dependent (plan for loading states) but writes work offline-first (signed locally, published when connected).
+
+For integration details, see [APP_DEVELOPER_GUIDE.md](./APP_DEVELOPER_GUIDE.md). For deployment, see [DEPLOYING.md](./DEPLOYING.md).
+
+---
+
+## Internal Architecture (HWC Contributors)
+
+The rest of this document covers the internal implementation details of HWC itself.
+
+---
+
 ## High-Level Architecture
 
 ```
