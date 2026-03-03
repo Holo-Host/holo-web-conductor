@@ -471,6 +471,9 @@ async function handleMessage(
       case MessageType.SIGN_RECONNECT_CHALLENGE:
         return handleSignReconnectChallenge(message, sender);
 
+      case MessageType.SIGN_JOINING_NONCE:
+        return handleSignJoiningNonce(message, sender);
+
       default:
         return createErrorResponse(
           message.id,
@@ -2131,6 +2134,52 @@ async function handleSignReconnectChallenge(
     const timestampBytes = new TextEncoder().encode(payload.timestamp);
     const client = await getLairClient();
     const signature = await client.signByPubKey(ed25519Key, timestampBytes);
+
+    return createSuccessResponse(message.id, { signature });
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle SIGN_JOINING_NONCE requests.
+ * Signs opaque nonce bytes with the agent's ed25519 key for joining service
+ * agent_whitelist verification. Validates nonce length (16-128 bytes).
+ */
+async function handleSignJoiningNonce(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    await ensureUnlocked();
+    const payload = getPayload<MessageType.SIGN_JOINING_NONCE>(message);
+    if (!payload.nonce || !Array.isArray(payload.nonce) || payload.nonce.length === 0) {
+      return createErrorResponse(message.id, "nonce is required and must be a non-empty byte array");
+    }
+
+    if (payload.nonce.length < 16 || payload.nonce.length > 128) {
+      return createErrorResponse(message.id, "nonce must be 16-128 bytes");
+    }
+
+    const origin = sender.tab?.url ? new URL(sender.tab.url).origin : undefined;
+    if (!origin) {
+      return createErrorResponse(message.id, "Cannot determine origin for signing");
+    }
+
+    const context = await happContextManager.getContextForDomain(origin);
+    if (!context?.agentPubKey) {
+      return createErrorResponse(message.id, "No agent key available — not connected");
+    }
+
+    const agentPubKey = toUint8Array(context.agentPubKey);
+    const ed25519Key = extractEd25519PubKey(agentPubKey);
+
+    const nonceBytes = new Uint8Array(payload.nonce);
+    const client = await getLairClient();
+    const signature = await client.signByPubKey(ed25519Key, nonceBytes);
 
     return createSuccessResponse(message.id, { signature });
   } catch (error) {
