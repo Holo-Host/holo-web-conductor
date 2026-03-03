@@ -66,10 +66,11 @@ export type {
   WellKnownHoloJoining,
   JoiningServiceInfo,
   HttpGateway,
+  LinkerUrl,
   AuthMethod,
   DnaModifiers,
   Challenge,
-  JoinCredentials,
+  JoinProvision,
   ReconnectRequest,
   ReconnectResponse,
 } from '@holo-host/joining-service/client';

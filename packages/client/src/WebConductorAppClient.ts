@@ -63,7 +63,7 @@ import {
   JoiningClient,
   JoiningError,
   type Challenge,
-  type JoinCredentials,
+  type JoinProvision,
 } from '@holo-host/joining-service/client';
 
 /**
@@ -224,7 +224,7 @@ export class WebConductorAppClient implements AppClient {
   }
 
   /**
-   * Join via the joining service, obtain credentials, configure linker, and install.
+   * Join via the joining service, obtain provision, configure linker, and install.
    */
   private async joinAndInstall(holochain: HolochainAPI): Promise<void> {
     const joiningClient = await this.getJoiningClient();
@@ -235,7 +235,7 @@ export class WebConductorAppClient implements AppClient {
     }
     const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
 
-    let credentials: JoinCredentials;
+    let provision: JoinProvision;
     try {
       // Attempt to join
       let session = await joiningClient.join(agentKeyBase64, this.connectionConfig.claims);
@@ -273,27 +273,31 @@ export class WebConductorAppClient implements AppClient {
         );
       }
 
-      credentials = await session.getCredentials();
+      provision = await session.getProvision();
     } catch (e) {
       if (e instanceof JoiningError && e.code === 'agent_already_joined') {
         // Already joined — reconnect to get fresh URLs
-        credentials = await this.reconnectViaJoiningService(joiningClient, holochain);
+        provision = await this.reconnectViaJoiningService(joiningClient, holochain);
       } else {
         throw e;
       }
     }
 
-    // Configure linker from credentials
-    if (credentials.linker_urls.length > 0) {
-      await holochain.configureNetwork({ linkerUrl: credentials.linker_urls[0] });
+    // Configure linker from provision, falling back to config linkerUrl
+    const linkerUrl = provision.linker_urls?.[0]?.url
+      ?? this.connectionConfig.linkerUrl;
+    if (linkerUrl) {
+      await holochain.configureNetwork({ linkerUrl });
+    } else {
+      console.log('[WebConductorAppClient] No linker URL from joining service or config');
     }
 
     // Build membrane proofs: map DnaHash keys to role names
     const membraneProofs = this.connectionConfig.membraneProofs
-      ?? this.decodeMembraneProofs(credentials.membrane_proofs);
+      ?? this.decodeMembraneProofs(provision.membrane_proofs);
 
     // Fetch and install the hApp bundle
-    const bundleUrl = credentials.happ_bundle_url
+    const bundleUrl = provision.happ_bundle_url
       ?? this.connectionConfig.happBundlePath;
     const bundle = await this.fetchHappBundle(bundleUrl);
 
@@ -311,7 +315,7 @@ export class WebConductorAppClient implements AppClient {
   private async reconnectViaJoiningService(
     joiningClient: JoiningClient,
     holochain: HolochainAPI,
-  ): Promise<JoinCredentials> {
+  ): Promise<JoinProvision> {
     if (!holochain.myPubKey) {
       throw new Error('Agent key not available for reconnect');
     }
@@ -330,7 +334,6 @@ export class WebConductorAppClient implements AppClient {
 
     return {
       linker_urls: response.linker_urls,
-      linker_urls_expire_at: response.linker_urls_expire_at,
     };
   }
 
@@ -360,8 +363,8 @@ export class WebConductorAppClient implements AppClient {
           },
         );
 
-        if (response.linker_urls.length > 0) {
-          await holochain.configureNetwork({ linkerUrl: response.linker_urls[0] });
+        if (response.linker_urls && response.linker_urls.length > 0) {
+          await holochain.configureNetwork({ linkerUrl: response.linker_urls[0].url });
           return;
         }
       } catch (e) {

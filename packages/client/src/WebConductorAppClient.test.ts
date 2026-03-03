@@ -442,9 +442,9 @@ describe('WebConductorAppClient', () => {
         .mockResolvedValueOnce(jsonResponse({
           session: 'js_abc', status: 'ready',
         }, 201))
-        // GET /credentials
+        // GET /provision
         .mockResolvedValueOnce(jsonResponse({
-          linker_urls: ['wss://linker.example.com:8090'],
+          linker_urls: [{ url: 'wss://linker.example.com:8090' }],
           membrane_proofs: {},
           happ_bundle_url: 'https://example.com/test.happ',
         }))
@@ -463,7 +463,7 @@ describe('WebConductorAppClient', () => {
         `${JOINING_URL}/join`,
         expect.objectContaining({ method: 'POST' }),
       );
-      // Should have configured linker from credentials
+      // Should have configured linker from provision
       expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
         linkerUrl: 'wss://linker.example.com:8090',
       });
@@ -492,9 +492,9 @@ describe('WebConductorAppClient', () => {
         }, 201))
         // POST /verify -> ready
         .mockResolvedValueOnce(jsonResponse({ status: 'ready' }))
-        // GET /credentials
+        // GET /provision
         .mockResolvedValueOnce(jsonResponse({
-          linker_urls: ['wss://linker.example.com:8090'],
+          linker_urls: [{ url: 'wss://linker.example.com:8090' }],
           membrane_proofs: {},
         }))
         // Fetch hApp bundle
@@ -559,8 +559,7 @@ describe('WebConductorAppClient', () => {
         ))
         // POST /reconnect -> fresh URLs
         .mockResolvedValueOnce(jsonResponse({
-          linker_urls: ['wss://new-linker.example.com:8090'],
-          linker_urls_expire_at: '2026-12-01T00:00:00Z',
+          linker_urls: [{ url: 'wss://new-linker.example.com:8090' }],
         }))
         // Fetch hApp bundle
         .mockResolvedValueOnce(happBundleResponse());
@@ -577,7 +576,7 @@ describe('WebConductorAppClient', () => {
         `${JOINING_URL}/reconnect`,
         expect.objectContaining({ method: 'POST' }),
       );
-      // Should configure linker from reconnect response
+      // Should configure linker from reconnect response (LinkerUrl.url extracted)
       expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
         linkerUrl: 'wss://new-linker.example.com:8090',
       });
@@ -594,7 +593,7 @@ describe('WebConductorAppClient', () => {
           session: 'js_abc', status: 'ready',
         }, 201))
         .mockResolvedValueOnce(jsonResponse({
-          linker_urls: ['wss://linker.example.com:8090'],
+          linker_urls: [{ url: 'wss://linker.example.com:8090' }],
           membrane_proofs: {},
         }))
         .mockResolvedValueOnce(happBundleResponse());
@@ -612,7 +611,7 @@ describe('WebConductorAppClient', () => {
       expect(joinBody.claims).toEqual({ email: 'test@example.com' });
     });
 
-    it('decodes base64 membrane proofs from credentials', async () => {
+    it('decodes base64 membrane proofs from provision', async () => {
       mockHolochain.appInfo = vi.fn()
         .mockResolvedValueOnce(null)
         .mockResolvedValue(MOCK_APP_INFO);
@@ -626,7 +625,7 @@ describe('WebConductorAppClient', () => {
           session: 'js_abc', status: 'ready',
         }, 201))
         .mockResolvedValueOnce(jsonResponse({
-          linker_urls: ['wss://linker.example.com:8090'],
+          linker_urls: [{ url: 'wss://linker.example.com:8090' }],
           membrane_proofs: { 'uhC0kDnaHash': proofBase64 },
         }))
         .mockResolvedValueOnce(happBundleResponse());
@@ -680,6 +679,38 @@ describe('WebConductorAppClient', () => {
       expect(mockHolochain.installApp).toHaveBeenCalled();
     });
 
+    it('falls back to config linkerUrl when provision has no linker URLs', async () => {
+      mockHolochain.appInfo = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(MOCK_APP_INFO);
+      mockHolochain.myPubKey = MOCK_AGENT_KEY;
+
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(jsonResponse({
+          session: 'js_abc', status: 'ready',
+        }, 201))
+        // GET /provision — no linker_urls
+        .mockResolvedValueOnce(jsonResponse({
+          membrane_proofs: {},
+          happ_bundle_url: 'https://example.com/test.happ',
+        }))
+        .mockResolvedValueOnce(happBundleResponse());
+
+      globalThis.fetch = mockFetch;
+
+      await WebConductorAppClient.connect({
+        linkerUrl: 'http://fallback:8090',
+        joiningServiceUrl: JOINING_URL,
+      });
+
+      // Should fall back to config linkerUrl
+      expect(mockHolochain.configureNetwork).toHaveBeenCalledWith({
+        linkerUrl: 'http://fallback:8090',
+      });
+      // Should still install the app
+      expect(mockHolochain.installApp).toHaveBeenCalled();
+    });
+
     it('discovers joining service from .well-known when autoDiscover is true', async () => {
       mockHolochain.appInfo = vi.fn()
         .mockResolvedValueOnce(null)
@@ -697,9 +728,9 @@ describe('WebConductorAppClient', () => {
         .mockResolvedValueOnce(jsonResponse({
           session: 'js_abc', status: 'ready',
         }, 201))
-        // GET /credentials
+        // GET /provision
         .mockResolvedValueOnce(jsonResponse({
-          linker_urls: ['wss://linker.example.com:8090'],
+          linker_urls: [{ url: 'wss://linker.example.com:8090' }],
           membrane_proofs: {},
         }))
         // Fetch hApp bundle
