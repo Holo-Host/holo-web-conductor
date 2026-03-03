@@ -54,6 +54,10 @@ export interface HolochainAPI {
   // Joining service reconnect: signs a timestamp with the agent's ed25519 key.
   // Optional for backwards compatibility with older extension versions.
   signReconnectChallenge?(timestamp: string): Promise<Uint8Array>;
+
+  // Joining service agent_whitelist: signs a nonce with the agent's ed25519 key.
+  // Optional for backwards compatibility with older extension versions.
+  signJoiningNonce?(nonce: Uint8Array): Promise<Uint8Array>;
 }
 
 /**

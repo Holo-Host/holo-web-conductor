@@ -40,8 +40,8 @@ export interface ConnectionState {
  * Configuration for linker connection.
  */
 export interface ConnectionConfig {
-  /** URL of the h2hc-linker linker */
-  linkerUrl: string;
+  /** URL of the h2hc-linker linker (optional when using joining service) */
+  linkerUrl?: string;
   /** Enable automatic reconnection (default: true) */
   autoReconnect?: boolean;
   /** Initial reconnect delay in ms (default: 1000) */

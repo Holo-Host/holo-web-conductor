@@ -209,7 +209,9 @@ export class WebConductorAppClient implements AppClient {
       await this.joinAndInstall(holochain);
     } else {
       // Direct flow: configure linker from config, install hApp
-      await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+      if (this.connectionConfig.linkerUrl) {
+        await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+      }
       await this.installHapp();
     }
 
@@ -240,7 +242,9 @@ export class WebConductorAppClient implements AppClient {
       // Attempt to join
       let session = await joiningClient.join(agentKeyBase64, this.connectionConfig.claims);
 
-      // Handle pending challenges
+      // Handle pending challenges (supports OR groups via challenge.group field)
+      const satisfiedGroups = new Set<string>();
+
       while (session.status === 'pending') {
         if (!session.challenges || session.challenges.length === 0) {
           // No challenges but pending — poll until resolved
@@ -249,19 +253,46 @@ export class WebConductorAppClient implements AppClient {
           continue;
         }
 
-        if (!this.connectionConfig.onChallenge) {
-          throw new JoiningError(
-            'challenge_callback_required',
-            'Join session requires verification but no onChallenge callback was provided',
-            0,
-          );
-        }
+        let madeProgress = false;
 
-        // Present each challenge to the UI
         for (const challenge of session.challenges) {
           if (challenge.completed) continue;
+          // Skip challenges whose OR group is already satisfied
+          if (challenge.group && satisfiedGroups.has(challenge.group)) continue;
+
+          if (challenge.type === 'agent_whitelist') {
+            // Machine-verifiable: sign nonce via extension
+            const response = await this.signAgentWhitelistChallenge(holochain, challenge);
+            if (response) {
+              session = await session.verify(challenge.id, response);
+              if (challenge.group) satisfiedGroups.add(challenge.group);
+              madeProgress = true;
+              break; // Re-evaluate from top after verify changes session
+            }
+            // Signing failed or not supported — skip (try OR alternatives)
+            continue;
+          }
+
+          // Interactive challenge — requires UI callback
+          if (!this.connectionConfig.onChallenge) {
+            throw new JoiningError(
+              'challenge_callback_required',
+              'Join session requires verification but no onChallenge callback was provided',
+              0,
+            );
+          }
+
           const response = await this.connectionConfig.onChallenge(challenge);
           session = await session.verify(challenge.id, response);
+          if (challenge.group) satisfiedGroups.add(challenge.group);
+          madeProgress = true;
+          break; // Re-evaluate from top after verify changes session
+        }
+
+        if (!madeProgress) {
+          // No actionable challenges — poll for external resolution
+          await delay(session.pollIntervalMs ?? 2000);
+          session = await session.pollStatus();
         }
       }
 
@@ -375,7 +406,29 @@ export class WebConductorAppClient implements AppClient {
     }
 
     // Fall back to configured linkerUrl
-    await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+    if (this.connectionConfig.linkerUrl) {
+      await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+    }
+  }
+
+  /**
+   * Auto-handle an agent_whitelist challenge by signing the nonce via the extension.
+   * Returns the base64-encoded signature, or null if signing is unavailable/failed.
+   */
+  private async signAgentWhitelistChallenge(
+    holochain: HolochainAPI,
+    challenge: Challenge,
+  ): Promise<string | null> {
+    if (!challenge.metadata?.nonce) return null;
+    if (!holochain.signJoiningNonce) return null;
+
+    try {
+      const nonceBytes = base64ToUint8Array(challenge.metadata.nonce as string);
+      const signature = await holochain.signJoiningNonce(nonceBytes);
+      return uint8ArrayToBase64(signature);
+    } catch {
+      return null; // Signing failed — caller can try OR alternatives
+    }
   }
 
   private async getJoiningClient(): Promise<JoiningClient> {

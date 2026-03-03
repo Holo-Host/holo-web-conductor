@@ -61,6 +61,7 @@ function createMockHolochain(): MockHolochain {
     }),
     onConnectionChange: vi.fn().mockReturnValue(() => {}),
     signReconnectChallenge: vi.fn().mockResolvedValue(new Uint8Array(64)),
+    signJoiningNonce: vi.fn().mockResolvedValue(new Uint8Array(64)),
   };
 
   return mock;
@@ -383,6 +384,132 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
           happBundlePath: 'https://example.com/test.happ',
         }),
       ).rejects.toThrow('Signature does not verify');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Agent whitelist flow
+  // ------------------------------------------------------------------
+  describe('agent whitelist flow', () => {
+    let server: E2EServer;
+    let mock: MockHolochain;
+
+    afterEach(async () => {
+      teardownGlobalWindow();
+      vi.restoreAllMocks();
+      if (server) await server.close();
+    });
+
+    it('auto-signs nonce challenge via signJoiningNonce (fails with mock signature)', async () => {
+      // Use a fake agent key — it will be whitelisted in the server config
+      const agentKey = nextAgentKey();
+      const agentKeyBytes = agentKeyToBytes(agentKey);
+
+      server = await startE2EServer({
+        auth_methods: ['agent_whitelist'],
+        allowed_agents: [agentKey],
+      });
+
+      mock = createMockHolochain();
+      mock.myPubKey = agentKeyBytes;
+      setupGlobalWindow(mock);
+      installFetchInterceptor();
+
+      // The mock signJoiningNonce returns 64 zero bytes (not a valid ed25519 signature),
+      // so the joining service will reject the verification.
+      await expect(
+        WebConductorAppClient.connect({
+          joiningServiceUrl: `${server.baseUrl}/v1`,
+          happBundlePath: 'https://example.com/test.happ',
+        }),
+      ).rejects.toThrow('Signature does not verify');
+
+      // signJoiningNonce was called with the nonce bytes
+      expect(mock.signJoiningNonce).toHaveBeenCalled();
+    });
+
+    it('non-whitelisted agent is rejected', async () => {
+      const agentKey = nextAgentKey();
+      const agentKeyBytes = agentKeyToBytes(agentKey);
+
+      server = await startE2EServer({
+        auth_methods: ['agent_whitelist'],
+        allowed_agents: [], // no agents whitelisted
+      });
+
+      mock = createMockHolochain();
+      mock.myPubKey = agentKeyBytes;
+      setupGlobalWindow(mock);
+      installFetchInterceptor();
+
+      await expect(
+        WebConductorAppClient.connect({
+          joiningServiceUrl: `${server.baseUrl}/v1`,
+          happBundlePath: 'https://example.com/test.happ',
+        }),
+      ).rejects.toThrow('not eligible');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // OR group flow
+  // ------------------------------------------------------------------
+  describe('OR group (any_of) flow', () => {
+    let server: E2EServer;
+    let mock: MockHolochain;
+
+    afterEach(async () => {
+      teardownGlobalWindow();
+      vi.restoreAllMocks();
+      if (server) await server.close();
+    });
+
+    it('non-whitelisted agent falls back to invite_code in OR group', async () => {
+      const agentKey = nextAgentKey();
+      const agentKeyBytes = agentKeyToBytes(agentKey);
+
+      server = await startE2EServer({
+        auth_methods: [{ any_of: ['agent_whitelist', 'invite_code'] }],
+        allowed_agents: [], // this agent is not whitelisted
+        invite_codes: ['FALLBACK-CODE'],
+      });
+
+      mock = createMockHolochain();
+      mock.myPubKey = agentKeyBytes;
+      setupGlobalWindow(mock);
+      installFetchInterceptor();
+
+      // invite_code auto-verifies via claims, so the OR group is satisfied
+      await WebConductorAppClient.connect({
+        joiningServiceUrl: `${server.baseUrl}/v1`,
+        happBundlePath: 'https://example.com/test.happ',
+        claims: { invite_code: 'FALLBACK-CODE' },
+      });
+
+      // App was installed
+      expect(mock.installApp).toHaveBeenCalled();
+    });
+
+    it('OR group rejected when no method can produce challenges', async () => {
+      const agentKey = nextAgentKey();
+      const agentKeyBytes = agentKeyToBytes(agentKey);
+
+      server = await startE2EServer({
+        auth_methods: [{ any_of: ['agent_whitelist'] }],
+        allowed_agents: [], // no agents whitelisted
+      });
+
+      mock = createMockHolochain();
+      mock.myPubKey = agentKeyBytes;
+      setupGlobalWindow(mock);
+      installFetchInterceptor();
+
+      await expect(
+        WebConductorAppClient.connect({
+          joiningServiceUrl: `${server.baseUrl}/v1`,
+          happBundlePath: 'https://example.com/test.happ',
+        }),
+      ).rejects.toThrow('No eligible auth method');
     });
   });
 });
