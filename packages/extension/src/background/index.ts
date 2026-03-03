@@ -468,6 +468,9 @@ async function handleMessage(
       case MessageType.LAIR_IMPORT_MNEMONIC:
         return handleLairImportMnemonic(message);
 
+      case MessageType.SIGN_RECONNECT_CHALLENGE:
+        return handleSignReconnectChallenge(message, sender);
+
       default:
         return createErrorResponse(
           message.id,
@@ -2073,6 +2076,63 @@ async function handleLairImportMnemonic(
     const client = await getLairClient();
     const result = await client.importSeedFromMnemonic(mnemonic, tag, exportable ?? true);
     return createSuccessResponse(message.id, result);
+  } catch (error) {
+    return createErrorResponse(
+      message.id,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+/**
+ * Handle SIGN_RECONNECT_CHALLENGE requests.
+ * Signs an ISO 8601 timestamp with the agent's ed25519 key for joining service reconnect.
+ * Validates timestamp format and recency (±5 minutes) before signing.
+ */
+async function handleSignReconnectChallenge(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  try {
+    await ensureUnlocked();
+    const payload = getPayload<MessageType.SIGN_RECONNECT_CHALLENGE>(message);
+    if (!payload.timestamp) {
+      return createErrorResponse(message.id, "timestamp is required");
+    }
+
+    // Validate timestamp format (must parse as a valid date)
+    const parsed = new Date(payload.timestamp);
+    if (isNaN(parsed.getTime())) {
+      return createErrorResponse(message.id, "Invalid timestamp format — expected ISO 8601");
+    }
+
+    // Validate recency (±5 minutes)
+    const MAX_DRIFT_MS = 5 * 60 * 1000;
+    const drift = Math.abs(Date.now() - parsed.getTime());
+    if (drift > MAX_DRIFT_MS) {
+      return createErrorResponse(message.id, "Timestamp too far from current time (max ±5 minutes)");
+    }
+
+    // Get the agent's public key from the hApp context for this origin
+    const origin = sender.tab?.url ? new URL(sender.tab.url).origin : undefined;
+    if (!origin) {
+      return createErrorResponse(message.id, "Cannot determine origin for signing");
+    }
+
+    const context = await happContextManager.getContextForDomain(origin);
+    if (!context?.agentPubKey) {
+      return createErrorResponse(message.id, "No agent key available — not connected");
+    }
+
+    const agentPubKey = toUint8Array(context.agentPubKey);
+    const ed25519Key = extractEd25519PubKey(agentPubKey);
+
+    // Sign the timestamp string as UTF-8 bytes
+    const timestampBytes = new TextEncoder().encode(payload.timestamp);
+    const client = await getLairClient();
+    const signature = await client.signByPubKey(ed25519Key, timestampBytes);
+
+    return createSuccessResponse(message.id, { signature });
   } catch (error) {
     return createErrorResponse(
       message.id,

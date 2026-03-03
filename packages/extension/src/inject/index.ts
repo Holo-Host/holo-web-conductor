@@ -48,6 +48,8 @@ interface HolochainAPI {
   // Connection status APIs
   getConnectionStatus(): Promise<ConnectionStatus>;
   onConnectionChange(callback: (status: ConnectionStatus) => void): () => void;
+  // Joining service reconnect signing
+  signReconnectChallenge(timestamp: string): Promise<Uint8Array>;
 }
 
 // Signal subscription handlers
@@ -370,6 +372,11 @@ const holochainAPI: HolochainAPI = {
         });
       }
     };
+  },
+
+  async signReconnectChallenge(timestamp: string): Promise<Uint8Array> {
+    const result = await sendToContentScript("sign_reconnect_challenge", { timestamp });
+    return toUint8Array(result.signature)!;
   },
 };
 

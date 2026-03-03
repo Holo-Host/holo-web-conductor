@@ -87,6 +87,9 @@ export enum MessageType {
   LAIR_EXPORT_MNEMONIC = "lair_export_mnemonic",
   LAIR_IMPORT_MNEMONIC = "lair_import_mnemonic",
 
+  // Joining service
+  SIGN_RECONNECT_CHALLENGE = "sign_reconnect_challenge",
+
   // Responses
   SUCCESS = "success",
   ERROR = "error",
@@ -147,7 +150,8 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.RECOVER_CHAIN
     | MessageType.GET_RECOVERY_PROGRESS
     | MessageType.LAIR_EXPORT_MNEMONIC
-    | MessageType.LAIR_IMPORT_MNEMONIC;
+    | MessageType.LAIR_IMPORT_MNEMONIC
+    | MessageType.SIGN_RECONNECT_CHALLENGE;
   payload?: unknown;
 }
 
@@ -369,6 +373,14 @@ export interface ImportMnemonicPayload {
   exportable?: boolean;
 }
 
+/**
+ * Sign reconnect challenge payload.
+ * The extension validates the timestamp and signs it with the agent's key.
+ */
+export interface SignReconnectChallengePayload {
+  timestamp: string; // ISO 8601 format
+}
+
 // ============================================================================
 // Response Payload Types
 // ============================================================================
@@ -492,6 +504,7 @@ export interface RequestPayloadMap {
   [MessageType.GET_RECOVERY_PROGRESS]: ContextIdPayload;
   [MessageType.LAIR_EXPORT_MNEMONIC]: ExportMnemonicPayload;
   [MessageType.LAIR_IMPORT_MNEMONIC]: ImportMnemonicPayload;
+  [MessageType.SIGN_RECONNECT_CHALLENGE]: SignReconnectChallengePayload;
 }
 
 /**
@@ -643,7 +656,8 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.RECOVER_CHAIN ||
     message.type === MessageType.GET_RECOVERY_PROGRESS ||
     message.type === MessageType.LAIR_EXPORT_MNEMONIC ||
-    message.type === MessageType.LAIR_IMPORT_MNEMONIC
+    message.type === MessageType.LAIR_IMPORT_MNEMONIC ||
+    message.type === MessageType.SIGN_RECONNECT_CHALLENGE
   );
 }
 
