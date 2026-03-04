@@ -518,9 +518,11 @@ async function handleConnect(
   if (permission?.granted) {
     // Already approved - instant connection
     logAuth.debug(`Origin ${origin} already approved`);
+    const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
     return createSuccessResponse(message.id, {
       connected: true,
       origin,
+      agentPubKey: Array.from(agentPubKey),
     });
   }
 
@@ -1467,10 +1469,13 @@ async function handlePermissionGrant(
     await permissionManager.grantPermission(origin);
     logAuth.info(`Permission granted for ${origin}`);
 
+    // Generate/retrieve agent key for this origin
+    const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
+
     // Resolve pending auth request
     const resolved = await authManager.resolveAuthRequest(
       requestId,
-      createSuccessResponse(message.id, { connected: true, origin })
+      createSuccessResponse(message.id, { connected: true, origin, agentPubKey: Array.from(agentPubKey) })
     );
 
     if (!resolved) {
@@ -2123,11 +2128,13 @@ async function handleSignReconnectChallenge(
     }
 
     const context = await happContextManager.getContextForDomain(origin);
-    if (!context?.agentPubKey) {
-      return createErrorResponse(message.id, "No agent key available — not connected");
+    let agentPubKey: Uint8Array;
+    if (context?.agentPubKey) {
+      agentPubKey = toUint8Array(context.agentPubKey);
+    } else {
+      // Pre-install: key exists in Lair but no HappContext yet
+      agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
     }
-
-    const agentPubKey = toUint8Array(context.agentPubKey);
     const ed25519Key = extractEd25519PubKey(agentPubKey);
 
     // Sign the timestamp string as UTF-8 bytes
@@ -2170,11 +2177,13 @@ async function handleSignJoiningNonce(
     }
 
     const context = await happContextManager.getContextForDomain(origin);
-    if (!context?.agentPubKey) {
-      return createErrorResponse(message.id, "No agent key available — not connected");
+    let agentPubKey: Uint8Array;
+    if (context?.agentPubKey) {
+      agentPubKey = toUint8Array(context.agentPubKey);
+    } else {
+      // Pre-install: key exists in Lair but no HappContext yet
+      agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
     }
-
-    const agentPubKey = toUint8Array(context.agentPubKey);
     const ed25519Key = extractEd25519PubKey(agentPubKey);
 
     const nonceBytes = new Uint8Array(payload.nonce);

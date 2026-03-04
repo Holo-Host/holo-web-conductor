@@ -87,6 +87,27 @@ export class HappContextManager {
   }
 
   /**
+   * Get or create an agent key for a domain.
+   * Returns a 39-byte AgentPubKey HoloHash.
+   * Idempotent: reuses existing key if one was already created for this domain.
+   */
+  async getOrCreateAgentKey(domain: string): Promise<Uint8Array> {
+    await this.ready;
+    const agentKeyTag = `${domain}:agent`;
+    const lair = await this.getLairClient();
+    let rawEd25519Key: Uint8Array;
+
+    const existingEntry = await lair.getEntry(agentKeyTag);
+    if (existingEntry) {
+      rawEd25519Key = existingEntry.ed25519_pub_key;
+    } else {
+      const keyResult = await lair.newSeed(agentKeyTag, true);
+      rawEd25519Key = keyResult.entry_info.ed25519_pub_key;
+    }
+    return wrapAsAgentPubKey(rawEd25519Key);
+  }
+
+  /**
    * Compute DNA hash from DNA definition (modifiers + integrity zomes)
    *
    * Holochain computes DNA hashes from:

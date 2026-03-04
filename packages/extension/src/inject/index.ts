@@ -260,10 +260,14 @@ const holochainAPI: HolochainAPI = {
 
   async connect(): Promise<any> {
     const result = await sendToContentScript("connect", null);
-    // Fetch app info to populate myPubKey and installedAppId
+    // Set agent key from connect response (generated/retrieved by background)
+    if (result?.agentPubKey) {
+      _myPubKey = toUint8Array(result.agentPubKey);
+    }
+    // Still try app_info for installedAppId and as fallback for agentPubKey
     try {
       const appInfo = await sendToContentScript("app_info", null);
-      if (appInfo?.agentPubKey) {
+      if (appInfo?.agentPubKey && !_myPubKey) {
         _myPubKey = toUint8Array(appInfo.agentPubKey);
       }
       if (appInfo?.contextId) {
