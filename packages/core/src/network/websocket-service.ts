@@ -163,6 +163,9 @@ export class WebSocketNetworkService {
   private reconnectAttempts = 0;
   private authenticated = false;
   private intentionalClose = false;
+  /** Agent pubkey we're currently authenticating with (mirrors linker's pending_auth_agent) */
+  private pendingAuthAgent: string | null = null;
+  private sessionTokenCallback: ((token: string) => void) | null = null;
 
   constructor(options: WebSocketServiceOptions) {
     this.options = {
@@ -220,6 +223,14 @@ export class WebSocketNetworkService {
    */
   setSessionToken(token: string | null): void {
     this.options.sessionToken = token || "";
+  }
+
+  /**
+   * Set callback for when a session token is received from auth_ok.
+   * The offscreen document uses this to update HTTP Bearer auth.
+   */
+  onSessionToken(callback: (token: string) => void): void {
+    this.sessionTokenCallback = callback;
   }
 
   /**
@@ -367,11 +378,13 @@ export class WebSocketNetworkService {
 
       switch (message.type) {
         case "auth_ok":
-          this.handleAuthOk();
+          this.handleAuthOk(message);
           break;
 
         case "auth_challenge":
-          this.handleAuthChallenge(message);
+          this.handleAuthChallenge(message).catch((e) =>
+            console.error("[WebSocketService] Auth challenge handling failed:", e)
+          );
           break;
 
         case "auth_error":
@@ -432,13 +445,22 @@ export class WebSocketNetworkService {
 
   private authenticate(agentPubkey: string): void {
     log.debug(`Authenticating with agent: ${agentPubkey.substring(0, 20)}...`);
+    this.pendingAuthAgent = agentPubkey;
     this.setState("authenticating");
     this.send({ type: "auth", agent_pubkey: agentPubkey });
   }
 
-  private handleAuthOk(): void {
+  private handleAuthOk(message: Extract<ServerMessage, { type: "auth_ok" }>): void {
     log.debug("Authenticated");
     this.authenticated = true;
+    this.pendingAuthAgent = null;
+
+    // Capture session token for HTTP auth
+    if (message.session_token) {
+      this.options.sessionToken = message.session_token;
+      this.sessionTokenCallback?.(message.session_token);
+    }
+
     this.setState("connected");
 
     // Register pending agents
@@ -451,11 +473,43 @@ export class WebSocketNetworkService {
     this.setState("connected");
   }
 
-  private handleAuthChallenge(_message: Extract<ServerMessage, { type: "auth_challenge" }>): void {
+  private async handleAuthChallenge(message: Extract<ServerMessage, { type: "auth_challenge" }>): Promise<void> {
     log.debug("Received auth challenge");
-    // Auth challenge-response: sign the nonce with the agent's key and send back.
-    // Used when the linker has authentication enabled.
-    console.warn("[WebSocketService] Auth challenge-response not yet implemented");
+
+    if (!this.pendingAuthAgent) {
+      console.error("[WebSocketService] Received auth challenge but no pending auth agent");
+      return;
+    }
+
+    if (!this.signCallback) {
+      console.error("[WebSocketService] Received auth challenge but no sign callback configured");
+      this.send({ type: "auth_challenge_response", signature: "" });
+      return;
+    }
+
+    try {
+      // Decode agent pubkey from HoloHash base64 to raw bytes
+      const agentBytes = decodeHashFromBase64(this.pendingAuthAgent);
+
+      // Decode hex-encoded challenge nonce to bytes
+      const challengeHex = message.challenge;
+      const challengeBytes = new Uint8Array(
+        challengeHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+      );
+
+      // Sign using the Lair sign callback
+      const signature = await this.signCallback({
+        agent_pubkey: agentBytes,
+        message: challengeBytes,
+      });
+
+      // Send base64-encoded signature back
+      const signatureB64 = btoa(String.fromCharCode(...signature));
+      this.send({ type: "auth_challenge_response", signature: signatureB64 });
+    } catch (error) {
+      console.error("[WebSocketService] Failed to sign auth challenge:", error);
+      this.send({ type: "auth_challenge_response", signature: "" });
+    }
   }
 
   private handleSignal(message: Extract<ServerMessage, { type: "signal" }>): void {

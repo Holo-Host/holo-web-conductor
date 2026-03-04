@@ -501,6 +501,17 @@ function initializeWebSocketService(config: {
     }
   });
 
+  // When linker auth succeeds, capture session token for HTTP Bearer auth
+  wsService.onSessionToken((token) => {
+    logNetwork.info("Received session token from linker auth");
+    sessionToken = token;
+    // Also update the worker so it includes Bearer token in DHT HTTP requests
+    if (workerReady && ribosomeWorker) {
+      sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
+        .catch(console.error);
+    }
+  });
+
   // Connect to linker
   wsService.connect();
 }
