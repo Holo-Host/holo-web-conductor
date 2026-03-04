@@ -499,18 +499,10 @@ export class WebConductorAppClient implements AppClient {
     // Disable client-side auto-reconnection since extension handles health monitoring
     this.reconnectionManager.cancel();
 
-    // Get initial status immediately (subscription only fires on changes)
-    if (holochain.getConnectionStatus) {
-      holochain.getConnectionStatus().then((status) => {
-        this.connection.setLinkerHealth(
-          status.httpHealthy,
-          status.wsHealthy,
-          status.lastError
-        );
-      }).catch(() => {
-        // Ignore - extension may not support this API
-      });
-    }
+    // Skip initial getConnectionStatus — it returns stale data from the background
+    // before health checks have run and would overwrite the already-correct
+    // setConnected() state. The subscription below delivers the first real update
+    // once the background completes its health check.
 
     // Subscribe to future changes
     holochain.onConnectionChange((status) => {

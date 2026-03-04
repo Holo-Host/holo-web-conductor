@@ -959,7 +959,7 @@ async function handleListHapps(
         domain: context.domain,
         appName: context.appName,
         appVersion: context.appVersion,
-        agentPubKey: context.agentPubKey,
+        agentPubKey: Array.from(context.agentPubKey),
         installedAt: context.installedAt,
         lastUsed: context.lastUsed,
         enabled: context.enabled,
