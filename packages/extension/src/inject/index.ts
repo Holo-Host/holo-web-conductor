@@ -8,6 +8,7 @@
 interface ConnectionStatus {
   httpHealthy: boolean;
   wsHealthy: boolean;
+  authenticated: boolean;
   linkerUrl: string | null;
   lastChecked: number;
   lastError?: string;

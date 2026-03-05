@@ -56,6 +56,7 @@ export interface RecoveryResult {
 export interface WsStateInfo {
   state: string;
   isConnected: boolean;
+  authenticated: boolean;
   registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
 }
 
@@ -93,7 +94,7 @@ export interface SignResponseData {
 
 export type RemoteSignalCallback = (data: RemoteSignalData) => void;
 export type SignRequestCallback = (data: SignRequestData) => Promise<SignResponseData>;
-export type WsStateChangeCallback = (state: string) => void;
+export type WsStateChangeCallback = (state: string, authenticated: boolean) => void;
 
 // ============================================================================
 // Interface

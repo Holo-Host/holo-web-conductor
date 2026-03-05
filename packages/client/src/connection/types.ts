@@ -28,6 +28,10 @@ export interface ConnectionState {
   httpHealthy: boolean;
   /** Whether WebSocket is connected */
   wsHealthy: boolean;
+  /** Whether WebSocket is authenticated with the linker */
+  authenticated: boolean;
+  /** The actual linker URL the extension is connected to */
+  linkerUrl?: string | null;
   /** Last error message if status is Error */
   lastError?: string;
   /** Current reconnection attempt number (if reconnecting) */

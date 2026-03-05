@@ -38,6 +38,7 @@ export interface HolochainAPI {
   getConnectionStatus(): Promise<{
     httpHealthy: boolean;
     wsHealthy: boolean;
+    authenticated: boolean;
     linkerUrl: string | null;
     lastChecked: number;
     lastError?: string;
@@ -45,6 +46,7 @@ export interface HolochainAPI {
   onConnectionChange(callback: (status: {
     httpHealthy: boolean;
     wsHealthy: boolean;
+    authenticated: boolean;
     linkerUrl: string | null;
     lastChecked: number;
     lastError?: string;
