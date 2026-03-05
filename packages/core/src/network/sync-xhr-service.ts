@@ -170,7 +170,7 @@ export class SyncXHRNetworkService implements NetworkService {
    */
   private addAuthHeaders(xhr: XMLHttpRequest): void {
     if (this.sessionToken) {
-      xhr.setRequestHeader('X-Session-Token', this.sessionToken);
+      xhr.setRequestHeader('Authorization', `Bearer ${this.sessionToken}`);
     }
   }
 
