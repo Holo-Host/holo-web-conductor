@@ -244,7 +244,7 @@ function handleWorkerMessage(event: MessageEvent): void {
  * Handle network request from worker - do sync XHR and signal back
  */
 function handleNetworkRequest(request: { id: number; method: string; url: string; headers?: Record<string, string>; body?: number[] }): void {
-  log.info("Handling network request:", request.method, request.url);
+  console.log("[Offscreen] handleNetworkRequest:", request.method, request.url, "sessionToken:", sessionToken ? sessionToken.substring(0, 20) + "..." : "NULL");
 
   try {
     // Build full URL
@@ -257,6 +257,8 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
     const headers = { ...(request.headers || {}) };
     if (sessionToken) {
       headers['Authorization'] = `Bearer ${sessionToken}`;
+    } else {
+      console.warn("[Offscreen] No session token for HTTP request - will get 401");
     }
 
     // Make synchronous XHR
@@ -454,6 +456,7 @@ function initializeWebSocketService(config: {
       target: "background",
       type: "WS_STATE_CHANGE",
       state,
+      authenticated: wsService?.isAuthenticated() || false,
     }).catch(() => {
       // Ignore errors if background is not listening
     });
@@ -503,12 +506,17 @@ function initializeWebSocketService(config: {
 
   // When linker auth succeeds, capture session token for HTTP Bearer auth
   wsService.onSessionToken((token) => {
+    console.log("[Offscreen] onSessionToken fired! token:", token?.substring(0, 30), "workerReady:", workerReady, "hasWorker:", !!ribosomeWorker);
     logNetwork.info("Received session token from linker auth");
     sessionToken = token;
     // Also update the worker so it includes Bearer token in DHT HTTP requests
     if (workerReady && ribosomeWorker) {
+      console.log("[Offscreen] Sending CONFIGURE_NETWORK to worker with session token");
       sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
-        .catch(console.error);
+        .then(() => console.log("[Offscreen] Worker CONFIGURE_NETWORK succeeded"))
+        .catch((err) => console.error("[Offscreen] Worker CONFIGURE_NETWORK failed:", err));
+    } else {
+      console.warn("[Offscreen] Worker not ready when session token received - token will be sent later");
     }
   });
 
@@ -741,7 +749,10 @@ chrome.runtime.onMessage.addListener(
 
     if (message.type === "CONFIGURE_NETWORK") {
       linkerUrl = message.linkerUrl || '';
-      sessionToken = message.sessionToken || null;
+      // Only update session token if explicitly provided — don't wipe an existing token
+      if (message.sessionToken !== undefined) {
+        sessionToken = message.sessionToken || null;
+      }
 
       logNetwork.info(`Network configured: ${linkerUrl}`);
 
@@ -751,11 +762,23 @@ chrome.runtime.onMessage.addListener(
           .catch(console.error);
       }
 
-      // Initialize WebSocket service for remote signals
+      // Initialize or reconfigure WebSocket service for remote signals
       if (linkerUrl && !wsService) {
         initializeWebSocketService({ linkerUrl, sessionToken: sessionToken || undefined });
-      } else if (wsService && sessionToken) {
-        wsService.setSessionToken(sessionToken);
+      } else if (wsService && linkerUrl) {
+        // Check if linker URL changed (e.g., new tunnel after linker restart)
+        const newWsUrl = linkerUrl
+          .replace(/^http:/, 'ws:')
+          .replace(/^https:/, 'wss:')
+          .replace(/\/$/, '') + '/ws';
+        if (wsService.getUrl() !== newWsUrl) {
+          logNetwork.info(`Linker URL changed, reinitializing WebSocket: ${newWsUrl}`);
+          wsService.disconnect();
+          wsService = null;
+          initializeWebSocketService({ linkerUrl, sessionToken: sessionToken || undefined });
+        } else if (sessionToken) {
+          wsService.setSessionToken(sessionToken);
+        }
       }
 
       sendResponse({ success: true, requestId: message.requestId || "config" });
@@ -801,6 +824,7 @@ chrome.runtime.onMessage.addListener(
         requestId: message.requestId || "state",
         state: wsService?.getState() || "disconnected",
         isConnected: wsService?.isConnected() || false,
+        authenticated: wsService?.isAuthenticated() || false,
         registrations: wsService?.getRegistrations() || [],
       });
       return true;

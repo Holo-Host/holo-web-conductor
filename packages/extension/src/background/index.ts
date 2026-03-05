@@ -92,6 +92,7 @@ let linkerConfig: { linkerUrl: string; sessionToken?: string } | null = null;
 interface ConnectionStatus {
   httpHealthy: boolean;
   wsHealthy: boolean;
+  authenticated: boolean;
   linkerUrl: string | null;
   lastChecked: number;
   lastError?: string;
@@ -100,6 +101,7 @@ interface ConnectionStatus {
 let connectionStatus: ConnectionStatus = {
   httpHealthy: false,
   wsHealthy: false,
+  authenticated: false,
   linkerUrl: null,
   lastChecked: 0,
 };
@@ -118,6 +120,7 @@ async function checkLinkerHealth(): Promise<void> {
     connectionStatus = {
       httpHealthy: false,
       wsHealthy: false,
+      authenticated: false,
       linkerUrl: null,
       lastChecked: Date.now(),
       lastError: 'No linker configured',
@@ -142,18 +145,21 @@ async function checkLinkerHealth(): Promise<void> {
     connectionStatus = {
       httpHealthy: response.ok,
       wsHealthy: connectionStatus.wsHealthy, // WebSocket status tracked separately
+      authenticated: connectionStatus.authenticated, // Preserve auth state
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: response.ok ? undefined : `HTTP ${response.status}`,
     };
 
-    // Also sync WebSocket state from executor to ensure wsHealthy is accurate
+    // Also sync WebSocket state from executor to ensure wsHealthy/authenticated is accurate
     // This catches cases where WS_STATE_CHANGE messages were missed
     if (executor.isReady()) {
       executor.getWebSocketState().then((wsState) => {
         const wasHealthy = connectionStatus.wsHealthy;
+        const wasAuthenticated = connectionStatus.authenticated;
         connectionStatus.wsHealthy = wsState.isConnected;
-        if (wasHealthy !== connectionStatus.wsHealthy) {
+        connectionStatus.authenticated = wsState.authenticated;
+        if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
           notifyConnectionStatusChange();
         }
       }).catch(() => {
@@ -164,6 +170,7 @@ async function checkLinkerHealth(): Promise<void> {
     connectionStatus = {
       httpHealthy: false,
       wsHealthy: false,
+      authenticated: false,
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: error instanceof Error ? error.message : 'Connection failed',
@@ -174,6 +181,7 @@ async function checkLinkerHealth(): Promise<void> {
   if (
     previousStatus.httpHealthy !== connectionStatus.httpHealthy ||
     previousStatus.wsHealthy !== connectionStatus.wsHealthy ||
+    previousStatus.authenticated !== connectionStatus.authenticated ||
     previousStatus.lastError !== connectionStatus.lastError
   ) {
     notifyConnectionStatusChange();
@@ -245,11 +253,13 @@ async function registerContextAgentsWithLinker(context: HappContext): Promise<vo
 }
 
 // Wire executor event callbacks
-executor.onWebSocketStateChange((state) => {
-  logLinker.debug(`WebSocket state changed: ${state}`);
+executor.onWebSocketStateChange((state, authenticated) => {
+  logLinker.debug(`WebSocket state changed: ${state} authenticated: ${authenticated}`);
   const wasHealthy = connectionStatus.wsHealthy;
+  const wasAuthenticated = connectionStatus.authenticated;
   connectionStatus.wsHealthy = state === "connected";
-  if (wasHealthy !== connectionStatus.wsHealthy) {
+  connectionStatus.authenticated = authenticated;
+  if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
     notifyConnectionStatusChange();
   }
 });
@@ -1620,13 +1630,12 @@ async function handleLinkerConfigure(
 
     setLinkerConfig(linkerUrl);
 
-    // Initialize executor and configure network
+    // Initialize executor and configure network.
+    // Always call configureNetwork even if previously configured — the linker URL
+    // may have changed (e.g., fresh URL from joining service reconnect) and the
+    // offscreen document may have been recreated by the browser.
     await executor.initialize();
-    if (!executor.networkConfigured) {
-      await executor.configureNetwork({ linkerUrl });
-    } else {
-      logLinker.debug("Network already configured, skipping");
-    }
+    await executor.configureNetwork({ linkerUrl });
 
     // Register agents for existing hApp contexts
     const contexts = await happContextManager.listContexts();
