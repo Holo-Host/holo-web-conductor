@@ -25,6 +25,7 @@
 import {
   CellType,
   SignalType,
+  encodeHashToBase64,
   type AppClient,
   type AppInfo,
   type CallZomeRequest,
@@ -187,27 +188,31 @@ export class WebConductorAppClient implements AppClient {
     await holochain.connect();
 
     // Check if hApp is already installed
+    let needsRejoin = false;
     try {
       const info = await holochain.appInfo();
       if (info?.agentPubKey && info?.cells?.length > 0) {
         // Already installed — try to get fresh linker URLs if joining service is configured
         await this.setupFromAppInfo(info);
-        await this.configureLinkerFromJoiningServiceOrConfig(info);
-        this.connection.setConnected();
-        this.subscribeToExtensionConnectionStatus();
-        return;
+        needsRejoin = !(await this.configureLinkerFromJoiningServiceOrConfig(info));
+        if (!needsRejoin) {
+          this.connection.setConnected();
+          this.subscribeToExtensionConnectionStatus();
+          return;
+        }
+        console.log('[WebConductorAppClient] Reconnect indicates agent not joined, attempting re-join...');
       }
     } catch (e) {
       console.log('[WebConductorAppClient] hApp not installed, will install...');
     }
 
-    // Not installed — use joining service if configured, otherwise direct install
+    // Not installed (or needs re-join) — use joining service if configured
     const useJoiningService = this.connectionConfig.joiningServiceUrl
       || this.connectionConfig.autoDiscover;
 
     if (useJoiningService) {
-      await this.joinAndInstall(holochain);
-    } else {
+      await this.joinAndInstall(holochain, needsRejoin);
+    } else if (!needsRejoin) {
       // Direct flow: configure linker from config, install hApp
       if (this.connectionConfig.linkerUrl) {
         await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
@@ -227,15 +232,16 @@ export class WebConductorAppClient implements AppClient {
 
   /**
    * Join via the joining service, obtain provision, configure linker, and install.
+   * @param skipInstall - If true, only configure linker (app already installed, re-joining for URLs)
    */
-  private async joinAndInstall(holochain: HolochainAPI): Promise<void> {
+  private async joinAndInstall(holochain: HolochainAPI, skipInstall = false): Promise<void> {
     const joiningClient = await this.getJoiningClient();
 
     // The extension generates the agent key during connect()
     if (!holochain.myPubKey) {
       throw new Error('Agent key not available after connect');
     }
-    const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
+    const agentKeyBase64 = encodeHashToBase64(holochain.myPubKey);
 
     let provision: JoinProvision;
     try {
@@ -317,27 +323,38 @@ export class WebConductorAppClient implements AppClient {
     // Configure linker from provision, falling back to config linkerUrl
     const linkerUrl = provision.linker_urls?.[0]?.url
       ?? this.connectionConfig.linkerUrl;
+    console.log('[WebConductorAppClient] joinAndInstall linker config:', {
+      provisionUrls: provision.linker_urls,
+      fallbackUrl: this.connectionConfig.linkerUrl,
+      resolvedUrl: linkerUrl,
+    });
     if (linkerUrl) {
+      console.log('[WebConductorAppClient] Calling configureNetwork with:', linkerUrl);
       await holochain.configureNetwork({ linkerUrl });
+      console.log('[WebConductorAppClient] configureNetwork returned');
     } else {
       console.log('[WebConductorAppClient] No linker URL from joining service or config');
     }
 
-    // Build membrane proofs: map DnaHash keys to role names
-    const membraneProofs = this.connectionConfig.membraneProofs
-      ?? this.decodeMembraneProofs(provision.membrane_proofs);
+    if (!skipInstall) {
+      // Build membrane proofs: map DnaHash keys to role names
+      const membraneProofs = this.connectionConfig.membraneProofs
+        ?? this.decodeMembraneProofs(provision.membrane_proofs);
 
-    // Fetch and install the hApp bundle
-    const bundleUrl = provision.happ_bundle_url
-      ?? this.connectionConfig.happBundlePath;
-    const bundle = await this.fetchHappBundle(bundleUrl);
+      // Fetch and install the hApp bundle
+      const bundleUrl = provision.happ_bundle_url
+        ?? this.connectionConfig.happBundlePath;
+      const bundle = await this.fetchHappBundle(bundleUrl);
 
-    await holochain.installApp({
-      bundle,
-      installedAppId: this._roleName,
-      membraneProofs,
-    });
-    console.log('[WebConductorAppClient] hApp installed via joining service');
+      await holochain.installApp({
+        bundle,
+        installedAppId: this._roleName,
+        membraneProofs,
+      });
+      console.log('[WebConductorAppClient] hApp installed via joining service');
+    } else {
+      console.log('[WebConductorAppClient] Re-joined for linker URLs (app already installed)');
+    }
   }
 
   /**
@@ -350,7 +367,7 @@ export class WebConductorAppClient implements AppClient {
     if (!holochain.myPubKey) {
       throw new Error('Agent key not available for reconnect');
     }
-    const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
+    const agentKeyBase64 = encodeHashToBase64(holochain.myPubKey);
 
     const response = await joiningClient.reconnect(
       agentKeyBase64,
@@ -370,12 +387,15 @@ export class WebConductorAppClient implements AppClient {
   /**
    * For an already-installed app, try to configure linker URL from joining service
    * (reconnect flow) or fall back to the config value.
+   *
+   * @returns true if linker was configured (or no joining service), false if
+   *          reconnect failed with "agent not joined" and a re-join should be attempted.
    */
   private async configureLinkerFromJoiningServiceOrConfig(
     info: WebConductorAppInfo,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const holochain = window.holochain;
-    if (!holochain) return;
+    if (!holochain) return true;
 
     const useJoiningService = this.connectionConfig.joiningServiceUrl
       || this.connectionConfig.autoDiscover;
@@ -383,7 +403,7 @@ export class WebConductorAppClient implements AppClient {
     if (useJoiningService && holochain.myPubKey) {
       try {
         const joiningClient = await this.getJoiningClient();
-        const agentKeyBase64 = uint8ArrayToBase64(holochain.myPubKey);
+        const agentKeyBase64 = encodeHashToBase64(holochain.myPubKey);
 
         const response = await joiningClient.reconnect(
           agentKeyBase64,
@@ -396,19 +416,30 @@ export class WebConductorAppClient implements AppClient {
         );
 
         if (response.linker_urls && response.linker_urls.length > 0) {
+          console.log('[WebConductorAppClient] Configuring linker from joining service:', response.linker_urls[0].url);
           await holochain.configureNetwork({ linkerUrl: response.linker_urls[0].url });
-          return;
+          return true;
         }
-      } catch (e) {
-        // Reconnect failed — fall back to config linkerUrl
-        console.log('[WebConductorAppClient] Joining service reconnect failed, using config linkerUrl');
+        console.log('[WebConductorAppClient] Reconnect succeeded but no linker_urls returned');
+        return true;
+      } catch (e: any) {
+        // If the agent was never joined (e.g. KV wipe), signal for re-join
+        if (e?.code === 'agent_not_joined' || e?.httpStatus === 403) {
+          console.log('[WebConductorAppClient] Agent not found in joining service:', e?.message);
+          return false;
+        }
+        console.log('[WebConductorAppClient] Joining service reconnect failed:', e);
       }
     }
 
     // Fall back to configured linkerUrl
     if (this.connectionConfig.linkerUrl) {
+      console.log('[WebConductorAppClient] Configuring linker from config:', this.connectionConfig.linkerUrl);
       await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
+    } else {
+      console.log('[WebConductorAppClient] No linkerUrl to configure');
     }
+    return true;
   }
 
   /**
@@ -499,19 +530,23 @@ export class WebConductorAppClient implements AppClient {
     // Disable client-side auto-reconnection since extension handles health monitoring
     this.reconnectionManager.cancel();
 
-    // Skip initial getConnectionStatus — it returns stale data from the background
-    // before health checks have run and would overwrite the already-correct
-    // setConnected() state. The subscription below delivers the first real update
-    // once the background completes its health check.
-
-    // Subscribe to future changes
-    holochain.onConnectionChange((status) => {
+    const applyStatus = (status: { httpHealthy: boolean; wsHealthy: boolean; authenticated: boolean; lastError?: string }) => {
       this.connection.setLinkerHealth(
         status.httpHealthy,
         status.wsHealthy,
+        status.authenticated,
         status.lastError
       );
-    });
+    };
+
+    // Subscribe to future changes
+    holochain.onConnectionChange(applyStatus);
+
+    // Fetch current status to catch events that fired before we subscribed
+    // (e.g., WS auth completing during the connect flow)
+    if (holochain.getConnectionStatus) {
+      holochain.getConnectionStatus().then(applyStatus).catch(() => {});
+    }
   }
 
   private async setupFromAppInfo(info: WebConductorAppInfo): Promise<void> {
