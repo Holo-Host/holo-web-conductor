@@ -165,6 +165,8 @@ export class WebSocketNetworkService {
   private intentionalClose = false;
   /** Agent pubkey we're currently authenticating with (mirrors linker's pending_auth_agent) */
   private pendingAuthAgent: string | null = null;
+  /** Agent pubkeys that failed auth (so we can try the next one) */
+  private failedAuthAgents = new Set<string>();
   private sessionTokenCallback: ((token: string) => void) | null = null;
 
   constructor(options: WebSocketServiceOptions) {
@@ -191,6 +193,13 @@ export class WebSocketNetworkService {
    */
   isConnected(): boolean {
     return this.state === "connected" && this.authenticated;
+  }
+
+  /**
+   * Check if authenticated with the linker
+   */
+  isAuthenticated(): boolean {
+    return this.authenticated;
   }
 
   /**
@@ -236,6 +245,10 @@ export class WebSocketNetworkService {
   /**
    * Connect to the linker WebSocket
    */
+  getUrl(): string {
+    return this.options.linkerWsUrl;
+  }
+
   connect(): void {
     if (this.ws) {
       log.debug("Already connected or connecting");
@@ -245,15 +258,24 @@ export class WebSocketNetworkService {
     this.intentionalClose = false;
     this.setState("connecting");
 
-    log.debug(`Connecting to ${this.options.linkerWsUrl}`);
+    console.log(`[WebSocketService] Connecting to ${this.options.linkerWsUrl}`);
 
     try {
       this.ws = new WebSocket(this.options.linkerWsUrl);
 
-      this.ws.onopen = () => this.handleOpen();
+      this.ws.onopen = () => {
+        console.log("[WebSocketService] WS onopen fired");
+        this.handleOpen();
+      };
       this.ws.onmessage = (event) => this.handleMessage(event);
-      this.ws.onerror = (event) => this.handleError(event);
-      this.ws.onclose = (event) => this.handleClose(event);
+      this.ws.onerror = (event) => {
+        console.error("[WebSocketService] WS onerror:", event);
+        this.handleError(event);
+      };
+      this.ws.onclose = (event) => {
+        console.log(`[WebSocketService] WS onclose: code=${event.code} reason=${event.reason} wasClean=${event.wasClean}`);
+        this.handleClose(event);
+      };
     } catch (error) {
       console.error("[WebSocketService] Connection failed:", error);
       this.scheduleReconnect();
@@ -351,10 +373,14 @@ export class WebSocketNetworkService {
   // Private Methods
   // ============================================================================
 
+  private prevAuthenticated = false;
+
   private setState(state: ConnectionState): void {
-    if (this.state !== state) {
-      log.debug(` State: ${this.state} -> ${state}`);
+    const authChanged = this.authenticated !== this.prevAuthenticated;
+    if (this.state !== state || authChanged) {
+      log.debug(` State: ${this.state} -> ${state} (authenticated: ${this.authenticated})`);
       this.state = state;
+      this.prevAuthenticated = this.authenticated;
       this.stateCallback?.(state);
     }
   }
@@ -362,12 +388,31 @@ export class WebSocketNetworkService {
   private handleOpen(): void {
     log.debug("Connected");
     this.reconnectAttempts = 0;
+    this.failedAuthAgents.clear();
     this.startHeartbeat();
 
-    // Authenticate if we have pending registrations (use first agent's pubkey).
+    // Authenticate with the first untried agent from pending registrations.
     // Otherwise, wait for registerAgent() to trigger auth.
-    if (this.pendingRegistrations.length > 0) {
-      this.authenticate(this.pendingRegistrations[0].agent_pubkey);
+    this.tryAuthenticateNextAgent();
+  }
+
+  /**
+   * Try to authenticate with the next untried agent from pending registrations.
+   * Skips agents that have already failed auth on this connection.
+   */
+  private tryAuthenticateNextAgent(): void {
+    // Collect unique agent pubkeys from both pending and confirmed registrations
+    const allAgents = [
+      ...this.pendingRegistrations.map(r => r.agent_pubkey),
+      ...this.registrations.map(r => r.agent_pubkey),
+    ];
+    const uniqueAgents = [...new Set(allAgents)];
+    const nextAgent = uniqueAgents.find(a => !this.failedAuthAgents.has(a));
+
+    if (nextAgent) {
+      this.authenticate(nextAgent);
+    } else if (uniqueAgents.length > 0) {
+      console.warn("[WebSocketService] All agents failed auth, no more agents to try");
     }
   }
 
@@ -444,13 +489,15 @@ export class WebSocketNetworkService {
   }
 
   private authenticate(agentPubkey: string): void {
-    log.debug(`Authenticating with agent: ${agentPubkey.substring(0, 20)}...`);
+    console.log(`[WebSocketService] Authenticating with agent: ${agentPubkey.substring(0, 20)}...`);
     this.pendingAuthAgent = agentPubkey;
     this.setState("authenticating");
     this.send({ type: "auth", agent_pubkey: agentPubkey });
   }
 
   private handleAuthOk(message: Extract<ServerMessage, { type: "auth_ok" }>): void {
+    console.log("[WebSocketService] handleAuthOk - full message:", JSON.stringify(message));
+    console.log("[WebSocketService] handleAuthOk - session_token present:", !!message.session_token, "value:", message.session_token?.substring(0, 30));
     log.debug("Authenticated");
     this.authenticated = true;
     this.pendingAuthAgent = null;
@@ -458,7 +505,10 @@ export class WebSocketNetworkService {
     // Capture session token for HTTP auth
     if (message.session_token) {
       this.options.sessionToken = message.session_token;
+      console.log("[WebSocketService] Calling sessionTokenCallback, callback exists:", !!this.sessionTokenCallback);
       this.sessionTokenCallback?.(message.session_token);
+    } else {
+      console.warn("[WebSocketService] auth_ok has NO session_token - HTTP auth will fail");
     }
 
     this.setState("connected");
@@ -470,11 +520,22 @@ export class WebSocketNetworkService {
   private handleAuthError(message: string): void {
     console.error("[WebSocketService] Authentication failed:", message);
     this.authenticated = false;
+
+    // Track the failed agent and try the next one
+    if (this.pendingAuthAgent) {
+      this.failedAuthAgents.add(this.pendingAuthAgent);
+      console.log(`[WebSocketService] Agent ${this.pendingAuthAgent.substring(0, 20)}... failed auth, trying next`);
+      this.pendingAuthAgent = null;
+      this.tryAuthenticateNextAgent();
+      // If tryAuthenticateNextAgent started a new auth attempt, don't change state
+      if (this.pendingAuthAgent) return;
+    }
+
     this.setState("connected");
   }
 
   private async handleAuthChallenge(message: Extract<ServerMessage, { type: "auth_challenge" }>): Promise<void> {
-    log.debug("Received auth challenge");
+    console.log("[WebSocketService] Received auth challenge, pendingAuthAgent:", this.pendingAuthAgent?.substring(0, 20));
 
     if (!this.pendingAuthAgent) {
       console.error("[WebSocketService] Received auth challenge but no pending auth agent");
@@ -740,6 +801,7 @@ export class WebSocketNetworkService {
     }
 
     this.authenticated = false;
+    this.failedAuthAgents.clear();
   }
 }
 
