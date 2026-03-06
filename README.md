@@ -27,8 +27,10 @@ packages/
 ├── extension/     # Chrome/Firefox browser extension (MV3)
 ├── core/          # Core conductor (WASM runtime, host functions, storage, DHT)
 ├── client/        # Client library (@holo-host/web-conductor-client)
-├── lair/          # Browser-based Lair keystore (IndexedDB)
-└── shared/        # Shared types and utilities
+├── lair/          # Lair keystore (browser + Node.js, pluggable storage backend)
+├── shared/        # Shared types and utilities
+├── e2e/           # Playwright end-to-end tests
+└── test-zome/     # HDK test zome (Rust/WASM)
 ```
 
 ## License

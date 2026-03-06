@@ -120,8 +120,11 @@ packages/
 │       ├── storage/     # SQLite storage layer
 │       ├── network/     # Linker network services
 │       └── dht/         # DhtOp generation and publishing
-├── lair/          # Browser-based Lair keystore
-└── shared/        # Shared types and utilities
+├── client/        # @holo-host/web-conductor-client (npm package)
+├── lair/          # Lair keystore (browser + Node.js, pluggable storage)
+├── shared/        # Shared types and utilities
+├── e2e/           # Playwright e2e tests
+└── test-zome/     # HDK test zome (Rust/WASM)
 ```
 
 ---
@@ -160,8 +163,6 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 | `LESSONS_LEARNED.md` | Failed approaches archive (serialization debugging) |
 | `DEVELOPMENT.md` | Build, test, and development workflow |
 | `TESTING.md` | Testing guide (unit, integration, e2e with linker) |
-| `DEPLOYING.md` | Deployment guide (linker setup, extension install, joining service) |
-| `COMPATIBILITY.md` | Version compatibility between HWC and h2hc-linker |
 | `STEPS/index.md` | Step status registry |
 | `STEPS/X_PLAN.md` | Detailed plan for step X |
 | `STEPS/X_COMPLETION.md` | Completion notes for step X |
