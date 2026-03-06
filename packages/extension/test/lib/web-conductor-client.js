@@ -1,23 +1,22 @@
-var H = Object.defineProperty;
-var R = (i, e, t) => e in i ? H(i, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : i[e] = t;
-var c = (i, e, t) => R(i, typeof e != "symbol" ? e + "" : e, t);
-import { encodeHashToBase64 as C, SignalType as F, CellType as M } from "@holochain/client";
-import { CellType as we, SignalType as ge } from "@holochain/client";
-import { JoiningError as x, JoiningClient as S } from "@holo-host/joining-service/client";
-import { GatewayError as ye, GatewayProxy as me, JoinSession as Ce, JoiningClient as xe, JoiningError as Ue } from "@holo-host/joining-service/client";
+var M = Object.defineProperty;
+var R = (i, e, t) => e in i ? M(i, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : i[e] = t;
+var r = (i, e, t) => R(i, typeof e != "symbol" ? e + "" : e, t);
+import { SignalType as P, CellType as z } from "@holochain/client";
+import { CellType as ge, SignalType as pe } from "@holochain/client";
+import { JoiningError as C, JoiningClient as I } from "@holo-host/joining-service/client";
+import { GatewayError as me, GatewayProxy as xe, JoinSession as Ue, JoiningClient as Ce, JoiningError as Ae } from "@holo-host/joining-service/client";
 var l = /* @__PURE__ */ ((i) => (i.Disconnected = "disconnected", i.Connecting = "connecting", i.Connected = "connected", i.Reconnecting = "reconnecting", i.Error = "error", i))(l || {});
-class W {
+class D {
   constructor(e) {
-    c(this, "state");
-    c(this, "listeners", /* @__PURE__ */ new Map());
-    c(this, "healthCheckTimer");
-    c(this, "consecutiveFailures", 0);
-    c(this, "MAX_FAILURES_BEFORE_UNHEALTHY", 1);
+    r(this, "state");
+    r(this, "listeners", /* @__PURE__ */ new Map());
+    r(this, "healthCheckTimer");
+    r(this, "consecutiveFailures", 0);
+    r(this, "MAX_FAILURES_BEFORE_UNHEALTHY", 1);
     this.config = e, this.state = {
       status: l.Disconnected,
       httpHealthy: !1,
-      wsHealthy: !1,
-      authenticated: !1
+      wsHealthy: !1
     };
   }
   /**
@@ -121,12 +120,11 @@ class W {
    * Update linker health status without changing overall connection status.
    * Used when extension is connected but linker may be unreachable.
    */
-  setLinkerHealth(e, t, n, s) {
+  setLinkerHealth(e, t, n) {
     this.updateState({
       httpHealthy: e,
       wsHealthy: t,
-      ...n !== void 0 && { authenticated: n },
-      lastError: s
+      lastError: n
     });
   }
   async checkHealth() {
@@ -138,8 +136,6 @@ class W {
           status: l.Error,
           httpHealthy: t.httpHealthy,
           wsHealthy: t.wsHealthy,
-          authenticated: t.authenticated ?? !1,
-          linkerUrl: t.linkerUrl,
           lastError: t.lastError || "Linker connection lost"
         }), this.emit("connection:error", {
           error: t.lastError || "Linker connection lost",
@@ -148,14 +144,10 @@ class W {
           status: l.Connected,
           httpHealthy: !0,
           wsHealthy: t.wsHealthy,
-          authenticated: t.authenticated ?? !1,
-          linkerUrl: t.linkerUrl,
           lastError: void 0
         }), this.state.status === l.Reconnecting && this.emit("connection:reconnected", void 0)) : this.updateState({
           httpHealthy: t.httpHealthy,
           wsHealthy: t.wsHealthy,
-          authenticated: t.authenticated ?? !1,
-          linkerUrl: t.linkerUrl,
           lastError: t.lastError
         });
       }
@@ -165,7 +157,7 @@ class W {
   }
   updateState(e) {
     const t = { ...this.state };
-    this.state = { ...this.state, ...e }, (t.status !== this.state.status || t.httpHealthy !== this.state.httpHealthy || t.wsHealthy !== this.state.wsHealthy || t.authenticated !== this.state.authenticated || t.linkerUrl !== this.state.linkerUrl || t.lastError !== this.state.lastError || t.reconnectAttempt !== this.state.reconnectAttempt) && this.emit("connection:change", this.getState());
+    this.state = { ...this.state, ...e }, (t.status !== this.state.status || t.httpHealthy !== this.state.httpHealthy || t.wsHealthy !== this.state.wsHealthy || t.lastError !== this.state.lastError || t.reconnectAttempt !== this.state.reconnectAttempt) && this.emit("connection:change", this.getState());
   }
   emit(e, t) {
     const n = this.listeners.get(e);
@@ -178,12 +170,12 @@ class W {
     });
   }
 }
-class P {
+class N {
   constructor(e, t, n) {
-    c(this, "attempt", 0);
-    c(this, "timer");
-    c(this, "isReconnecting", !1);
-    c(this, "cancelled", !1);
+    r(this, "attempt", 0);
+    r(this, "timer");
+    r(this, "isReconnecting", !1);
+    r(this, "cancelled", !1);
     this.config = e, this.reconnectFn = t, this.onStateChange = n;
   }
   /**
@@ -253,7 +245,7 @@ function u(i) {
   }
   return new Uint8Array();
 }
-function v(i) {
+function _(i) {
   if (i.length === 0 || !i.every(
     (t) => typeof t == "number" && Number.isInteger(t) && t >= 0 && t <= 255
   )) return !1;
@@ -264,27 +256,27 @@ function v(i) {
   }
   return i.length > 39;
 }
-function U(i) {
+function A(i) {
   if (i == null || i instanceof Uint8Array)
     return i;
   if (typeof i == "object" && !Array.isArray(i)) {
     const e = i, t = Object.keys(e);
     if (t.length > 0 && t.every((s) => /^\d+$/.test(s))) {
-      const s = t.map((o) => parseInt(o, 10)).sort((o, r) => o - r);
+      const s = t.map((o) => parseInt(o, 10)).sort((o, c) => o - c);
       if (s[0] === 0 && s[s.length - 1] === s.length - 1) {
-        const o = s.map((r) => e[r.toString()]);
-        if (v(o))
+        const o = s.map((c) => e[c.toString()]);
+        if (_(o))
           return new Uint8Array(o);
       }
     }
     const n = {};
     for (const s of Object.keys(e))
-      n[s] = U(e[s]);
+      n[s] = A(e[s]);
     return n;
   }
-  return Array.isArray(i) ? v(i) ? new Uint8Array(i) : i.map((e) => U(e)) : i;
+  return Array.isArray(i) ? _(i) ? new Uint8Array(i) : i.map((e) => A(e)) : i;
 }
-function z(i) {
+function W(i) {
   const e = i.length;
   let t = 0, n = 0;
   for (; n < e; ) {
@@ -306,40 +298,40 @@ function z(i) {
   }
   return t;
 }
-function N(i, e, t) {
+function K(i, e, t) {
   const n = i.length;
   let s = t, o = 0;
   for (; o < n; ) {
-    let r = i.charCodeAt(o++);
-    if (r & 4294967168)
-      if (!(r & 4294965248))
-        e[s++] = r >> 6 & 31 | 192;
+    let c = i.charCodeAt(o++);
+    if (c & 4294967168)
+      if (!(c & 4294965248))
+        e[s++] = c >> 6 & 31 | 192;
       else {
-        if (r >= 55296 && r <= 56319 && o < n) {
+        if (c >= 55296 && c <= 56319 && o < n) {
           const f = i.charCodeAt(o);
-          (f & 64512) === 56320 && (++o, r = ((r & 1023) << 10) + (f & 1023) + 65536);
+          (f & 64512) === 56320 && (++o, c = ((c & 1023) << 10) + (f & 1023) + 65536);
         }
-        r & 4294901760 ? (e[s++] = r >> 18 & 7 | 240, e[s++] = r >> 12 & 63 | 128, e[s++] = r >> 6 & 63 | 128) : (e[s++] = r >> 12 & 15 | 224, e[s++] = r >> 6 & 63 | 128);
+        c & 4294901760 ? (e[s++] = c >> 18 & 7 | 240, e[s++] = c >> 12 & 63 | 128, e[s++] = c >> 6 & 63 | 128) : (e[s++] = c >> 12 & 15 | 224, e[s++] = c >> 6 & 63 | 128);
       }
     else {
-      e[s++] = r;
+      e[s++] = c;
       continue;
     }
-    e[s++] = r & 63 | 128;
+    e[s++] = c & 63 | 128;
   }
 }
-const D = new TextEncoder(), K = 50;
-function L(i, e, t) {
-  D.encodeInto(i, e.subarray(t));
+const L = new TextEncoder(), J = 50;
+function O(i, e, t) {
+  L.encodeInto(i, e.subarray(t));
 }
-function J(i, e, t) {
-  i.length > K ? L(i, e, t) : N(i, e, t);
+function $(i, e, t) {
+  i.length > J ? O(i, e, t) : K(i, e, t);
 }
 new TextDecoder();
-class p {
+class g {
   constructor(e, t) {
-    c(this, "type");
-    c(this, "data");
+    r(this, "type");
+    r(this, "data");
     this.type = e, this.data = t;
   }
 }
@@ -354,22 +346,22 @@ class y extends Error {
     });
   }
 }
-function O(i, e, t) {
+function V(i, e, t) {
   const n = t / 4294967296, s = t;
   i.setUint32(e, n), i.setUint32(e + 4, s);
 }
-function _(i, e, t) {
+function k(i, e, t) {
   const n = Math.floor(t / 4294967296), s = t;
   i.setUint32(e, n), i.setUint32(e + 4, s);
 }
-function $(i, e) {
+function q(i, e) {
   const t = i.getInt32(e), n = i.getUint32(e + 4);
   return t * 4294967296 + n;
 }
-const V = -1, q = 4294967296 - 1, X = 17179869184 - 1;
-function G({ sec: i, nsec: e }) {
-  if (i >= 0 && e >= 0 && i <= X)
-    if (e === 0 && i <= q) {
+const X = -1, G = 4294967296 - 1, Z = 17179869184 - 1;
+function Y({ sec: i, nsec: e }) {
+  if (i >= 0 && e >= 0 && i <= Z)
+    if (e === 0 && i <= G) {
       const t = new Uint8Array(4);
       return new DataView(t.buffer).setUint32(0, i), t;
     } else {
@@ -378,24 +370,24 @@ function G({ sec: i, nsec: e }) {
     }
   else {
     const t = new Uint8Array(12), n = new DataView(t.buffer);
-    return n.setUint32(0, e), _(n, 4, i), t;
+    return n.setUint32(0, e), k(n, 4, i), t;
   }
 }
-function Z(i) {
+function Q(i) {
   const e = i.getTime(), t = Math.floor(e / 1e3), n = (e - t * 1e3) * 1e6, s = Math.floor(n / 1e9);
   return {
     sec: t + s,
     nsec: n - s * 1e9
   };
 }
-function Y(i) {
+function j(i) {
   if (i instanceof Date) {
-    const e = Z(i);
-    return G(e);
+    const e = Q(i);
+    return Y(e);
   } else
     return null;
 }
-function Q(i) {
+function ee(i) {
   const e = new DataView(i.buffer, i.byteOffset, i.byteLength);
   switch (i.byteLength) {
     case 4:
@@ -405,34 +397,34 @@ function Q(i) {
       return { sec: s, nsec: o };
     }
     case 12: {
-      const t = $(e, 4), n = e.getUint32(0);
+      const t = q(e, 4), n = e.getUint32(0);
       return { sec: t, nsec: n };
     }
     default:
       throw new y(`Unrecognized data size for timestamp (expected 4, 8, or 12): ${i.length}`);
   }
 }
-function j(i) {
-  const e = Q(i);
+function te(i) {
+  const e = ee(i);
   return new Date(e.sec * 1e3 + e.nsec / 1e6);
 }
-const ee = {
-  type: V,
-  encode: Y,
-  decode: j
+const ne = {
+  type: X,
+  encode: j,
+  decode: te
 }, m = class m {
   constructor() {
     // ensures ExtensionCodecType<X> matches ExtensionCodec<X>
     // this will make type errors a lot more clear
     // eslint-disable-next-line @typescript-eslint/naming-convention
-    c(this, "__brand");
+    r(this, "__brand");
     // built-in extensions
-    c(this, "builtInEncoders", []);
-    c(this, "builtInDecoders", []);
+    r(this, "builtInEncoders", []);
+    r(this, "builtInDecoders", []);
     // custom extensions
-    c(this, "encoders", []);
-    c(this, "decoders", []);
-    this.register(ee);
+    r(this, "encoders", []);
+    r(this, "decoders", []);
+    this.register(ne);
   }
   register({ type: e, encode: t, decode: n }) {
     if (e >= 0)
@@ -448,8 +440,8 @@ const ee = {
       if (s != null) {
         const o = s(e, t);
         if (o != null) {
-          const r = -1 - n;
-          return new p(r, o);
+          const c = -1 - n;
+          return new g(c, o);
         }
       }
     }
@@ -458,43 +450,43 @@ const ee = {
       if (s != null) {
         const o = s(e, t);
         if (o != null) {
-          const r = n;
-          return new p(r, o);
+          const c = n;
+          return new g(c, o);
         }
       }
     }
-    return e instanceof p ? e : null;
+    return e instanceof g ? e : null;
   }
   decode(e, t, n) {
     const s = t < 0 ? this.builtInDecoders[-1 - t] : this.decoders[t];
-    return s ? s(e, t, n) : new p(t, e);
+    return s ? s(e, t, n) : new g(t, e);
   }
 };
-c(m, "defaultCodec", new m());
-let A = m;
-function te(i) {
+r(m, "defaultCodec", new m());
+let E = m;
+function ie(i) {
   return i instanceof ArrayBuffer || typeof SharedArrayBuffer < "u" && i instanceof SharedArrayBuffer;
 }
-function ne(i) {
-  return i instanceof Uint8Array ? i : ArrayBuffer.isView(i) ? new Uint8Array(i.buffer, i.byteOffset, i.byteLength) : te(i) ? new Uint8Array(i) : Uint8Array.from(i);
+function se(i) {
+  return i instanceof Uint8Array ? i : ArrayBuffer.isView(i) ? new Uint8Array(i.buffer, i.byteOffset, i.byteLength) : ie(i) ? new Uint8Array(i) : Uint8Array.from(i);
 }
-const ie = 100, se = 2048;
+const oe = 100, re = 2048;
 class b {
   constructor(e) {
-    c(this, "extensionCodec");
-    c(this, "context");
-    c(this, "useBigInt64");
-    c(this, "maxDepth");
-    c(this, "initialBufferSize");
-    c(this, "sortKeys");
-    c(this, "forceFloat32");
-    c(this, "ignoreUndefined");
-    c(this, "forceIntegerToFloat");
-    c(this, "pos");
-    c(this, "view");
-    c(this, "bytes");
-    c(this, "entered", !1);
-    this.extensionCodec = (e == null ? void 0 : e.extensionCodec) ?? A.defaultCodec, this.context = e == null ? void 0 : e.context, this.useBigInt64 = (e == null ? void 0 : e.useBigInt64) ?? !1, this.maxDepth = (e == null ? void 0 : e.maxDepth) ?? ie, this.initialBufferSize = (e == null ? void 0 : e.initialBufferSize) ?? se, this.sortKeys = (e == null ? void 0 : e.sortKeys) ?? !1, this.forceFloat32 = (e == null ? void 0 : e.forceFloat32) ?? !1, this.ignoreUndefined = (e == null ? void 0 : e.ignoreUndefined) ?? !1, this.forceIntegerToFloat = (e == null ? void 0 : e.forceIntegerToFloat) ?? !1, this.pos = 0, this.view = new DataView(new ArrayBuffer(this.initialBufferSize)), this.bytes = new Uint8Array(this.view.buffer);
+    r(this, "extensionCodec");
+    r(this, "context");
+    r(this, "useBigInt64");
+    r(this, "maxDepth");
+    r(this, "initialBufferSize");
+    r(this, "sortKeys");
+    r(this, "forceFloat32");
+    r(this, "ignoreUndefined");
+    r(this, "forceIntegerToFloat");
+    r(this, "pos");
+    r(this, "view");
+    r(this, "bytes");
+    r(this, "entered", !1);
+    this.extensionCodec = (e == null ? void 0 : e.extensionCodec) ?? E.defaultCodec, this.context = e == null ? void 0 : e.context, this.useBigInt64 = (e == null ? void 0 : e.useBigInt64) ?? !1, this.maxDepth = (e == null ? void 0 : e.maxDepth) ?? oe, this.initialBufferSize = (e == null ? void 0 : e.initialBufferSize) ?? re, this.sortKeys = (e == null ? void 0 : e.sortKeys) ?? !1, this.forceFloat32 = (e == null ? void 0 : e.forceFloat32) ?? !1, this.ignoreUndefined = (e == null ? void 0 : e.ignoreUndefined) ?? !1, this.forceIntegerToFloat = (e == null ? void 0 : e.forceIntegerToFloat) ?? !1, this.pos = 0, this.view = new DataView(new ArrayBuffer(this.initialBufferSize)), this.bytes = new Uint8Array(this.view.buffer);
   }
   clone() {
     return new b({
@@ -579,8 +571,8 @@ class b {
       throw new Error(`Too long string: ${e} bytes in UTF-8`);
   }
   encodeString(e) {
-    const n = z(e);
-    this.ensureBufferSizeToWrite(5 + n), this.writeStringHeader(n), J(e, this.bytes, this.pos), this.pos += n;
+    const n = W(e);
+    this.ensureBufferSizeToWrite(5 + n), this.writeStringHeader(n), $(e, this.bytes, this.pos), this.pos += n;
   }
   encodeObject(e, t) {
     const n = this.extensionCodec.tryToEncode(e, this.context);
@@ -605,7 +597,7 @@ class b {
       this.writeU8(198), this.writeU32(t);
     else
       throw new Error(`Too large binary: ${t}`);
-    const n = ne(e);
+    const n = se(e);
     this.writeU8a(n);
   }
   encodeArray(e, t) {
@@ -640,8 +632,8 @@ class b {
     else
       throw new Error(`Too large map object: ${s}`);
     for (const o of n) {
-      const r = e[o];
-      this.ignoreUndefined && r === void 0 || (this.encodeString(o), this.doEncode(r, t + 1));
+      const c = e[o];
+      this.ignoreUndefined && c === void 0 || (this.encodeString(o), this.doEncode(c, t + 1));
     }
   }
   encodeExtension(e) {
@@ -702,10 +694,10 @@ class b {
     this.ensureBufferSizeToWrite(8), this.view.setFloat64(this.pos, e), this.pos += 8;
   }
   writeU64(e) {
-    this.ensureBufferSizeToWrite(8), O(this.view, this.pos, e), this.pos += 8;
+    this.ensureBufferSizeToWrite(8), V(this.view, this.pos, e), this.pos += 8;
   }
   writeI64(e) {
-    this.ensureBufferSizeToWrite(8), _(this.view, this.pos, e), this.pos += 8;
+    this.ensureBufferSizeToWrite(8), k(this.view, this.pos, e), this.pos += 8;
   }
   writeBigUint64(e) {
     this.ensureBufferSizeToWrite(8), this.view.setBigUint64(this.pos, e), this.pos += 8;
@@ -714,32 +706,32 @@ class b {
     this.ensureBufferSizeToWrite(8), this.view.setBigInt64(this.pos, e), this.pos += 8;
   }
 }
-function oe(i, e) {
+function ce(i, e) {
   return new b(e).encodeSharedRef(i);
 }
-class T {
+class H {
   constructor(e) {
-    c(this, "_myPubKey", null);
-    c(this, "_installedAppId", "");
-    c(this, "_cellId", null);
-    c(this, "_roleName");
-    c(this, "signalHandlers", /* @__PURE__ */ new Set());
-    c(this, "unsubscribeExtension", null);
+    r(this, "_myPubKey", null);
+    r(this, "_installedAppId", "");
+    r(this, "_cellId", null);
+    r(this, "_roleName");
+    r(this, "signalHandlers", /* @__PURE__ */ new Set());
+    r(this, "unsubscribeExtension", null);
     /** Connection monitor for health status */
-    c(this, "connection");
+    r(this, "connection");
     /** Reconnection manager */
-    c(this, "reconnectionManager");
+    r(this, "reconnectionManager");
     /** Connection configuration */
-    c(this, "connectionConfig");
+    r(this, "connectionConfig");
     /** Cached AppInfo for ZomeClient compatibility */
-    c(this, "cachedAppInfo", null);
+    r(this, "cachedAppInfo", null);
     this.connectionConfig = {
       autoReconnect: !0,
       reconnectDelayMs: 1e3,
       maxReconnectDelayMs: 3e4,
       healthCheckIntervalMs: 1e4,
       ...e
-    }, this._roleName = e.roleName ?? "default", this.connection = new W(this.connectionConfig), this.reconnectionManager = new P(
+    }, this._roleName = e.roleName ?? "default", this.connection = new D(this.connectionConfig), this.reconnectionManager = new N(
       this.connectionConfig,
       () => this.doReconnect(),
       (t) => {
@@ -776,104 +768,92 @@ class T {
    * ```
    */
   static async connect(e) {
-    const t = typeof e == "string" ? { linkerUrl: e } : e, n = new T(t);
+    const t = typeof e == "string" ? { linkerUrl: e } : e, n = new H(t);
     return await n.initialize(), n;
   }
   async initialize() {
-    var o;
+    var s;
     const e = window.holochain;
     if (!(e != null && e.isWebConductor))
       throw new Error("Holochain extension not detected. Please install the Holochain browser extension.");
     await e.connect();
-    let t = !1;
     try {
-      const r = await e.appInfo();
-      if (r != null && r.agentPubKey && ((o = r == null ? void 0 : r.cells) == null ? void 0 : o.length) > 0) {
-        if (await this.setupFromAppInfo(r), t = !await this.configureLinkerFromJoiningServiceOrConfig(r), !t) {
-          this.connection.setConnected(), this.subscribeToExtensionConnectionStatus();
-          return;
-        }
-        console.log("[WebConductorAppClient] Reconnect indicates agent not joined, attempting re-join...");
+      const o = await e.appInfo();
+      if (o != null && o.agentPubKey && ((s = o == null ? void 0 : o.cells) == null ? void 0 : s.length) > 0) {
+        await this.setupFromAppInfo(o), await this.configureLinkerFromJoiningServiceOrConfig(o), this.connection.setConnected(), this.subscribeToExtensionConnectionStatus();
+        return;
       }
     } catch {
       console.log("[WebConductorAppClient] hApp not installed, will install...");
     }
-    this.connectionConfig.joiningServiceUrl || this.connectionConfig.autoDiscover ? await this.joinAndInstall(e, t) : t || (this.connectionConfig.linkerUrl && await e.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl }), await this.installHapp());
-    const s = await e.appInfo();
-    if (!(s != null && s.agentPubKey))
+    this.connectionConfig.joiningServiceUrl || this.connectionConfig.autoDiscover ? await this.joinAndInstall(e) : (this.connectionConfig.linkerUrl && await e.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl }), await this.installHapp());
+    const n = await e.appInfo();
+    if (!(n != null && n.agentPubKey))
       throw new Error("Failed to get app info after installation");
-    await this.setupFromAppInfo(s), this.connection.setConnected(), this.subscribeToExtensionConnectionStatus();
+    await this.setupFromAppInfo(n), this.connection.setConnected(), this.subscribeToExtensionConnectionStatus();
   }
   /**
    * Join via the joining service, obtain provision, configure linker, and install.
-   * @param skipInstall - If true, only configure linker (app already installed, re-joining for URLs)
    */
-  async joinAndInstall(e, t = !1) {
-    var f, d;
-    const n = await this.getJoiningClient();
+  async joinAndInstall(e) {
+    var w, S;
+    const t = await this.getJoiningClient();
     if (!e.myPubKey)
       throw new Error("Agent key not available after connect");
-    const s = C(e.myPubKey);
-    let o;
+    const n = p(e.myPubKey);
+    let s;
     try {
-      let a = await n.join(s, this.connectionConfig.claims);
-      const w = /* @__PURE__ */ new Set();
+      let a = await t.join(n, this.connectionConfig.claims);
+      const x = /* @__PURE__ */ new Set();
       for (; a.status === "pending"; ) {
         if (!a.challenges || a.challenges.length === 0) {
-          await I(a.pollIntervalMs ?? 2e3), a = await a.pollStatus();
+          await T(a.pollIntervalMs ?? 2e3), a = await a.pollStatus();
           continue;
         }
-        let g = !1;
+        let U = !1;
         for (const h of a.challenges) {
-          if (h.completed || h.group && w.has(h.group)) continue;
+          if (h.completed || h.group && x.has(h.group)) continue;
           if (h.type === "agent_whitelist") {
-            const E = await this.signAgentWhitelistChallenge(e, h);
-            if (E) {
-              a = await a.verify(h.id, E), h.group && w.add(h.group), g = !0;
+            const v = await this.signAgentWhitelistChallenge(e, h);
+            if (v) {
+              a = await a.verify(h.id, v), h.group && x.add(h.group), U = !0;
               break;
             }
             continue;
           }
           if (!this.connectionConfig.onChallenge)
-            throw new x(
+            throw new C(
               "challenge_callback_required",
               "Join session requires verification but no onChallenge callback was provided",
               0
             );
-          const B = await this.connectionConfig.onChallenge(h);
-          a = await a.verify(h.id, B), h.group && w.add(h.group), g = !0;
+          const F = await this.connectionConfig.onChallenge(h);
+          a = await a.verify(h.id, F), h.group && x.add(h.group), U = !0;
           break;
         }
-        g || (await I(a.pollIntervalMs ?? 2e3), a = await a.pollStatus());
+        U || (await T(a.pollIntervalMs ?? 2e3), a = await a.pollStatus());
       }
       if (a.status === "rejected")
-        throw new x(
+        throw new C(
           "join_rejected",
           a.reason ?? "Join request was rejected",
           0
         );
-      o = await a.getProvision();
+      s = await a.getProvision();
     } catch (a) {
-      if (a instanceof x && a.code === "agent_already_joined")
-        o = await this.reconnectViaJoiningService(n, e);
+      if (a instanceof C && a.code === "agent_already_joined")
+        s = await this.reconnectViaJoiningService(t, e);
       else
         throw a;
     }
-    const r = ((d = (f = o.linker_urls) == null ? void 0 : f[0]) == null ? void 0 : d.url) ?? this.connectionConfig.linkerUrl;
-    if (console.log("[WebConductorAppClient] joinAndInstall linker config:", {
-      provisionUrls: o.linker_urls,
-      fallbackUrl: this.connectionConfig.linkerUrl,
-      resolvedUrl: r
-    }), r ? (console.log("[WebConductorAppClient] Calling configureNetwork with:", r), await e.configureNetwork({ linkerUrl: r }), console.log("[WebConductorAppClient] configureNetwork returned")) : console.log("[WebConductorAppClient] No linker URL from joining service or config"), t)
-      console.log("[WebConductorAppClient] Re-joined for linker URLs (app already installed)");
-    else {
-      const a = this.connectionConfig.membraneProofs ?? this.decodeMembraneProofs(o.membrane_proofs), w = o.happ_bundle_url ?? this.connectionConfig.happBundlePath, g = await this.fetchHappBundle(w);
-      await e.installApp({
-        bundle: g,
-        installedAppId: this._roleName,
-        membraneProofs: a
-      }), console.log("[WebConductorAppClient] hApp installed via joining service");
-    }
+    const o = ((S = (w = s.linker_urls) == null ? void 0 : w[0]) == null ? void 0 : S.url) ?? this.connectionConfig.linkerUrl;
+    o ? await e.configureNetwork({ linkerUrl: o }) : console.log("[WebConductorAppClient] No linker URL from joining service or config");
+    const c = this.connectionConfig.membraneProofs ?? this.decodeMembraneProofs(s.membrane_proofs), f = s.happ_bundle_url ?? this.connectionConfig.happBundlePath, d = await this.fetchHappBundle(f);
+    await e.installApp({
+      bundle: d,
+      installedAppId: this._roleName,
+      membraneProofs: c
+    }), console.log("[WebConductorAppClient] hApp installed via joining service");
   }
   /**
    * Reconnect via the joining service to get fresh linker URLs.
@@ -881,7 +861,7 @@ class T {
   async reconnectViaJoiningService(e, t) {
     if (!t.myPubKey)
       throw new Error("Agent key not available for reconnect");
-    const n = C(t.myPubKey);
+    const n = p(t.myPubKey);
     return {
       linker_urls: (await e.reconnect(
         n,
@@ -896,16 +876,13 @@ class T {
   /**
    * For an already-installed app, try to configure linker URL from joining service
    * (reconnect flow) or fall back to the config value.
-   *
-   * @returns true if linker was configured (or no joining service), false if
-   *          reconnect failed with "agent not joined" and a re-join should be attempted.
    */
   async configureLinkerFromJoiningServiceOrConfig(e) {
     const t = window.holochain;
-    if (!t) return !0;
+    if (!t) return;
     if ((this.connectionConfig.joiningServiceUrl || this.connectionConfig.autoDiscover) && t.myPubKey)
       try {
-        const s = await this.getJoiningClient(), o = C(t.myPubKey), r = await s.reconnect(
+        const s = await this.getJoiningClient(), o = p(t.myPubKey), c = await s.reconnect(
           o,
           async (f) => {
             if (t.signReconnectChallenge)
@@ -913,13 +890,14 @@ class T {
             throw new Error("Extension does not support signReconnectChallenge — update required");
           }
         );
-        return r.linker_urls && r.linker_urls.length > 0 ? (console.log("[WebConductorAppClient] Configuring linker from joining service:", r.linker_urls[0].url), await t.configureNetwork({ linkerUrl: r.linker_urls[0].url }), !0) : (console.log("[WebConductorAppClient] Reconnect succeeded but no linker_urls returned"), !0);
-      } catch (s) {
-        if ((s == null ? void 0 : s.code) === "agent_not_joined" || (s == null ? void 0 : s.httpStatus) === 403)
-          return console.log("[WebConductorAppClient] Agent not found in joining service:", s == null ? void 0 : s.message), !1;
-        console.log("[WebConductorAppClient] Joining service reconnect failed:", s);
+        if (c.linker_urls && c.linker_urls.length > 0) {
+          await t.configureNetwork({ linkerUrl: c.linker_urls[0].url });
+          return;
+        }
+      } catch {
+        console.log("[WebConductorAppClient] Joining service reconnect failed, using config linkerUrl");
       }
-    return this.connectionConfig.linkerUrl ? (console.log("[WebConductorAppClient] Configuring linker from config:", this.connectionConfig.linkerUrl), await t.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl })) : console.log("[WebConductorAppClient] No linkerUrl to configure"), !0;
+    this.connectionConfig.linkerUrl && await t.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
   }
   /**
    * Auto-handle an agent_whitelist challenge by signing the nonce via the extension.
@@ -929,17 +907,17 @@ class T {
     var n;
     if (!((n = t.metadata) != null && n.nonce) || !e.signJoiningNonce) return null;
     try {
-      const s = k(t.metadata.nonce), o = await e.signJoiningNonce(s);
-      return re(o);
+      const s = B(t.metadata.nonce), o = await e.signJoiningNonce(s);
+      return p(o);
     } catch {
       return null;
     }
   }
   async getJoiningClient() {
     if (this.connectionConfig.joiningServiceUrl)
-      return S.fromUrl(this.connectionConfig.joiningServiceUrl);
+      return I.fromUrl(this.connectionConfig.joiningServiceUrl);
     if (this.connectionConfig.autoDiscover)
-      return S.discover(window.location.origin);
+      return I.discover(window.location.origin);
     throw new Error("No joining service URL configured and autoDiscover is not enabled");
   }
   /**
@@ -952,7 +930,7 @@ class T {
     if (!e) return;
     const t = {};
     for (const [n, s] of Object.entries(e))
-      t[n] = k(s);
+      t[n] = B(s);
     return t;
   }
   async fetchHappBundle(e) {
@@ -978,18 +956,20 @@ class T {
    */
   subscribeToExtensionConnectionStatus() {
     const e = window.holochain;
-    if (!(e != null && e.onConnectionChange)) return;
-    this.reconnectionManager.cancel();
-    const t = (n) => {
+    e != null && e.onConnectionChange && (this.reconnectionManager.cancel(), e.getConnectionStatus && e.getConnectionStatus().then((t) => {
       this.connection.setLinkerHealth(
-        n.httpHealthy,
-        n.wsHealthy,
-        n.authenticated,
-        n.lastError
+        t.httpHealthy,
+        t.wsHealthy,
+        t.lastError
       );
-    };
-    e.onConnectionChange(t), e.getConnectionStatus && e.getConnectionStatus().then(t).catch(() => {
-    });
+    }).catch(() => {
+    }), e.onConnectionChange((t) => {
+      this.connection.setLinkerHealth(
+        t.httpHealthy,
+        t.wsHealthy,
+        t.lastError
+      );
+    }));
   }
   async setupFromAppInfo(e) {
     var t;
@@ -1010,20 +990,20 @@ class T {
   setupSignalForwarding() {
     const e = window.holochain;
     e && (this.unsubscribeExtension && this.unsubscribeExtension(), this.unsubscribeExtension = e.on("signal", (t) => {
-      var o, r, f;
+      var o, c, f;
       const n = t, s = {
-        type: F.App,
+        type: P.App,
         value: {
           cell_id: (o = n.value) != null && o.cell_id ? [u(n.value.cell_id[0]), u(n.value.cell_id[1])] : this._cellId,
-          zome_name: ((r = n.value) == null ? void 0 : r.zome_name) || "",
+          zome_name: ((c = n.value) == null ? void 0 : c.zome_name) || "",
           payload: (f = n.value) == null ? void 0 : f.payload
         }
       };
       this.signalHandlers.forEach((d) => {
         try {
           d(s);
-        } catch (a) {
-          console.error("[WebConductorAppClient] Signal handler error:", a);
+        } catch (w) {
+          console.error("[WebConductorAppClient] Signal handler error:", w);
         }
       });
     }));
@@ -1088,7 +1068,7 @@ class T {
         provenance: e.provenance || this._myPubKey || void 0,
         cap_secret: e.cap_secret
       });
-      return this.connection.reportCallSuccess(), U(o);
+      return this.connection.reportCallSuccess(), A(o);
     } catch (o) {
       throw this.connection.reportCallFailure(o), o;
     }
@@ -1111,19 +1091,19 @@ class T {
     if (!e) throw new Error("Holochain extension not available");
     const t = await e.appInfo();
     if (!t) return null;
-    const n = u(t.agentPubKey), s = [u(t.cells[0][0]), u(t.cells[0][1])], o = ((d = t.dnaProperties) == null ? void 0 : d[this._roleName]) ?? null, r = new Uint8Array(oe(o));
+    const n = u(t.agentPubKey), s = [u(t.cells[0][0]), u(t.cells[0][1])], o = ((d = t.dnaProperties) == null ? void 0 : d[this._roleName]) ?? null, c = new Uint8Array(ce(o));
     return {
       installed_app_id: t.contextId || this._installedAppId,
       agent_pub_key: n,
       cell_info: {
         [this._roleName]: [
           {
-            type: M.Provisioned,
+            type: z.Provisioned,
             value: {
               cell_id: s,
               dna_modifiers: {
                 network_seed: "",
-                properties: r,
+                properties: c,
                 origin_time: 0,
                 quantum_time: { secs: 0, nanos: 0 }
               },
@@ -1176,10 +1156,10 @@ class T {
     throw new Error("disableCloneCell not supported in Web Conductor mode");
   }
 }
-function I(i) {
+function T(i) {
   return new Promise((e) => setTimeout(e, i));
 }
-function re(i) {
+function p(i) {
   if (typeof Buffer < "u")
     return Buffer.from(i).toString("base64");
   let e = "";
@@ -1187,7 +1167,7 @@ function re(i) {
     e += String.fromCharCode(i[t]);
   return btoa(e);
 }
-function k(i) {
+function B(i) {
   if (typeof Buffer < "u")
     return new Uint8Array(Buffer.from(i, "base64"));
   const e = atob(i), t = new Uint8Array(e.length);
@@ -1195,7 +1175,7 @@ function k(i) {
     t[n] = e.charCodeAt(n);
   return t;
 }
-function he(i = 5e3) {
+function fe(i = 5e3) {
   return new Promise((e, t) => {
     var s;
     if ((s = window.holochain) != null && s.isWebConductor) {
@@ -1216,26 +1196,26 @@ function he(i = 5e3) {
     );
   });
 }
-function fe() {
+function ue() {
   var i;
   return ((i = window.holochain) == null ? void 0 : i.isWebConductor) === !0;
 }
 export {
-  we as CellType,
-  W as ConnectionMonitor,
+  ge as CellType,
+  D as ConnectionMonitor,
   l as ConnectionStatus,
-  ye as GatewayError,
-  me as GatewayProxy,
-  Ce as JoinSession,
-  xe as JoiningClient,
-  Ue as JoiningError,
-  P as ReconnectionManager,
-  ge as SignalType,
-  T as WebConductorAppClient,
-  U as deepConvertByteArrays,
-  fe as isWebConductorAvailable,
-  v as looksLikeByteArray,
+  me as GatewayError,
+  xe as GatewayProxy,
+  Ue as JoinSession,
+  Ce as JoiningClient,
+  Ae as JoiningError,
+  N as ReconnectionManager,
+  pe as SignalType,
+  H as WebConductorAppClient,
+  A as deepConvertByteArrays,
+  ue as isWebConductorAvailable,
+  _ as looksLikeByteArray,
   u as toUint8Array,
-  he as waitForHolochain
+  fe as waitForHolochain
 };
 //# sourceMappingURL=index.js.map

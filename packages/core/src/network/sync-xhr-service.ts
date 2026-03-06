@@ -170,7 +170,7 @@ export class SyncXHRNetworkService implements NetworkService {
    */
   private addAuthHeaders(xhr: XMLHttpRequest): void {
     if (this.sessionToken) {
-      xhr.setRequestHeader('Authorization', `Bearer ${this.sessionToken}`);
+      xhr.setRequestHeader('X-Session-Token', this.sessionToken);
     }
   }
 
@@ -389,6 +389,12 @@ export class SyncXHRNetworkService implements NetworkService {
         action_seq: create.action_seq,
       });
 
+      // Preserve fields needed by get_links_details to reconstruct SignedActionHashed
+      const signature = create.signature ? this.normalizeByteArrays(create.signature) : undefined;
+      const weight = create.weight
+        ? { bucket_id: create.weight.bucket_id ?? 0, units: create.weight.units ?? 0 }
+        : undefined;
+
       return {
         create_link_hash: createLinkHash,
         base,
@@ -398,6 +404,10 @@ export class SyncXHRNetworkService implements NetworkService {
         tag,
         timestamp: create.timestamp,
         author,
+        prev_action: prevAction,
+        signature,
+        action_seq: create.action_seq,
+        weight,
       };
     });
   }
