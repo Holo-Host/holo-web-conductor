@@ -106,9 +106,11 @@ function nextAgentKey(): string {
   return fakeAgentKey(agentSeed++);
 }
 
-// Convert base64 agentKey to Uint8Array for the mock myPubKey
+// Convert base64 agentKey to Uint8Array for the mock myPubKey.
+// fakeAgentKey returns "u" + base64url (HoloHash encoding), so strip the
+// leading "u" and decode as base64url.
 function agentKeyToBytes(base64Key: string): Uint8Array {
-  return new Uint8Array(Buffer.from(base64Key, 'base64'));
+  return new Uint8Array(Buffer.from(base64Key.slice(1), 'base64url'));
 }
 
 // ---- Tests ----

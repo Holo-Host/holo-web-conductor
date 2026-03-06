@@ -669,7 +669,7 @@ describe("ChromeOffscreenExecutor", () => {
         state: "connected",
       });
 
-      expect(callback).toHaveBeenCalledWith("connected");
+      expect(callback).toHaveBeenCalledWith("connected", false);
     });
 
     it("ignores non-background messages", () => {
