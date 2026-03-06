@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "build:extension": "npm run build --workspace=@hwc/core --workspace=@holo-host/lair --workspace=@hwc/shared --workspace=@hwc/extension",
-    "pretest": "npm run build --workspace=@hwc/test-zome && cp packages/test-zome/target/wasm32-unknown-unknown/release/test_zome.wasm packages/extension/test/test-zome.wasm",
+    "pretest": "npm run build --workspace=@hwc/test-zome && cp packages/test-zome/target/wasm32-unknown-unknown/release/test_zome.wasm packages/extension/test/test-zome.wasm && npm run build:extension",
     "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/lair/tsconfig.json && tsc -p packages/core/tsconfig.json && tsc -p packages/client/tsconfig.json && tsc --noEmit -p packages/extension/tsconfig.json",
     "test": "npm run typecheck && npm run test:unit && npm run test:integration",
     "test:unit": "npm run test --workspaces",
