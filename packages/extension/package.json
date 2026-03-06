@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Holo Web Conductor browser extension - Holochain conductor in the browser",
+  "license": "CAL-1.0",
   "type": "module",
   "scripts": {
     "build": "vite build",

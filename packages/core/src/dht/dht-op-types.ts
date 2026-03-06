@@ -3,7 +3,7 @@
  *
  * These types represent the DHT operations generated from source chain records.
  * Based on Holochain's dht_op.rs:
- * /home/eric/code/metacurrency/holochain/holochain/crates/holochain_types/src/dht_op.rs
+ * https://github.com/holochain/holochain/blob/main/crates/holochain_types/src/dht_op.rs
  *
  * DhtOps are the unit of DHT gossip - they notify authorities of new data.
  */

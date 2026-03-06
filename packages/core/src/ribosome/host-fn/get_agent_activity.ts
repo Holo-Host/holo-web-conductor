@@ -7,6 +7,8 @@
  *
  * Input: GetAgentActivityInput { agent_pubkey, chain_query_filter, activity_request, get_options }
  * Output: AgentActivity { valid_activity, rejected_activity, status, highest_observed, warrants }
+ *
+ * For HWC (zero-arc), queries the network via linker for other agents' data.
  */
 
 import { HostFunctionImpl } from "./base";
@@ -47,7 +49,7 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
     return getAgentActivityFromLocal(instance, dnaHash, selfAgent);
   }
 
-  // Query network via linker for other agents
+  // Query network via linker for other agents (zero-arc node pattern)
   const networkService = getNetworkService();
   if (!networkService) {
     console.log("[HostFn] get_agent_activity: no network service, returning empty");

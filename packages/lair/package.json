@@ -2,6 +2,7 @@
   "name": "@holo-host/lair",
   "version": "0.1.0",
   "description": "Lair keystore implementation for Holochain applications",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

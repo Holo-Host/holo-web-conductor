@@ -4,8 +4,8 @@
  * This file contains TypeScript type definitions for Holochain types.
  * Types are imported from @holochain/client when available, with additional
  * types defined for host function implementation based on Rust definitions from:
- * /home/eric/code/metacurrency/holochain/holochain/crates/holochain_zome_types/
- * /home/eric/code/metacurrency/holochain/holochain/crates/holochain_integrity_types/
+ * https://github.com/holochain/holochain/blob/main/crates/holochain_zome_types/
+ * https://github.com/holochain/holochain/blob/main/crates/holochain_integrity_types/
  */
 
 // ============================================================================
@@ -396,7 +396,7 @@ export type AppSignal = Uint8Array;
 
 /**
  * Record entry variants - compatible with @holochain/client RecordEntry
- * Note: Client uses { Hidden: void } etc, we use string for simplicity in fishy
+ * Note: Client uses { Hidden: void } etc, we use string for simplicity in HWC
  */
 export type RecordEntry = ClientRecordEntry;
 

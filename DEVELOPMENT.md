@@ -1,6 +1,6 @@
 # Holo Web Conductor Development Guide
 
-## Quick Start for Continuing Development
+## Quick Start
 
 ### First Time Setup
 ```bash
@@ -14,8 +14,7 @@ npm install
 npm run build
 
 # Build extension only
-cd packages/extension
-npm run build
+npm run build:extension
 
 # Watch mode for development
 npm run dev
@@ -23,7 +22,7 @@ npm run dev
 
 ### Testing
 ```bash
-# Run all tests
+# Run all tests (includes typecheck)
 npm test
 
 # Run extension tests only
@@ -57,65 +56,54 @@ npm run test:watch
 
 ```
 holo-web-conductor/
-├── CLAUDE.md              # Main project plan
-├── SESSION.md             # Current session state
-├── DEVELOPMENT.md         # This file
-├── package.json           # Root workspace config
-└── packages/
-    ├── extension/         # Browser extension (Step 1)
-    │   ├── src/
-    │   │   ├── background/    # Service worker
-    │   │   ├── content/       # Content script bridge
-    │   │   ├── popup/         # Extension popup UI
-    │   │   └── lib/           # Shared extension code
-    │   ├── test/              # Integration test page
-    │   ├── dist/              # Build output (gitignored)
-    │   └── vite.config.ts     # Build config
-    ├── core/              # Conductor logic (Step 5+)
-    ├── lair/              # Keystore (Step 2)
-    └── shared/            # Shared types/utilities
+├── packages/
+│   ├── extension/     # Chrome/Firefox browser extension (MV3)
+│   │   └── src/
+│   │       ├── background/  # Service worker
+│   │       ├── content/     # Content scripts (page bridge)
+│   │       ├── offscreen/   # Offscreen document (WASM + SQLite)
+│   │       └── popup/       # Extension popup UI
+│   ├── core/          # Core conductor functionality
+│   │   └── src/
+│   │       ├── ribosome/    # Host function implementations
+│   │       ├── storage/     # SQLite storage layer
+│   │       ├── network/     # Linker network services
+│   │       └── dht/         # DhtOp generation and publishing
+│   ├── client/        # Client library (@holo-host/web-conductor-client)
+│   ├── lair/          # Lair keystore (browser + Node.js, pluggable storage)
+│   ├── shared/        # Shared types and utilities
+│   ├── e2e/           # Playwright end-to-end tests
+│   └── test-zome/     # HDK test zome (Rust/WASM)
+├── CLAUDE.md          # AI agent instructions and project rules
+├── ARCHITECTURE.md    # System architecture and design decisions
+├── TESTING.md         # Testing guide
+├── STEPS/             # Development step plans and completion notes
+└── COMPATIBILITY.md   # Version compatibility with h2hc-linker
 ```
 
 ## Development Workflow
 
-### Starting a New Feature/Step
-1. Read `SESSION.md` for current state
+### Starting a New Feature
+1. Check `STEPS/index.md` for current status
 2. Read relevant section in `CLAUDE.md`
 3. Create tests first (TDD)
 4. Implement feature
 5. Run tests: `npm test`
 6. Test manually (for UI/extension features)
-7. Update `SESSION.md` with progress
-8. Commit when complete and tested
-
-### Cross-Workstation Development
-1. **Before switching**:
-   - Update `SESSION.md` with current status
-   - Commit WIP if needed
-   - Push to git
-
-2. **On new workstation**:
-   - `git pull`
-   - Read `SESSION.md`
-   - Run `npm install` if needed
-   - Continue from documented state
+7. Commit when complete and tested
 
 ### Committing Changes
-⚠️ **IMPORTANT**: User testing required before commits (see Requirements)
-
-1. Manual testing complete ✓
-2. All unit tests pass ✓
-3. Update `SESSION.md` ✓
-4. Stage changes: `git add .`
-5. Commit with descriptive message
-6. Push to origin
+1. All unit tests pass: `npm test`
+2. Manual browser testing complete (for extension changes)
+3. Stage changes and commit with descriptive message
+4. Push to origin
 
 ## Testing Philosophy
 
 ### Three Layers of Testing
-1. **Unit Tests**: `src/**/*.test.ts` - Fast, automated
-2. **Build Validation**: `src/build-validation.test.ts` - Catches build issues
-3. **Integration Tests**: Manual browser testing - Catches runtime issues
+1. **Unit Tests**: `src/**/*.test.ts` - Fast, automated (Vitest)
+2. **Integration Tests**: `packages/core/vitest.integration.config.ts` - Test with real WASM
+3. **E2E Tests**: `packages/e2e/` - Playwright tests against built extension with linker
 
 ### When to Write Tests
 - **Before implementation** (TDD preferred)
@@ -129,10 +117,6 @@ holo-web-conductor/
 - Cross-browser compatibility (Chrome + Firefox)
 
 ## Common Issues & Solutions
-
-### "Unsupported engine" warnings during npm install
-- **Cause**: Node version < 20.9.0
-- **Solution**: Warnings are safe to ignore on Node 20.5.0+
 
 ### Content script import errors
 - **Cause**: Scripts not bundled as IIFE
@@ -154,20 +138,11 @@ holo-web-conductor/
 - **Check**: Compare timestamps: `ls -la packages/extension/dist/background/index.js` vs latest source file modification times.
 - **See also**: LESSONS_LEARNED.md Pattern 8
 
-## Requirements & Constraints
-
-From `CLAUDE.md`:
-
-1. **Test-Driven Development**: CI must confirm no regressions
-2. **User Testing Required**: Manual browser testing before commits
-3. **Cross-Workstation Support**: Use SESSION.md for continuity
-4. **Pragmatic Quality**: Functionality over perfection, iterate later
-
 ## Tech Stack
 
 - **Language**: TypeScript (strict mode)
-- **Build**: Vite 5.4.21
-- **Tests**: Vitest 2.1.9
+- **Build**: Vite
+- **Tests**: Vitest + Playwright (e2e)
 - **Package Manager**: npm (workspaces)
 - **Browser**: Chrome MV3 (primary), Firefox (secondary)
 
@@ -187,12 +162,12 @@ npm test
 
 Vitest uses esbuild for speed, which **strips types without checking them**. This means a test suite can pass with type errors present. The `npm run typecheck` step (which runs before tests via `npm test`) catches these. If you run vitest directly (e.g., `npx vitest run`), you bypass typechecking entirely.
 
-### Rules for contributors and AI agents
+### Rules for contributors
 
-- **No `as any` in production code.** Define a named type instead. If the shape doesn't match an existing type, create one that documents the actual shape.
-- **No `as any` in test code without justification.** Use `Pick<T, ...>`, typed factory functions, or proper mocks. The only acceptable use is global patching (`window as any`, `globalThis as any`) with a brief comment.
-- **Type return values explicitly.** Functions that return data from WASM, network, or message boundaries must declare their return type. Don't rely on inference from casted internals.
-- **Use `@holochain/client` types.** `EntryHash`, `ActionHash`, `AgentPubKey`, `DnaHash`, `Record`, `Action`, `CellId` -- these exist and are well-defined. Prefer them over `Uint8Array` or custom equivalents.
+- **No `as any` in production code.** Define a named type instead.
+- **No `as any` in test code without justification.** Use `Pick<T, ...>`, typed factory functions, or proper mocks.
+- **Type return values explicitly.** Functions at WASM, network, or message boundaries must declare their return type.
+- **Use `@holochain/client` types.** `EntryHash`, `ActionHash`, `AgentPubKey`, `DnaHash`, `Record`, `Action`, `CellId` -- prefer these over `Uint8Array` or custom equivalents.
 - **Run `npm run typecheck` before marking work complete.** Type errors are real errors.
 
 ## Architecture Decisions
@@ -206,31 +181,8 @@ Vite's IIFE format doesn't support code splitting. We build popup normally (can 
 ### Why npm Workspaces?
 Simpler than pnpm/yarn for this project size. All packages are private and co-located.
 
-## Step-by-Step Plan
-
-See `CLAUDE.md` for full details. Summary:
-
-- ✅ **Step 0**: Plan refinement and scaffolding
-- ⚠️ **Step 1**: Browser extension base (PENDING USER TEST)
-- 📋 **Step 2**: Lair keystore implementation
-- 📋 **Step 3**: Authorization mechanism
-- 📋 **Step 4**: hApp context creation
-- 📋 **Step 5**: WASM execution with mocks
-- 📋 **Step 6**: Local chain storage
-- 📋 **Step 7**: hc-http-gw extensions
-- 📋 **Step 8**: Network host functions
-- 📋 **Step 9**: Integration testing
-
 ## Resources
 
-- **Holochain**: `../holochain/` (reference implementation)
-- **Lair**: `../lair/` (keystore reference)
-- **h2hc-linker**: `../h2hc-linker/` (Holo-to-Holochain linker)
-- **Chrome Extension Docs**: https://developer.chrome.com/docs/extensions/mv3/
-- **Web Crypto API**: https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API
-
-## Contact & Session Info
-
-- Current session documented in `SESSION.md`
-- Update before switching workstations
-- Include blockers and next steps
+- **Architecture**: See [ARCHITECTURE.md](./ARCHITECTURE.md)
+- **Testing Guide**: See [TESTING.md](./TESTING.md)
+- **Step Plans**: See [STEPS/index.md](./STEPS/index.md)

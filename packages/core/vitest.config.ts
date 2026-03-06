@@ -18,8 +18,9 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
     exclude: [
       "**/node_modules/**",
-      // Run by separate CI step (npm run test:integration) to avoid double-execution
+      // Run separately via npm run test:integration
       "src/ribosome/integration.test.ts",
+      "src/ribosome/genesis-self-check.test.ts",
       // Fails due to libsodium signing initialization in callZome path — needs signing mock
       "test/profiles-integration.test.ts",
     ],

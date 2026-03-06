@@ -30,7 +30,7 @@ export type UnresolvedDependencies =
 /**
  * Chain filter for agent activity queries.
  *
- * Simplified for fishy - full implementation would match
+ * Simplified for HWC - full implementation would match
  * holochain_integrity_types/src/chain.rs
  */
 export interface ChainFilter {
