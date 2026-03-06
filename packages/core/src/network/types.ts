@@ -15,10 +15,12 @@ import type {
   Record,
   Link,
   SignedActionHashed,
+  Signature,
   Entry,
   Timestamp,
   LinkTag,
 } from '../types/holochain-types';
+import type { RateWeight } from '../types/holochain-serialization';
 
 // ============================================================================
 // Agent Activity types (matching Holochain wire protocol responses)
@@ -128,6 +130,14 @@ export interface NetworkLink {
   timestamp: Timestamp;
   /** Author of the link */
   author: AgentPubKey;
+  /** Previous action hash (from WireCreateLink; absent for locally-stored links) */
+  prev_action?: ActionHash;
+  /** Signature of the CreateLink action (from WireCreateLink; absent for locally-stored links) */
+  signature?: Signature;
+  /** Action sequence number (from WireCreateLink; absent for locally-stored links) */
+  action_seq?: number;
+  /** Rate weight (from WireCreateLink; absent for locally-stored links) */
+  weight?: RateWeight;
 }
 
 /**

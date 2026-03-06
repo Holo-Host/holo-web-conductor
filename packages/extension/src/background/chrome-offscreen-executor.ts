@@ -80,9 +80,9 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         }
 
         if (rawMessage.type === "WS_STATE_CHANGE") {
-          logLinker.debug(`WebSocket state changed: ${rawMessage.state}`);
+          logLinker.debug(`WebSocket state changed: ${rawMessage.state} authenticated: ${rawMessage.authenticated}`);
           if (this.wsStateChangeCallback) {
-            this.wsStateChangeCallback(rawMessage.state);
+            this.wsStateChangeCallback(rawMessage.state, !!rawMessage.authenticated);
           }
           return false;
         }
@@ -382,6 +382,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         return {
           state: response.state || "disconnected",
           isConnected: response.isConnected || false,
+          authenticated: response.authenticated || false,
           registrations: response.registrations,
         };
       }
@@ -389,7 +390,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
       logLinker.debug("Could not get WebSocket state from offscreen:", error);
     }
 
-    return { state: "disconnected", isConnected: false };
+    return { state: "disconnected", isConnected: false, authenticated: false };
   }
 
   // ============================================================================

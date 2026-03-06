@@ -38,6 +38,7 @@ export interface HolochainAPI {
   getConnectionStatus(): Promise<{
     httpHealthy: boolean;
     wsHealthy: boolean;
+    authenticated: boolean;
     linkerUrl: string | null;
     lastChecked: number;
     lastError?: string;
@@ -45,11 +46,20 @@ export interface HolochainAPI {
   onConnectionChange(callback: (status: {
     httpHealthy: boolean;
     wsHealthy: boolean;
+    authenticated: boolean;
     linkerUrl: string | null;
     lastChecked: number;
     lastError?: string;
   }) => void): () => void;
   reconnectWebSocket?(): Promise<void>;
+
+  // Joining service reconnect: signs a timestamp with the agent's ed25519 key.
+  // Optional for backwards compatibility with older extension versions.
+  signReconnectChallenge?(timestamp: string): Promise<Uint8Array>;
+
+  // Joining service agent_whitelist: signs a nonce with the agent's ed25519 key.
+  // Optional for backwards compatibility with older extension versions.
+  signJoiningNonce?(nonce: Uint8Array): Promise<Uint8Array>;
 }
 
 /**
@@ -71,6 +81,10 @@ export interface InstallAppRequest {
   bundle: Uint8Array | number[];
   installedAppId?: string;
   membraneProofs?: Record<string, Uint8Array | number[]>;
+  dnaModifiers?: {
+    networkSeed?: string;
+    properties?: Record<string, unknown>;
+  };
 }
 
 /**

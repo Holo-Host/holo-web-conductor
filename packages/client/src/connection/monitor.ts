@@ -29,6 +29,7 @@ export class ConnectionMonitor {
       status: ConnectionStatus.Disconnected,
       httpHealthy: false,
       wsHealthy: false,
+      authenticated: false,
     };
   }
 
@@ -177,10 +178,11 @@ export class ConnectionMonitor {
    * Update linker health status without changing overall connection status.
    * Used when extension is connected but linker may be unreachable.
    */
-  setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, error?: string): void {
+  setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, authenticated?: boolean, error?: string): void {
     this.updateState({
       httpHealthy,
       wsHealthy,
+      ...(authenticated !== undefined && { authenticated }),
       lastError: error,
     });
   }
@@ -199,6 +201,8 @@ export class ConnectionMonitor {
             status: ConnectionStatus.Error,
             httpHealthy: status.httpHealthy,
             wsHealthy: status.wsHealthy,
+            authenticated: status.authenticated ?? false,
+            linkerUrl: status.linkerUrl,
             lastError: status.lastError || 'Linker connection lost',
           });
           this.emit('connection:error', {
@@ -211,6 +215,8 @@ export class ConnectionMonitor {
             status: ConnectionStatus.Connected,
             httpHealthy: true,
             wsHealthy: status.wsHealthy,
+            authenticated: status.authenticated ?? false,
+            linkerUrl: status.linkerUrl,
             lastError: undefined,
           });
           if (this.state.status === ConnectionStatus.Reconnecting) {
@@ -221,6 +227,8 @@ export class ConnectionMonitor {
           this.updateState({
             httpHealthy: status.httpHealthy,
             wsHealthy: status.wsHealthy,
+            authenticated: status.authenticated ?? false,
+            linkerUrl: status.linkerUrl,
             lastError: status.lastError,
           });
         }
@@ -240,6 +248,8 @@ export class ConnectionMonitor {
       prevState.status !== this.state.status ||
       prevState.httpHealthy !== this.state.httpHealthy ||
       prevState.wsHealthy !== this.state.wsHealthy ||
+      prevState.authenticated !== this.state.authenticated ||
+      prevState.linkerUrl !== this.state.linkerUrl ||
       prevState.lastError !== this.state.lastError ||
       prevState.reconnectAttempt !== this.state.reconnectAttempt;
 

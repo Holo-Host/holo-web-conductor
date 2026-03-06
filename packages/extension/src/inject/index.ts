@@ -8,6 +8,7 @@
 interface ConnectionStatus {
   httpHealthy: boolean;
   wsHealthy: boolean;
+  authenticated: boolean;
   linkerUrl: string | null;
   lastChecked: number;
   lastError?: string;
@@ -48,6 +49,9 @@ interface HolochainAPI {
   // Connection status APIs
   getConnectionStatus(): Promise<ConnectionStatus>;
   onConnectionChange(callback: (status: ConnectionStatus) => void): () => void;
+  // Joining service signing
+  signReconnectChallenge(timestamp: string): Promise<Uint8Array>;
+  signJoiningNonce(nonce: Uint8Array): Promise<Uint8Array>;
 }
 
 // Signal subscription handlers
@@ -257,10 +261,14 @@ const holochainAPI: HolochainAPI = {
 
   async connect(): Promise<any> {
     const result = await sendToContentScript("connect", null);
-    // Fetch app info to populate myPubKey and installedAppId
+    // Set agent key from connect response (generated/retrieved by background)
+    if (result?.agentPubKey) {
+      _myPubKey = toUint8Array(result.agentPubKey);
+    }
+    // Still try app_info for installedAppId and as fallback for agentPubKey
     try {
       const appInfo = await sendToContentScript("app_info", null);
-      if (appInfo?.agentPubKey) {
+      if (appInfo?.agentPubKey && !_myPubKey) {
         _myPubKey = toUint8Array(appInfo.agentPubKey);
       }
       if (appInfo?.contextId) {
@@ -370,6 +378,18 @@ const holochainAPI: HolochainAPI = {
         });
       }
     };
+  },
+
+  async signReconnectChallenge(timestamp: string): Promise<Uint8Array> {
+    const result = await sendToContentScript("sign_reconnect_challenge", { timestamp });
+    return toUint8Array(result.signature)!;
+  },
+
+  async signJoiningNonce(nonce: Uint8Array): Promise<Uint8Array> {
+    const result = await sendToContentScript("sign_joining_nonce", {
+      nonce: Array.from(nonce),
+    });
+    return toUint8Array(result.signature)!;
   },
 };
 

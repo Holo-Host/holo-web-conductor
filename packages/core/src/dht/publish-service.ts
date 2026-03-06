@@ -314,7 +314,7 @@ export class PublishService {
     };
 
     if (this.options.sessionToken) {
-      headers["X-Session-Token"] = this.options.sessionToken;
+      headers["Authorization"] = `Bearer ${this.options.sessionToken}`;
     }
 
     const response = await fetch(url, {

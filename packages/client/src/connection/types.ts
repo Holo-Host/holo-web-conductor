@@ -28,6 +28,10 @@ export interface ConnectionState {
   httpHealthy: boolean;
   /** Whether WebSocket is connected */
   wsHealthy: boolean;
+  /** Whether WebSocket is authenticated with the linker */
+  authenticated: boolean;
+  /** The actual linker URL the extension is connected to */
+  linkerUrl?: string | null;
   /** Last error message if status is Error */
   lastError?: string;
   /** Current reconnection attempt number (if reconnecting) */
@@ -40,8 +44,8 @@ export interface ConnectionState {
  * Configuration for linker connection.
  */
 export interface ConnectionConfig {
-  /** URL of the h2hc-linker linker */
-  linkerUrl: string;
+  /** URL of the h2hc-linker linker (optional when using joining service) */
+  linkerUrl?: string;
   /** Enable automatic reconnection (default: true) */
   autoReconnect?: boolean;
   /** Initial reconnect delay in ms (default: 1000) */

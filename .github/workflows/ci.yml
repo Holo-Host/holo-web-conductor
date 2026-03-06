@@ -20,6 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # TODO: remove once @holo-host/joining-service is published to npm
+      - uses: actions/checkout@v4
+        with:
+          repository: Holo-Host/joining-service
+          path: _joining-service
+      - name: "Link joining-service for file: dependency resolution"
+        run: ln -sf "$GITHUB_WORKSPACE/_joining-service" "$(dirname $GITHUB_WORKSPACE)/joining-service"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,6 +43,15 @@ jobs:
           workspaces: packages/test-zome
 
       - run: npm ci
+
+      - name: Build joining-service client types
+        working-directory: ${{ github.workspace }}/_joining-service
+        run: |
+          # lair is a file: dep pointing at ../holo-web-conductor/packages/lair
+          ln -sf "$GITHUB_WORKSPACE" "$(dirname $GITHUB_WORKSPACE)/holo-web-conductor"
+          npm ci
+          # Only client types are needed; server code has unresolvable deps in CI
+          npx tsc || true
 
       - name: Build workspace packages for cross-references
         run: |

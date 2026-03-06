@@ -19,8 +19,10 @@ import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
 import type { NetworkLink } from "../../network/types";
 import type { Link as StoredLink } from "../../storage/types";
+import type { LinkDetails, SignedActionHashed } from "../../types/holochain-types";
+import { buildCreateLinkAction, buildDeleteLinkAction } from "../../types/holochain-serialization";
 import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
-import { hashFrom32AndType, HoloHashType, ActionType, dhtLocationFrom32 } from "@holochain/client";
+import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 import { parseLinkTypeFilter } from "./get_links";
 
 // Helper to convert to base64url for logging
@@ -29,37 +31,46 @@ const toBase64 = (arr: Uint8Array) => {
   return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
-/**
- * Build a SignedActionHashed for a CreateLink action from link data.
- *
- * For network-sourced links we don't have the full action, so we
- * construct a synthetic one from the available fields.
- */
-function buildCreateLinkSignedAction(link: NetworkLink): any {
-  const authorPrefixed = link.author.length === 39
-    ? link.author
-    : hashFrom32AndType(link.author.slice(0, 32), HoloHashType.Agent);
+/** Zero-filled 39-byte ActionHash used as fallback when prev_action is unavailable */
+const ZERO_ACTION_HASH = new Uint8Array(39);
+// ActionHash prefix bytes
+ZERO_ACTION_HASH[0] = 132;
+ZERO_ACTION_HASH[1] = 41;
+ZERO_ACTION_HASH[2] = 36;
 
-  const action = {
-    type: ActionType.CreateLink,
-    author: authorPrefixed,
+/** Zero-filled 64-byte signature used as fallback when signature is unavailable */
+const ZERO_SIGNATURE = new Uint8Array(64);
+
+function ensureAgentPubKey(author: Uint8Array): Uint8Array {
+  return author.length === 39
+    ? author
+    : hashFrom32AndType(author.slice(0, 32), HoloHashType.Agent);
+}
+
+/**
+ * Build a SignedActionHashed for a CreateLink action from network link data.
+ */
+function buildCreateLinkSignedAction(link: NetworkLink): SignedActionHashed {
+  const action = buildCreateLinkAction({
+    author: ensureAgentPubKey(link.author),
     timestamp: typeof link.timestamp === 'bigint' ? Number(link.timestamp) : link.timestamp,
-    action_seq: 0,
+    action_seq: link.action_seq ?? 0,
+    prev_action: link.prev_action ?? ZERO_ACTION_HASH,
     base_address: link.base,
     target_address: link.target,
     zome_index: link.zome_index,
     link_type: link.link_type,
     tag: link.tag,
-    weight: { bucket_id: 0, units: 0 },
-  };
+    weight: link.weight,
+  });
 
   return {
     hashed: {
       content: action,
       hash: link.create_link_hash,
     },
-    signature: new Uint8Array(64),
-  };
+    signature: link.signature ?? ZERO_SIGNATURE,
+  } as SignedActionHashed;
 }
 
 /**
@@ -74,27 +85,23 @@ function buildDeleteLinkSignedAction(
   baseAddress: Uint8Array,
   author: Uint8Array,
   timestamp: number
-): any {
-  const authorPrefixed = author.length === 39
-    ? author
-    : hashFrom32AndType(author.slice(0, 32), HoloHashType.Agent);
-
-  const action = {
-    type: ActionType.DeleteLink,
-    author: authorPrefixed,
+): SignedActionHashed {
+  const action = buildDeleteLinkAction({
+    author: ensureAgentPubKey(author),
     timestamp,
     action_seq: 0,
-    link_add_address: createLinkHash,
+    prev_action: ZERO_ACTION_HASH,
     base_address: baseAddress,
-  };
+    link_add_address: createLinkHash,
+  });
 
   return {
     hashed: {
       content: action,
       hash: deleteHash,
     },
-    signature: new Uint8Array(64),
-  };
+    signature: ZERO_SIGNATURE,
+  } as SignedActionHashed;
 }
 
 /**
@@ -109,7 +116,7 @@ function processGetLinksDetailsInput(
   cascade: Cascade,
   storage: ReturnType<typeof getStorageProvider>,
   inputIndex: number
-): Array<[any, any[]]> {
+): LinkDetails {
   console.log(`[get_links_details] Input ${inputIndex}: Getting link details`, {
     base_hash: toBase64(input.base_address),
     linkType: JSON.stringify(input.link_type),
@@ -146,12 +153,12 @@ function processGetLinksDetailsInput(
   }
 
   // Build LinkDetails tuples: (CreateLink SignedActionHashed, [DeleteLink SignedActionHashed])
-  const details: Array<[any, any[]]> = filteredLinks.map(link => {
+  const details: LinkDetails = filteredLinks.map(link => {
     const createAction = buildCreateLinkSignedAction(link);
 
     // Check if this link has been deleted (from local storage)
     const localLink = localLinkMap.get(toBase64(link.create_link_hash));
-    const deletes: any[] = [];
+    const deletes: SignedActionHashed[] = [];
 
     if (localLink?.deleted && localLink.deleteHash) {
       deletes.push(buildDeleteLinkSignedAction(

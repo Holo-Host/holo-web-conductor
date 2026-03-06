@@ -1,6 +1,78 @@
 # Holochain Web Conductor Testing Guide
 
-This document covers testing procedures for the Holochain Web Conductor browser extension, including unit tests, integration tests, automated end-to-end tests, and manual test pages.
+This document covers testing for both **hApp developers testing their apps with HWC** and **HWC contributors testing the extension itself**.
+
+---
+
+## Testing Your hApp with HWC
+
+If you're building an app that uses `@holo-host/web-conductor-client`, here's how to test it.
+
+### Unit Testing (mocked extension)
+
+Mock `window.holochain` to test your app logic without the extension:
+
+```typescript
+// test-setup.ts
+const mockHolochain = {
+  isWebConductor: true,
+  version: '0.1.0',
+  myPubKey: new Uint8Array(39),
+  installedAppId: 'test-app',
+  connect: vi.fn().mockResolvedValue(undefined),
+  callZome: vi.fn().mockResolvedValue(/* your expected return */),
+  appInfo: vi.fn().mockResolvedValue({
+    contextId: 'test-app',
+    agentPubKey: new Uint8Array(39),
+    cells: [[new Uint8Array(39), new Uint8Array(39)]],
+    status: 'enabled',
+  }),
+  on: vi.fn().mockReturnValue(() => {}),
+  configureNetwork: vi.fn().mockResolvedValue(undefined),
+  getConnectionStatus: vi.fn().mockResolvedValue({
+    httpHealthy: true, wsHealthy: true, linkerUrl: 'ws://localhost:8090', lastChecked: Date.now(),
+  }),
+  onConnectionChange: vi.fn().mockReturnValue(() => {}),
+};
+
+(globalThis as any).window = { holochain: mockHolochain };
+```
+
+### E2E Testing (real extension + linker)
+
+For full integration testing with a real extension and linker, use the e2e test infrastructure in `packages/e2e/`. The `e2e-test-setup.sh` script orchestrates the full stack:
+
+1. Bootstraps Holochain conductors
+2. Starts the linker
+3. Loads the extension
+4. Runs Playwright tests
+
+See the [E2E Tests with Linker](#e2e-tests-with-linker) section below for details.
+
+### Testing Joining Service Flows
+
+The `@holo-host/joining-service` package includes test utilities:
+
+```typescript
+import { createApp, resolveConfig } from '@holo-host/joining-service';
+
+// Spin up a test joining service with open auth
+const config = resolveConfig({
+  happ: { id: 'test', name: 'Test' },
+  auth_methods: ['open'],
+  linker_urls: ['ws://localhost:8090'],
+});
+const app = createApp({ config });
+// Use with fetch() or a test HTTP client
+```
+
+See the joining-service [E2E tests](https://github.com/Holo-Host/joining-service/tree/main/test/e2e) for examples of testing email verification, invite codes, agent whitelist, and reconnect flows.
+
+---
+
+## HWC Internal Testing
+
+The rest of this document covers testing procedures for the Holochain Web Conductor extension itself.
 
 ## Quick Reference
 
