@@ -99,6 +99,24 @@ let nextRequestId = 1;
 let linkerUrl: string = '';
 let sessionToken: string | null = null;
 
+/**
+ * Trigger WS disconnect + reconnect to obtain a fresh session token.
+ * Uses wsService.getState() to avoid redundant cycles — if the WS is already
+ * reconnecting/connecting/authenticating, it's already working toward a new token.
+ */
+function triggerReauth(): void {
+  if (!wsService) return;
+
+  const state = wsService.getState();
+  if (state === "connecting" || state === "authenticating" || state === "reconnecting") {
+    return;
+  }
+
+  logNetwork.info("401 detected - triggering WS re-auth (was: " + state + ")");
+  wsService.disconnect();
+  wsService.connect();
+}
+
 // Recovery context tracking (for progress forwarding)
 let activeRecoveryContextId: string | null = null;
 
@@ -286,6 +304,11 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
     new Uint8Array(networkResultBuffer!, 8).set(responseBody);
 
     log.info("Network response:", xhr.status, responseBody.length, "bytes");
+
+    // If 401, session token is expired/invalid - trigger WS re-auth to get a fresh one
+    if (xhr.status === 401) {
+      triggerReauth();
+    }
 
     // Signal worker
     Atomics.store(networkSignalView!, 0, 1);
