@@ -102,7 +102,7 @@ describe('ConnectionMonitor', () => {
   describe('setLinkerHealth', () => {
     it('updates health status without changing connection status', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth(false, false, 'Linker unreachable');
+      monitor.setLinkerHealth(false, false, undefined, 'Linker unreachable');
 
       const state = monitor.getState();
       // Status should still be Connected (extension is connected)
@@ -119,7 +119,7 @@ describe('ConnectionMonitor', () => {
       const listener = vi.fn();
       monitor.on('connection:change', listener);
 
-      monitor.setLinkerHealth(false, true, 'HTTP down');
+      monitor.setLinkerHealth(false, true, undefined, 'HTTP down');
 
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -132,7 +132,7 @@ describe('ConnectionMonitor', () => {
 
     it('clears error when health is restored', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth(false, false, 'Linker down');
+      monitor.setLinkerHealth(false, false, undefined, 'Linker down');
       monitor.setLinkerHealth(true, true);
 
       const state = monitor.getState();

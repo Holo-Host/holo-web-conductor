@@ -11,7 +11,7 @@
     "build": "npm run build --workspaces",
     "build:extension": "npm run build --workspace=@hwc/core --workspace=@holo-host/lair --workspace=@hwc/shared --workspace=@hwc/extension",
     "pretest": "npm run build --workspace=@hwc/test-zome && cp packages/test-zome/target/wasm32-unknown-unknown/release/test_zome.wasm packages/extension/test/test-zome.wasm",
-    "typecheck": "npx tsc --noEmit -p packages/shared/tsconfig.json && npx tsc --noEmit -p packages/lair/tsconfig.json && npx tsc --noEmit -p packages/core/tsconfig.json && npx tsc --noEmit -p packages/extension/tsconfig.json",
+    "typecheck": "npx tsc --noEmit -p packages/shared/tsconfig.json && npx tsc --noEmit -p packages/lair/tsconfig.json && npx tsc --noEmit -p packages/core/tsconfig.json && npx tsc --noEmit -p packages/client/tsconfig.json && npx tsc --noEmit -p packages/extension/tsconfig.json",
     "test": "npm run typecheck && npm run test --workspaces",
     "test:integration": "npm run pretest && vitest run packages/core/src/ribosome/integration.test.ts",
     "test:unit": "vitest run --exclude 'packages/core/src/ribosome/integration.test.ts'",

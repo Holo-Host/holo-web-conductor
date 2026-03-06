@@ -722,6 +722,7 @@ interface OffscreenResponse {
   records?: any[];
   state?: string;
   isConnected?: boolean;
+  authenticated?: boolean;
   registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
   valid?: boolean;
   didWrite?: boolean;
