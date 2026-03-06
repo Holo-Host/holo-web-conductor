@@ -3,7 +3,7 @@
  *
  * This module implements the logic for generating DhtOps from source chain records.
  * Based on Holochain's produce_ops_from_record function in:
- * /home/eric/code/metacurrency/holochain/holochain/crates/holochain_types/src/dht_op.rs
+ * https://github.com/holochain/holochain/blob/main/crates/holochain_types/src/dht_op.rs
  */
 
 import type {

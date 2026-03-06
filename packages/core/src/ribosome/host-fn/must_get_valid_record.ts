@@ -7,7 +7,7 @@
  * Input: MustGetValidRecordInput (newtype wrapper around ActionHash - transparent in serde)
  * Output: Record = { signed_action: SignedActionHashed, entry: RecordEntry }
  *
- * For fishy (zero-arc), locally-authored data is treated as valid.
+ * For HWC (zero-arc), locally-authored data is treated as valid.
  * Data from network is trusted (the linker's peers validated it).
  *
  * In validation context, throws UnresolvedDependenciesError if not found.

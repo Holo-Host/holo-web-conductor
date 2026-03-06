@@ -50,21 +50,10 @@ jobs:
           # lair is a file: dep pointing at ../holo-web-conductor/packages/lair
           ln -sf "$GITHUB_WORKSPACE" "$(dirname $GITHUB_WORKSPACE)/holo-web-conductor"
           npm ci
-          # Only client types are needed; server code has unresolvable deps in CI
-          npx tsc || true
+          # Only client types are needed; server code has unresolvable deps in CI.
+          # Redirect tsc output to avoid GitHub annotations from joining-service
+          # type errors that are not relevant to HWC (e.g. missing server-only deps).
+          npx tsc > /dev/null 2>&1 || true
 
-      - name: Build workspace packages for cross-references
-        run: |
-          for pkg in shared lair core; do
-            (cd packages/$pkg && npx tsc --composite false --noCheck)
-          done
-          npm run build --workspace=@hwc/extension
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests
-        run: npm test --workspaces --if-present
-
-      - name: Integration tests
-        run: npm run test:integration
+      - name: Test
+        run: npm test

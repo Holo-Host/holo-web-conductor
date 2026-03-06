@@ -1,7 +1,7 @@
 /**
  * Validation Pipeline
  *
- * Implements inline validation for fishy:
+ * Implements inline validation for HWC:
  * - Converts pending records to Op types
  * - Resolves which integrity zome(s) to invoke for each Op
  * - Calls the `validate` WASM export on each integrity zome
@@ -55,7 +55,7 @@ const log = createLogger("Validate");
  * 4. Determine which integrity zome(s) to invoke
  * 5. Call validate export on each zome
  * 6. If any returns Invalid, throw (caller should rollback)
- * 7. If any returns UnresolvedDependencies, throw (fishy can't retry)
+ * 7. If any returns UnresolvedDependencies, throw (HWC can't retry)
  *
  * @param pendingRecords - Records created during this zome call
  * @param context - The current call context

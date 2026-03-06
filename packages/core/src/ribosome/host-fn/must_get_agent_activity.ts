@@ -6,7 +6,7 @@
  * Input: MustGetAgentActivityInput { author: AgentPubKey, chain_filter: ChainFilter }
  * Output: Vec<RegisterAgentActivity> (array of { action: SignedActionHashed, cached_entry: null })
  *
- * Queries the network via linker since fishy is a zero-arc node.
+ * Queries the network via linker since HWC is a zero-arc node.
  * Falls back to local storage if network is unavailable.
  * In validation context, throws UnresolvedDependenciesError if data not found.
  */
