@@ -44,8 +44,14 @@ jobs:
 
       - run: npm ci
 
-      - name: Build joining-service types
-        run: cd "$(dirname $GITHUB_WORKSPACE)/joining-service" && npm ci && npm run build
+      - name: Build joining-service client types
+        working-directory: ${{ github.workspace }}/_joining-service
+        run: |
+          # lair is a file: dep pointing at ../holo-web-conductor/packages/lair
+          ln -sf "$GITHUB_WORKSPACE" "$(dirname $GITHUB_WORKSPACE)/holo-web-conductor"
+          npm ci
+          # Only client types are needed; server code has unresolvable deps in CI
+          npx tsc || true
 
       - name: Build workspace packages for cross-references
         run: |
