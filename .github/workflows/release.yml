@@ -21,6 +21,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # TODO: remove once @holo-host/joining-service is published to npm
+      - uses: actions/checkout@v4
+        with:
+          repository: Holo-Host/joining-service
+          path: _joining-service
+      - name: Link joining-service for file: dependency resolution
+        run: ln -sf "$GITHUB_WORKSPACE/_joining-service" "$(dirname $GITHUB_WORKSPACE)/joining-service"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -37,47 +45,16 @@ jobs:
 
       - run: npm ci
 
-      - name: Build extension
-        run: npm run build:extension
-
       - name: Run tests
         run: npm test --workspaces --if-present
 
-      - name: Package Chrome extension
-        run: |
-          cd packages/extension/dist
-          zip -r ../../../hwc-chrome-${{ github.ref_name }}.zip .
-
-      - name: Package Firefox extension
-        run: |
-          cp -r packages/extension/dist packages/extension/dist-firefox
-
-          node -e "
-            const fs = require('fs');
-            const manifest = JSON.parse(fs.readFileSync('packages/extension/dist-firefox/manifest.json', 'utf8'));
-
-            // Add Firefox gecko ID
-            manifest.browser_specific_settings = {
-              gecko: { id: 'holochain@holo.host' }
-            };
-
-            // Remove service worker module type (Firefox uses event pages)
-            if (manifest.background) {
-              delete manifest.background.type;
-            }
-
-            fs.writeFileSync('packages/extension/dist-firefox/manifest.json', JSON.stringify(manifest, null, 2));
-          "
-
-          cd packages/extension/dist-firefox
-          zip -r ../../../hwc-firefox-${{ github.ref_name }}.zip .
+      - name: Package extension
+        run: npm run release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            hwc-chrome-${{ github.ref_name }}.zip
-            hwc-firefox-${{ github.ref_name }}.zip
+          files: release/*.zip
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
