@@ -49,7 +49,7 @@ User's Browser                          Your Infrastructure
 
 ### 1. Deploy Holochain conductors
 
-You need at least one always-on Holochain conductor running your hApp's DNA. These are the "full nodes" that hold DHT data and gossip with each other. HWC browser nodes are zero-arc — they don't hold data for others.
+You need at least one always-on Holochain conductor running your hApp's DNA, and another node that was on at least once for the nodes to come up to full sync. These are the "full nodes" that hold DHT data and gossip with each other. HWC browser nodes are zero-arc — they don't hold data for others.
 
 ### 2. Deploy the linker
 
