@@ -21,7 +21,8 @@
     "e2e": "npx tsx packages/e2e/src/index.ts",
     "e2e:env": "npx tsx packages/e2e/src/index.ts env",
     "e2e:logs": "npx tsx packages/e2e/src/index.ts logs",
-    "e2e:test": "npx playwright test --config=packages/e2e/playwright.config.cjs"
+    "e2e:test": "npx playwright test --config=packages/e2e/playwright.config.cjs",
+    "release": "npm run build:extension && ./scripts/package-extension.sh"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
