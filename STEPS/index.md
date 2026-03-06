@@ -64,7 +64,10 @@
 | 24 | ✅ | Kitsune2 DHT Query Fix (resolved in 19.3/M4) |
 | 25 | ⏳ | Linker Record Response Format Fix |
 | 26 | ✅ | Membrane Proof Support |
+| 27 | ✅ | Joining Service Integration |
+| 28 | ✅ | Lair Generalization (non-browser environments) |
 | CI | ✅ | GitHub Actions CI for HWC and h2hc-linker |
+| CI-R | ✅ | Release Workflows (tag-triggered, extension + linker) |
 | Meta-1 | 📋 | Process Review (periodic) |
 
 **Legend**: ✅ Complete | ⏳ In Progress | 🔀 Pending Merge | 📋 Planned | ❌ Blocked
@@ -145,6 +148,34 @@ Full rename from fishy to holo-web-conductor (HWC):
 - E2E: env vars renamed `HC_MEMBRANE_*` -> `H2HC_LINKER_*`
 
 See [22_PLAN.md](./22_PLAN.md)
+
+### Step 27: Joining Service Integration (complete)
+**Status**: Complete (PR #27, merged to main)
+
+Integrated `@holo-host/joining-service/client` into the extension and client library:
+- `JoiningClient` for agent registration and provision lookup
+- `GatewayProxy` for linker URL discovery via joining service
+- WebSocket auth challenge-response flow (session tokens, Bearer auth)
+- `signJoiningNonce` and `signReconnectChallenge` extension APIs
+- OR challenge groups and `agent_whitelist` support
+- Auto re-join flow when agent not found in joining service
+- HTTP 401 triggers WS re-auth for stale session tokens
+
+### Step 28: Lair Generalization (complete)
+**Status**: Complete (PR #28, merged to main)
+
+Generalized the lair package to work outside browser environments:
+- Abstracted storage backend (IndexedDB for browser, pluggable for Node.js/other)
+- Enables joining service and other server-side code to use lair for key management
+
+### CI-R: Release Workflows (complete)
+**Status**: Complete (PR #32 for HWC, direct commit for h2hc-linker)
+
+Tag-triggered release CI for both repos:
+- **HWC**: `npm run release` builds extension, packages Chrome `.zip` and Firefox `.zip` (gecko ID patched). GitHub Actions creates release on `v*` tag push.
+- **h2hc-linker**: Matrix build for linux-x86_64, linux-aarch64, macos-aarch64. GitHub Actions creates release on `v*` tag push.
+- `COMPATIBILITY.md` in both repos for version coordination.
+- `scripts/package-extension.sh` for local release builds.
 
 ---
 

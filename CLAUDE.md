@@ -160,6 +160,8 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 | `LESSONS_LEARNED.md` | Failed approaches archive (serialization debugging) |
 | `DEVELOPMENT.md` | Build, test, and development workflow |
 | `TESTING.md` | Testing guide (unit, integration, e2e with linker) |
+| `DEPLOYING.md` | Deployment guide (linker setup, extension install, joining service) |
+| `COMPATIBILITY.md` | Version compatibility between HWC and h2hc-linker |
 | `STEPS/index.md` | Step status registry |
 | `STEPS/X_PLAN.md` | Detailed plan for step X |
 | `STEPS/X_COMPLETION.md` | Completion notes for step X |
