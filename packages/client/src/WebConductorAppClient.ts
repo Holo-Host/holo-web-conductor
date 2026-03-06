@@ -311,7 +311,7 @@ export class WebConductorAppClient implements AppClient {
       }
 
       provision = await session.getProvision();
-    } catch (e) {
+    } catch (e: unknown) {
       if (e instanceof JoiningError && e.code === 'agent_already_joined') {
         // Already joined — reconnect to get fresh URLs
         provision = await this.reconnectViaJoiningService(joiningClient, holochain);

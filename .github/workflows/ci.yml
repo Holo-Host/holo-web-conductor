@@ -44,6 +44,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Build joining-service types
+        run: cd "$(dirname $GITHUB_WORKSPACE)/joining-service" && npm ci && npm run build
+
       - name: Build workspace packages for cross-references
         run: |
           for pkg in shared lair core; do
