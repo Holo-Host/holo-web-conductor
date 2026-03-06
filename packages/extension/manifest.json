@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Holochain",
-  "version": "0.0.1",
+  "name": "Holo Web Conductor",
+  "version": "0.1.0",
   "description": "Browser extension implementation of Holochain conductor",
   "icons": {
     "16": "icons/holochain-16.png",
@@ -29,7 +29,7 @@
   ],
   "action": {
     "default_popup": "popup/index.html",
-    "default_title": "Holochain",
+    "default_title": "Holo Web Conductor",
     "default_icon": {
       "16": "icons/holochain-16.png",
       "48": "icons/holochain-48.png",

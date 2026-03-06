@@ -1,6 +1,6 @@
 {
   "name": "@hwc/extension",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Holo Web Conductor browser extension - Holochain conductor in the browser",
   "type": "module",

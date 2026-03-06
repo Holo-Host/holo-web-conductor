@@ -1,6 +1,6 @@
 {
   "name": "@hwc/e2e",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "E2E test runner for Holo Web Conductor browser extension",
   "type": "module",
