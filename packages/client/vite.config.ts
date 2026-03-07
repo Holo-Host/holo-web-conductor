@@ -14,14 +14,19 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
-      name: 'WebConductorClient',
-      formats: ['es', 'cjs'],
-      fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`,
+      entry: {
+        index: resolve(__dirname, 'src/index.ts'),
+        'connect-with-ui': resolve(__dirname, 'src/connect-with-ui.ts'),
+      },
+      formats: ['es'],
     },
     rollupOptions: {
-      // Don't bundle peer dependencies or the joining-service client
-      external: ['@holochain/client', '@holo-host/joining-service/client'],
+      // Don't bundle peer dependencies or the joining-service packages
+      external: [
+        '@holochain/client',
+        '@holo-host/joining-service/client',
+        '@holo-host/joining-service/ui/shoelace',
+      ],
       output: {
         globals: {
           '@holochain/client': 'HolochainClient',
@@ -32,7 +37,6 @@ export default defineConfig({
   },
   plugins: [
     dts({
-      rollupTypes: true,
       insertTypesEntry: true,
     }),
   ],
