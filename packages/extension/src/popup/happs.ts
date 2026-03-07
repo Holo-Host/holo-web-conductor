@@ -10,6 +10,7 @@ import {
   type ResponseMessage,
   type PublishStatusPayload,
 } from "../lib/messaging";
+import { encodeHashToBase64 } from "@holochain/client";
 
 interface HappContext {
   id: string;
@@ -103,22 +104,27 @@ function formatTimestamp(timestamp: number): string {
 }
 
 /**
- * Format public key for display (truncated)
+ * Ensure value is a real Uint8Array (Chrome messaging converts to plain objects)
  */
-function formatPubKey(pubKey: Uint8Array): string {
-  const hex = Array.from(pubKey)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return `${hex.substring(0, 8)}...${hex.substring(hex.length - 8)}`;
+function toUint8Array(data: Uint8Array | number[] | Record<string, number>): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (Array.isArray(data)) return new Uint8Array(data);
+  return new Uint8Array(Object.values(data));
 }
 
 /**
- * Format public key to full hex
+ * Format public key for display (truncated base64)
  */
-function formatPubKeyFull(pubKey: Uint8Array): string {
-  return Array.from(pubKey)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+function formatPubKey(pubKey: Uint8Array | number[] | Record<string, number>): string {
+  const b64 = encodeHashToBase64(toUint8Array(pubKey));
+  return `${b64.substring(0, 12)}...${b64.substring(b64.length - 8)}`;
+}
+
+/**
+ * Format public key to full base64
+ */
+function formatPubKeyFull(pubKey: Uint8Array | number[] | Record<string, number>): string {
+  return encodeHashToBase64(toUint8Array(pubKey));
 }
 
 /**
