@@ -137,16 +137,18 @@ describe('NetworkCache', () => {
     expect(result).toEqual(record);
   });
 
-  it('should return null for expired record', async () => {
-    const shortTTLCache = new NetworkCache({ ttl: 10 }); // 10ms TTL
+  it('should never expire records (immutable, no TTL)', async () => {
+    const cache2 = new NetworkCache({ ttl: 10 }); // legacy ttl only affects details
     const hash = createHash(10);
-    shortTTLCache.cacheRecordSync(hash, createNetworkRecord(10));
+    const record = createNetworkRecord(10);
+    cache2.cacheRecordSync(hash, record);
 
-    // Wait for expiration
+    // Wait well past any old TTL
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const result = shortTTLCache.getRecordSync(hash);
-    expect(result).toBeNull();
+    // Records are content-addressed and immutable -- they never expire
+    const result = cache2.getRecordSync(hash);
+    expect(result).toEqual(record);
   });
 
   it('should cache and retrieve links', () => {

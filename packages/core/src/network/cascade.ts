@@ -25,6 +25,7 @@ import {
   type AnyDhtHash,
   type SignedActionHashed,
   type Entry,
+  type GetStrategy,
 } from '../types/holochain-types';
 import { createLogger } from '@hwc/shared';
 
@@ -112,9 +113,14 @@ export class Cascade {
   fetchRecord(
     dnaHash: DnaHash,
     hash: AnyDhtHash,
-    options?: CascadeOptions
+    options?: CascadeOptions,
+    strategy?: GetStrategy
   ): NetworkRecord | null {
     const opts = { ...this.options, ...options };
+    // Local strategy: skip network, only check local storage + cache
+    if (strategy === 'Local') {
+      opts.useNetwork = false;
+    }
 
     // Determine hash type and dispatch to appropriate method
     if (isEntryHash(hash)) {
@@ -337,9 +343,14 @@ export class Cascade {
     agentPubKey: Uint8Array,
     baseAddress: AnyDhtHash,
     filter?: LinkTypeFilter,
-    options?: CascadeOptions
+    options?: CascadeOptions,
+    strategy?: GetStrategy
   ): NetworkLink[] {
     const opts = { ...this.options, ...options };
+    // Local strategy: skip network, only check local storage + cache
+    if (strategy === 'Local') {
+      opts.useNetwork = false;
+    }
 
     log.debug(` Fetching links for base: ${this.hashToBase64(baseAddress)}`);
 
@@ -465,6 +476,7 @@ export class Cascade {
    */
   invalidate(hash: AnyDhtHash): void {
     this.cache.invalidateRecord(hash);
+    this.cache.invalidateDetails(hash);
   }
 
   /**
@@ -499,9 +511,13 @@ export class Cascade {
     dnaHash: DnaHash,
     agentPubKey: Uint8Array,
     hash: AnyDhtHash,
-    options?: CascadeOptions
+    options?: CascadeOptions,
+    strategy?: GetStrategy
   ): any | null {
     const opts = { ...this.options, ...options };
+    if (strategy === 'Local') {
+      opts.useNetwork = false;
+    }
 
     // Detect hash type from prefix bytes
     if (isEntryHash(hash)) {
@@ -533,14 +549,25 @@ export class Cascade {
       return { source: 'local', details: localDetails };
     }
 
-    // 2. Try network (if enabled)
+    // 2. Try details cache
+    const cached = this.cache.getDetailsSync(entryHash);
+    if (cached !== null) {
+      log.debug(` Found entry details in cache`);
+      return cached;
+    }
+
+    // 3. Try network (if enabled)
     if (opts.useNetwork && this.network?.isAvailable()) {
       log.debug(`🌐 Fetching entry details from NETWORK`);
       try {
         const networkDetails = this.network.getDetailsSync(dnaHash, entryHash);
         if (networkDetails) {
           log.debug(`🌐 Found entry details in NETWORK`);
-          return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
+          const result = { source: 'network', details: this.normalizeByteArrays(networkDetails) };
+          if (opts.cacheNetworkResults) {
+            this.cache.cacheDetailsSync(entryHash, result);
+          }
+          return result;
         }
       } catch (error) {
         console.warn(`[Cascade] Network details fetch failed:`, error);
@@ -577,14 +604,25 @@ export class Cascade {
       }
     }
 
-    // 2. Try network (if enabled)
+    // 2. Try details cache
+    const cached = this.cache.getDetailsSync(actionHash);
+    if (cached !== null) {
+      log.debug(` Found record details in cache`);
+      return cached;
+    }
+
+    // 3. Try network (if enabled)
     if (opts.useNetwork && this.network?.isAvailable()) {
       log.debug(`🌐 Fetching record details from NETWORK`);
       try {
         const networkDetails = this.network.getDetailsSync(dnaHash, actionHash);
         if (networkDetails) {
           log.debug(`🌐 Found record details in NETWORK`);
-          return { source: 'network', details: this.normalizeByteArrays(networkDetails) };
+          const result = { source: 'network', details: this.normalizeByteArrays(networkDetails) };
+          if (opts.cacheNetworkResults) {
+            this.cache.cacheDetailsSync(actionHash, result);
+          }
+          return result;
         }
       } catch (error) {
         console.warn(`[Cascade] Network details fetch failed:`, error);

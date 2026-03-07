@@ -1,11 +1,13 @@
 /**
  * Network Cache
  *
- * In-memory cache for network data with optional TTL expiration.
- * This cache stores data fetched from the network to avoid redundant requests.
+ * In-memory cache for network data with strategy-appropriate lifetime policies:
+ * - Records: LRU, no TTL (content-addressed, immutable)
+ * - Links: LRU, no TTL (invalidated explicitly or via optimistic merge)
+ * - Details: TTL-based (contains mutable metadata like updates/deletes)
  *
- * Note: This is a simple in-memory cache. For persistent caching across
- * extension restarts, we could extend this to use IndexedDB.
+ * Records support dual-keying: a record cached by action hash is also
+ * findable by entry hash (and vice versa) via an alias map.
  */
 
 import type {
@@ -23,138 +25,286 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-/**
- * Default cache options
- */
-const DEFAULT_OPTIONS: Required<NetworkCacheOptions> = {
-  ttl: 5 * 60 * 1000, // 5 minutes
-  maxEntries: 1000,
-};
+// ============================================================================
+// LRU Record Cache (no TTL -- records are immutable/content-addressed)
+// ============================================================================
 
-/**
- * In-memory network cache
- */
-export class NetworkCache {
-  private records = new Map<string, CacheEntry<NetworkRecord>>();
-  private links = new Map<string, CacheEntry<NetworkLink[]>>();
-  private options: Required<NetworkCacheOptions>;
+class LRURecordCache {
+  private map = new Map<string, NetworkRecord>();
+  private aliasMap = new Map<string, string>(); // alias key -> canonical key
+  private maxEntries: number;
 
-  constructor(options?: NetworkCacheOptions) {
-    this.options = { ...DEFAULT_OPTIONS, ...options };
+  constructor(maxEntries: number) {
+    this.maxEntries = maxEntries;
   }
 
-  /**
-   * Check if a cache entry is expired
-   */
-  private isExpired(entry: CacheEntry<any>): boolean {
-    return Date.now() > entry.expiresAt;
+  get(key: string): NetworkRecord | null {
+    // Resolve alias
+    const canonicalKey = this.aliasMap.get(key) ?? key;
+    const value = this.map.get(canonicalKey);
+    if (value === undefined) return null;
+
+    // LRU touch: delete and re-insert to move to end
+    this.map.delete(canonicalKey);
+    this.map.set(canonicalKey, value);
+    return value;
   }
 
-  /**
-   * Evict expired entries and trim to max size
-   */
-  private evict(): void {
-    const now = Date.now();
-
-    // Remove expired entries
-    for (const [key, entry] of this.records.entries()) {
-      if (now > entry.expiresAt) {
-        this.records.delete(key);
-      }
+  set(key: string, value: NetworkRecord): void {
+    // If already exists, delete first (to update position)
+    if (this.map.has(key)) {
+      this.map.delete(key);
     }
+    this.map.set(key, value);
 
-    for (const [key, entry] of this.links.entries()) {
-      if (now > entry.expiresAt) {
-        this.links.delete(key);
-      }
-    }
-
-    // Trim to max size (LRU-ish: just remove oldest entries)
-    const totalEntries = this.records.size + this.links.size;
-    if (totalEntries > this.options.maxEntries) {
-      const toRemove = totalEntries - this.options.maxEntries;
-
-      // Remove oldest record entries first
-      let removed = 0;
-      for (const key of this.records.keys()) {
-        if (removed >= toRemove) break;
-        this.records.delete(key);
-        removed++;
-      }
-
-      // Then links if needed
-      for (const key of this.links.keys()) {
-        if (removed >= toRemove) break;
-        this.links.delete(key);
-        removed++;
+    // Evict oldest if over capacity
+    while (this.map.size > this.maxEntries) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) {
+        this.evictKey(oldest);
       }
     }
   }
 
-  /**
-   * Get a cached record (synchronous)
-   */
-  getRecordSync(hash: AnyDhtHash): NetworkRecord | null {
-    const key = toBase64(hash);
-    const entry = this.records.get(key);
+  setAlias(aliasKey: string, canonicalKey: string): void {
+    if (aliasKey !== canonicalKey) {
+      this.aliasMap.set(aliasKey, canonicalKey);
+    }
+  }
 
-    if (!entry) {
+  delete(key: string): void {
+    const canonicalKey = this.aliasMap.get(key) ?? key;
+    this.evictKey(canonicalKey);
+  }
+
+  private evictKey(canonicalKey: string): void {
+    this.map.delete(canonicalKey);
+    // Clean up aliases pointing to this key
+    for (const [alias, target] of this.aliasMap.entries()) {
+      if (target === canonicalKey) {
+        this.aliasMap.delete(alias);
+      }
+    }
+  }
+
+  clear(): void {
+    this.map.clear();
+    this.aliasMap.clear();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+// ============================================================================
+// TTL Cache (for details -- contains mutable metadata)
+// ============================================================================
+
+class TTLCache<T> {
+  private map = new Map<string, CacheEntry<T>>();
+  private maxEntries: number;
+  private ttl: number;
+
+  constructor(maxEntries: number, ttl: number) {
+    this.maxEntries = maxEntries;
+    this.ttl = ttl;
+  }
+
+  get(key: string): T | null {
+    const entry = this.map.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.map.delete(key);
       return null;
     }
-
-    if (this.isExpired(entry)) {
-      this.records.delete(key);
-      return null;
-    }
-
     return entry.data;
   }
 
-  /**
-   * Cache a record (synchronous)
-   */
-  cacheRecordSync(hash: AnyDhtHash, record: NetworkRecord): void {
-    const key = toBase64(hash);
+  set(key: string, data: T): void {
     const now = Date.now();
-
-    this.records.set(key, {
-      data: record,
+    // Delete first to update insertion order
+    this.map.delete(key);
+    this.map.set(key, {
+      data,
       fetchedAt: now,
-      expiresAt: now + this.options.ttl,
+      expiresAt: now + this.ttl,
     });
 
-    // Periodically evict
-    if (this.records.size + this.links.size > this.options.maxEntries * 1.1) {
+    // Evict if over capacity
+    if (this.map.size > this.maxEntries) {
       this.evict();
     }
   }
 
-  /**
-   * Get cached links for a base address (synchronous)
-   */
+  delete(key: string): void {
+    this.map.delete(key);
+  }
+
+  private evict(): void {
+    const now = Date.now();
+    // Remove expired first
+    for (const [key, entry] of this.map.entries()) {
+      if (now > entry.expiresAt) {
+        this.map.delete(key);
+      }
+    }
+    // Trim oldest if still over
+    while (this.map.size > this.maxEntries) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) {
+        this.map.delete(oldest);
+      }
+    }
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+// ============================================================================
+// LRU Link Cache (no TTL -- invalidated explicitly or via optimistic merge)
+// ============================================================================
+
+class LRULinkCache {
+  private map = new Map<string, NetworkLink[]>();
+  private maxEntries: number;
+
+  constructor(maxEntries: number) {
+    this.maxEntries = maxEntries;
+  }
+
+  get(key: string): NetworkLink[] | null {
+    const value = this.map.get(key);
+    if (value === undefined) return null;
+    // LRU touch
+    this.map.delete(key);
+    this.map.set(key, value);
+    return value;
+  }
+
+  set(key: string, value: NetworkLink[]): void {
+    this.map.delete(key);
+    this.map.set(key, value);
+    while (this.map.size > this.maxEntries) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) {
+        this.map.delete(oldest);
+      }
+    }
+  }
+
+  delete(key: string): void {
+    this.map.delete(key);
+  }
+
+  deleteByPrefix(baseKey: string): void {
+    for (const key of this.map.keys()) {
+      if (key === baseKey || key.startsWith(baseKey + ':')) {
+        this.map.delete(key);
+      }
+    }
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+
+  entries(): IterableIterator<[string, NetworkLink[]]> {
+    return this.map.entries();
+  }
+}
+
+// ============================================================================
+// Default cache options
+// ============================================================================
+
+const DEFAULT_RECORD_MAX = 10_000;
+const DEFAULT_LINK_MAX = 5_000;
+const DEFAULT_DETAILS_MAX = 1_000;
+const DEFAULT_DETAILS_TTL = 2 * 60 * 1000; // 2 minutes
+
+// ============================================================================
+// NetworkCache
+// ============================================================================
+
+/**
+ * In-memory network cache with strategy-appropriate lifetimes
+ */
+export class NetworkCache {
+  private records: LRURecordCache;
+  private links: LRULinkCache;
+  private details: TTLCache<any>;
+  private _recordMax: number;
+  private _linkMax: number;
+
+  constructor(options?: NetworkCacheOptions) {
+    // Support legacy options: map old ttl/maxEntries to new fields
+    const recordMax = options?.recordMaxEntries ?? DEFAULT_RECORD_MAX;
+    const linkMax = options?.linkMaxEntries ??
+      (options?.maxEntries ?? DEFAULT_LINK_MAX);
+    const detailsMax = options?.detailsMaxEntries ?? DEFAULT_DETAILS_MAX;
+    const detailsTtl = options?.detailsTtl ??
+      (options?.ttl ?? DEFAULT_DETAILS_TTL);
+
+    this._recordMax = recordMax;
+    this._linkMax = linkMax;
+    this.records = new LRURecordCache(recordMax);
+    this.links = new LRULinkCache(linkMax);
+    this.details = new TTLCache<any>(detailsMax, detailsTtl);
+  }
+
+  // --- Records (LRU, no TTL, dual-keyed) ---
+
+  getRecordSync(hash: AnyDhtHash): NetworkRecord | null {
+    const key = toBase64(hash);
+    return this.records.get(key);
+  }
+
+  cacheRecordSync(hash: AnyDhtHash, record: NetworkRecord): void {
+    const key = toBase64(hash);
+    this.records.set(key, record);
+
+    // Dual-keying: create alias from the "other" hash
+    const actionHash = record.signed_action?.hashed?.hash;
+    const content = record.signed_action?.hashed?.content as any;
+    const entryHash = content?.entry_hash ?? content?.entryHash;
+
+    if (actionHash instanceof Uint8Array && actionHash.length > 0 &&
+        entryHash instanceof Uint8Array && entryHash.length > 0) {
+      const actionKey = toBase64(actionHash);
+      const entryKey = toBase64(entryHash);
+      if (key === actionKey && entryKey !== actionKey) {
+        this.records.setAlias(entryKey, actionKey);
+      } else if (key === entryKey && actionKey !== entryKey) {
+        this.records.setAlias(actionKey, entryKey);
+      }
+    }
+  }
+
+  invalidateRecord(hash: AnyDhtHash): void {
+    const key = toBase64(hash);
+    this.records.delete(key);
+  }
+
+  // --- Links (LRU, no TTL) ---
+
   getLinksSync(baseAddress: AnyDhtHash, linkType?: number): NetworkLink[] | null {
-    // Include link type in key for type-specific caching
     const key = linkType !== undefined
       ? `${toBase64(baseAddress)}:${linkType}`
       : toBase64(baseAddress);
-
-    const entry = this.links.get(key);
-
-    if (!entry) {
-      return null;
-    }
-
-    if (this.isExpired(entry)) {
-      this.links.delete(key);
-      return null;
-    }
-
-    return entry.data;
+    return this.links.get(key);
   }
 
-  /**
-   * Cache links for a base address (synchronous)
-   */
   cacheLinksSync(
     baseAddress: AnyDhtHash,
     links: NetworkLink[],
@@ -163,75 +313,105 @@ export class NetworkCache {
     const key = linkType !== undefined
       ? `${toBase64(baseAddress)}:${linkType}`
       : toBase64(baseAddress);
-
-    const now = Date.now();
-
-    this.links.set(key, {
-      data: links,
-      fetchedAt: now,
-      expiresAt: now + this.options.ttl,
-    });
-
-    // Periodically evict
-    if (this.records.size + this.links.size > this.options.maxEntries * 1.1) {
-      this.evict();
-    }
+    this.links.set(key, links);
   }
 
-  /**
-   * Invalidate a cached record
-   */
-  invalidateRecord(hash: AnyDhtHash): void {
-    const key = toBase64(hash);
-    this.records.delete(key);
-  }
-
-  /**
-   * Invalidate cached links for a base address
-   */
   invalidateLinks(baseAddress: AnyDhtHash, linkType?: number): void {
     if (linkType !== undefined) {
       const key = `${toBase64(baseAddress)}:${linkType}`;
       this.links.delete(key);
     } else {
-      // Invalidate all link types for this base
       const baseKey = toBase64(baseAddress);
-      for (const key of this.links.keys()) {
-        if (key === baseKey || key.startsWith(baseKey + ':')) {
-          this.links.delete(key);
+      this.links.deleteByPrefix(baseKey);
+    }
+  }
+
+  /**
+   * Optimistic merge: add a single link into all matching cached link sets
+   * for the given base address. Called from create_link host function.
+   */
+  mergeLinkIntoCache(baseAddress: AnyDhtHash, link: NetworkLink): void {
+    const baseKey = toBase64(baseAddress);
+    for (const [key, links] of this.links.entries()) {
+      if (key === baseKey || key === `${baseKey}:${link.link_type}`) {
+        const exists = links.some(l =>
+          l.create_link_hash.length === link.create_link_hash.length &&
+          l.create_link_hash.every((b: number, i: number) => b === link.create_link_hash[i])
+        );
+        if (!exists) {
+          links.push(link);
         }
       }
     }
   }
 
   /**
-   * Clear the entire cache
+   * Optimistic remove: remove a link from all cached link sets
+   * for the given base address. Called from delete_link host function.
    */
+  removeLinkFromCache(baseAddress: AnyDhtHash, createLinkHash: Uint8Array): void {
+    const baseKey = toBase64(baseAddress);
+    for (const [key, links] of this.links.entries()) {
+      if (key === baseKey || key.startsWith(baseKey + ':')) {
+        const idx = links.findIndex(l =>
+          l.create_link_hash.length === createLinkHash.length &&
+          l.create_link_hash.every((b: number, i: number) => b === createLinkHash[i])
+        );
+        if (idx !== -1) {
+          links.splice(idx, 1);
+        }
+      }
+    }
+  }
+
+  // --- Details (TTL-based) ---
+
+  getDetailsSync(hash: AnyDhtHash): any | null {
+    const key = toBase64(hash);
+    return this.details.get(key);
+  }
+
+  cacheDetailsSync(hash: AnyDhtHash, details: any): void {
+    const key = toBase64(hash);
+    this.details.set(key, details);
+  }
+
+  invalidateDetails(hash: AnyDhtHash): void {
+    const key = toBase64(hash);
+    this.details.delete(key);
+  }
+
+  // --- General ---
+
   clear(): void {
     this.records.clear();
     this.links.clear();
+    this.details.clear();
   }
 
-  /**
-   * Get cache statistics
-   */
-  getStats(): { records: number; links: number; maxEntries: number } {
+  getStats(): {
+    records: number;
+    links: number;
+    details: number;
+    recordMaxEntries: number;
+    linkMaxEntries: number;
+  } {
     return {
       records: this.records.size,
       links: this.links.size,
-      maxEntries: this.options.maxEntries,
+      details: this.details.size,
+      recordMaxEntries: this._recordMax,
+      linkMaxEntries: this._linkMax,
     };
   }
 }
 
-/**
- * Singleton instance for the default network cache
- */
+// ============================================================================
+// Singleton
+// ============================================================================
+
 let defaultCache: NetworkCache | null = null;
 
-/**
- * Get the default network cache instance
- */
 export function getNetworkCache(): NetworkCache {
   if (!defaultCache) {
     defaultCache = new NetworkCache();
@@ -239,9 +419,6 @@ export function getNetworkCache(): NetworkCache {
   return defaultCache;
 }
 
-/**
- * Reset the default network cache (for testing)
- */
 export function resetNetworkCache(): void {
   defaultCache = null;
 }

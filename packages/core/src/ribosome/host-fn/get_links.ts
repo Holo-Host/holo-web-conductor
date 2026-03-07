@@ -8,9 +8,10 @@
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
-import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { Cascade, getNetworkCache, getNetworkService, getGetStrategyMode } from "../../network";
 import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
 import { hashFrom32AndType, HoloHashType, dhtLocationFrom32 } from "@holochain/client";
+import type { GetStrategy } from "../../types/holochain-types";
 
 /**
  * Link structure (matches Holochain's Link type)
@@ -108,11 +109,18 @@ function processGetLinksInput(
     tag_prefix: input.tag_prefix ? Array.from(input.tag_prefix) : null,
   });
 
+  // Resolve GetStrategy: compatibility mode forces Network
+  let strategy: GetStrategy | undefined;
+  const getOpts = input.get_options as { strategy?: GetStrategy } | undefined;
+  if (getOpts?.strategy && getGetStrategyMode() === 'honor') {
+    strategy = getOpts.strategy;
+  }
+
   const linkTypeFilter = parseLinkTypeFilter(input.link_type);
-  console.log(`[get_links] Input ${inputIndex}: Parsed linkTypeFilter:`, linkTypeFilter);
+  console.log(`[get_links] Input ${inputIndex}: Parsed linkTypeFilter:`, linkTypeFilter, strategy ? `strategy=${strategy}` : '');
 
   // Try cascade: local → cache → network
-  const networkLinks = cascade.fetchLinks(dnaHash, agentPubKey, input.base_address, linkTypeFilter);
+  const networkLinks = cascade.fetchLinks(dnaHash, agentPubKey, input.base_address, linkTypeFilter, undefined, strategy);
   console.log(`[get_links] Input ${inputIndex}: Cascade returned:`, networkLinks.length, "links");
 
   // Filter by tag prefix if specified
