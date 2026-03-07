@@ -102,7 +102,7 @@ This runs Vitest tests across all packages:
 - `packages/lair` - 1 test file (~25 tests): Key management
 - `packages/shared` - 1 test file: Shared utilities
 
-**Important**: Vitest uses esbuild, not tsc, so TypeScript type errors are not caught by vitest alone. However, `npm test` runs `npm run typecheck` (tsc --noEmit across all packages) before running vitest, so type errors will fail the pipeline. If you run vitest directly (e.g., `npx vitest run`), you bypass typechecking -- always use `npm test` or run `npm run typecheck` separately.
+**Important**: `npm test` includes typechecking, but running vitest directly does not. See [DEVELOPMENT.md](./DEVELOPMENT.md#typecheck-pipeline) for details.
 
 **Known issues**:
 - Some tests need libsodium; may fail with "No secure random number generator found" when run in isolation
@@ -275,6 +275,6 @@ npm run build
 
 **Arc not established**: Conductors need time to establish DHT arcs. `e2e-test-setup.sh` waits up to 90s (minimum 30s). Check conductor logs in `/tmp/hwc-e2e/*.log` for arc establishment messages.
 
-**Deserialization errors**: Verify that WASM boundary invariants are followed (see CLAUDE.md). Check that payloads with hashes use Uint8Array (39 bytes), not base64 strings or 32-byte raw keys.
+**Deserialization errors**: Verify that WASM boundary invariants are followed (see [CONTRIBUTING.md](./CONTRIBUTING.md)). Check that payloads with hashes use Uint8Array (39 bytes), not base64 strings or 32-byte raw keys.
 
 **Test hApp build failures**: For ziptest/mewsfeed, rebuild in respective repos and copy to `fixtures/`.

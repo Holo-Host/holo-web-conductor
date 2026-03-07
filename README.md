@@ -16,6 +16,7 @@ If you're building a Holochain application and want it to run via HWC:
 
 If you're working on HWC itself:
 
+- **[Contributing](./CONTRIBUTING.md)** — Project rules, coding standards, critical contracts
 - **[Architecture](./ARCHITECTURE.md)** — Internal system architecture, data flows, encoding boundaries, design decisions
 - **[Development](./DEVELOPMENT.md)** — Build setup, dependencies, development workflow
 - **[Testing](./TESTING.md)** — Testing guide (unit, integration, e2e with linker)
