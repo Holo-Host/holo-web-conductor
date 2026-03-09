@@ -86,6 +86,8 @@ export interface WebConductorAppClientOptions extends ConnectionConfig {
   claims?: Record<string, string>;
   /** Pre-obtained membrane proofs keyed by role name (bypasses joining service) */
   membraneProofs?: Record<string, Uint8Array>;
+  /** Skip the initial holochain.connect() call (already connected externally) */
+  skipExtensionConnect?: boolean;
 }
 
 /**
@@ -185,7 +187,9 @@ export class WebConductorAppClient implements AppClient {
     }
 
     // Connect to extension (triggers authorization popup if needed)
-    await holochain.connect();
+    if (!this.connectionConfig.skipExtensionConnect) {
+      await holochain.connect();
+    }
 
     // Check if hApp is already installed
     let needsRejoin = false;
