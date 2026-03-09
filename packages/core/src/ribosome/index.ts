@@ -34,6 +34,7 @@ import {
   type StorageProvider,
 } from "../storage";
 import type { EntryDef } from "../types/holochain-types";
+import { getNetworkCache } from "../network";
 import {
   startZomeCallMetrics,
   endZomeCallMetrics,
@@ -340,6 +341,19 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     }
     recordPhase('txCommit', performance.now() - commitStart);
     log.debug(' Transaction committed successfully');
+
+    // Apply pending cache operations now that data is persisted
+    if (context.pendingCacheOps && context.pendingCacheOps.length > 0) {
+      const cache = getNetworkCache();
+      for (const op of context.pendingCacheOps) {
+        if (op.type === 'mergeLink') {
+          cache.mergeLinkIntoCache(op.baseAddress, op.link);
+        } else if (op.type === 'removeLink') {
+          cache.removeLinkFromCache(op.baseAddress, op.createLinkHash);
+        }
+      }
+      log.debug(` Applied ${context.pendingCacheOps.length} cache operations`);
+    }
 
     // Collect ALL pending records including genesis
     const allPendingRecords = [

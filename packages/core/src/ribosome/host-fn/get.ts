@@ -9,10 +9,10 @@ import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { toHolochainAction } from "./action-serialization";
-import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { Cascade, getNetworkCache, getNetworkService, getGetStrategyMode } from "../../network";
 import type { Record as HolochainRecord } from "../holochain-types";
 import { isStoredDeleteAction, type StoredAction } from "../../storage/types";
-import type { WireAction, RecordEntry } from "../../types/holochain-types";
+import type { WireAction, RecordEntry, GetStrategy } from "../../types/holochain-types";
 import { validateWasmGetInputArray } from "../wasm-io-types";
 import { normalizeEntryBytes } from "./entry-utils";
 
@@ -31,15 +31,22 @@ function processGetInput(
 ): HolochainRecord | null {
   const { any_dht_hash } = input;
 
+  // Resolve GetStrategy: compatibility mode forces Network
+  let strategy: GetStrategy | undefined;
+  const opts = input.get_options as { strategy?: GetStrategy } | undefined;
+  if (opts?.strategy && getGetStrategyMode() === 'honor') {
+    strategy = opts.strategy;
+  }
+
   // Detect hash type based on prefix
   const hashType = any_dht_hash[0] === 132 && any_dht_hash[1] === 33 ? 'ENTRY' :
                    any_dht_hash[0] === 132 && any_dht_hash[1] === 41 ? 'ACTION' :
                    any_dht_hash[0] === 132 && any_dht_hash[1] === 32 ? 'AGENT' : 'UNKNOWN';
 
-  console.log(`[get] Input ${inputIndex}: Getting ${hashType} hash: ${toBase64(any_dht_hash)}`);
+  console.log(`[get] Input ${inputIndex}: Getting ${hashType} hash: ${toBase64(any_dht_hash)}${strategy ? ` strategy=${strategy}` : ''}`);
 
   // Try cascade: local → cache → network
-  const networkRecord = cascade.fetchRecord(dnaHash, any_dht_hash);
+  const networkRecord = cascade.fetchRecord(dnaHash, any_dht_hash, undefined, strategy);
 
   if (!networkRecord) {
     console.log(`[get] Input ${inputIndex}: NOT FOUND`);

@@ -90,6 +90,16 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.deleteLink(input.address, actionHash);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
+  // Queue optimistic cache remove -- applied after transaction commits successfully
+  if (!callContext.pendingCacheOps) {
+    callContext.pendingCacheOps = [];
+  }
+  callContext.pendingCacheOps.push({
+    type: 'removeLink',
+    baseAddress: createLinkAction.baseAddress,
+    createLinkHash: input.address,
+  });
+
   // Track record for publishing after transaction commits (no entry for delete_link)
   if (!callContext.pendingRecords) {
     callContext.pendingRecords = [];

@@ -47,6 +47,29 @@ export {
 export { Cascade } from './cascade';
 export type { CascadeOptions } from './cascade';
 
+// GetStrategy mode: controls whether happ-provided GetStrategy is honored or forced to Network
+export type GetStrategyMode = 'compatibility' | 'honor';
+let getStrategyMode: GetStrategyMode = 'compatibility';
+
+/**
+ * Set the GetStrategy mode.
+ * - 'compatibility' (default): forces all get/get_links to Network strategy,
+ *   ignoring what the happ requests. Safe for happs not designed for zero-arc.
+ * - 'honor': respects the happ's GetStrategy, enabling Local-first caching.
+ */
+export function setGetStrategyMode(mode: GetStrategyMode): void {
+  getStrategyMode = mode;
+  console.log('[Network] GetStrategy mode set:', mode);
+}
+
+export function getGetStrategyMode(): GetStrategyMode {
+  return getStrategyMode;
+}
+
+export function resetGetStrategyMode(): void {
+  getStrategyMode = 'compatibility';
+}
+
 // Global network service configuration
 let globalNetworkService: NetworkService | null = null;
 
