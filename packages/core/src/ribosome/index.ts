@@ -34,6 +34,7 @@ import {
   type StorageProvider,
 } from "../storage";
 import type { EntryDef } from "../types/holochain-types";
+import { getNetworkCache } from "../network";
 import {
   startZomeCallMetrics,
   endZomeCallMetrics,
@@ -343,7 +344,6 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
 
     // Apply pending cache operations now that data is persisted
     if (context.pendingCacheOps && context.pendingCacheOps.length > 0) {
-      const { getNetworkCache } = await import('../network');
       const cache = getNetworkCache();
       for (const op of context.pendingCacheOps) {
         if (op.type === 'mergeLink') {
