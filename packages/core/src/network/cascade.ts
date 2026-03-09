@@ -360,50 +360,23 @@ export class Cascade {
 
     log.debug(` linkType filter: zomeIndex=${zomeIndex}, linkType=${linkType}`);
 
-    // Collect links from all sources
-    const allLinks: NetworkLink[] = [];
-
-    // 1. Try local storage (always synchronous)
+    // 1. Get local links (always synchronous) - these are our own unpublished data
     log.debug(` Querying local storage with base=${this.hashToBase64(baseAddress)}, linkType=${linkType}`);
     const localLinks = this.storage.getLinks(baseAddress, dnaHash, agentPubKey, linkType);
     log.debug(` Local storage returned ${localLinks.length} links`);
+    const localNetworkLinks = localLinks.map(l => this.storedLinkToNetworkLink(l));
 
-    if (localLinks.length > 0) {
-      log.debug(` Found ${localLinks.length} links in local storage`);
-      // Convert to NetworkLink format
-      allLinks.push(...localLinks.map(l => this.storedLinkToNetworkLink(l)));
-    }
-
-    // 2. Try network cache
-    const cached = this.cache.getLinksSync(baseAddress, linkType);
-    if (cached !== null && cached.length > 0) {
-      log.debug(` Found ${cached.length} links in network cache`);
-      // Merge with local, avoiding duplicates
-      for (const link of cached) {
-        if (!allLinks.some(l => this.linksEqual(l, link))) {
-          allLinks.push(link);
-        }
-      }
-    }
-
-    // 3. Try network (if enabled) - ALWAYS fetch to get other agents' links
+    // 2. Try network (if enabled) - authoritative source for other agents' links
     // Links are non-deterministic: we can't know we have them all without querying.
+    let networkLinks: NetworkLink[] | null = null;
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
       log.info(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, zomeIndex=${zomeIndex}, linkType=${linkType}`);
       try {
-        const networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType, zomeIndex);
+        networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType, zomeIndex);
         log.info(`🌐 Network returned ${networkLinks.length} links`);
 
-        if (networkLinks.length > 0) {
-          if (opts.cacheNetworkResults) {
-            this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
-          }
-          // Merge with local, avoiding duplicates
-          for (const link of networkLinks) {
-            if (!allLinks.some(l => this.linksEqual(l, link))) {
-              allLinks.push(link);
-            }
-          }
+        if (opts.cacheNetworkResults) {
+          this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
         }
       } catch (error) {
         log.error(`🌐 Network fetch error: ${error}`);
@@ -413,6 +386,33 @@ export class Cascade {
         log.debug(` Network not configured for links - call configureNetwork() first`);
       } else if (!this.network.isAvailable()) {
         log.debug(` Network service not available for links (linker: ${this.network.getLinkerUrl()})`);
+      }
+    }
+
+    // 3. Build result set:
+    // - If network was queried: use network results + merge in local (unpublished) data
+    // - If network was NOT queried (Local strategy or unavailable): use local + cache
+    let allLinks: NetworkLink[];
+    if (networkLinks !== null) {
+      // Network is authoritative. Start with network results, then merge in local
+      // data that may not yet be published.
+      allLinks = [...networkLinks];
+      for (const link of localNetworkLinks) {
+        if (!allLinks.some(l => this.linksEqual(l, link))) {
+          allLinks.push(link);
+        }
+      }
+    } else {
+      // Network unavailable -- fall back to local + cache
+      allLinks = [...localNetworkLinks];
+      const cached = this.cache.getLinksSync(baseAddress, linkType);
+      if (cached !== null && cached.length > 0) {
+        log.debug(` Found ${cached.length} links in network cache (fallback)`);
+        for (const link of cached) {
+          if (!allLinks.some(l => this.linksEqual(l, link))) {
+            allLinks.push(link);
+          }
+        }
       }
     }
 

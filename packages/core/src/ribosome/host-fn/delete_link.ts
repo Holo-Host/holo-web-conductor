@@ -7,7 +7,6 @@
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
-import { getNetworkCache } from "../../network";
 import type { DeleteLinkAction } from "../../storage/types";
 import { computeActionHashV2, serializeAction } from "../../hash";
 import { buildDeleteLinkAction } from "../../types/holochain-serialization";
@@ -91,8 +90,15 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.deleteLink(input.address, actionHash);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
-  // Optimistic cache remove: remove link from cached link sets
-  getNetworkCache().removeLinkFromCache(createLinkAction.baseAddress, input.address);
+  // Queue optimistic cache remove -- applied after transaction commits successfully
+  if (!callContext.pendingCacheOps) {
+    callContext.pendingCacheOps = [];
+  }
+  callContext.pendingCacheOps.push({
+    type: 'removeLink',
+    baseAddress: createLinkAction.baseAddress,
+    createLinkHash: input.address,
+  });
 
   // Track record for publishing after transaction commits (no entry for delete_link)
   if (!callContext.pendingRecords) {

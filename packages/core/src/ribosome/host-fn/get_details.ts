@@ -16,7 +16,8 @@ import { toHolochainAction } from "./action-serialization";
 import { buildEntry } from "./entry-utils";
 import { HoloHashType, getHashType } from "@holochain/client";
 import type { EntryHash, ActionHash } from "@holochain/client";
-import { Cascade, getNetworkCache, getNetworkService } from "../../network";
+import { Cascade, getNetworkCache, getNetworkService, getGetStrategyMode } from "../../network";
+import type { GetStrategy } from "../../types/holochain-types";
 
 // Helper to convert to base64url for logging
 const toBase64 = (arr: Uint8Array) => {
@@ -37,21 +38,29 @@ function processGetDetailsInput(
 ): any | null {
   const inputHash = input.any_dht_hash;
 
+  // Resolve GetStrategy: compatibility mode forces Network
+  let strategy: GetStrategy | undefined;
+  const opts = input.get_options as { strategy?: GetStrategy } | undefined;
+  if (opts?.strategy && getGetStrategyMode() === 'honor') {
+    strategy = opts.strategy;
+  }
+
   // Detect hash type from prefix bytes
   const hashType = getHashType(inputHash);
 
   console.log(`[get_details] Input ${inputIndex}:`, {
     hash: toBase64(inputHash),
     hashType,
+    ...(strategy ? { strategy } : {}),
   });
 
   // Route based on hash type
   if (hashType === HoloHashType.Entry) {
-    return processEntryHashQuery(inputHash as EntryHash, dnaHash, agentPubKey, storage, cascade, inputIndex);
+    return processEntryHashQuery(inputHash as EntryHash, dnaHash, agentPubKey, storage, cascade, inputIndex, strategy);
   }
 
   // Default: treat as action hash query
-  return processActionHashQuery(inputHash as ActionHash, dnaHash, agentPubKey, storage, cascade, inputIndex);
+  return processActionHashQuery(inputHash as ActionHash, dnaHash, agentPubKey, storage, cascade, inputIndex, strategy);
 }
 
 /**
@@ -97,12 +106,13 @@ function processEntryHashQuery(
   agentPubKey: Uint8Array,
   storage: ReturnType<typeof getStorageProvider>,
   cascade: Cascade,
-  inputIndex: number
+  inputIndex: number,
+  strategy?: GetStrategy
 ): any | null {
   console.log(`[get_details] Input ${inputIndex}: entry hash query`);
 
   // Use cascade for local-first with network fallback
-  const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, entryHash);
+  const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, entryHash, undefined, strategy);
 
   if (!cascadeResult) {
     console.log(`[get_details] Input ${inputIndex}: No entry details found`);
@@ -172,14 +182,15 @@ function processActionHashQuery(
   agentPubKey: Uint8Array,
   storage: ReturnType<typeof getStorageProvider>,
   cascade: Cascade,
-  inputIndex: number
+  inputIndex: number,
+  strategy?: GetStrategy
 ): any | null {
   console.log(`[get_details] Input ${inputIndex}: action hash query`, {
     actionHash: toBase64(actionHash),
   });
 
   // Use cascade for local-first with network fallback
-  const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, actionHash);
+  const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, actionHash, undefined, strategy);
 
   if (!cascadeResult) {
     console.log(`[get_details] Input ${inputIndex}: No record details found`);

@@ -378,3 +378,108 @@ describe('NetworkCache - Legacy Options', () => {
     vi.useRealTimers();
   });
 });
+
+describe('NetworkCache - Link Deletion Clears Cache', () => {
+  let cache: NetworkCache;
+
+  beforeEach(() => {
+    cache = new NetworkCache();
+  });
+
+  it('should remove deleted link from untyped cache entry', () => {
+    const base = createActionHash(50);
+    const link1 = createLink(1, 50);
+    const link2 = createLink(2, 50);
+    cache.cacheLinksSync(base, [link1, link2]);
+
+    cache.removeLinkFromCache(base, link1.create_link_hash);
+
+    const result = cache.getLinksSync(base);
+    expect(result).toHaveLength(1);
+    expect(result![0].link_type).toBe(2);
+  });
+
+  it('should remove deleted link from typed cache entry', () => {
+    const base = createActionHash(50);
+    const link = createLink(3, 50);
+    cache.cacheLinksSync(base, [link], 3);
+
+    cache.removeLinkFromCache(base, link.create_link_hash);
+
+    expect(cache.getLinksSync(base, 3)).toHaveLength(0);
+  });
+
+  it('should remove link from both typed and untyped cache entries', () => {
+    const base = createActionHash(50);
+    const link = createLink(4, 50);
+
+    // Cache the same link in both typed and untyped entries
+    cache.cacheLinksSync(base, [link]);
+    cache.cacheLinksSync(base, [link], 4);
+
+    cache.removeLinkFromCache(base, link.create_link_hash);
+
+    expect(cache.getLinksSync(base)).toHaveLength(0);
+    expect(cache.getLinksSync(base, 4)).toHaveLength(0);
+  });
+
+  it('should not affect other base addresses when removing link', () => {
+    const base1 = createActionHash(50);
+    const base2 = createActionHash(51);
+    const link1 = createLink(1, 50);
+    const link2 = createLink(1, 51);
+
+    cache.cacheLinksSync(base1, [link1]);
+    cache.cacheLinksSync(base2, [link2]);
+
+    cache.removeLinkFromCache(base1, link1.create_link_hash);
+
+    expect(cache.getLinksSync(base1)).toHaveLength(0);
+    expect(cache.getLinksSync(base2)).toHaveLength(1);
+  });
+
+  it('should handle removing non-existent link gracefully', () => {
+    const base = createActionHash(50);
+    const link = createLink(1, 50);
+    cache.cacheLinksSync(base, [link]);
+
+    // Try to remove a link that doesn't exist
+    cache.removeLinkFromCache(base, createActionHash(255));
+
+    expect(cache.getLinksSync(base)).toHaveLength(1);
+  });
+});
+
+describe('NetworkCache - Details Invalidation on Record Invalidate', () => {
+  let cache: NetworkCache;
+
+  beforeEach(() => {
+    cache = new NetworkCache();
+  });
+
+  it('should cache and retrieve details by hash', () => {
+    const hash = createActionHash(1);
+    const details = { source: 'network', details: { record: { entry: 'test' }, deletes: [], updates: [] } };
+    cache.cacheDetailsSync(hash, details);
+    expect(cache.getDetailsSync(hash)).toBe(details);
+  });
+
+  it('should invalidate details when invalidateDetails is called', () => {
+    const hash = createActionHash(1);
+    cache.cacheDetailsSync(hash, { data: 'test' });
+    cache.invalidateDetails(hash);
+    expect(cache.getDetailsSync(hash)).toBeNull();
+  });
+
+  it('should not affect records when invalidating details', () => {
+    const hash = createActionHash(1);
+    const record = createRecord(1);
+    cache.cacheRecordSync(hash, record);
+    cache.cacheDetailsSync(hash, { data: 'test' });
+
+    cache.invalidateDetails(hash);
+
+    expect(cache.getDetailsSync(hash)).toBeNull();
+    expect(cache.getRecordSync(hash)).toBe(record);
+  });
+});

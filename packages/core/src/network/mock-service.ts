@@ -39,6 +39,7 @@ function toBase64(bytes: Uint8Array): string {
 export class MockNetworkService implements NetworkService {
   private records = new Map<string, NetworkRecord>();
   private links = new Map<string, NetworkLink[]>();
+  private details = new Map<string, any>();
   private available = true;
   private callLog: Array<{ method: string; args: any[] }> = [];
 
@@ -60,11 +61,20 @@ export class MockNetworkService implements NetworkService {
   }
 
   /**
+   * Add details that will be returned for the given hash
+   */
+  addDetails(hash: AnyDhtHash, details: any): void {
+    const key = toBase64(hash);
+    this.details.set(key, details);
+  }
+
+  /**
    * Clear all mock data
    */
   clear(): void {
     this.records.clear();
     this.links.clear();
+    this.details.clear();
     this.callLog = [];
   }
 
@@ -150,8 +160,8 @@ export class MockNetworkService implements NetworkService {
       throw new Error('Network unavailable');
     }
 
-    // Mock returns null - real implementation would return details
-    return null;
+    const key = toBase64(hash);
+    return this.details.get(key) ?? null;
   }
 
   countLinksSync(

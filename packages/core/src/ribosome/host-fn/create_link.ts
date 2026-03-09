@@ -7,7 +7,6 @@
 import { HostFunctionImpl } from "./base";
 import { deserializeFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
-import { getNetworkCache } from "../../network";
 import type { CreateLinkAction, Link } from "../../storage/types";
 import { computeActionHashV2, serializeAction } from "../../hash";
 import { buildCreateLinkAction } from "../../types/holochain-serialization";
@@ -168,16 +167,23 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.putLink(link, dnaHash, agentPubKey);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
-  // Optimistic cache merge: make new link immediately visible in cached link sets
-  getNetworkCache().mergeLinkIntoCache(input.base_address, {
-    create_link_hash: actionHash,
-    base: input.base_address,
-    target: input.target_address,
-    zome_index: zomeIndex,
-    link_type: linkType,
-    tag: input.tag,
-    timestamp: timestampMicros,
-    author: agentPubKey,
+  // Queue optimistic cache merge -- applied after transaction commits successfully
+  if (!callContext.pendingCacheOps) {
+    callContext.pendingCacheOps = [];
+  }
+  callContext.pendingCacheOps.push({
+    type: 'mergeLink',
+    baseAddress: input.base_address,
+    link: {
+      create_link_hash: actionHash,
+      base: input.base_address,
+      target: input.target_address,
+      zome_index: zomeIndex,
+      link_type: linkType,
+      tag: input.tag,
+      timestamp: timestampMicros,
+      author: agentPubKey,
+    },
   });
 
   // Track record for publishing after transaction commits (no entry for links)
