@@ -17,6 +17,7 @@ import {
   MessageType,
   createRequest,
 } from "../lib/messaging";
+import { PAGE_ALLOWED_TYPES } from "../lib/page-allowed-types";
 
 console.log("Holochain content script loaded");
 
@@ -98,6 +99,13 @@ window.addEventListener("message", (event) => {
 
   // Only handle hwc-page messages
   if (!message || message.source !== "hwc-page") return;
+
+  // Security: only relay message types the page SDK is allowed to send.
+  // Lair management, permission, and admin operations are blocked here.
+  if (!PAGE_ALLOWED_TYPES.has(message.type)) {
+    console.warn("[Content] Blocked disallowed message type:", message.type);
+    return;
+  }
 
   // Forward to background
   sendToBackground(message.type, message.payload, message.id).catch((error) => {
