@@ -69,6 +69,7 @@ describe("PAGE_ALLOWED_TYPES", () => {
 
   // Admin/debug operations must not be relayed from web pages
   const BLOCKED_ADMIN_TYPES = [
+    MessageType.LIST_HAPPS,
     MessageType.UNINSTALL_HAPP,
     MessageType.ENABLE_HAPP,
     MessageType.DISABLE_HAPP,
@@ -77,6 +78,8 @@ describe("PAGE_ALLOWED_TYPES", () => {
     MessageType.PUBLISH_ALL_RECORDS,
     MessageType.RECOVER_CHAIN,
     MessageType.GET_RECOVERY_PROGRESS,
+    MessageType.LINKER_DISCONNECT,
+    MessageType.LINKER_RECONNECT,
   ];
 
   for (const type of BLOCKED_ADMIN_TYPES) {
@@ -84,4 +87,40 @@ describe("PAGE_ALLOWED_TYPES", () => {
       expect(PAGE_ALLOWED_TYPES.has(type)).toBe(false);
     });
   }
+
+  // Response/push types are not page-initiated requests
+  const NON_REQUEST_TYPES = [
+    MessageType.SUCCESS,
+    MessageType.ERROR,
+    MessageType.SIGNAL,
+  ];
+
+  for (const type of NON_REQUEST_TYPES) {
+    it(`blocks non-request type: ${type}`, () => {
+      expect(PAGE_ALLOWED_TYPES.has(type)).toBe(false);
+    });
+  }
+
+  // Exhaustive check: every MessageType value must be either explicitly
+  // allowed or explicitly blocked above. If a new MessageType is added
+  // to the enum without updating this test, this test will fail —
+  // forcing the developer to decide whether it should be page-accessible.
+  //
+  // Note: PAGE_ALLOWED_TYPES uses string literals (not enum references)
+  // so that renaming an enum value is fail-safe — the allowlist silently
+  // becomes more restrictive rather than accidentally allowing something.
+  it("accounts for every MessageType enum value", () => {
+    const allExplicitlyListed = new Set<string>([
+      ...SDK_TYPES,
+      ...BLOCKED_LAIR_TYPES,
+      ...BLOCKED_PERMISSION_TYPES,
+      ...BLOCKED_ADMIN_TYPES,
+      ...NON_REQUEST_TYPES,
+    ]);
+
+    const allEnumValues = Object.values(MessageType) as string[];
+    const unlisted = allEnumValues.filter((v) => !allExplicitlyListed.has(v));
+
+    expect(unlisted).toEqual([]);
+  });
 });

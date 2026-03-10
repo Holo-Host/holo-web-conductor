@@ -377,7 +377,7 @@ async function handleMessage(
 
       // Lair lock/unlock operations
       case MessageType.LAIR_GET_LOCK_STATE:
-        return handleLairGetLockState(message);
+        return handleLairGetLockState(message, sender);
 
       case MessageType.LAIR_SET_PASSPHRASE:
         return handleLairSetPassphrase(message, sender);
@@ -406,7 +406,7 @@ async function handleMessage(
         return handleLairSign(message, sender);
 
       case MessageType.LAIR_VERIFY:
-        return handleLairVerify(message);
+        return handleLairVerify(message, sender);
 
       case MessageType.LAIR_DERIVE_SEED:
         return handleLairDeriveSeed(message, sender);
@@ -426,7 +426,7 @@ async function handleMessage(
         return handlePermissionDeny(message, sender);
 
       case MessageType.PERMISSION_LIST:
-        return handlePermissionList(message);
+        return handlePermissionList(message, sender);
 
       case MessageType.PERMISSION_REVOKE:
         return handlePermissionRevoke(message, sender);
@@ -1113,8 +1113,11 @@ async function handleProvideMemproofs(
  * Handle LAIR_GET_LOCK_STATE requests
  */
 async function handleLairGetLockState(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_GET_LOCK_STATE");
+  if (blocked) return blocked;
   try {
     const state = await lairLock.getLockState();
     return createSuccessResponse(message.id, state);
@@ -1375,8 +1378,11 @@ async function handleLairSign(
  * Handle LAIR_VERIFY requests
  */
 async function handleLairVerify(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_VERIFY");
+  if (blocked) return blocked;
   try {
     // Note: Verification doesn't require unlocking since it's public operation
     const payload = getPayload<MessageType.LAIR_VERIFY>(message);
@@ -1604,8 +1610,11 @@ async function handlePermissionDeny(
  * Handle PERMISSION_LIST requests
  */
 async function handlePermissionList(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "PERMISSION_LIST");
+  if (blocked) return blocked;
   try {
     const permissions = await permissionManager.listPermissions();
     return createSuccessResponse(message.id, { permissions });
