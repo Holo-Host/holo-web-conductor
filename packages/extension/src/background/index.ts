@@ -541,7 +541,7 @@ async function handleConnect(
     logAuth.debug(`Origin ${origin} was previously denied`);
     return createErrorResponse(
       message.id,
-      "Connection denied. This site was previously denied access to Holochain."
+      "Connection denied. This site was previously denied access to Holo Web Conductor."
     );
   }
 

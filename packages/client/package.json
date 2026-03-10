@@ -3,14 +3,17 @@
   "version": "0.1.0",
   "description": "Holochain AppClient for the Holo Web Conductor browser extension - drop-in replacement for @holochain/client",
   "type": "module",
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
+    },
+    "./ui": {
+      "import": "./dist/connect-with-ui.js",
+      "types": "./dist/connect-with-ui.d.ts"
     }
   },
   "files": [
