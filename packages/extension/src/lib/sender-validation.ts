@@ -13,21 +13,29 @@ export function rejectTabSender(
   operation: string
 ): ResponseMessage | null {
   if (sender.tab) {
-    return createErrorResponse(
-      messageId,
-      `${operation} is not allowed from web pages`
-    );
+    // Extension popup windows (opened via chrome.windows.create) also have
+    // sender.tab, but their URL starts with the extension protocol.
+    const url = sender.tab.url || sender.url || "";
+    if (!url.startsWith("chrome-extension://") && !url.startsWith("moz-extension://")) {
+      return createErrorResponse(
+        messageId,
+        `${operation} is not allowed from web pages`
+      );
+    }
   }
   return null;
 }
 
 /**
- * Check if the sender is from a tab context (content script relay).
+ * Check if the sender is from a web page tab (content script relay).
+ * Returns false for extension popup windows that also have sender.tab.
  */
 export function isTabSender(
   sender: chrome.runtime.MessageSender
 ): boolean {
-  return !!sender.tab;
+  if (!sender.tab) return false;
+  const url = sender.tab.url || sender.url || "";
+  return !url.startsWith("chrome-extension://") && !url.startsWith("moz-extension://");
 }
 
 /**

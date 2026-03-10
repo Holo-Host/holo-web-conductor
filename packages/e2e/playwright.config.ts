@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
-const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
+const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist-chrome');
 
 /**
  * Playwright configuration for HWC E2E tests

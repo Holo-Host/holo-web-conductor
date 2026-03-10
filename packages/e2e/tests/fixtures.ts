@@ -17,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
-const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
+const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist-chrome');
 const SANDBOX_DIR = '/tmp/hwc-e2e';
 // Use HTTP URL to avoid file:// issues with Chrome extension signal delivery
 const TEST_PAGE_URL = 'http://localhost:3333/e2e-linker-test.html';

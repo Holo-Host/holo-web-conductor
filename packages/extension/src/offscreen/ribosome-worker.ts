@@ -58,7 +58,7 @@ console.log = (...args: any[]) => {
 
 // Polyfill document for sqlite-wasm which tries to access it during module init in workers
 if (typeof document === 'undefined') {
-  const workerUrl = (self as any).location?.href || 'chrome-extension://placeholder/offscreen/ribosome-worker.js';
+  const workerUrl = (self as any).location?.href || '';
   const extensionRoot = workerUrl.replace(/\/offscreen\/ribosome-worker\.js.*$/, '/');
   (self as any).document = {
     currentScript: { src: workerUrl, tagName: 'SCRIPT' },
@@ -77,14 +77,16 @@ import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
 import { setNetworkService, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
 import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@holo-host/lair';
+import { createLairClient, type LairClient } from '@holo-host/lair';
 import { recoverChainFromDHT, storeRecoveredRecords } from '@hwc/core/recovery';
 import { isEntryAction, type Action, type StoredEntry, type StoredRecord, type ChainHead, type Link, type RecordDetails, type EntryDetails, type EntryDhtStatus, type CreateAction, type UpdateAction, type DeleteAction } from '@hwc/core/storage/types';
 import { encodeHashToBase64, type ActionHash, type EntryHash, type DnaHash, type AgentPubKey, type AnyDhtHash } from '@holochain/client';
+import { toUint8Array } from '@hwc/core';
 
 // Types
 interface WorkerMessage {
   id: number;
-  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN' | 'RUN_GENESIS';
+  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN' | 'RUN_GENESIS' | 'PRELOAD_SIGNING_KEY';
   payload?: any;
 }
 
@@ -120,8 +122,14 @@ let signResultView: Uint8Array | null = null;
 let linkerUrl: string = '';
 let sessionToken: string | null = null;
 
+// Firefox mode: worker does sync XHR directly and signs via postMessage roundtrip
+let firefoxMode = false;
+
 // Request ID counter
 let nextNetworkRequestId = 1;
+
+// Worker-local LairClient for Firefox mode (reads keys from shared IndexedDB)
+let workerLairClient: LairClient | null = null;
 
 // WASM cache - avoid re-sending 1.3MB on every call
 // Key: base64-encoded DNA hash, Value: Uint8Array of WASM
@@ -788,7 +796,6 @@ class ProxyLairClient implements ILairClient {
   }
 
   async signByPubKey(pub_key: Ed25519PubKey, data: Uint8Array): Promise<Ed25519Signature> {
-    // Forward to background for async signing
     return this.signSync(pub_key, data);
   }
 
@@ -799,6 +806,14 @@ class ProxyLairClient implements ILairClient {
   }
 
   signSync(pub_key: Ed25519PubKey, data: Uint8Array): Ed25519Signature {
+    if (firefoxMode) {
+      // Firefox: sign using worker-local LairClient (reads keys from shared IndexedDB)
+      if (!workerLairClient) {
+        throw new Error('Worker LairClient not initialized for Firefox signing');
+      }
+      return workerLairClient.signSync(pub_key, data);
+    }
+
     if (!signSignalBuffer || !signResultBuffer) {
       throw new Error('Sign buffers not initialized');
     }
@@ -908,6 +923,10 @@ class ProxyNetworkService implements NetworkService {
    * Low-level sync fetch via offscreen document
    */
   fetchSync(method: string, url: string, headers?: Record<string, string>, body?: Uint8Array): { status: number; body: Uint8Array } {
+    if (firefoxMode) {
+      return this.fetchSyncDirect(method, url, headers, body);
+    }
+
     if (!networkSignalBuffer || !networkResultBuffer) {
       throw new Error('Network buffers not initialized');
     }
@@ -944,6 +963,42 @@ class ProxyNetworkService implements NetworkService {
     console.log('[Ribosome Worker] Network response received, status:', status);
 
     return { status, body: new Uint8Array(responseBody) };
+  }
+
+  /**
+   * Firefox: Worker can do synchronous XMLHttpRequest directly.
+   * No SharedArrayBuffer or Atomics needed.
+   */
+  private fetchSyncDirect(method: string, url: string, headers?: Record<string, string>, body?: Uint8Array): { status: number; body: Uint8Array } {
+    let fullUrl = url;
+    if (!fullUrl.startsWith('http')) {
+      fullUrl = linkerUrl + url;
+    }
+
+    const mergedHeaders = { ...(headers || {}) };
+    if (sessionToken) {
+      mergedHeaders['Authorization'] = `Bearer ${sessionToken}`;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, fullUrl, false); // false = synchronous
+
+    for (const [key, value] of Object.entries(mergedHeaders)) {
+      xhr.setRequestHeader(key, value);
+    }
+
+    if (body) {
+      xhr.send(body.buffer as ArrayBuffer);
+    } else {
+      xhr.send();
+    }
+
+    const responseText = xhr.responseText || '';
+    const responseBody = new TextEncoder().encode(responseText);
+
+    console.log('[Ribosome Worker] Direct XHR response, status:', xhr.status, 'bytes:', responseBody.length);
+
+    return { status: xhr.status, body: responseBody };
   }
 
   /**
@@ -1449,6 +1504,20 @@ async function handleCallZome(payload: any): Promise<any> {
     throw new Error('No WASM available for DNA');
   }
 
+  // Normalize manifest WASM fields — they may arrive as Uint8Array (Firefox structured clone),
+  // number[] (pre-converted), or {0:x,1:y} objects (Chrome message passing corruption).
+  const normalizedManifest = dnaManifest ? {
+    ...dnaManifest,
+    integrity_zomes: (dnaManifest.integrity_zomes || []).map((z: any) => ({
+      ...z,
+      wasm: z.wasm ? toUint8Array(z.wasm) : undefined,
+    })),
+    coordinator_zomes: (dnaManifest.coordinator_zomes || []).map((z: any) => ({
+      ...z,
+      wasm: z.wasm ? toUint8Array(z.wasm) : undefined,
+    })),
+  } : dnaManifest;
+
   const request: ZomeCallRequest = {
     dnaWasm: cachedWasm,
     cellId: cellIdBytes,
@@ -1456,7 +1525,7 @@ async function handleCallZome(payload: any): Promise<any> {
     fn,
     payload: new Uint8Array(payloadBytes),
     provenance: new Uint8Array(provenance),
-    dnaManifest,
+    dnaManifest: normalizedManifest,
   };
   const afterBuildRequest = performance.now();
 
@@ -1544,25 +1613,39 @@ self.onmessage = async (event: MessageEvent) => {
         // Initialize SQLite
         await initSQLite();
 
-        // Set up network buffers
-        if (payload.networkSignalBuffer && payload.networkResultBuffer) {
-          const nsb: SharedArrayBuffer = payload.networkSignalBuffer;
-          const nrb: SharedArrayBuffer = payload.networkResultBuffer;
-          networkSignalBuffer = nsb;
-          networkSignalView = new Int32Array(nsb);
-          networkResultBuffer = nrb;
-          networkResultView = new Uint8Array(nrb);
-        }
+        if (payload.firefoxMode) {
+          // Firefox mode: no SharedArrayBuffer, worker does sync XHR directly
+          // and signing uses a worker-local LairClient (reads keys from shared IndexedDB)
+          firefoxMode = true;
+          console.log('[Ribosome Worker] Firefox mode enabled - direct sync XHR + local LairClient');
 
-        // Set up sign buffers
-        if (payload.signSignalBuffer && payload.signResultBuffer) {
-          const ssb: SharedArrayBuffer = payload.signSignalBuffer;
-          const srb: SharedArrayBuffer = payload.signResultBuffer;
-          signSignalBuffer = ssb;
-          signSignalView = new Int32Array(ssb);
-          signResultBuffer = srb;
-          signResultView = new Uint8Array(srb);
-          console.log('[Ribosome Worker] Sign buffers initialized');
+          // Create worker-local LairClient backed by the same IndexedDB as background
+          workerLairClient = await createLairClient();
+          console.log('[Ribosome Worker] Worker LairClient initialized from IndexedDB');
+
+          // Apply initial network config if provided
+          if (payload.linkerUrl) linkerUrl = payload.linkerUrl;
+          if (payload.sessionToken) sessionToken = payload.sessionToken;
+        } else {
+          // Chrome mode: SharedArrayBuffer + Atomics for sync coordination with offscreen
+          if (payload.networkSignalBuffer && payload.networkResultBuffer) {
+            const nsb: SharedArrayBuffer = payload.networkSignalBuffer;
+            const nrb: SharedArrayBuffer = payload.networkResultBuffer;
+            networkSignalBuffer = nsb;
+            networkSignalView = new Int32Array(nsb);
+            networkResultBuffer = nrb;
+            networkResultView = new Uint8Array(nrb);
+          }
+
+          if (payload.signSignalBuffer && payload.signResultBuffer) {
+            const ssb: SharedArrayBuffer = payload.signSignalBuffer;
+            const srb: SharedArrayBuffer = payload.signResultBuffer;
+            signSignalBuffer = ssb;
+            signSignalView = new Int32Array(ssb);
+            signResultBuffer = srb;
+            signResultView = new Uint8Array(srb);
+            console.log('[Ribosome Worker] Sign buffers initialized');
+          }
         }
 
         // Set storage provider for ribosome
@@ -1590,6 +1673,19 @@ self.onmessage = async (event: MessageEvent) => {
         result = { success: true, filter: workerLogFilter };
         break;
 
+      case 'PRELOAD_SIGNING_KEY': {
+        // Firefox mode: preload a signing key from IndexedDB into the worker's LairClient
+        if (!workerLairClient) {
+          throw new Error('Worker LairClient not initialized');
+        }
+        const { pubKey } = payload;
+        const pubKeyBytes = new Uint8Array(pubKey) as Ed25519PubKey;
+        await workerLairClient.preloadKeyForSync(pubKeyBytes);
+        console.log(`[Ribosome Worker] Signing key preloaded from IndexedDB`);
+        result = { success: true };
+        break;
+      }
+
       case 'CALL_ZOME': {
         // Chain onto zomeCallChain so concurrent CALL_ZOME messages execute
         // one at a time. Errors are isolated per-call (the chain always continues).
@@ -1602,6 +1698,8 @@ self.onmessage = async (event: MessageEvent) => {
       case 'NETWORK_RESPONSE':
         // Response from offscreen's sync XHR - signal is handled via Atomics
         break;
+
+      // No SIGN_RESPONSE handler needed: Firefox worker uses local LairClient for signing
 
       case 'GET_ALL_RECORDS': {
         // Get all records for a cell - used for republishing

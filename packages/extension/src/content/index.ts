@@ -34,13 +34,18 @@ const pendingRequests = new Map<
 >();
 
 /**
- * Send a message to the background service worker
+ * Send a message to the background service worker.
+ * Retries on "Receiving end does not exist" which can happen on Firefox
+ * when the event page is waking up from idle suspension.
  */
 async function sendToBackground(
   type: string,
   payload: any,
-  pageMessageId: string
+  pageMessageId: string,
+  retryCount = 0
 ): Promise<void> {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 300;
   const message = createRequest(type as any, payload);
 
   return new Promise((resolve, reject) => {
@@ -62,6 +67,18 @@ async function sendToBackground(
 
       if (runtimeError || !response) {
         const errorMsg = runtimeError?.message || "Background service worker disconnected";
+
+        // Retry on Firefox event page wake-up failures
+        if (errorMsg.includes("Receiving end does not exist") && retryCount < MAX_RETRIES) {
+          console.warn(`[Content] Background not ready, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+          setTimeout(() => {
+            sendToBackground(type, payload, pageMessageId, retryCount + 1)
+              .then(callbacks.resolve)
+              .catch(callbacks.reject);
+          }, RETRY_DELAY_MS * (retryCount + 1));
+          return;
+        }
+
         console.error("[Content] Background error:", errorMsg);
         window.postMessage({ source: "hwc-content", id: callbacks.pageMessageId, error: errorMsg }, "*");
         callbacks.reject(new Error(errorMsg));

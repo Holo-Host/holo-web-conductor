@@ -3,7 +3,7 @@ const { defineConfig, devices } = require('@playwright/test');
 const path = require('path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const EXTENSION_PATH = path.join(PROJECT_ROOT, 'packages', 'extension', 'dist');
+const EXTENSION_PATH = path.join(PROJECT_ROOT, 'packages', 'extension', 'dist-chrome');
 const ZIPTEST_UI_PATH = path.resolve(PROJECT_ROOT, '..', 'ziptest', 'ui', 'dist');
 
 /**

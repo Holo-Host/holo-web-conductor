@@ -62,6 +62,9 @@ import sodium from "libsodium-wrappers";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 import type { ZomeExecutor } from "../lib/zome-executor";
 import { ChromeOffscreenExecutor } from "./chrome-offscreen-executor";
+import { FirefoxDirectExecutor } from "./firefox-direct-executor";
+
+declare const __BROWSER__: "chrome" | "firefox";
 
 // Expose filter control to globalThis for runtime debugging
 // Usage in service worker console: setHwcLogFilter('Signal,CallZome') or hwcLogFilter = 'Signal'
@@ -83,7 +86,16 @@ log.info("Background service worker loaded");
 // ZomeExecutor - abstraction over offscreen document / WASM execution
 // ============================================================================
 
-const executor: ZomeExecutor = new ChromeOffscreenExecutor();
+function createExecutor(): ZomeExecutor {
+  if (typeof __BROWSER__ !== "undefined" && __BROWSER__ === "firefox") {
+    log.info("Using Firefox direct executor");
+    return new FirefoxDirectExecutor();
+  }
+  log.info("Using Chrome offscreen executor");
+  return new ChromeOffscreenExecutor();
+}
+
+const executor: ZomeExecutor = createExecutor();
 
 // Linker configuration - tracked in background for status reporting and health checks.
 // Executor gets its own copy via configureNetwork().
@@ -286,6 +298,26 @@ async function getLairClient() {
     lairClient = await createLairClient();
   }
   return lairClient;
+}
+
+/**
+ * Tell the executor's worker to preload an agent's signing key (Firefox only).
+ * On Chrome this is a no-op since signing uses SharedArrayBuffer roundtrip.
+ * On Firefox the worker creates its own LairClient from IndexedDB and calls
+ * preloadKeyForSync() — only the public key crosses the message boundary.
+ *
+ * @param agentPubKey - 39-byte AgentPubKey (3 prefix + 32 ed25519 + 4 location)
+ */
+async function preloadSigningKeyIfNeeded(agentPubKey: Uint8Array): Promise<void> {
+  if (!executor.preloadSigningKey) return; // Chrome executor doesn't have this
+
+  try {
+    const ed25519PubKey = extractEd25519PubKey(agentPubKey);
+    await executor.preloadSigningKey(ed25519PubKey);
+    logLair.info("Signing key preload requested for worker");
+  } catch (error) {
+    logLair.error("Failed to request signing key preload:", error);
+  }
 }
 
 /**
@@ -530,6 +562,8 @@ async function handleConnect(
     // Already approved - instant connection
     logAuth.debug(`Origin ${origin} already approved`);
     const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
+    // Firefox: preload signing key into worker for local signing
+    await preloadSigningKeyIfNeeded(agentPubKey);
     return createSuccessResponse(message.id, {
       connected: true,
       origin,
@@ -681,6 +715,11 @@ async function handleCallZome(
     // Serialize payload to MessagePack
     const payloadBytes = new Uint8Array(encode(normalizedPayload));
     logZome.trace(`Payload serialized: ${payloadBytes.length} bytes`);
+
+    // Firefox: ensure signing key is preloaded in worker before WASM execution.
+    // This is idempotent — if key is already loaded, it's a no-op.
+    await preloadSigningKeyIfNeeded(agentPubKey);
+
     const afterPrepare = performance.now();
 
     // Build minimal zome call request
@@ -1547,6 +1586,8 @@ async function handlePermissionGrant(
 
     // Generate/retrieve agent key for this origin
     const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
+    // Firefox: preload signing key into worker for local signing
+    await preloadSigningKeyIfNeeded(agentPubKey);
 
     // Resolve pending auth request
     const resolved = await authManager.resolveAuthRequest(

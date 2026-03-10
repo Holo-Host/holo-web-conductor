@@ -15,7 +15,7 @@ const __dirname = dirname(__filename);
 
 // Navigate from packages/e2e/src to project root
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
-const DEFAULT_EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
+const DEFAULT_EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist-chrome');
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
 
 export interface BrowserContextOptions {
