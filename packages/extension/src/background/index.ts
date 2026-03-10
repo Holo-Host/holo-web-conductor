@@ -37,6 +37,7 @@ import {
   type ProvideMemproofsPayload,
 } from "../lib/messaging";
 import { getLairLock } from "../lib/lair-lock";
+import { rejectTabSender } from "../lib/sender-validation";
 import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
@@ -376,59 +377,59 @@ async function handleMessage(
 
       // Lair lock/unlock operations
       case MessageType.LAIR_GET_LOCK_STATE:
-        return handleLairGetLockState(message);
+        return handleLairGetLockState(message, sender);
 
       case MessageType.LAIR_SET_PASSPHRASE:
-        return handleLairSetPassphrase(message);
+        return handleLairSetPassphrase(message, sender);
 
       case MessageType.LAIR_UNLOCK:
-        return handleLairUnlock(message);
+        return handleLairUnlock(message, sender);
 
       case MessageType.LAIR_LOCK:
-        return handleLairLock(message);
+        return handleLairLock(message, sender);
 
       // Lair keypair management
       case MessageType.LAIR_NEW_SEED:
-        return handleLairNewSeed(message);
+        return handleLairNewSeed(message, sender);
 
       case MessageType.LAIR_LIST_ENTRIES:
-        return handleLairListEntries(message);
+        return handleLairListEntries(message, sender);
 
       case MessageType.LAIR_GET_ENTRY:
-        return handleLairGetEntry(message);
+        return handleLairGetEntry(message, sender);
 
       case MessageType.LAIR_DELETE_ENTRY:
-        return handleLairDeleteEntry(message);
+        return handleLairDeleteEntry(message, sender);
 
       // Lair operations
       case MessageType.LAIR_SIGN:
-        return handleLairSign(message);
+        return handleLairSign(message, sender);
 
       case MessageType.LAIR_VERIFY:
-        return handleLairVerify(message);
+        return handleLairVerify(message, sender);
 
       case MessageType.LAIR_DERIVE_SEED:
-        return handleLairDeriveSeed(message);
+        return handleLairDeriveSeed(message, sender);
 
       // Lair export/import
       case MessageType.LAIR_EXPORT_SEED:
-        return handleLairExportSeed(message);
+        return handleLairExportSeed(message, sender);
 
       case MessageType.LAIR_IMPORT_SEED:
-        return handleLairImportSeed(message);
+        return handleLairImportSeed(message, sender);
 
       // Permission management
       case MessageType.PERMISSION_GRANT:
-        return handlePermissionGrant(message);
+        return handlePermissionGrant(message, sender);
 
       case MessageType.PERMISSION_DENY:
-        return handlePermissionDeny(message);
+        return handlePermissionDeny(message, sender);
 
       case MessageType.PERMISSION_LIST:
-        return handlePermissionList(message);
+        return handlePermissionList(message, sender);
 
       case MessageType.PERMISSION_REVOKE:
-        return handlePermissionRevoke(message);
+        return handlePermissionRevoke(message, sender);
 
       case MessageType.AUTH_REQUEST_INFO:
         return handleAuthRequestInfo(message);
@@ -473,10 +474,10 @@ async function handleMessage(
         return handleGetRecoveryProgress(message);
 
       case MessageType.LAIR_EXPORT_MNEMONIC:
-        return handleLairExportMnemonic(message);
+        return handleLairExportMnemonic(message, sender);
 
       case MessageType.LAIR_IMPORT_MNEMONIC:
-        return handleLairImportMnemonic(message);
+        return handleLairImportMnemonic(message, sender);
 
       case MessageType.SIGN_RECONNECT_CHALLENGE:
         return handleSignReconnectChallenge(message, sender);
@@ -1112,8 +1113,11 @@ async function handleProvideMemproofs(
  * Handle LAIR_GET_LOCK_STATE requests
  */
 async function handleLairGetLockState(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_GET_LOCK_STATE");
+  if (blocked) return blocked;
   try {
     const state = await lairLock.getLockState();
     return createSuccessResponse(message.id, state);
@@ -1129,8 +1133,11 @@ async function handleLairGetLockState(
  * Handle LAIR_SET_PASSPHRASE requests
  */
 async function handleLairSetPassphrase(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_SET_PASSPHRASE");
+  if (blocked) return blocked;
   try {
     const { passphrase } = getPayload<MessageType.LAIR_SET_PASSPHRASE>(message);
     if (!passphrase) {
@@ -1150,8 +1157,11 @@ async function handleLairSetPassphrase(
  * Handle LAIR_UNLOCK requests
  */
 async function handleLairUnlock(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_UNLOCK");
+  if (blocked) return blocked;
   try {
     const { passphrase } = getPayload<MessageType.LAIR_UNLOCK>(message);
     if (!passphrase) {
@@ -1174,7 +1184,12 @@ async function handleLairUnlock(
 /**
  * Handle LAIR_LOCK requests
  */
-async function handleLairLock(message: RequestMessage): Promise<ResponseMessage> {
+async function handleLairLock(
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
+): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_LOCK");
+  if (blocked) return blocked;
   try {
     await lairLock.lock();
     return createSuccessResponse(message.id, { locked: true });
@@ -1204,8 +1219,11 @@ async function ensureUnlocked(): Promise<void> {
  * Handle LAIR_NEW_SEED requests
  */
 async function handleLairNewSeed(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_NEW_SEED");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { tag, exportable } = getPayload<MessageType.LAIR_NEW_SEED>(message);
@@ -1227,8 +1245,11 @@ async function handleLairNewSeed(
  * Handle LAIR_LIST_ENTRIES requests
  */
 async function handleLairListEntries(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_LIST_ENTRIES");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const client = await getLairClient();
@@ -1246,8 +1267,11 @@ async function handleLairListEntries(
  * Handle LAIR_GET_ENTRY requests
  */
 async function handleLairGetEntry(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_GET_ENTRY");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { tag } = getPayload<MessageType.LAIR_GET_ENTRY>(message);
@@ -1272,8 +1296,11 @@ async function handleLairGetEntry(
  * Handle LAIR_DELETE_ENTRY requests
  */
 async function handleLairDeleteEntry(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_DELETE_ENTRY");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { tag } = getPayload<MessageType.LAIR_DELETE_ENTRY>(message);
@@ -1299,19 +1326,43 @@ async function handleLairDeleteEntry(
  * Handle LAIR_SIGN requests
  */
 async function handleLairSign(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
   try {
     await ensureUnlocked();
     const payload = getPayload<MessageType.LAIR_SIGN>(message);
-    if (!payload.pubKey || !payload.data) {
-      return createErrorResponse(message.id, "pubKey and data are required");
+    if (!payload.data) {
+      return createErrorResponse(message.id, "data is required");
     }
 
-    // Convert serialized Uint8Arrays back to actual Uint8Arrays
-    const pubKey = toUint8Array(payload.pubKey);
-    const data = toUint8Array(payload.data);
+    let pubKey: Uint8Array;
 
+    if (sender.tab) {
+      // Tab context: derive pubKey from origin, ignore payload.pubKey.
+      // This prevents a malicious page from signing with arbitrary keys.
+      const url = sender.tab.url;
+      if (!url) {
+        return createErrorResponse(message.id, "Cannot determine origin - no tab URL");
+      }
+      const origin = new URL(url).origin;
+      const context = await happContextManager.getContextForDomain(origin);
+      let agentPubKey: Uint8Array;
+      if (context?.agentPubKey) {
+        agentPubKey = toUint8Array(context.agentPubKey);
+      } else {
+        agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
+      }
+      pubKey = extractEd25519PubKey(agentPubKey);
+    } else {
+      // Popup/extension context: trust the payload pubKey
+      if (!payload.pubKey) {
+        return createErrorResponse(message.id, "pubKey is required");
+      }
+      pubKey = toUint8Array(payload.pubKey);
+    }
+
+    const data = toUint8Array(payload.data);
     const client = await getLairClient();
     const signature = await client.signByPubKey(pubKey, data);
     return createSuccessResponse(message.id, { signature });
@@ -1327,8 +1378,11 @@ async function handleLairSign(
  * Handle LAIR_VERIFY requests
  */
 async function handleLairVerify(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_VERIFY");
+  if (blocked) return blocked;
   try {
     // Note: Verification doesn't require unlocking since it's public operation
     const payload = getPayload<MessageType.LAIR_VERIFY>(message);
@@ -1363,8 +1417,11 @@ async function handleLairVerify(
  * Handle LAIR_DERIVE_SEED requests
  */
 async function handleLairDeriveSeed(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_DERIVE_SEED");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { srcTag, srcIndex, dstTag, exportable } = getPayload<MessageType.LAIR_DERIVE_SEED>(message);
@@ -1398,8 +1455,11 @@ async function handleLairDeriveSeed(
  * Handle LAIR_EXPORT_SEED requests
  */
 async function handleLairExportSeed(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_EXPORT_SEED");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { tag, passphrase } = getPayload<MessageType.LAIR_EXPORT_SEED>(message);
@@ -1421,8 +1481,11 @@ async function handleLairExportSeed(
  * Handle LAIR_IMPORT_SEED requests
  */
 async function handleLairImportSeed(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_IMPORT_SEED");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const payload = getPayload<MessageType.LAIR_IMPORT_SEED>(message);
@@ -1466,8 +1529,11 @@ async function handleLairImportSeed(
  * Handle PERMISSION_GRANT requests
  */
 async function handlePermissionGrant(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "PERMISSION_GRANT");
+  if (blocked) return blocked;
   try {
     const { requestId, origin } = getPayload<MessageType.PERMISSION_GRANT>(message);
 
@@ -1505,8 +1571,11 @@ async function handlePermissionGrant(
  * Handle PERMISSION_DENY requests
  */
 async function handlePermissionDeny(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "PERMISSION_DENY");
+  if (blocked) return blocked;
   try {
     const { requestId, origin } = getPayload<MessageType.PERMISSION_DENY>(message);
 
@@ -1541,8 +1610,11 @@ async function handlePermissionDeny(
  * Handle PERMISSION_LIST requests
  */
 async function handlePermissionList(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "PERMISSION_LIST");
+  if (blocked) return blocked;
   try {
     const permissions = await permissionManager.listPermissions();
     return createSuccessResponse(message.id, { permissions });
@@ -1558,8 +1630,11 @@ async function handlePermissionList(
  * Handle PERMISSION_REVOKE requests
  */
 async function handlePermissionRevoke(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "PERMISSION_REVOKE");
+  if (blocked) return blocked;
   try {
     const { origin } = getPayload<MessageType.PERMISSION_REVOKE>(message);
 
@@ -2058,8 +2133,11 @@ async function handleGetRecoveryProgress(
  * Returns 24-word BIP-39 mnemonic for the specified key
  */
 async function handleLairExportMnemonic(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_EXPORT_MNEMONIC");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { tag } = getPayload<MessageType.LAIR_EXPORT_MNEMONIC>(message);
@@ -2082,8 +2160,11 @@ async function handleLairExportMnemonic(
  * Imports a key from a 24-word BIP-39 mnemonic phrase
  */
 async function handleLairImportMnemonic(
-  message: RequestMessage
+  message: RequestMessage,
+  sender: chrome.runtime.MessageSender
 ): Promise<ResponseMessage> {
+  const blocked = rejectTabSender(sender, message.id, "LAIR_IMPORT_MNEMONIC");
+  if (blocked) return blocked;
   try {
     await ensureUnlocked();
     const { mnemonic, tag, exportable } = getPayload<MessageType.LAIR_IMPORT_MNEMONIC>(message);
