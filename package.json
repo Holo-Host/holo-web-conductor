@@ -22,6 +22,9 @@
     "e2e:env": "npx tsx packages/e2e/src/index.ts env",
     "e2e:logs": "npx tsx packages/e2e/src/index.ts logs",
     "e2e:test": "npx playwright test --config=packages/e2e/playwright.config.cjs",
+    "e2e:test:ziptest": "npx playwright test --config=packages/e2e/playwright.config.cjs --project=chromium-extension tests/ziptest.test.ts --headed",
+    "e2e:test:mewsfeed": "npx playwright test --config=packages/e2e/playwright.config.cjs --project=chromium-extension tests/mewsfeed.test.ts --headed",
+    "e2e:test:cross-browser": "npx playwright test --config=packages/e2e/playwright.config.cjs --project=cross-browser tests/cross-browser.test.ts --headed",
     "release": "npm run build:extension && ./scripts/package-extension.sh"
   },
   "devDependencies": {
@@ -35,7 +38,8 @@
   },
   "dependencies": {
     "libsodium": "^0.8.0",
-    "libsodium-wrappers": "^0.8.0"
+    "libsodium-wrappers": "^0.8.0",
+    "tslib": "^2.8.1"
   },
   "overrides": {
     "libsodium": "^0.8.0",

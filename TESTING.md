@@ -155,7 +155,7 @@ Two hApp fixtures are supported:
 | hApp | App ID | Source | UI Server | Tests |
 |------|--------|--------|-----------|-------|
 | ziptest | `ziptest` | `fixtures/ziptest.happ` (committed binary) | `../ziptest/ui/dist` (port 8081) | Multi-agent sync |
-| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `../mewsfeed-hwc/ui/dist` (port 8082) | Real-world hApp |
+| mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `../mewsfeed/ui/dist` (port 8082) | Real-world hApp, cross-browser |
 
 ### Using e2e-test-setup.sh
 
@@ -195,37 +195,43 @@ The primary way to set up the E2E environment:
 
 The Playwright tests are in `packages/e2e/`:
 
-| Test File | Description | Fixture |
-|-----------|-------------|---------|
-| `ziptest.test.ts` | Multi-agent: profiles, signal exchange, entry sync | ziptest |
-| `mewsfeed.test.ts` | Multi-agent: profiles, mew posting, hashtag search | mewsfeed |
+| Test File | Project | Description | Fixture |
+|-----------|---------|-------------|---------|
+| `ziptest.test.ts` | `chromium-extension` | Multi-agent: profiles, signal exchange, entry sync | ziptest |
+| `mewsfeed.test.ts` | `chromium-extension` | Multi-agent: profiles, mew posting, hashtag search | mewsfeed |
+| `cross-browser.test.ts` | `cross-browser` | Alice (Chrome) + Bob (Firefox): mewsfeed interop | mewsfeed |
 
-**To run tests**:
+**To run tests** (all commands from the project root, in nix shell):
 
 ```bash
-# 1. Start E2E environment (in nix shell)
-nix develop -c bash
-./scripts/e2e-test-setup.sh start --happ=ziptest
+# 1. Start E2E environment
+nix develop -c ./scripts/e2e-test-setup.sh start --happ=mewsfeed   # or --happ=ziptest
 
-# 2. Build extension
-npm run build
+# 2. Build extension (both Chrome and Firefox variants)
+nix develop -c npm run build
 
-# 3. Run Playwright tests (from packages/e2e/)
-cd packages/e2e
-npx playwright test
+# 3. Run a specific test suite
+nix develop -c npm run e2e:test:ziptest         # Ziptest, Chrome-only
+nix develop -c npm run e2e:test:mewsfeed        # Mewsfeed, Chrome-only
+nix develop -c npm run e2e:test:cross-browser   # Mewsfeed, Chrome + Firefox
 
-# Or run specific test
-npx playwright test ziptest.test.ts
+# Or run all tests
+nix develop -c npm run e2e:test
 
-# With UI (for debugging)
-npx playwright test --ui
+# Or run with extra Playwright options
+nix develop -c npm run e2e:test -- --project=chromium-extension tests/ziptest.test.ts --headed
 ```
 
 **Multi-agent architecture**:
-- Each agent gets a separate Chromium context with its own user data directory
+- Each agent gets a separate browser context with its own user data directory
 - Each context loads the extension independently (separate keypairs in IndexedDB)
 - `setupAutoApproval()` intercepts authorization popups and auto-clicks approve
 - Extension readiness detected via `window.holochain?.isWebConductor === true`
+
+**Cross-browser notes**:
+- The `cross-browser` project manages its own browser contexts (Chrome + Firefox)
+- Firefox extension loading uses `playwright-webextext` (temporary add-on install)
+- Localhost origins are auto-approved (no popup) since Playwright cannot interact with Firefox extension popups
 
 ---
 

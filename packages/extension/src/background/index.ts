@@ -580,8 +580,28 @@ async function handleConnect(
     );
   }
 
-  // No permission set - create authorization request and open popup
-  logAuth.info(`No permission for ${origin} - opening authorization popup`);
+  // No permission set - check if localhost (auto-approve for development)
+  logAuth.info(`No permission for ${origin} - checking origin`);
+
+  try {
+    const parsedOrigin = new URL(origin);
+    if (parsedOrigin.hostname === 'localhost' || parsedOrigin.hostname === '127.0.0.1') {
+      logAuth.info(`Auto-approving localhost origin: ${origin}`);
+      await permissionManager.grantPermission(origin);
+      const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
+      await preloadSigningKeyIfNeeded(agentPubKey);
+      return createSuccessResponse(message.id, {
+        connected: true,
+        origin,
+        agentPubKey: Array.from(agentPubKey),
+      });
+    }
+  } catch {
+    // URL parsing failed, fall through to popup
+  }
+
+  // Open authorization popup for non-localhost origins
+  logAuth.info(`Opening authorization popup for ${origin}`);
 
   const authRequest = await authManager.createAuthRequest(
     origin,

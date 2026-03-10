@@ -110,8 +110,8 @@ MEWSFEED_UI_PORT=8082
 # Ziptest UI directory
 ZIPTEST_UI_DIR="$PROJECT_DIR/../ziptest/ui"
 
-# Mewsfeed UI directory (worktree of mewsfeed repo)
-MEWSFEED_UI_DIR="$PROJECT_DIR/../mewsfeed-fishy/ui"
+# Mewsfeed UI directory
+MEWSFEED_UI_DIR="$PROJECT_DIR/../mewsfeed/ui"
 
 # Number of conductors to run (need 2 for full arc establishment)
 NUM_CONDUCTORS=2
