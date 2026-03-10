@@ -21,6 +21,7 @@ vi.mock('./WebConductorAppClient', () => ({
 import { connectWithJoiningUI } from './connect-with-ui';
 import { WebConductorAppClient } from './WebConductorAppClient';
 import { JoiningClient } from '@holo-host/joining-service/client';
+import type { HolochainAPI } from './types';
 
 // Stub custom elements so document.createElement returns elements with
 // the properties/methods that connectWithJoiningUI expects.
@@ -55,9 +56,11 @@ safeDefine('joining-claims-form-sl', StubClaimsFormEl);
 const mockConnect = vi.mocked(WebConductorAppClient.connect);
 const mockFromUrl = vi.mocked(JoiningClient.fromUrl);
 
-/** Flush pending microtasks (Promises). */
-function flushMicrotasks(): Promise<void> {
-  return new Promise((r) => queueMicrotask(r));
+/** Flush pending microtasks (Promises) — runs multiple rounds. */
+async function flushMicrotasks(rounds = 10): Promise<void> {
+  for (let i = 0; i < rounds; i++) {
+    await new Promise<void>((r) => queueMicrotask(r));
+  }
 }
 
 describe('connectWithJoiningUI', () => {
@@ -68,37 +71,47 @@ describe('connectWithJoiningUI', () => {
     document.body.appendChild(container);
     mockConnect.mockReset();
     mockFromUrl.mockReset();
+
+    // Mock window.holochain so Phase 1 (extension detection) passes
+    window.holochain = {
+      isWebConductor: true,
+      version: '0.0.1',
+      myPubKey: new Uint8Array(39),
+      installedAppId: null,
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      callZome: vi.fn().mockResolvedValue(null),
+      appInfo: vi.fn().mockResolvedValue(null),
+      installApp: vi.fn().mockResolvedValue(undefined),
+      provideMemproofs: vi.fn().mockResolvedValue(undefined),
+      configureNetwork: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn().mockReturnValue(() => {}),
+      getConnectionStatus: vi.fn().mockResolvedValue({
+        httpHealthy: true, wsHealthy: true, authenticated: true,
+        linkerUrl: null, lastChecked: Date.now(),
+      }),
+      onConnectionChange: vi.fn().mockReturnValue(() => {}),
+    } as unknown as HolochainAPI;
   });
 
   afterEach(() => {
     container.remove();
+    delete (window as any).holochain;
   });
 
-  it('mounts status and challenge dialog, cleans up on success', async () => {
+  it('mounts overlay during extension approval, cleans up on success', async () => {
     const fakeClient = {} as WebConductorAppClient;
     mockConnect.mockResolvedValue(fakeClient);
 
-    const connectPromise = connectWithJoiningUI({
+    const client = await connectWithJoiningUI({
       linkerUrl: 'http://localhost:8090',
       mountTo: container,
     });
 
-    // Wait for componentRegistration (mocked, resolves immediately) and
-    // the connect mock to resolve.
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    // Status and challenge dialog should be mounted
-    expect(container.querySelector('joining-status-sl')).not.toBeNull();
-    expect(container.querySelector('joining-challenge-dialog-sl')).not.toBeNull();
-
-    // Wait for the full flow (including 800ms success delay)
-    const client = await connectPromise;
     expect(client).toBe(fakeClient);
 
-    // Elements cleaned up after success
-    expect(container.querySelector('joining-status-sl')).toBeNull();
-    expect(container.querySelector('joining-challenge-dialog-sl')).toBeNull();
+    // Overlay cleaned up after success
+    expect(container.children.length).toBe(0);
   });
 
   it('passes claims and onChallenge to WebConductorAppClient.connect', async () => {
@@ -188,21 +201,31 @@ describe('connectWithJoiningUI', () => {
     expect(mockConnect).toHaveBeenCalledOnce();
   });
 
-  it('leaves error UI visible on failure', async () => {
-    mockConnect.mockRejectedValue(new Error('Connection failed'));
+  it('shows error with retry button on failure', async () => {
+    mockConnect.mockRejectedValueOnce(new Error('Connection failed'));
 
-    await expect(
-      connectWithJoiningUI({
-        linkerUrl: 'http://localhost:8090',
-        mountTo: container,
-      }),
-    ).rejects.toThrow('Connection failed');
+    // Start the connect flow (it will catch the error and show retry UI)
+    const connectPromise = connectWithJoiningUI({
+      linkerUrl: 'http://localhost:8090',
+      mountTo: container,
+    });
 
-    // Status element should still be mounted with error
-    const statusEl = container.querySelector('joining-status-sl') as StubStatusEl;
-    expect(statusEl).not.toBeNull();
-    expect(statusEl.status).toBe('error');
-    expect(statusEl.reason).toBe('Connection failed');
+    // Flush microtasks so the error is caught and retry UI is shown
+    await flushMicrotasks();
+
+    // The overlay card should contain the error message and retry button
+    const retryBtn = container.querySelector('button');
+    expect(retryBtn).not.toBeNull();
+    expect(retryBtn!.textContent).toBe('Retry');
+    expect(container.textContent).toContain('Connection failed');
+
+    // Click retry, this time connect succeeds
+    const fakeClient = {} as WebConductorAppClient;
+    mockConnect.mockResolvedValueOnce(fakeClient);
+    retryBtn!.click();
+
+    const client = await connectPromise;
+    expect(client).toBe(fakeClient);
   });
 
   it('skips claims form when claims are pre-provided', async () => {
