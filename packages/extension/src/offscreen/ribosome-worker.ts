@@ -982,6 +982,9 @@ class ProxyNetworkService implements NetworkService {
 
     const xhr = new XMLHttpRequest();
     xhr.open(method, fullUrl, false); // false = synchronous
+    // Sync XHR cannot use responseType='arraybuffer'. Use charset override
+    // to preserve raw bytes — each byte maps to code points 0x00-0xFF.
+    xhr.overrideMimeType('text/plain; charset=x-user-defined');
 
     for (const [key, value] of Object.entries(mergedHeaders)) {
       xhr.setRequestHeader(key, value);
@@ -993,8 +996,11 @@ class ProxyNetworkService implements NetworkService {
       xhr.send();
     }
 
-    const responseText = xhr.responseText || '';
-    const responseBody = new TextEncoder().encode(responseText);
+    const raw = xhr.responseText || '';
+    const responseBody = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      responseBody[i] = raw.charCodeAt(i) & 0xFF;
+    }
 
     console.log('[Ribosome Worker] Direct XHR response, status:', xhr.status, 'bytes:', responseBody.length);
 
