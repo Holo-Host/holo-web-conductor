@@ -280,8 +280,16 @@ export interface CacheEntry<T> {
  * Network cache options
  */
 export interface NetworkCacheOptions {
-  /** Time-to-live in milliseconds (default: 5 minutes) */
-  ttl?: number;
-  /** Maximum number of entries (default: 1000) */
+  /** Max record cache entries (default: 10000). Records are LRU, no TTL (immutable). */
+  recordMaxEntries?: number;
+  /** Max link cache entries (default: 5000). Links are LRU, no TTL. */
+  linkMaxEntries?: number;
+  /** Max details cache entries (default: 1000). Details use TTL. */
+  detailsMaxEntries?: number;
+  /** Details TTL in milliseconds (default: 2 minutes) */
+  detailsTtl?: number;
+  /** @deprecated Use linkMaxEntries. Legacy: mapped to linkMaxEntries. */
   maxEntries?: number;
+  /** @deprecated Use detailsTtl. Legacy: mapped to detailsTtl. */
+  ttl?: number;
 }

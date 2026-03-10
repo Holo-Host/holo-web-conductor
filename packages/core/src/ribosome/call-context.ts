@@ -6,6 +6,7 @@
 
 import type { DnaManifestRuntime } from '../types/bundle-types';
 import type { StoredAction, StoredEntry } from '../storage/types';
+import type { NetworkLink } from '../network/types';
 
 /**
  * Cell ID: [DNA hash, Agent public key]
@@ -38,6 +39,14 @@ export interface PendingRecord {
   /** The stored entry (if applicable) */
   entry?: StoredEntry;
 }
+
+/**
+ * Pending cache operation to apply after transaction commit.
+ * This ensures optimistic cache updates only take effect when data is persisted.
+ */
+export type PendingCacheOp =
+  | { type: 'mergeLink'; baseAddress: Uint8Array; link: NetworkLink }
+  | { type: 'removeLink'; baseAddress: Uint8Array; createLinkHash: Uint8Array };
 
 /**
  * Remote signal queued for delivery via kitsune2
@@ -81,6 +90,9 @@ export interface CallContext {
 
   /** Records created during this call (populated by create, update, delete, etc.) */
   pendingRecords?: PendingRecord[];
+
+  /** Cache operations to apply after transaction commit (populated by create_link, delete_link) */
+  pendingCacheOps?: PendingCacheOp[];
 
   /** Whether this context is running inside a validate callback */
   isValidationContext?: boolean;

@@ -167,6 +167,25 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   storage.putLink(link, dnaHash, agentPubKey);
   storage.updateChainHead(dnaHash, agentPubKey, actionSeq, actionHash, timestampBigInt);
 
+  // Queue optimistic cache merge -- applied after transaction commits successfully
+  if (!callContext.pendingCacheOps) {
+    callContext.pendingCacheOps = [];
+  }
+  callContext.pendingCacheOps.push({
+    type: 'mergeLink',
+    baseAddress: input.base_address,
+    link: {
+      create_link_hash: actionHash,
+      base: input.base_address,
+      target: input.target_address,
+      zome_index: zomeIndex,
+      link_type: linkType,
+      tag: input.tag,
+      timestamp: timestampMicros,
+      author: agentPubKey,
+    },
+  });
+
   // Track record for publishing after transaction commits (no entry for links)
   if (!callContext.pendingRecords) {
     callContext.pendingRecords = [];

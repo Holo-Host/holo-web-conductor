@@ -137,16 +137,18 @@ describe('NetworkCache', () => {
     expect(result).toEqual(record);
   });
 
-  it('should return null for expired record', async () => {
-    const shortTTLCache = new NetworkCache({ ttl: 10 }); // 10ms TTL
+  it('should never expire records (immutable, no TTL)', async () => {
+    const cache2 = new NetworkCache({ ttl: 10 }); // legacy ttl only affects details
     const hash = createHash(10);
-    shortTTLCache.cacheRecordSync(hash, createNetworkRecord(10));
+    const record = createNetworkRecord(10);
+    cache2.cacheRecordSync(hash, record);
 
-    // Wait for expiration
+    // Wait well past any old TTL
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const result = shortTTLCache.getRecordSync(hash);
-    expect(result).toBeNull();
+    // Records are content-addressed and immutable -- they never expire
+    const result = cache2.getRecordSync(hash);
+    expect(result).toEqual(record);
   });
 
   it('should cache and retrieve links', () => {
@@ -308,10 +310,30 @@ describe('Cascade', () => {
       // so we only verify local results are included, not that network was skipped
     });
 
-    it('should merge cached links with local', () => {
+    it('should use cached links as fallback when network unavailable', () => {
+      // Create cascade with no network service to simulate network unavailable
+      const noNetCascade = new Cascade(mockStorage as any, cache, null);
       const baseAddress = createHash(50);
       const cachedLinks = [createNetworkLink(1)];
       cache.cacheLinksSync(baseAddress, cachedLinks);
+
+      const result = noNetCascade.fetchLinks(
+        createHash(1),
+        createHash(2),
+        baseAddress
+      );
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('should NOT merge stale cache when network returns results', () => {
+      const baseAddress = createHash(50);
+      // Cache has a link that no longer exists on network
+      const cachedLinks = [createNetworkLink(1)];
+      cache.cacheLinksSync(baseAddress, cachedLinks);
+
+      // Network returns empty (the link was deleted by another agent)
+      // mockNetwork has no links added for this base
 
       const result = cascade.fetchLinks(
         createHash(1),
@@ -319,7 +341,8 @@ describe('Cascade', () => {
         baseAddress
       );
 
-      expect(result).toHaveLength(1);
+      // Network is authoritative -- stale cache should not appear
+      expect(result).toHaveLength(0);
     });
 
     it('should fetch from network when local is empty', () => {
@@ -424,6 +447,44 @@ describe('Cascade', () => {
       // so we verify results are correct rather than asserting network was skipped
       const result2 = cascade.fetchLinks(dnaHash, agentPubKey, baseAddress);
       expect(result2).toHaveLength(2);
+    });
+
+    it('should fetch details from network first time, cache second time', () => {
+      const hash = createHash(42);
+      const dnaHash = createHash(1);
+      const agentPubKey = createHash(2);
+      const details = {
+        type: 'Entry',
+        content: { entry: { entry_type: 'App', entry: new Uint8Array([1]) }, actions: [], deletes: [], updates: [] },
+      };
+
+      // Add details to mock network
+      mockNetwork.addDetails(hash, details);
+
+      // First fetch - should hit network
+      const result1 = cascade.fetchDetails(dnaHash, agentPubKey, hash);
+      expect(result1).not.toBeNull();
+      expect(result1.source).toBe('network');
+      expect(mockNetwork.getCallLog().filter(c => c.method === 'getDetailsSync')).toHaveLength(1);
+
+      // Second fetch - should hit details cache (TTL-based)
+      const result2 = cascade.fetchDetails(dnaHash, agentPubKey, hash);
+      expect(result2).not.toBeNull();
+      // Network should NOT have been called again
+      expect(mockNetwork.getCallLog().filter(c => c.method === 'getDetailsSync')).toHaveLength(1);
+    });
+
+    it('should skip details network call with Local strategy', () => {
+      const hash = createHash(42);
+      const dnaHash = createHash(1);
+      const agentPubKey = createHash(2);
+      const details = { type: 'Record', content: {} };
+      mockNetwork.addDetails(hash, details);
+
+      // With Local strategy, should not hit network
+      const result = cascade.fetchDetails(dnaHash, agentPubKey, hash, undefined, 'Local');
+      expect(result).toBeNull(); // nothing in local storage or cache
+      expect(mockNetwork.getCallLog().filter(c => c.method === 'getDetailsSync')).toHaveLength(0);
     });
 
     it('should use well-known hash for testing network→cache flow', () => {

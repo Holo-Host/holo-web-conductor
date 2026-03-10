@@ -659,9 +659,9 @@ pause_linker() {
         rm -f linker.pid
     else
         # Also check by process name
-        if pgrep -f "target/release/h2hc-linker$" > /dev/null 2>&1; then
+        if pgrep -f "target/release/h2hc-linker" > /dev/null 2>&1; then
             log_info "Stopping h2hc-linker by process name..."
-            pkill -f "target/release/h2hc-linker$" || true
+            pkill -f "target/release/h2hc-linker" || true
         fi
     fi
 
@@ -693,7 +693,7 @@ unpause_linker() {
     fi
 
     # Check if linker already running
-    if pgrep -f "target/release/h2hc-linker$" > /dev/null 2>&1; then
+    if pgrep -f "target/release/h2hc-linker" > /dev/null 2>&1; then
         log_warn "Linker already running"
         return 0
     fi
