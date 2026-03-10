@@ -486,6 +486,8 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
     this.wsService.sendRemoteSignals(dnaHashB64, data.signals);
   }
 
+  private static readonly WORKER_REQUEST_TIMEOUT_MS = 60_000;
+
   private sendToWorker(type: string, payload?: any): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
@@ -493,7 +495,15 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
         return;
       }
       const id = this.nextRequestId++;
-      this.pendingRequests.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error(`Worker request timed out after ${FirefoxDirectExecutor.WORKER_REQUEST_TIMEOUT_MS}ms (type=${type}, id=${id})`));
+      }, FirefoxDirectExecutor.WORKER_REQUEST_TIMEOUT_MS);
+
+      this.pendingRequests.set(id, {
+        resolve: (value: any) => { clearTimeout(timer); resolve(value); },
+        reject: (reason: any) => { clearTimeout(timer); reject(reason); },
+      });
       this.worker.postMessage({ id, type, payload });
     });
   }
