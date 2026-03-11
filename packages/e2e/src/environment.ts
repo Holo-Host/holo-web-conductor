@@ -29,15 +29,29 @@ export class EnvironmentManager {
   }
 
   /**
-   * Start the test environment (conductors + linker)
+   * Start the test environment (conductors + linker).
+   *
+   * Idempotent: if the environment is already running with the requested hApp,
+   * this is a no-op. If it's running with a different hApp, it stops first
+   * and restarts with the correct one.
    */
   async start(config?: Partial<EnvConfig>): Promise<EnvState> {
     if (config) {
       this.config = { ...this.config, ...config };
     }
 
-    console.log(`Starting environment with hApp: ${this.config.happ}`);
+    // Check if environment is already running with the correct hApp
+    const currentState = await this.getStatus();
+    if (currentState.running) {
+      if (currentState.appId === this.config.happ) {
+        console.log(`Environment already running with hApp: ${this.config.happ}`);
+        return currentState;
+      }
+      console.log(`Environment running with hApp '${currentState.appId}', need '${this.config.happ}' — restarting...`);
+      await this.stop();
+    }
 
+    console.log(`Starting environment with hApp: ${this.config.happ}`);
     await this.runScript('start', [`--happ=${this.config.happ}`]);
 
     // Read state from sandbox files

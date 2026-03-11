@@ -25,27 +25,44 @@ program
   .description('E2E test runner for Holochain Web Conductor browser extension')
   .version('0.0.1');
 
+/**
+ * Infer the required hApp from --project and --test options.
+ * Cross-browser and mewsfeed tests need the mewsfeed hApp; everything else defaults to ziptest.
+ */
+function inferHapp(project?: string, testFile?: string): EnvConfig['happ'] {
+  if (project === 'cross-browser') return 'mewsfeed';
+  if (testFile && /cross-browser|mewsfeed/.test(testFile)) return 'mewsfeed';
+  return 'ziptest';
+}
+
 // Main test command
 program
   .command('test', { isDefault: true })
   .description('Run e2e tests')
   .option('--clean', 'Clean environment before starting')
   .option('--pattern <pattern>', 'Test file pattern to match')
-  .option('--happ <name>', 'hApp to use (ziptest or mewsfeed)', 'ziptest')
+  .option('--project <name>', 'Playwright project (chromium-extension, firefox-extension, cross-browser)')
+  .option('--test <file>', 'Specific test file to run (e.g., tests/cross-browser.test.ts)')
+  .option('--happ <name>', 'hApp to use (ziptest or mewsfeed); auto-inferred from --project/--test if omitted')
   .option('--json', 'Output results as JSON')
   .option('--headed', 'Run with visible browser')
   .option('--no-logs', 'Skip log collection')
   .action(async (options) => {
     const runner = new TestRunner();
 
+    // Auto-infer hApp if not explicitly set
+    const happ = options.happ ?? inferHapp(options.project, options.test);
+
     const envConfig: Partial<EnvConfig> = {
-      happ: options.happ as EnvConfig['happ'],
+      happ: happ as EnvConfig['happ'],
     };
 
     const results = await runner.run({
       envConfig,
       clean: options.clean,
       pattern: options.pattern,
+      project: options.project,
+      testFile: options.test,
       outputFormat: options.json ? 'json' : 'pretty',
       collectLogs: options.logs !== false,
       headed: options.headed,
