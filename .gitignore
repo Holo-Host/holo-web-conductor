@@ -42,6 +42,9 @@ release/
 # Holochain sandbox
 .hc-sandbox/
 
+# Bundled test client (rebuilt from extension dist)
+packages/extension/test/lib/web-conductor-client.js
+
 # Playwright test artifacts
 .playwright-user-data*/
 packages/e2e/test-results/
