@@ -23,6 +23,10 @@ export interface TestRunnerOptions {
   clean?: boolean;
   /** Test file pattern to match */
   pattern?: string;
+  /** Playwright project to run (e.g., 'chromium-extension', 'cross-browser') */
+  project?: string;
+  /** Specific test file to run (e.g., 'tests/cross-browser.test.ts') */
+  testFile?: string;
   /** Output format */
   outputFormat?: 'json' | 'pretty';
   /** Whether to collect logs from environment */
@@ -134,7 +138,19 @@ export class TestRunner {
     options: TestRunnerOptions
   ): Promise<E2EResults['results']> {
     return new Promise((resolve) => {
-      const args = ['playwright', 'test', '--reporter=json'];
+      // Test file must come immediately after 'playwright test' (positional arg),
+      // before any --options, otherwise Playwright misparses it.
+      const args = ['playwright', 'test', '--config=playwright.config.cjs'];
+
+      if (options.testFile) {
+        args.push(options.testFile);
+      }
+
+      args.push('--reporter=json');
+
+      if (options.project) {
+        args.push('--project', options.project);
+      }
 
       if (options.pattern) {
         args.push('--grep', options.pattern);

@@ -82,7 +82,7 @@ The rest of this document covers testing procedures for the Holochain Web Conduc
 | Build validation | `npm run build` | None |
 | Type checking | `npm run typecheck` | None (tsc --noEmit all packages) |
 | Integration tests | `npm run test:integration` | None |
-| E2E (Playwright) | See "E2E with Linker" section | nix shell, conductor, linker |
+| E2E (Playwright) | `npm run e2e:test:cross-browser` | nix shell, conductor, linker (auto-started) |
 | Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
 
 ---
@@ -157,41 +157,9 @@ Two hApp fixtures are supported:
 | ziptest | `ziptest` | `fixtures/ziptest.happ` (committed binary) | `../ziptest/ui/dist` (port 8081) | Multi-agent sync |
 | mewsfeed | `mewsfeed` | `fixtures/mewsfeed.happ` (committed binary) | `../mewsfeed/ui/dist` (port 8082) | Real-world hApp, cross-browser |
 
-### Using e2e-test-setup.sh
+### Running E2E Tests
 
-The primary way to set up the E2E environment:
-
-```bash
-# Start with default hApp (ziptest)
-./scripts/e2e-test-setup.sh start
-
-# Start with specific hApp
-./scripts/e2e-test-setup.sh start --happ=ziptest
-./scripts/e2e-test-setup.sh start --happ=mewsfeed
-
-# Other commands
-./scripts/e2e-test-setup.sh stop     # Stop all services
-./scripts/e2e-test-setup.sh pause    # Stop linker only (for linker development)
-./scripts/e2e-test-setup.sh unpause  # Restart linker
-./scripts/e2e-test-setup.sh status   # Check what's running
-./scripts/e2e-test-setup.sh clean    # Remove state files
-```
-
-**What it does**:
-1. Starts local kitsune2-bootstrap-srv (saves port to `/tmp/hwc-e2e/bootstrap_addr.txt`)
-2. Starts 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
-3. Waits for arc establishment (up to 90s, minimum 30s)
-4. Starts h2hc-linker on port 8000
-5. Starts UI server (ziptest: port 8081, mewsfeed: port 8082)
-6. Initializes test data (saves dna_hash for selected hApp)
-
-**State files** in `/tmp/hwc-e2e/`:
-- `bootstrap_addr.txt` - Bootstrap server address
-- `admin_port.txt`, `admin_port_2.txt` - Conductor admin ports
-- `app_id.txt`, `happ_path.txt`, `dna_hash.txt` - hApp configuration
-- PIDs and logs for all services
-
-### Running Playwright Tests
+All e2e commands go through the TypeScript CLI (`npm run e2e`), which automatically manages the test environment (conductors, linker, bootstrap server). The correct hApp is inferred from the test being run.
 
 The Playwright tests are in `packages/e2e/`:
 
@@ -204,23 +172,45 @@ The Playwright tests are in `packages/e2e/`:
 **To run tests** (all commands from the project root, in nix shell):
 
 ```bash
-# 1. Start E2E environment
-nix develop -c ./scripts/e2e-test-setup.sh start --happ=mewsfeed   # or --happ=ziptest
-
-# 2. Build extension (both Chrome and Firefox variants)
-nix develop -c npm run build
-
-# 3. Run a specific test suite
+# Run a specific test suite (starts env automatically with correct hApp):
 nix develop -c npm run e2e:test:ziptest         # Ziptest, Chrome-only
 nix develop -c npm run e2e:test:mewsfeed        # Mewsfeed, Chrome-only
 nix develop -c npm run e2e:test:cross-browser   # Mewsfeed, Chrome + Firefox
 
-# Or run all tests
+# Run all tests:
 nix develop -c npm run e2e:test
 
-# Or run with extra Playwright options
-nix develop -c npm run e2e:test -- --project=chromium-extension tests/ziptest.test.ts --headed
+# Run with custom options:
+nix develop -c npm run e2e:test -- --project=chromium-extension --test=tests/ziptest.test.ts --headed
 ```
+
+**Environment management** (for debugging or manual testing):
+
+```bash
+nix develop -c npm run e2e:env:start            # Start env (default: ziptest)
+nix develop -c npm run e2e:env:start -- --happ=mewsfeed  # Start with specific hApp
+nix develop -c npm run e2e:env:status           # Check what's running
+nix develop -c npm run e2e:env:stop             # Stop all services
+nix develop -c npm run e2e:logs                 # Stream service logs
+```
+
+**Idempotent startup**: If the environment is already running with the correct hApp, it skips startup. If it's running with a different hApp, it stops and restarts with the correct one.
+
+### Environment internals
+
+The CLI wraps `scripts/e2e-test-setup.sh`, which orchestrates:
+1. Local kitsune2-bootstrap-srv (saves port to `/tmp/hwc-e2e/bootstrap_addr.txt`)
+2. 2 conductors via `hc sandbox generate --in-process-lair --run 0` with QUIC transport
+3. Arc establishment (up to 90s, minimum 30s)
+4. h2hc-linker on port 8000
+5. UI server (ziptest: port 8081, mewsfeed: port 8082)
+6. Test data initialization (saves dna_hash for selected hApp)
+
+**State files** in `/tmp/hwc-e2e/`:
+- `bootstrap_addr.txt` - Bootstrap server address
+- `admin_port.txt`, `admin_port_2.txt` - Conductor admin ports
+- `app_id.txt`, `happ_path.txt`, `dna_hash.txt` - hApp configuration
+- PIDs and logs for all services
 
 **Multi-agent architecture**:
 - Each agent gets a separate browser context with its own user data directory
@@ -277,9 +267,9 @@ npm run build
 
 **Playwright extension not loading**: Check that extension is built (`npm run build`) and path is correct in test fixture. Check `.playwright-user-data-*/` directories for IndexedDB state.
 
-**Linker connection refused**: Check that linker is running (`./scripts/e2e-test-setup.sh status`). Check that `H2HC_LINKER_DIR` points to correct repo and linker is built (`cargo build --release` in h2hc-linker).
+**Linker connection refused**: Check that linker is running (`npm run e2e:env:status`). Check that `H2HC_LINKER_DIR` points to correct repo and linker is built (`cargo build --release` in h2hc-linker).
 
-**Arc not established**: Conductors need time to establish DHT arcs. `e2e-test-setup.sh` waits up to 90s (minimum 30s). Check conductor logs in `/tmp/hwc-e2e/*.log` for arc establishment messages.
+**Arc not established**: Conductors need time to establish DHT arcs. The setup script waits up to 90s (minimum 30s). Check conductor logs with `npm run e2e:logs` or in `/tmp/hwc-e2e/*.log`.
 
 **Deserialization errors**: Verify that WASM boundary invariants are followed (see [CONTRIBUTING.md](./CONTRIBUTING.md)). Check that payloads with hashes use Uint8Array (39 bytes), not base64 strings or 32-byte raw keys.
 

@@ -9,6 +9,10 @@ export default defineConfig({
         __dirname,
         "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
       ),
+      // Mirror tsconfig paths so vitest can resolve workspace packages
+      "@hwc/core": resolve(__dirname, "../core/src"),
+      "@holo-host/lair": resolve(__dirname, "../lair/src"),
+      "@hwc/shared": resolve(__dirname, "../shared/src"),
     },
   },
   test: {

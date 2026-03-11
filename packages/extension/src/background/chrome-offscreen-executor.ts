@@ -5,12 +5,13 @@
  * The offscreen document spawns a ribosome worker that runs WASM + SQLite,
  * with synchronous network access via XHR and signing via SharedArrayBuffer/Atomics.
  *
- * This class encapsulates all Chrome-specific offscreen document management
- * that was previously spread across background/index.ts.
+ * Overrides all BaseExecutor network/publish methods to proxy through the
+ * offscreen document via chrome.runtime.sendMessage. WebSocket, publish service,
+ * and signal forwarding all run inside the offscreen document — this class
+ * is a thin message-passing layer.
  */
 
 import type {
-  ZomeExecutor,
   MinimalZomeCallRequest,
   ZomeCallResult,
   RecoveryResult,
@@ -18,11 +19,9 @@ import type {
   RemoteSignalData,
   SignRequestData,
   SignResponseData,
-  RemoteSignalCallback,
-  SignRequestCallback,
-  WsStateChangeCallback,
 } from "../lib/zome-executor";
 import type { ZomeCallRequest } from "@hwc/core/ribosome";
+import { BaseExecutor } from "./base-executor";
 import { createLogger } from "../lib/logger";
 
 const logOffscreen = createLogger("OffscreenMgr");
@@ -34,19 +33,14 @@ const log = createLogger("Background");
 
 const OFFSCREEN_DOCUMENT_PATH = "offscreen/offscreen.html";
 
-export class ChromeOffscreenExecutor implements ZomeExecutor {
+export class ChromeOffscreenExecutor extends BaseExecutor {
   // --- Offscreen document state ---
   private creatingOffscreen: Promise<void> | null = null;
-  private _networkConfigured = false;
   private _offscreenReady = false;
   private offscreenReadyResolvers: Array<() => void> = [];
 
-  // --- Event callbacks ---
-  private remoteSignalCallback: RemoteSignalCallback | null = null;
-  private signRequestCallback: SignRequestCallback | null = null;
-  private wsStateChangeCallback: WsStateChangeCallback | null = null;
-
   constructor() {
+    super();
     this.setupMessageListener();
   }
 
@@ -103,11 +97,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
         if (rawMessage.type === "RECOVER_CHAIN_PROGRESS") {
           const { contextId, progress } = rawMessage;
           if (contextId && progress) {
-            chrome.storage.local.set({
-              [`hwc_recovery_progress_${contextId}`]: progress,
-            }).catch((err) => {
-              console.warn("Failed to write recovery progress:", err);
-            });
+            this.writeRecoveryProgress(contextId, progress);
           }
           return false;
         }
@@ -131,7 +121,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
-  // Network configuration
+  // Network configuration (overrides base — proxies to offscreen)
   // ============================================================================
 
   async configureNetwork(config: { linkerUrl: string; sessionToken?: string }): Promise<void> {
@@ -169,7 +159,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
-  // Agent registration
+  // Agent registration (overrides base — proxies to offscreen)
   // ============================================================================
 
   async registerAgent(dnaHashB64: string, agentPubKeyB64: string): Promise<void> {
@@ -253,7 +243,7 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
-  // Records & publishing
+  // Records & publishing (overrides base — proxies to offscreen)
   // ============================================================================
 
   async runGenesis(
@@ -342,17 +332,11 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
       throw new Error(response.error || "Chain recovery failed");
     }
 
-    return {
-      recoveredCount: response.recoveredCount ?? 0,
-      failedCount: response.failedCount ?? 0,
-      verifiedCount: response.verifiedCount ?? 0,
-      unverifiedCount: response.unverifiedCount ?? 0,
-      errors: response.errors ?? [],
-    };
+    return this.normalizeRecoveryResult(response);
   }
 
   // ============================================================================
-  // Linker connectivity
+  // Linker connectivity (overrides base — proxies to offscreen)
   // ============================================================================
 
   async disconnectLinker(): Promise<void> {
@@ -394,19 +378,15 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
-  // Events
+  // Platform-specific: recovery progress storage
   // ============================================================================
 
-  onRemoteSignal(callback: RemoteSignalCallback): void {
-    this.remoteSignalCallback = callback;
-  }
-
-  onSignRequest(callback: SignRequestCallback): void {
-    this.signRequestCallback = callback;
-  }
-
-  onWebSocketStateChange(callback: WsStateChangeCallback): void {
-    this.wsStateChangeCallback = callback;
+  protected writeRecoveryProgress(contextId: string, progress: any): void {
+    chrome.storage.local.set({
+      [`hwc_recovery_progress_${contextId}`]: progress,
+    }).catch((err) => {
+      console.warn("Failed to write recovery progress:", err);
+    });
   }
 
   // ============================================================================
@@ -497,10 +477,5 @@ export class ChromeOffscreenExecutor implements ZomeExecutor {
       logOffscreen.error("Offscreen document failed to become ready");
       throw new Error("Offscreen document initialization failed");
     }
-  }
-
-  /** Whether the network has been configured on the offscreen document. */
-  get networkConfigured(): boolean {
-    return this._networkConfigured;
   }
 }
