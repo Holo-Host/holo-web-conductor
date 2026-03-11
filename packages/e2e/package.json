@@ -17,6 +17,8 @@
     "logs": "tsx src/index.ts logs",
     "test": "echo 'E2E tests require headed browser + linker. Run: npm run e2e:test (from repo root)'",
     "test:e2e": "playwright test",
+    "test:chrome": "BROWSER=chrome playwright test --project=chromium-extension",
+    "test:firefox": "BROWSER=firefox playwright test --project=firefox-extension",
     "test:headed": "playwright test --headed",
     "lint": "eslint src/",
     "clean": "rm -rf dist"
@@ -24,6 +26,7 @@
   "dependencies": {
     "@playwright/test": "^1.40.0",
     "commander": "^12.0.0",
+    "playwright-webextext": "^0.0.4",
     "tail": "^2.2.6"
   },
   "devDependencies": {

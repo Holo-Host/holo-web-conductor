@@ -3,23 +3,46 @@ import { resolve } from "path";
 import { copyFileSync, rmSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { build as viteBuild } from "vite";
 
+const BROWSER = (process.env.BROWSER || "chrome") as "chrome" | "firefox";
+const isFirefox = BROWSER === "firefox";
+const distDir = `dist-${BROWSER}`;
+
+const sharedAliases = {
+  "@hwc/shared": resolve(__dirname, "../shared/src"),
+  "@hwc/core": resolve(__dirname, "../core/src"),
+  "@holo-host/lair": resolve(__dirname, "../lair/src"),
+  "libsodium-wrappers": resolve(
+    __dirname,
+    "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
+  ),
+};
+
+const sharedDefine = {
+  __BROWSER__: JSON.stringify(BROWSER),
+};
+
+// HTML inputs: popup pages always included, offscreen only for Chrome
+const htmlInputs: Record<string, string> = {
+  popup: resolve(__dirname, "src/popup/index.html"),
+  lair: resolve(__dirname, "src/popup/lair.html"),
+  authorize: resolve(__dirname, "src/popup/authorize.html"),
+  permissions: resolve(__dirname, "src/popup/permissions.html"),
+  happs: resolve(__dirname, "src/popup/happs.html"),
+};
+if (!isFirefox) {
+  htmlInputs.offscreen = resolve(__dirname, "src/offscreen/offscreen.html");
+}
+
 export default defineConfig({
+  define: sharedDefine,
   build: {
-    outDir: "dist",
+    outDir: distDir,
     sourcemap: true,
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        popup: resolve(__dirname, "src/popup/index.html"),
-        lair: resolve(__dirname, "src/popup/lair.html"),
-        authorize: resolve(__dirname, "src/popup/authorize.html"),
-        permissions: resolve(__dirname, "src/popup/permissions.html"),
-        happs: resolve(__dirname, "src/popup/happs.html"),
-        offscreen: resolve(__dirname, "src/offscreen/offscreen.html"),
-      },
+      input: htmlInputs,
       output: {
         entryFileNames: (chunkInfo) => {
-          // Put scripts in appropriate directories
           if (chunkInfo.name === "offscreen") {
             return "offscreen/[name].js";
           }
@@ -28,7 +51,6 @@ export default defineConfig({
         chunkFileNames: "lib/[name]-[hash].js",
         assetFileNames: (assetInfo) => {
           if (assetInfo.name?.endsWith(".html")) {
-            // Keep HTML files in appropriate directories
             const baseName = assetInfo.name.replace(/^.*[\\/]/, "");
             if (baseName === "offscreen.html") {
               return `offscreen/${baseName}`;
@@ -43,27 +65,20 @@ export default defineConfig({
     minify: false,
   },
   resolve: {
-    alias: {
-      "@hwc/shared": resolve(__dirname, "../shared/src"),
-      "@hwc/core": resolve(__dirname, "../core/src"),
-      "@holo-host/lair": resolve(__dirname, "../lair/src"),
-      "libsodium-wrappers": resolve(
-        __dirname,
-        "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-      ),
-    },
+    alias: sharedAliases,
   },
   plugins: [
     {
       name: "build-extension-scripts",
       async closeBundle() {
-        const distDir = resolve(__dirname, "dist");
+        const outDir = resolve(__dirname, distDir);
 
         // Build background script as IIFE
         await viteBuild({
           configFile: false,
+          define: sharedDefine,
           build: {
-            outDir: distDir,
+            outDir,
             emptyOutDir: false,
             lib: {
               entry: resolve(__dirname, "src/background/index.ts"),
@@ -80,24 +95,15 @@ export default defineConfig({
               },
             },
           },
-          resolve: {
-            alias: {
-              "@hwc/shared": resolve(__dirname, "../shared/src"),
-              "@hwc/core": resolve(__dirname, "../core/src"),
-              "@holo-host/lair": resolve(__dirname, "../lair/src"),
-              "libsodium-wrappers": resolve(
-                __dirname,
-                "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-              ),
-            },
-          },
+          resolve: { alias: sharedAliases },
         });
 
         // Build content script as IIFE
         await viteBuild({
           configFile: false,
+          define: sharedDefine,
           build: {
-            outDir: distDir,
+            outDir,
             emptyOutDir: false,
             lib: {
               entry: resolve(__dirname, "src/content/index.ts"),
@@ -126,8 +132,9 @@ export default defineConfig({
         // Build inject script as IIFE (runs in page context)
         await viteBuild({
           configFile: false,
+          define: sharedDefine,
           build: {
-            outDir: distDir,
+            outDir,
             emptyOutDir: false,
             lib: {
               entry: resolve(__dirname, "src/inject/index.ts"),
@@ -146,53 +153,19 @@ export default defineConfig({
           },
         });
 
-        // Build offscreen script as IIFE (runs in offscreen document)
-        await viteBuild({
-          configFile: false,
-          build: {
-            outDir: distDir,
-            emptyOutDir: false,
-            lib: {
-              entry: resolve(__dirname, "src/offscreen/index.ts"),
-              formats: ["iife"],
-              name: "HwcOffscreen",
-              fileName: () => "offscreen/offscreen.js",
-            },
-            sourcemap: true,
-            target: "es2020",
-            minify: false,
-            rollupOptions: {
-              output: {
-                extend: true,
-              },
-            },
-          },
-          resolve: {
-            alias: {
-              "@hwc/shared": resolve(__dirname, "../shared/src"),
-              "@hwc/core": resolve(__dirname, "../core/src"),
-              "@holo-host/lair": resolve(__dirname, "../lair/src"),
-              "libsodium-wrappers": resolve(
-                __dirname,
-                "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-              ),
-            },
-          },
-        });
-
-        // Build SQLite worker as IIFE (runs in dedicated worker from offscreen document)
-        const sqliteWorkerPath = resolve(__dirname, "src/offscreen/sqlite-worker.ts");
-        if (existsSync(sqliteWorkerPath)) {
+        // Build offscreen script (Chrome only)
+        if (!isFirefox) {
           await viteBuild({
             configFile: false,
+            define: sharedDefine,
             build: {
-              outDir: distDir,
+              outDir,
               emptyOutDir: false,
               lib: {
-                entry: sqliteWorkerPath,
+                entry: resolve(__dirname, "src/offscreen/index.ts"),
                 formats: ["iife"],
-                name: "HwcSqliteWorker",
-                fileName: () => "offscreen/sqlite-worker.js",
+                name: "HwcOffscreen",
+                fileName: () => "offscreen/offscreen.js",
               },
               sourcemap: true,
               target: "es2020",
@@ -203,34 +176,68 @@ export default defineConfig({
                 },
               },
             },
-            resolve: {
-              alias: {
-                "@hwc/shared": resolve(__dirname, "../shared/src"),
-                "@hwc/core": resolve(__dirname, "../core/src"),
-                "@holo-host/lair": resolve(__dirname, "../lair/src"),
-              },
-            },
+            resolve: { alias: sharedAliases },
           });
+        }
 
-          // Copy SQLite WASM file to offscreen directory
-          // The sqlite-wasm package is in the root node_modules (monorepo hoisting)
-          const sqliteWasmSrc = resolve(__dirname, "../../node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3.wasm");
-          const sqliteWasmDest = resolve(distDir, "offscreen/sqlite3.wasm");
-          if (existsSync(sqliteWasmSrc)) {
-            copyFileSync(sqliteWasmSrc, sqliteWasmDest);
-            console.log("Copied sqlite3.wasm to offscreen/");
-          } else {
-            console.warn("sqlite3.wasm not found at:", sqliteWasmSrc);
+        // Build SQLite worker (Chrome only — Firefox uses it via ribosome worker)
+        if (!isFirefox) {
+          const sqliteWorkerPath = resolve(__dirname, "src/offscreen/sqlite-worker.ts");
+          if (existsSync(sqliteWorkerPath)) {
+            await viteBuild({
+              configFile: false,
+              define: sharedDefine,
+              build: {
+                outDir,
+                emptyOutDir: false,
+                lib: {
+                  entry: sqliteWorkerPath,
+                  formats: ["iife"],
+                  name: "HwcSqliteWorker",
+                  fileName: () => "offscreen/sqlite-worker.js",
+                },
+                sourcemap: true,
+                target: "es2020",
+                minify: false,
+                rollupOptions: {
+                  output: {
+                    extend: true,
+                  },
+                },
+              },
+              resolve: {
+                alias: {
+                  "@hwc/shared": resolve(__dirname, "../shared/src"),
+                  "@hwc/core": resolve(__dirname, "../core/src"),
+                  "@holo-host/lair": resolve(__dirname, "../lair/src"),
+                },
+              },
+            });
           }
         }
 
-        // Build Ribosome worker as IIFE (runs WASM + SQLite together in dedicated worker)
+        // Copy SQLite WASM file to offscreen directory (needed by ribosome worker on both browsers)
+        const sqliteWasmSrc = resolve(__dirname, "../../node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3.wasm");
+        const offscreenDir = resolve(outDir, "offscreen");
+        if (!existsSync(offscreenDir)) {
+          mkdirSync(offscreenDir, { recursive: true });
+        }
+        const sqliteWasmDest = resolve(offscreenDir, "sqlite3.wasm");
+        if (existsSync(sqliteWasmSrc)) {
+          copyFileSync(sqliteWasmSrc, sqliteWasmDest);
+          console.log("Copied sqlite3.wasm to offscreen/");
+        } else {
+          console.warn("sqlite3.wasm not found at:", sqliteWasmSrc);
+        }
+
+        // Build Ribosome worker as IIFE (needed on both browsers)
         const ribosomeWorkerPath = resolve(__dirname, "src/offscreen/ribosome-worker.ts");
         if (existsSync(ribosomeWorkerPath)) {
           await viteBuild({
             configFile: false,
+            define: sharedDefine,
             build: {
-              outDir: distDir,
+              outDir,
               emptyOutDir: false,
               lib: {
                 entry: ribosomeWorkerPath,
@@ -247,30 +254,18 @@ export default defineConfig({
                 },
               },
             },
-            resolve: {
-              alias: {
-                "@hwc/shared": resolve(__dirname, "../shared/src"),
-                "@hwc/core": resolve(__dirname, "../core/src"),
-                "@holo-host/lair": resolve(__dirname, "../lair/src"),
-                "libsodium-wrappers": resolve(
-                  __dirname,
-                  "../../node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js"
-                ),
-              },
-            },
+            resolve: { alias: sharedAliases },
           });
           console.log("Built ribosome-worker.js");
         }
 
-        // Copy manifest.json to dist folder
-        copyFileSync(
-          resolve(__dirname, "manifest.json"),
-          resolve(distDir, "manifest.json")
-        );
+        // Copy manifest to dist folder (browser-specific)
+        const manifestSrc = resolve(__dirname, `manifest.${BROWSER}.json`);
+        copyFileSync(manifestSrc, resolve(outDir, "manifest.json"));
 
         // Copy icons to dist folder
         const iconsSrc = resolve(__dirname, "icons");
-        const iconsDest = resolve(distDir, "icons");
+        const iconsDest = resolve(outDir, "icons");
         if (existsSync(iconsSrc)) {
           if (!existsSync(iconsDest)) {
             mkdirSync(iconsDest, { recursive: true });
@@ -281,12 +276,12 @@ export default defineConfig({
         }
 
         // Move HTML files from dist/src/ to appropriate directories
-        const srcDir = resolve(distDir, "src");
+        const srcDir = resolve(outDir, "src");
 
         if (existsSync(srcDir)) {
           // Move popup HTML files
           const srcPopupDir = resolve(srcDir, "popup");
-          const destPopupDir = resolve(distDir, "popup");
+          const destPopupDir = resolve(outDir, "popup");
 
           if (existsSync(srcPopupDir)) {
             if (!existsSync(destPopupDir)) {
@@ -303,25 +298,29 @@ export default defineConfig({
             });
           }
 
-          // Move offscreen HTML file
-          const srcOffscreenDir = resolve(srcDir, "offscreen");
-          const destOffscreenDir = resolve(distDir, "offscreen");
+          // Move offscreen HTML file (Chrome only)
+          if (!isFirefox) {
+            const srcOffscreenDir = resolve(srcDir, "offscreen");
+            const destOffscreenDir = resolve(outDir, "offscreen");
 
-          if (existsSync(srcOffscreenDir)) {
-            if (!existsSync(destOffscreenDir)) {
-              mkdirSync(destOffscreenDir, { recursive: true });
-            }
+            if (existsSync(srcOffscreenDir)) {
+              if (!existsSync(destOffscreenDir)) {
+                mkdirSync(destOffscreenDir, { recursive: true });
+              }
 
-            const srcPath = resolve(srcOffscreenDir, "offscreen.html");
-            const destPath = resolve(destOffscreenDir, "offscreen.html");
-            if (existsSync(srcPath)) {
-              copyFileSync(srcPath, destPath);
+              const srcPath = resolve(srcOffscreenDir, "offscreen.html");
+              const destPath = resolve(destOffscreenDir, "offscreen.html");
+              if (existsSync(srcPath)) {
+                copyFileSync(srcPath, destPath);
+              }
             }
           }
 
           // Remove the dist/src directory
           rmSync(srcDir, { recursive: true, force: true });
         }
+
+        console.log(`Built ${BROWSER} extension in ${distDir}/`);
       },
     },
   ],

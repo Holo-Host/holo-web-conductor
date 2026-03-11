@@ -4,13 +4,16 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
-const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
+const CHROME_EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist-chrome');
 
 /**
  * Playwright configuration for HWC E2E tests
  *
  * Note: Extensions require a persistent context with headed mode.
  * Tests use a custom fixture that loads the extension.
+ *
+ * Run Chrome tests:  BROWSER=chrome npx playwright test --project=chromium-extension
+ * Run Firefox tests: BROWSER=firefox npx playwright test --project=firefox-extension
  */
 export default defineConfig({
   testDir: './tests',
@@ -36,15 +39,20 @@ export default defineConfig({
       name: 'chromium-extension',
       use: {
         ...devices['Desktop Chrome'],
-        // Custom launch options for extension loading
         launchOptions: {
           args: [
-            `--disable-extensions-except=${EXTENSION_PATH}`,
-            `--load-extension=${EXTENSION_PATH}`,
+            `--disable-extensions-except=${CHROME_EXTENSION_PATH}`,
+            `--load-extension=${CHROME_EXTENSION_PATH}`,
             '--no-first-run',
             '--disable-default-apps',
           ],
         },
+      },
+    },
+    {
+      name: 'firefox-extension',
+      use: {
+        ...devices['Desktop Firefox'],
       },
     },
   ],

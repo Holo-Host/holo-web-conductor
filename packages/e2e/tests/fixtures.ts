@@ -8,7 +8,8 @@
  */
 
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
+import { withExtension } from 'playwright-webextext';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readFile } from 'fs/promises';
@@ -17,11 +18,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
-const EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
 const SANDBOX_DIR = '/tmp/hwc-e2e';
 // Use HTTP URL to avoid file:// issues with Chrome extension signal delivery
 const TEST_PAGE_URL = 'http://localhost:3333/e2e-linker-test.html';
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
+
+/** Target browser: 'chrome' (default) or 'firefox' */
+export type TargetBrowser = 'chrome' | 'firefox';
+
+function getTargetBrowser(): TargetBrowser {
+  const env = process.env.BROWSER?.toLowerCase();
+  if (env === 'firefox') return 'firefox';
+  return 'chrome';
+}
+
+function getExtensionPath(browser: TargetBrowser): string {
+  const distDir = browser === 'firefox' ? 'dist-firefox' : 'dist-chrome';
+  return join(PROJECT_ROOT, 'packages', 'extension', distDir);
+}
 
 export interface HwcFixtures {
   /** Browser context with extension loaded */
@@ -41,29 +55,86 @@ export interface HwcFixtures {
 }
 
 /**
- * Get extension ID from service workers
+ * Launch a browser with the HWC extension loaded.
+ * Chrome: uses chromium.launchPersistentContext with --load-extension args
+ * Firefox: uses playwright-webextext to install via remote debugging protocol
+ */
+async function launchBrowserWithExtension(
+  browser: TargetBrowser,
+  extensionPath: string,
+  userDataDir: string,
+  extraArgs: string[] = [],
+): Promise<BrowserContext> {
+  if (browser === 'firefox') {
+    const firefoxWithExt = withExtension(firefox, extensionPath);
+    return firefoxWithExt.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: extraArgs,
+      // Disable IDB migration so the extension reads from the legacy JSON
+      // storage format (browser-extension-data/), allowing us to pre-populate
+      // permissions before launch.
+      firefoxUserPrefs: {
+        'extensions.webextensions.ExtensionStorageIDB.migrated.holochain@holo.host': false,
+      },
+    });
+  }
+  return chromium.launchPersistentContext(userDataDir, {
+    headless: false,
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+      '--no-first-run',
+      '--disable-default-apps',
+      ...extraArgs,
+    ],
+  });
+}
+
+/**
+ * Get extension ID from the browser context.
+ * Chrome: extracts from service worker URL (chrome-extension://ID/)
+ * Firefox: extracts from background page URL (moz-extension://UUID/)
  */
 async function getExtensionId(context: BrowserContext): Promise<string> {
   const page = await context.newPage();
-
   let extensionId = '';
   let attempts = 0;
-  const maxAttempts = 30;
+  const maxAttempts = 50;
 
   while (!extensionId && attempts < maxAttempts) {
-    const serviceWorkers = context.serviceWorkers();
-
-    for (const worker of serviceWorkers) {
-      const url = worker.url();
-      const match = url.match(/chrome-extension:\/\/([a-z]{32})\//);
+    // Chrome: check service workers
+    for (const worker of context.serviceWorkers()) {
+      const match = worker.url().match(/chrome-extension:\/\/([a-z]{32})\//);
       if (match) {
         extensionId = match[1];
         break;
       }
     }
 
+    // Firefox: check background pages (event pages)
     if (!extensionId) {
-      await page.waitForTimeout(100);
+      for (const bg of context.backgroundPages()) {
+        const match = bg.url().match(/moz-extension:\/\/([^/]+)\//);
+        if (match) {
+          extensionId = match[1];
+          break;
+        }
+      }
+    }
+
+    // Firefox fallback: check all pages for moz-extension:// URLs
+    if (!extensionId) {
+      for (const p of context.pages()) {
+        const match = p.url().match(/moz-extension:\/\/([^/]+)\//);
+        if (match) {
+          extensionId = match[1];
+          break;
+        }
+      }
+    }
+
+    if (!extensionId) {
+      await page.waitForTimeout(200);
       attempts++;
     }
   }
@@ -71,7 +142,7 @@ async function getExtensionId(context: BrowserContext): Promise<string> {
   await page.close();
 
   if (!extensionId) {
-    throw new Error('Could not find extension ID');
+    console.warn('Could not find extension ID after polling');
   }
 
   return extensionId;
@@ -109,21 +180,72 @@ async function readSandboxState(): Promise<{
  */
 function setupAutoApproval(context: BrowserContext): void {
   context.on('page', async (page) => {
-    const url = page.url();
-    // Check if this is an authorization popup
-    if (url.includes('authorize.html')) {
-      console.log('[E2E] Authorization popup detected, auto-approving...');
-      try {
-        // Wait for the approve button to be visible
+    try {
+      // On Firefox, the page URL may be about:blank when the event fires.
+      // Wait for the page to finish its initial navigation before checking.
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
+      let url = page.url();
+
+      // If still about:blank, wait briefly for the real navigation
+      if (url === 'about:blank') {
+        await page.waitForURL((u) => u.toString() !== 'about:blank', { timeout: 5000 }).catch(() => {});
+        url = page.url();
+      }
+
+      if (url.includes('authorize.html')) {
+        console.log('[E2E] Authorization popup detected, auto-approving...');
         await page.waitForSelector('#approve-btn', { timeout: 5000 });
-        // Click approve
         await page.click('#approve-btn');
         console.log('[E2E] Clicked approve button');
-      } catch (err) {
-        console.error('[E2E] Failed to auto-approve:', err);
       }
+    } catch (err) {
+      console.error('[E2E] Failed to auto-approve:', err);
     }
   });
+}
+
+/**
+ * Pre-populate Firefox extension storage with pre-approved origins.
+ *
+ * On Firefox, the authorization popup opened by chrome.windows.create() is
+ * invisible to Playwright (not in context.pages()), so we can't auto-approve it.
+ * Instead, we pre-populate the extension's chrome.storage.local data using
+ * Firefox's legacy JSON storage format (browser-extension-data/).
+ *
+ * This must be called BEFORE launching the browser. We also set the
+ * `extensions.webextensions.ExtensionStorageIDB.migrated.holochain@holo.host`
+ * pref to false so Firefox uses the JSON storage instead of IndexedDB.
+ *
+ * @param userDataDir - Firefox profile directory
+ * @param origins - origins to pre-approve (e.g. ['http://localhost:8082'])
+ */
+async function preApproveOriginsInProfile(
+  userDataDir: string,
+  origins: string[],
+): Promise<void> {
+  const { mkdir, writeFile } = await import('fs/promises');
+  const addonId = 'holochain@holo.host';
+  const storageDir = join(userDataDir, 'browser-extension-data', addonId);
+  await mkdir(storageDir, { recursive: true });
+
+  const permissions: Record<string, any> = {};
+  for (const origin of origins) {
+    permissions[origin] = {
+      origin,
+      granted: true,
+      timestamp: Date.now(),
+    };
+  }
+
+  const storageData = {
+    hwc_permissions: {
+      permissions,
+      version: 1,
+    },
+  };
+
+  await writeFile(join(storageDir, 'storage.js'), JSON.stringify(storageData));
+  console.log(`[E2E] Pre-approved ${origins.length} origins in Firefox profile storage`);
 }
 
 /**
@@ -131,15 +253,9 @@ function setupAutoApproval(context: BrowserContext): void {
  */
 export const test = base.extend<HwcFixtures>({
   extensionContext: async ({}, use) => {
-    const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-      headless: false,
-      args: [
-        `--disable-extensions-except=${EXTENSION_PATH}`,
-        `--load-extension=${EXTENSION_PATH}`,
-        '--no-first-run',
-        '--disable-default-apps',
-      ],
-    });
+    const browser = getTargetBrowser();
+    const extensionPath = getExtensionPath(browser);
+    const context = await launchBrowserWithExtension(browser, extensionPath, USER_DATA_DIR);
 
     // Set up auto-approval for authorization popups
     setupAutoApproval(context);
@@ -346,8 +462,15 @@ export interface AgentContext {
 /**
  * Create a persistent browser context for an agent with the extension loaded.
  * Each agent gets its own user data directory for isolated IndexedDB storage.
+ * @param agentName - unique name for this agent (used for user data dir)
+ * @param browser - 'chrome' or 'firefox' (defaults to BROWSER env var, then 'chrome')
  */
-export async function createAgentContext(agentName: string): Promise<AgentContext> {
+export async function createAgentContext(
+  agentName: string,
+  browser?: TargetBrowser,
+): Promise<AgentContext> {
+  const targetBrowser = browser ?? getTargetBrowser();
+  const extensionPath = getExtensionPath(targetBrowser);
   const userDataDir = join(PROJECT_ROOT, `.playwright-user-data-${agentName}`);
 
   // Clean up any existing user data to start fresh
@@ -355,48 +478,44 @@ export async function createAgentContext(agentName: string): Promise<AgentContex
     rmSync(userDataDir, { recursive: true, force: true });
   }
 
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false, // Extensions require headed mode
-    args: [
-      `--disable-extensions-except=${EXTENSION_PATH}`,
-      `--load-extension=${EXTENSION_PATH}`,
-      '--no-first-run',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--disable-background-networking',
-    ],
-    viewport: { width: 1280, height: 720 },
-  });
+  // Pre-approve test origins in the Firefox profile BEFORE launching the browser.
+  // This writes to the legacy JSON storage format that Firefox reads on startup.
+  if (targetBrowser === 'firefox') {
+    await preApproveOriginsInProfile(userDataDir, [
+      'http://localhost:3333',
+      'http://localhost:8081',
+      'http://localhost:8082',
+    ]);
+  }
+
+  // Chrome-specific args; Firefox ignores unknown args but keep it clean
+  const extraArgs = targetBrowser === 'chrome'
+    ? ['--disable-sync', '--disable-background-networking']
+    : [];
+  const context = await launchBrowserWithExtension(
+    targetBrowser,
+    extensionPath,
+    userDataDir,
+    extraArgs,
+  );
 
   // Set up auto-approval for extension permission dialogs
   setupAutoApproval(context);
 
-  // Wait for extension service worker to be ready
-  console.log(`[${agentName}] Waiting for extension service worker...`);
+  // Get extension ID. For Chrome, poll service workers. For Firefox, the ID
+  // can't be discovered via Playwright APIs, and the 10s polling would cause
+  // the MV3 event page to suspend due to inactivity. Skip it for Firefox.
   let extensionId = '';
-  let attempts = 0;
-  const maxAttempts = 30;
-
-  while (!extensionId && attempts < maxAttempts) {
-    const serviceWorkers = context.serviceWorkers();
-    for (const worker of serviceWorkers) {
-      const url = worker.url();
-      const match = url.match(/chrome-extension:\/\/([a-z]{32})\//);
-      if (match) {
-        extensionId = match[1];
-        break;
-      }
+  if (targetBrowser === 'chrome') {
+    console.log(`[${agentName}] Waiting for extension (${targetBrowser})...`);
+    try {
+      extensionId = await getExtensionId(context);
+      console.log(`[${agentName}] Extension ready: ${extensionId}`);
+    } catch {
+      console.warn(`[${agentName}] Could not find extension ID`);
     }
-    if (!extensionId) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      attempts++;
-    }
-  }
-
-  if (!extensionId) {
-    console.warn(`[${agentName}] Could not find extension ID after ${maxAttempts} attempts`);
   } else {
-    console.log(`[${agentName}] Extension ready: ${extensionId}`);
+    console.log(`[${agentName}] Firefox: skipping extension ID polling (not discoverable)`);
   }
 
   const page = await context.newPage();
@@ -438,6 +557,30 @@ export async function waitForExtensionReady(page: Page, timeout = 10000): Promis
     () => (window as any).holochain?.isWebConductor === true,
     { timeout }
   );
+}
+
+/**
+ * Inject a MutationObserver that auto-clicks "Retry" buttons from the
+ * connectWithJoiningUI overlay. On Firefox, the event page may be suspended
+ * when the content script first tries to connect, causing holochain.connect()
+ * to fail. The overlay shows a Retry button which we auto-click so the
+ * retry happens without manual intervention.
+ */
+export async function setupAutoRetry(page: Page, agentName: string): Promise<void> {
+  await page.evaluate((name) => {
+    const observer = new MutationObserver(() => {
+      const buttons = document.querySelectorAll('button');
+      for (const btn of buttons) {
+        if (btn.textContent?.trim() === 'Retry') {
+          console.log(`[${name}] Auto-clicking Retry button`);
+          btn.click();
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    // Store for cleanup
+    (window as any).__hwcAutoRetryObserver = observer;
+  }, agentName);
 }
 
 /**
@@ -851,7 +994,8 @@ export async function startSignalTest(
 
 // Export URLs for tests
 export { ZIPTEST_UI_URL };
-export const MEWSFEED_UI_URL = 'http://localhost:8082';
+export const LINKER_URL = process.env.LINKER_URL ?? 'http://localhost:8000';
+export const MEWSFEED_UI_URL = `http://localhost:8082?linkerUrl=${encodeURIComponent(LINKER_URL)}`;
 
 // ============================================================================
 // Mewsfeed Testing Helpers
@@ -1074,11 +1218,20 @@ export async function openPopupPage(
   agent: AgentContext,
   pageName: string
 ): Promise<Page> {
-  const url = `chrome-extension://${agent.extensionId}/popup/${pageName}`;
+  const url = extensionUrl(agent.extensionId, `popup/${pageName}`);
   const page = await agent.context.newPage();
   await page.goto(url);
   await page.waitForLoadState('domcontentloaded');
   return page;
+}
+
+/**
+ * Build a full extension URL from extension ID and path.
+ * Chrome IDs are 32 lowercase letters; Firefox IDs contain hyphens (UUID format).
+ */
+function extensionUrl(extensionId: string, path: string): string {
+  const protocol = extensionId.includes('-') ? 'moz-extension' : 'chrome-extension';
+  return `${protocol}://${extensionId}/${path}`;
 }
 
 /**

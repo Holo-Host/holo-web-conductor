@@ -2,9 +2,11 @@
  * Browser Context
  *
  * Sets up Playwright browser context with the HWC extension loaded.
+ * Supports both Chrome and Firefox via the BROWSER env var.
  */
 
-import { chromium, type BrowserContext, type Page } from '@playwright/test';
+import { chromium, firefox, type BrowserContext, type Page } from '@playwright/test';
+import { withExtension } from 'playwright-webextext';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { access, readdir } from 'fs/promises';
@@ -15,12 +17,31 @@ const __dirname = dirname(__filename);
 
 // Navigate from packages/e2e/src to project root
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
-const DEFAULT_EXTENSION_PATH = join(PROJECT_ROOT, 'packages', 'extension', 'dist');
 const USER_DATA_DIR = join(PROJECT_ROOT, '.playwright-user-data');
 
+type TargetBrowser = 'chrome' | 'firefox';
+
+function getTargetBrowser(): TargetBrowser {
+  const env = process.env.BROWSER?.toLowerCase();
+  if (env === 'firefox') return 'firefox';
+  return 'chrome';
+}
+
+function getDefaultExtensionPath(browser: TargetBrowser): string {
+  const distDir = browser === 'firefox' ? 'dist-firefox' : 'dist-chrome';
+  return join(PROJECT_ROOT, 'packages', 'extension', distDir);
+}
+
+function extensionUrl(extensionId: string, path: string): string {
+  const protocol = extensionId.includes('-') ? 'moz-extension' : 'chrome-extension';
+  return `${protocol}://${extensionId}/${path}`;
+}
+
 export interface BrowserContextOptions {
-  /** Path to the extension directory (default: packages/extension/dist) */
+  /** Path to the extension directory (auto-detected from BROWSER env var if not set) */
   extensionPath?: string;
+  /** Target browser: 'chrome' or 'firefox' (defaults to BROWSER env var) */
+  browser?: TargetBrowser;
   /** Whether to run headless (default: false - extensions require headed mode) */
   headless?: boolean;
   /** Slow down operations by this many milliseconds */
@@ -35,7 +56,8 @@ export interface BrowserContextOptions {
 export async function createBrowserContext(
   options: BrowserContextOptions = {}
 ): Promise<BrowserContextResult> {
-  const extensionPath = options.extensionPath ?? DEFAULT_EXTENSION_PATH;
+  const targetBrowser = options.browser ?? getTargetBrowser();
+  const extensionPath = options.extensionPath ?? getDefaultExtensionPath(targetBrowser);
 
   // Verify extension exists
   try {
@@ -47,30 +69,37 @@ export async function createBrowserContext(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(
-        `Extension not found at ${extensionPath}. Run 'npm run build:extension' first.`
+        `Extension not found at ${extensionPath}. Run 'npm run build' in packages/extension first.`
       );
     }
     throw err;
   }
 
-  // Launch browser with extension
-  // Note: Extensions require headed mode (headless: false)
-  const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-    headless: false, // Extensions don't work in headless mode
-    args: [
-      `--disable-extensions-except=${extensionPath}`,
-      `--load-extension=${extensionPath}`,
-      '--no-first-run',
-      '--disable-default-apps',
-    ],
-    slowMo: options.slowMo,
-    devtools: options.devtools,
-  });
+  let context: BrowserContext;
 
-  // Get extension ID from service worker URL
+  if (targetBrowser === 'firefox') {
+    const firefoxWithExt = withExtension(firefox, extensionPath);
+    context = await firefoxWithExt.launchPersistentContext(USER_DATA_DIR, {
+      headless: false,
+      slowMo: options.slowMo,
+    });
+  } else {
+    context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+        '--no-first-run',
+        '--disable-default-apps',
+      ],
+      slowMo: options.slowMo,
+      devtools: options.devtools,
+    });
+  }
+
+  // Get extension ID
   const extensionId = await getExtensionId(context);
-
-  const serviceWorkerUrl = `chrome-extension://${extensionId}/background.js`;
+  const serviceWorkerUrl = extensionUrl(extensionId, 'background.js');
 
   return {
     context,
@@ -80,28 +109,33 @@ export async function createBrowserContext(
 }
 
 /**
- * Get the extension ID by waiting for the service worker to register
+ * Get the extension ID by waiting for service worker (Chrome) or background page (Firefox)
  */
 async function getExtensionId(context: BrowserContext): Promise<string> {
-  // Navigate to chrome://extensions to trigger extension loading
   const page = await context.newPage();
 
-  // Wait for service worker to be available
   let extensionId = '';
   let attempts = 0;
   const maxAttempts = 30;
 
   while (!extensionId && attempts < maxAttempts) {
-    // Get all service workers
-    const serviceWorkers = context.serviceWorkers();
-
-    for (const worker of serviceWorkers) {
-      const url = worker.url();
-      // Extension service worker URLs look like: chrome-extension://EXTENSION_ID/background.js
-      const match = url.match(/chrome-extension:\/\/([a-z]{32})\//);
+    // Chrome: service workers
+    for (const worker of context.serviceWorkers()) {
+      const match = worker.url().match(/chrome-extension:\/\/([a-z]{32})\//);
       if (match) {
         extensionId = match[1];
         break;
+      }
+    }
+
+    // Firefox: background pages
+    if (!extensionId) {
+      for (const bg of context.backgroundPages()) {
+        const match = bg.url().match(/moz-extension:\/\/([^/]+)\//);
+        if (match) {
+          extensionId = match[1];
+          break;
+        }
       }
     }
 
@@ -127,28 +161,28 @@ export async function openExtensionPopup(
   context: BrowserContext,
   extensionId: string
 ): Promise<Page> {
-  const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+  const popupUrl = extensionUrl(extensionId, 'popup.html');
   const page = await context.newPage();
   await page.goto(popupUrl);
   return page;
 }
 
 /**
- * Navigate to the extension's offscreen document
- * Note: Offscreen documents have restricted access, this may not work directly
+ * Navigate to the extension's offscreen document (Chrome only)
  */
 export async function openOffscreenDocument(
   context: BrowserContext,
   extensionId: string
 ): Promise<Page> {
-  const offscreenUrl = `chrome-extension://${extensionId}/offscreen.html`;
+  const offscreenUrl = extensionUrl(extensionId, 'offscreen.html');
   const page = await context.newPage();
   await page.goto(offscreenUrl);
   return page;
 }
 
 /**
- * Reload the extension by navigating to chrome://extensions and clicking reload
+ * Reload the extension by navigating to chrome://extensions and clicking reload.
+ * Chrome-only — Firefox temporary add-ons are reloaded via about:debugging.
  */
 export async function reloadExtension(
   context: BrowserContext,
@@ -169,7 +203,6 @@ export async function reloadExtension(
     }
 
     // Find our extension card and click reload
-    // The extension cards are in shadow DOM, so we need to pierce through
     await page.evaluate((extId) => {
       const manager = document.querySelector('extensions-manager');
       if (!manager?.shadowRoot) return;
@@ -199,7 +232,7 @@ export async function reloadExtension(
 }
 
 /**
- * Wait for the extension to be ready (service worker active)
+ * Wait for the extension to be ready (service worker or background page active)
  */
 export async function waitForExtensionReady(
   context: BrowserContext,
@@ -209,19 +242,22 @@ export async function waitForExtensionReady(
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
-    const serviceWorkers = context.serviceWorkers();
-    const extensionWorker = serviceWorkers.find((w) =>
+    // Check Chrome service workers
+    const extensionWorker = context.serviceWorkers().find((w) =>
       w.url().includes(`chrome-extension://${extensionId}`)
     );
+    if (extensionWorker) return;
 
-    if (extensionWorker) {
-      return;
-    }
+    // Check Firefox background pages
+    const extensionBg = context.backgroundPages().find((p) =>
+      p.url().includes(`moz-extension://${extensionId}`)
+    );
+    if (extensionBg) return;
 
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
-  throw new Error(`Extension ${extensionId} service worker not ready after ${timeoutMs}ms`);
+  throw new Error(`Extension ${extensionId} not ready after ${timeoutMs}ms`);
 }
 
 /**

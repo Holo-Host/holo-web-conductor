@@ -171,6 +171,16 @@ export interface ZomeExecutor {
   /** Query current WebSocket connection state. */
   getWebSocketState(): Promise<WsStateInfo>;
 
+  // --- Signing key preload (Firefox) ---
+
+  /**
+   * Tell the executor to preload a signing key in its worker.
+   * On Chrome (offscreen executor), this is a no-op — signing uses SharedArrayBuffer roundtrip.
+   * On Firefox, the worker creates its own LairClient from IndexedDB and calls
+   * preloadKeyForSync() with the given public key. No secret key crosses the boundary.
+   */
+  preloadSigningKey?(pubKey: Uint8Array): Promise<void>;
+
   // --- Events (executor → background) ---
 
   /** Register callback for incoming remote signals from the linker. */
