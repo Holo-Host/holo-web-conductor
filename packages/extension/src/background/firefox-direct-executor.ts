@@ -12,18 +12,15 @@
  */
 
 import type {
-  ZomeExecutor,
   ZomeCallResult,
   RecoveryResult,
   WsStateInfo,
   RemoteSignalData,
   SignRequestData,
   SignResponseData,
-  RemoteSignalCallback,
-  SignRequestCallback,
-  WsStateChangeCallback,
 } from "../lib/zome-executor";
 import type { ZomeCallRequest } from "@hwc/core/ribosome";
+import { BaseExecutor } from "./base-executor";
 import { encode, decode } from "@msgpack/msgpack";
 import { getHappContextStorage } from "../lib/happ-context-storage";
 import {
@@ -42,7 +39,7 @@ const logSignal = createLogger("Signal");
 const logPublish = createLogger("Publish");
 const logZome = createLogger("ZomeCall");
 
-export class FirefoxDirectExecutor implements ZomeExecutor {
+export class FirefoxDirectExecutor extends BaseExecutor {
   // --- Worker state ---
   private worker: Worker | null = null;
   private workerReady = false;
@@ -55,7 +52,6 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
   // --- Network config ---
   private linkerUrl = "";
   private sessionToken: string | null = null;
-  private _networkConfigured = false;
 
   // --- Worker request tracking ---
   private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
@@ -66,11 +62,6 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
 
   // --- Recovery tracking ---
   private activeRecoveryContextId: string | null = null;
-
-  // --- Event callbacks ---
-  private remoteSignalCallback: RemoteSignalCallback | null = null;
-  private signRequestCallback: SignRequestCallback | null = null;
-  private wsStateChangeCallback: WsStateChangeCallback | null = null;
 
   // --- Storage ---
   private storage = getHappContextStorage();
@@ -85,10 +76,6 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
 
   isReady(): boolean {
     return this.workerReady;
-  }
-
-  get networkConfigured(): boolean {
-    return this._networkConfigured;
   }
 
   // ============================================================================
@@ -331,13 +318,7 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
 
     const response = await this.sendToWorker("RECOVER_CHAIN", { dnaHashes, agentPubKey });
 
-    return {
-      recoveredCount: response?.recoveredCount || 0,
-      failedCount: response?.failedCount || 0,
-      verifiedCount: response?.verifiedCount || 0,
-      unverifiedCount: response?.unverifiedCount || 0,
-      errors: response?.errors || [],
-    };
+    return this.normalizeRecoveryResult(response);
   }
 
   // ============================================================================
@@ -376,19 +357,13 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
   }
 
   // ============================================================================
-  // Events
+  // Platform-specific: recovery progress storage
   // ============================================================================
 
-  onRemoteSignal(callback: RemoteSignalCallback): void {
-    this.remoteSignalCallback = callback;
-  }
-
-  onSignRequest(callback: SignRequestCallback): void {
-    this.signRequestCallback = callback;
-  }
-
-  onWebSocketStateChange(callback: WsStateChangeCallback): void {
-    this.wsStateChangeCallback = callback;
+  protected writeRecoveryProgress(contextId: string, progress: any): void {
+    chrome.storage.local.set({
+      [`hwc_recovery_progress_${contextId}`]: progress,
+    }).catch(() => {});
   }
 
   // ============================================================================
@@ -457,9 +432,7 @@ export class FirefoxDirectExecutor implements ZomeExecutor {
     if (type === "RECOVER_CHAIN_PROGRESS") {
       const progress = event.data.progress;
       if (progress && this.activeRecoveryContextId) {
-        chrome.storage.local.set({
-          [`hwc_recovery_progress_${this.activeRecoveryContextId}`]: progress,
-        }).catch(() => {});
+        this.writeRecoveryProgress(this.activeRecoveryContextId, progress);
       }
       return;
     }
