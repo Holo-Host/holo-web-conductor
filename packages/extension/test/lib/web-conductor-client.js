@@ -1,4 +1,4 @@
-import { a as l, C as u, R as d, W as w, d as y, l as C, t as h } from "./WebConductorAppClient-CKMg93P4.js";
+import { a as l, C as u, R as d, W as w, d as y, l as C, t as h } from "./WebConductorAppClient-Cd2L0eOd.js";
 import { GatewayError as m, GatewayProxy as x, JoinSession as b, JoiningClient as f, JoiningError as A } from "@holo-host/joining-service/client";
 import { CellType as g, SignalType as E } from "@holochain/client";
 function i(o = 5e3) {
