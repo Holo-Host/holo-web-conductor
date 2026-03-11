@@ -5,8 +5,10 @@
  * The offscreen document spawns a ribosome worker that runs WASM + SQLite,
  * with synchronous network access via XHR and signing via SharedArrayBuffer/Atomics.
  *
- * This class encapsulates all Chrome-specific offscreen document management
- * that was previously spread across background/index.ts.
+ * Overrides all BaseExecutor network/publish methods to proxy through the
+ * offscreen document via chrome.runtime.sendMessage. WebSocket, publish service,
+ * and signal forwarding all run inside the offscreen document — this class
+ * is a thin message-passing layer.
  */
 
 import type {
@@ -119,7 +121,7 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
   }
 
   // ============================================================================
-  // Network configuration
+  // Network configuration (overrides base — proxies to offscreen)
   // ============================================================================
 
   async configureNetwork(config: { linkerUrl: string; sessionToken?: string }): Promise<void> {
@@ -157,7 +159,7 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
   }
 
   // ============================================================================
-  // Agent registration
+  // Agent registration (overrides base — proxies to offscreen)
   // ============================================================================
 
   async registerAgent(dnaHashB64: string, agentPubKeyB64: string): Promise<void> {
@@ -241,7 +243,7 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
   }
 
   // ============================================================================
-  // Records & publishing
+  // Records & publishing (overrides base — proxies to offscreen)
   // ============================================================================
 
   async runGenesis(
@@ -334,7 +336,7 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
   }
 
   // ============================================================================
-  // Linker connectivity
+  // Linker connectivity (overrides base — proxies to offscreen)
   // ============================================================================
 
   async disconnectLinker(): Promise<void> {
@@ -476,5 +478,4 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
       throw new Error("Offscreen document initialization failed");
     }
   }
-
 }

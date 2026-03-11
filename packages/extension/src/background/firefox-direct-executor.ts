@@ -9,29 +9,25 @@
  * - Run WebSocket + publish services in the background page (has DOM)
  *
  * No SharedArrayBuffer, no Atomics, no offscreen document.
+ *
+ * Inherits WebSocket management, publish service, signal forwarding, and
+ * linker connectivity from BaseExecutor. Only adds worker lifecycle and
+ * zome call execution.
  */
 
 import type {
   ZomeCallResult,
   RecoveryResult,
   WsStateInfo,
-  RemoteSignalData,
-  SignRequestData,
-  SignResponseData,
 } from "../lib/zome-executor";
 import type { ZomeCallRequest } from "@hwc/core/ribosome";
 import { BaseExecutor } from "./base-executor";
 import { encode, decode } from "@msgpack/msgpack";
 import { getHappContextStorage } from "../lib/happ-context-storage";
-import {
-  WebSocketNetworkService,
-  type ConnectionState,
-} from "@hwc/core/network";
-import { PublishService } from "@hwc/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@hwc/core";
-import { encodeHashToBase64, decodeHashFromBase64 } from "@holochain/client";
-import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
-import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
+import { encodeHashToBase64 } from "@holochain/client";
+import type { DnaHash } from "@holochain/client";
+import { createLogger } from "../lib/logger";
 
 const log = createLogger("FirefoxExec");
 const logNetwork = createLogger("Network");
@@ -44,14 +40,6 @@ export class FirefoxDirectExecutor extends BaseExecutor {
   private worker: Worker | null = null;
   private workerReady = false;
   private workerInitPromise: Promise<void> | null = null;
-
-  // --- Services ---
-  private wsService: WebSocketNetworkService | null = null;
-  private publishService: PublishService | null = null;
-
-  // --- Network config ---
-  private linkerUrl = "";
-  private sessionToken: string | null = null;
 
   // --- Worker request tracking ---
   private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
@@ -79,16 +67,12 @@ export class FirefoxDirectExecutor extends BaseExecutor {
   }
 
   // ============================================================================
-  // Network configuration
+  // Network configuration (extends base with worker forwarding)
   // ============================================================================
 
   async configureNetwork(config: { linkerUrl: string; sessionToken?: string }): Promise<void> {
-    this.linkerUrl = config.linkerUrl;
-    if (config.sessionToken !== undefined) {
-      this.sessionToken = config.sessionToken || null;
-    }
-
-    logNetwork.info(`Configuring network: ${this.linkerUrl}`);
+    // Base class handles WS service init/reconfigure, stores config
+    await super.configureNetwork(config);
 
     // Forward to worker if ready
     if (this.workerReady) {
@@ -97,60 +81,30 @@ export class FirefoxDirectExecutor extends BaseExecutor {
         sessionToken: this.sessionToken,
       });
     }
-
-    // Initialize or reconfigure WebSocket
-    if (this.linkerUrl && !this.wsService) {
-      this.initializeWebSocketService();
-    } else if (this.wsService && this.linkerUrl) {
-      const newWsUrl = this.linkerUrl
-        .replace(/^http:/, "ws:")
-        .replace(/^https:/, "wss:")
-        .replace(/\/$/, "") + "/ws";
-      if (this.wsService.getUrl() !== newWsUrl) {
-        logNetwork.info(`Linker URL changed, reinitializing WebSocket`);
-        this.wsService.disconnect();
-        this.wsService = null;
-        this.initializeWebSocketService();
-      } else if (this.sessionToken) {
-        this.wsService.setSessionToken(this.sessionToken);
-      }
-    }
-
-    this._networkConfigured = true;
-    logNetwork.info("Network configured");
   }
 
   async updateSessionToken(token: string | null): Promise<void> {
-    if (!this._networkConfigured) return;
+    // Base class handles WS service update, stores token
+    await super.updateSessionToken(token);
 
-    this.sessionToken = token;
-    if (this.workerReady) {
+    if (this._networkConfigured && this.workerReady) {
       await this.sendToWorker("CONFIGURE_NETWORK", {
         linkerUrl: this.linkerUrl,
         sessionToken: this.sessionToken,
       }).catch((err: unknown) => logNetwork.error("Failed to update worker session token:", err));
     }
-    if (this.wsService) {
-      this.wsService.setSessionToken(token || "");
-    }
   }
 
   // ============================================================================
-  // Agent registration
+  // Hook: linker session token propagation to worker
   // ============================================================================
 
-  async registerAgent(dnaHashB64: string, agentPubKeyB64: string): Promise<void> {
-    if (!this._networkConfigured) {
-      logNetwork.debug("Skipping agent registration - network not configured");
-      return;
-    }
-
-    logNetwork.info(
-      `Registering agent: dna=${dnaHashB64.substring(0, 15)}..., agent=${agentPubKeyB64.substring(0, 15)}...`
-    );
-
-    if (this.wsService) {
-      this.wsService.registerAgent(dnaHashB64, agentPubKeyB64);
+  protected onLinkerSessionToken(token: string): void {
+    if (this.workerReady) {
+      this.sendToWorker("CONFIGURE_NETWORK", {
+        linkerUrl: this.linkerUrl,
+        sessionToken: this.sessionToken,
+      }).catch((err: unknown) => logNetwork.error("Worker token update failed:", err));
     }
   }
 
@@ -279,29 +233,13 @@ export class FirefoxDirectExecutor extends BaseExecutor {
   }
 
   // ============================================================================
-  // Records & publishing
+  // Records
   // ============================================================================
 
   async getAllRecords(dnaHash: number[], agentPubKey: number[]): Promise<{ records: any[] }> {
     await this.initWorker();
     const response = await this.sendToWorker("GET_ALL_RECORDS", { dnaHash, agentPubKey });
     return { records: response?.records || [] };
-  }
-
-  async processPublishQueue(dnaHashes: number[][]): Promise<void> {
-    if (!this.publishService) {
-      if (!this.linkerUrl) return;
-      this.publishService = new PublishService({
-        linkerUrl: this.linkerUrl,
-        sessionToken: this.sessionToken || undefined,
-      });
-      await this.publishService.init();
-    }
-
-    for (const dnaHashArray of dnaHashes) {
-      const dnaHash = new Uint8Array(dnaHashArray);
-      await this.publishService.processQueue(dnaHash);
-    }
   }
 
   // ============================================================================
@@ -319,27 +257,6 @@ export class FirefoxDirectExecutor extends BaseExecutor {
     const response = await this.sendToWorker("RECOVER_CHAIN", { dnaHashes, agentPubKey });
 
     return this.normalizeRecoveryResult(response);
-  }
-
-  // ============================================================================
-  // Linker connectivity
-  // ============================================================================
-
-  async disconnectLinker(): Promise<void> {
-    if (this.wsService) this.wsService.disconnect();
-  }
-
-  async reconnectLinker(): Promise<void> {
-    if (this.wsService) this.wsService.connect();
-  }
-
-  async getWebSocketState(): Promise<WsStateInfo> {
-    return {
-      state: this.wsService?.getState() || "disconnected",
-      isConnected: this.wsService?.isConnected() || false,
-      authenticated: this.wsService?.isAuthenticated() || false,
-      registrations: this.wsService?.getRegistrations(),
-    };
   }
 
   // ============================================================================
@@ -363,7 +280,9 @@ export class FirefoxDirectExecutor extends BaseExecutor {
   protected writeRecoveryProgress(contextId: string, progress: any): void {
     chrome.storage.local.set({
       [`hwc_recovery_progress_${contextId}`]: progress,
-    }).catch(() => {});
+    }).catch((err) => {
+      log.warn("Failed to write recovery progress:", err);
+    });
   }
 
   // ============================================================================
@@ -479,148 +398,6 @@ export class FirefoxDirectExecutor extends BaseExecutor {
       });
       this.worker.postMessage({ id, type, payload });
     });
-  }
-
-  // ============================================================================
-  // Internal: WebSocket service
-  // ============================================================================
-
-  private initializeWebSocketService(): void {
-    const wsUrl = this.linkerUrl
-      .replace(/^http:/, "ws:")
-      .replace(/^https:/, "wss:")
-      .replace(/\/$/, "") + "/ws";
-
-    logNetwork.info(`Initializing WebSocket: ${wsUrl}`);
-
-    this.wsService = new WebSocketNetworkService({
-      linkerWsUrl: wsUrl,
-      sessionToken: this.sessionToken || undefined,
-    });
-
-    // Signal forwarding: invoke the callback registered by background/index.ts
-    this.wsService.onSignal((signal) => {
-      logSignal.info(`Remote signal: dna=${signal.dna_hash.substring(0, 15)}..., zome=${signal.zome_name}`);
-      if (this.remoteSignalCallback) {
-        this.remoteSignalCallback({
-          dna_hash: signal.dna_hash,
-          to_agent: signal.to_agent,
-          from_agent: signal.from_agent,
-          zome_name: signal.zome_name,
-          signal: Array.from(signal.signal),
-        });
-      }
-    });
-
-    // State change notifications
-    this.wsService.onStateChange((state: ConnectionState) => {
-      logNetwork.info(`WebSocket state: ${state}`);
-      if (this.wsStateChangeCallback) {
-        this.wsStateChangeCallback(state, this.wsService?.isAuthenticated() || false);
-      }
-
-      // Auto-retry publishes on reconnect
-      if (state === "connected") {
-        setTimeout(() => {
-          const registrations = this.wsService?.getRegistrations() || [];
-          if (registrations.length > 0 && this.publishService) {
-            const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
-            for (const dnaHashB64 of uniqueDnas) {
-              const dnaHash = decodeHashFromBase64(dnaHashB64);
-              this.publishService.processQueue(dnaHash).catch(err => {
-                logPublish.warn(`Auto-retry failed:`, err);
-              });
-            }
-          }
-        }, 2000);
-      }
-    });
-
-    // Sign callback for WebSocket auth
-    this.wsService.onSign(async (request) => {
-      if (!this.signRequestCallback) throw new Error("No sign handler");
-
-      const response = await this.signRequestCallback({
-        agent_pubkey: Array.from(request.agent_pubkey),
-        message: Array.from(request.message),
-      });
-
-      if (response.success && response.signature) {
-        return new Uint8Array(response.signature);
-      }
-      throw new Error(response.error || "Signing failed");
-    });
-
-    // Session token callback: update worker when linker auth succeeds
-    this.wsService.onSessionToken((token) => {
-      logNetwork.info("Received session token from linker auth");
-      this.sessionToken = token;
-      if (this.workerReady) {
-        this.sendToWorker("CONFIGURE_NETWORK", {
-          linkerUrl: this.linkerUrl,
-          sessionToken: this.sessionToken,
-        }).catch((err: unknown) => logNetwork.error("Worker token update failed:", err));
-      }
-    });
-
-    this.wsService.connect();
-  }
-
-  // ============================================================================
-  // Internal: Publishing
-  // ============================================================================
-
-  private async publishPendingRecords(transportedRecords: any[], dnaHash: DnaHash): Promise<void> {
-    if (!this.linkerUrl) return;
-
-    if (!this.publishService) {
-      this.publishService = new PublishService({
-        linkerUrl: this.linkerUrl,
-        sessionToken: this.sessionToken || undefined,
-      });
-      await this.publishService.init();
-    } else {
-      this.publishService.setLinkerUrl(this.linkerUrl);
-      if (this.sessionToken) this.publishService.setSessionToken(this.sessionToken);
-    }
-
-    const records = transportedRecords.map(this.transportedRecordToRecord);
-    logPublish.info(`Publishing ${records.length} records`);
-
-    for (const record of records) {
-      try {
-        await this.publishService.publishRecord(record, dnaHash);
-      } catch (error) {
-        logPublish.error("Failed to publish record:", error);
-      }
-    }
-  }
-
-  private transportedRecordToRecord(transported: any): HolochainRecord {
-    let entry: any = undefined;
-    if (transported.entry) {
-      if (transported.entry.Present) {
-        entry = {
-          Present: {
-            entry_type: transported.entry.Present.entry_type,
-            entry: new Uint8Array(transported.entry.Present.entry),
-          },
-        };
-      } else if (transported.entry.NotApplicable !== undefined) {
-        entry = { NotApplicable: undefined };
-      }
-    }
-
-    return {
-      signed_action: {
-        hashed: {
-          content: transported.signed_action.hashed.content,
-          hash: new Uint8Array(transported.signed_action.hashed.hash),
-        },
-        signature: new Uint8Array(transported.signed_action.signature),
-      },
-      entry,
-    } as HolochainRecord;
   }
 
   // ============================================================================
