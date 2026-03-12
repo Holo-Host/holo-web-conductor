@@ -44,6 +44,7 @@ release/
 
 # Bundled test client (rebuilt from extension dist)
 packages/extension/test/lib/web-conductor-client.js
+packages/extension/test/lib/WebConductorAppClient-*.js
 
 # Playwright test artifacts
 .playwright-user-data*/

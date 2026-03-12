@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "build": "vite build && npm run copy-to-test",
-    "copy-to-test": "mkdir -p ../extension/test/lib && cp dist/index.js ../extension/test/lib/web-conductor-client.js",
+    "copy-to-test": "mkdir -p ../extension/test/lib && rm -f ../extension/test/lib/WebConductorAppClient-*.js && cp dist/index.js ../extension/test/lib/web-conductor-client.js && cp dist/WebConductorAppClient-*.js ../extension/test/lib/",
     "dev": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",

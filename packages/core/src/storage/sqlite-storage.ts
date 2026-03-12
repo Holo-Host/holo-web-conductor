@@ -179,7 +179,11 @@ export class SQLiteStorage {
     const resultLength = dv.getUint32(0);
 
     if (resultLength > 0 && resultLength < RESULT_BUFFER_SIZE - 4) {
-      const resultBytes = this.resultView.slice(4, 4 + resultLength);
+      // Copy from SharedArrayBuffer into a plain ArrayBuffer for TextDecoder
+      // (TextDecoder.decode rejects views backed by SharedArrayBuffer)
+      const shared = this.resultView.subarray(4, 4 + resultLength);
+      const resultBytes = new Uint8Array(shared.length);
+      resultBytes.set(shared);
       const resultJson = new TextDecoder().decode(resultBytes);
       const result = JSON.parse(resultJson);
 
