@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lair Keystore - Holo Web Conductor</title>
+    <title>Keystore - Holo Web Conductor</title>
     <style>
       body {
         width: 500px;
@@ -122,6 +122,11 @@
       button.secondary:hover {
         background: #545b62;
       }
+      button.small {
+        padding: 4px 8px;
+        font-size: 11px;
+        margin-top: 0;
+      }
       .error {
         color: #dc3545;
         font-size: 12px;
@@ -184,38 +189,6 @@
       .hidden {
         display: none;
       }
-      .seed-phrase-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 6px;
-        margin: 10px 0;
-        padding: 10px;
-        background: #f8f9fa;
-        border-radius: 6px;
-        font-family: monospace;
-        font-size: 13px;
-      }
-      .seed-phrase-grid .word {
-        padding: 4px 6px;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        text-align: center;
-      }
-      .seed-phrase-grid .word-num {
-        color: #6c757d;
-        font-size: 10px;
-        margin-right: 2px;
-      }
-      .warning-box {
-        background: #fff3cd;
-        color: #856404;
-        border: 1px solid #ffc107;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 12px;
-        margin-bottom: 10px;
-      }
       .info-text {
         font-size: 12px;
         color: #6c757d;
@@ -237,15 +210,100 @@
         color: #721c24;
         border: 1px solid #f5c6cb;
       }
+
+      /* Modal styles */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+      .modal-overlay.active {
+        display: flex;
+      }
+      .modal {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 420px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      }
+      .modal h3 {
+        margin: 0 0 12px 0;
+        font-size: 15px;
+        color: #333;
+      }
+      .modal-actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .seed-words-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin: 10px 0;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        font-family: monospace;
+        font-size: 13px;
+      }
+      .seed-words-grid .word {
+        padding: 4px 6px;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        text-align: center;
+      }
+      .seed-words-grid .word-num {
+        color: #6c757d;
+        font-size: 10px;
+        margin-right: 2px;
+      }
+      .warning-box {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffc107;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      .action-buttons {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .button-row {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 8px;
+      }
+      .section hr {
+        border: none;
+        border-top: 1px solid #ddd;
+        margin: 16px 0;
+      }
     </style>
   </head>
   <body>
-    <a href="index.html" class="back-link">← Back to Main</a>
-    <h1>Lair Keystore Management</h1>
+    <a href="index.html" class="back-link">&larr; Back to Main</a>
+    <h1>Keystore Management</h1>
 
     <!-- Lock Status -->
     <div id="lock-status" class="lock-status locked">
-      <span id="lock-status-text">🔒 Locked</span>
+      <span id="lock-status-text">&#x1f512; Locked</span>
     </div>
 
     <!-- Lock/Unlock Section -->
@@ -258,7 +316,7 @@
           <label for="new-passphrase">New Passphrase (min 8 characters)</label>
           <input type="password" id="new-passphrase" placeholder="Enter passphrase" />
         </div>
-        <button id="set-passphrase-btn">Set Passphrase</button>
+        <div class="button-row"><button id="set-passphrase-btn">Set Passphrase</button></div>
         <div id="set-passphrase-error" class="error hidden"></div>
       </div>
 
@@ -267,7 +325,7 @@
           <label for="unlock-passphrase">Passphrase</label>
           <input type="password" id="unlock-passphrase" placeholder="Enter passphrase" />
         </div>
-        <button id="unlock-btn">Unlock</button>
+        <div class="button-row"><button id="unlock-btn">Unlock</button></div>
         <div id="unlock-error" class="error hidden"></div>
       </div>
 
@@ -277,28 +335,61 @@
       </div>
     </div>
 
-    <!-- Keypair Management Section -->
+    <!-- Keypair List Section -->
     <div id="keypair-section" class="section disabled">
-      <h2>Keypair Management</h2>
-
-      <div class="form-group">
-        <label for="new-tag">Tag (identifier)</label>
-        <input type="text" id="new-tag" placeholder="my-keypair" />
-      </div>
-      <div class="form-group">
-        <label>
-          <input type="checkbox" id="new-exportable" />
-          Exportable
-        </label>
-      </div>
-      <button id="create-keypair-btn">Create Keypair</button>
-      <div id="create-keypair-error" class="error hidden"></div>
-      <div id="create-keypair-success" class="success hidden"></div>
-
-      <h2>Existing Keypairs</h2>
+      <h2>Keypairs</h2>
       <div id="keypair-list">
         <p style="font-size: 12px; color: #666;">No keypairs yet.</p>
       </div>
+    </div>
+
+    <!-- Create / Import Section -->
+    <div id="create-section" class="section disabled">
+      <h2>Create / Import Keypair</h2>
+
+      <div class="form-group">
+        <label for="create-mode">Method</label>
+        <select id="create-mode">
+          <option value="new">Create New</option>
+          <option value="import-export">Import from Passphrase-Protected Export</option>
+          <option value="import-seed">Import from Seed Words</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="create-tag">Tag (identifier)</label>
+        <input type="text" id="create-tag" placeholder="my-keypair" />
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="create-exportable" />
+          Exportable
+        </label>
+      </div>
+
+      <!-- Import from export fields -->
+      <div id="import-export-fields" class="hidden">
+        <div class="form-group">
+          <label for="import-data">Encrypted Export Data</label>
+          <textarea id="import-data" placeholder="Paste encrypted export data"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="import-passphrase">Decryption Passphrase</label>
+          <input type="password" id="import-passphrase" placeholder="Enter passphrase used during export" />
+        </div>
+      </div>
+
+      <!-- Import from seed words fields -->
+      <div id="import-seed-fields" class="hidden">
+        <div class="form-group">
+          <label for="import-mnemonic">Seed Words (24 words)</label>
+          <textarea id="import-mnemonic" rows="3" placeholder="Enter your 24 seed words, separated by spaces"></textarea>
+        </div>
+      </div>
+
+      <div class="button-row"><button id="create-btn">Create</button></div>
+      <div id="create-error" class="error hidden"></div>
+      <div id="create-success" class="success hidden"></div>
     </div>
 
     <!-- Sign/Verify Section -->
@@ -322,16 +413,18 @@
         <label for="sign-data">Data to Sign</label>
         <textarea id="sign-data" placeholder="Enter text, base64, or hex to sign"></textarea>
       </div>
-      <button id="sign-btn">Sign</button>
+      <div class="button-row"><button id="sign-btn">Sign</button></div>
       <div id="sign-error" class="error hidden"></div>
       <div id="sign-result-wrapper" class="hidden" style="position:relative;">
         <div id="sign-result" class="result-box" style="padding-right:2.5rem;word-break:break-all;"></div>
         <button id="sign-copy-btn" title="Copy to clipboard" style="position:absolute;top:4px;right:4px;padding:2px 6px;font-size:0.75rem;cursor:pointer;">Copy</button>
       </div>
 
+      <hr>
+
       <h2>Verify Signature</h2>
       <div class="form-group">
-        <label for="verify-pubkey">Public Key (base64)</label>
+        <label for="verify-pubkey">Public Key or AgentPubKey (base64)</label>
         <input type="text" id="verify-pubkey" placeholder="Paste public key" />
       </div>
       <div class="form-group">
@@ -350,90 +443,62 @@
         <label for="verify-signature">Signature (base64)</label>
         <textarea id="verify-signature" placeholder="Paste signature"></textarea>
       </div>
-      <button id="verify-btn">Verify</button>
+      <div class="button-row"><button id="verify-btn">Verify</button></div>
       <div id="verify-error" class="error hidden"></div>
       <div id="verify-result" class="success hidden"></div>
     </div>
 
-    <!-- Export/Import Section -->
-    <div id="export-import-section" class="section disabled">
-      <h2>Export Keypair</h2>
-      <div class="form-group">
-        <label for="export-keypair">Select Keypair (exportable only)</label>
-        <select id="export-keypair">
-          <option value="">-- Select keypair --</option>
-        </select>
+    <!-- Export Passphrase Modal -->
+    <div id="export-modal" class="modal-overlay">
+      <div class="modal">
+        <h3>Export Keypair: <span id="export-modal-tag"></span></h3>
+        <div class="form-group">
+          <label for="export-passphrase">Encryption Passphrase (min 8 characters)</label>
+          <input type="password" id="export-passphrase" placeholder="Enter passphrase" />
+        </div>
+        <div class="form-group">
+          <label for="export-passphrase-confirm">Confirm Passphrase</label>
+          <input type="password" id="export-passphrase-confirm" placeholder="Confirm passphrase" />
+        </div>
+        <div id="export-modal-error" class="error hidden"></div>
+        <div class="modal-actions">
+          <button id="export-modal-cancel" class="secondary">Cancel</button>
+          <button id="export-modal-submit">Export</button>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="export-passphrase">Encryption Passphrase</label>
-        <input type="password" id="export-passphrase" placeholder="Enter passphrase for export" />
-      </div>
-      <button id="export-btn">Export</button>
-      <div id="export-error" class="error hidden"></div>
-      <div id="export-result" class="result-box hidden"></div>
-
-      <h2>Import Keypair</h2>
-      <div class="form-group">
-        <label for="import-data">Encrypted Export Data (JSON)</label>
-        <textarea id="import-data" placeholder="Paste encrypted export data"></textarea>
-      </div>
-      <div class="form-group">
-        <label for="import-passphrase">Decryption Passphrase</label>
-        <input type="password" id="import-passphrase" placeholder="Enter passphrase" />
-      </div>
-      <div class="form-group">
-        <label for="import-tag">New Tag</label>
-        <input type="text" id="import-tag" placeholder="my-imported-keypair" />
-      </div>
-      <div class="form-group">
-        <label>
-          <input type="checkbox" id="import-exportable" />
-          Make Exportable
-        </label>
-      </div>
-      <button id="import-btn">Import</button>
-      <div id="import-error" class="error hidden"></div>
-      <div id="import-success" class="success hidden"></div>
     </div>
 
-    <!-- Seed Phrase Backup & Restore Section -->
-    <div id="seed-phrase-section" class="section disabled">
-      <h2>Seed Phrase Backup &amp; Restore</h2>
-
-      <div class="form-group">
-        <h3>Backup Seed Phrase</h3>
-        <p class="info-text">Export a keypair as a 24-word seed phrase for backup. Only exportable keys can be backed up.</p>
+    <!-- Export Result Modal -->
+    <div id="export-result-modal" class="modal-overlay">
+      <div class="modal">
+        <h3>Exported: <span id="export-result-tag"></span></h3>
         <div class="form-group">
-          <label>Select Key Tag:</label>
-          <select id="backup-key-select">
-            <option value="">-- Select a key --</option>
+          <label for="export-format">Format</label>
+          <select id="export-format">
+            <option value="short">Short (base64)</option>
+            <option value="json">Full JSON</option>
           </select>
         </div>
-        <button id="show-seed-phrase-btn">Show Seed Phrase</button>
-        <div id="seed-phrase-display" class="hidden">
-          <div class="warning-box">Do not share these words. Anyone with this phrase can control your identity.</div>
-          <div id="seed-phrase-words" class="seed-phrase-grid"></div>
-          <button id="copy-seed-phrase-btn" class="secondary">Copy to Clipboard</button>
+        <p id="export-result-hint" class="info-text">Copy this data and store it securely. You will need it along with your passphrase to import this keypair.</p>
+        <div id="export-result-data" class="result-box" style="user-select: all;"></div>
+        <div class="modal-actions">
+          <button id="export-result-copy">Copy to Clipboard</button>
+          <button id="export-result-close" class="secondary">Close</button>
         </div>
       </div>
+    </div>
 
-      <hr>
-
-      <div class="form-group">
-        <h3>Restore from Seed Phrase</h3>
-        <p class="info-text">Import a previously backed-up seed phrase to restore your identity.</p>
-        <div class="form-group">
-          <label>Tag for restored key:</label>
-          <input type="text" id="restore-tag" placeholder="e.g., my-recovered-key" />
+    <!-- Seed Words Modal -->
+    <div id="seed-modal" class="modal-overlay">
+      <div class="modal">
+        <h3>Seed Words: <span id="seed-modal-tag"></span></h3>
+        <div class="warning-box">Do not share these words. Anyone with them can control your identity. Write them down on paper.</div>
+        <div id="seed-modal-words" class="seed-words-grid"></div>
+        <div id="seed-modal-error" class="error hidden"></div>
+        <div class="modal-actions">
+          <button id="seed-modal-close" class="secondary">Close</button>
         </div>
-        <div class="form-group">
-          <label>Seed Phrase (24 words):</label>
-          <textarea id="restore-mnemonic" rows="3" placeholder="Enter your 24-word seed phrase, separated by spaces"></textarea>
-        </div>
-        <button id="restore-seed-btn">Restore Key</button>
       </div>
-
-      <div id="seed-phrase-message" class="hidden"></div>
     </div>
 
     <script type="module" src="./lair.ts"></script>

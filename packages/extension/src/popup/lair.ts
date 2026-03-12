@@ -1,5 +1,5 @@
 /**
- * Lair management popup UI
+ * Keystore management popup UI
  *
  * Handles lock/unlock, keypair management, signing/verification, and export/import
  */
@@ -64,6 +64,18 @@ function agentPubKeyFromEd25519(ed25519: Uint8Array): Uint8Array {
   key.set(ed25519, 3);
   key.set(dhtLocationFrom32(ed25519), 35);
   return key;
+}
+
+/**
+ * Normalize data to Uint8Array (handles Chrome messaging serialization)
+ */
+function toUint8Array(data: Uint8Array | any): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (Array.isArray(data)) return new Uint8Array(data);
+  if (typeof data === 'object' && data !== null) {
+    return new Uint8Array(Object.values(data) as number[]);
+  }
+  throw new Error('Invalid data type for toUint8Array');
 }
 
 /**
@@ -204,33 +216,30 @@ async function updateLockState(): Promise<void> {
     if (lockStatusEl && lockStatusTextEl) {
       if (isLocked) {
         lockStatusEl.className = "lock-status locked";
-        lockStatusTextEl.textContent = "🔒 Locked";
+        lockStatusTextEl.textContent = "\u{1f512} Locked";
       } else {
         lockStatusEl.className = "lock-status unlocked";
-        lockStatusTextEl.textContent = "🔓 Unlocked";
+        lockStatusTextEl.textContent = "\u{1f513} Unlocked";
       }
     }
 
     // Show appropriate lock/unlock sections
     if (!hasPassphrase) {
-      // No passphrase set - show setup
       setVisible("passphrase-setup", true);
       setVisible("unlock-section", false);
       setVisible("lock-section", false);
     } else if (isLocked) {
-      // Locked - show unlock
       setVisible("passphrase-setup", false);
       setVisible("unlock-section", true);
       setVisible("lock-section", false);
     } else {
-      // Unlocked - show lock
       setVisible("passphrase-setup", false);
       setVisible("unlock-section", false);
       setVisible("lock-section", true);
     }
 
     // Enable/disable other sections based on lock state
-    const sections = ["keypair-section", "sign-verify-section", "export-import-section", "seed-phrase-section"];
+    const sections = ["keypair-section", "create-section", "sign-verify-section"];
     sections.forEach((sectionId) => {
       const el = document.getElementById(sectionId);
       if (el) {
@@ -275,7 +284,6 @@ async function setPassphrase(): Promise<void> {
       return;
     }
 
-    // Clear input and refresh state
     setValue("new-passphrase", "");
     await updateLockState();
   } catch (error) {
@@ -306,7 +314,6 @@ async function unlock(): Promise<void> {
       return;
     }
 
-    // Clear input and refresh state
     setValue("unlock-passphrase", "");
     await updateLockState();
   } catch (error) {
@@ -338,26 +345,23 @@ let keypairs: EntryInfo[] = [];
  */
 async function refreshKeypairList(): Promise<void> {
   try {
-    console.log("[Lair UI] Refreshing keypair list...");
     const response = await sendMessage(MessageType.LAIR_LIST_ENTRIES);
 
     if (response.type === MessageType.ERROR) {
-      console.error("[Lair UI] Failed to list entries:", response.error);
+      console.error("Failed to list entries:", response.error);
       return;
     }
 
     keypairs = (response.payload as { entries: EntryInfo[] }).entries;
-    console.log("[Lair UI] Received keypairs:", keypairs.length, keypairs);
     renderKeypairList();
     updateKeypairSelects();
-    populateBackupKeySelect(keypairs);
   } catch (error) {
-    console.error("[Lair UI] Error refreshing keypair list:", error);
+    console.error("Error refreshing keypair list:", error);
   }
 }
 
 /**
- * Render the keypair list as a table
+ * Render the keypair list as a table with inline actions
  */
 function renderKeypairList(): void {
   const listEl = document.getElementById("keypair-list");
@@ -389,6 +393,10 @@ function renderKeypairList(): void {
             const agentPubKey = agentPubKeyFromEd25519(ed25519Bytes);
             const agentPubKeyB64 = toBase64(agentPubKey);
             const ed25519B64 = toBase64(kp.ed25519_pub_key);
+            const exportActions = kp.exportable
+              ? `<button class="small export-btn" data-tag="${kp.tag}">Export</button>
+                 <button class="small secondary seed-btn" data-tag="${kp.tag}">Seed Words</button>`
+              : '';
             return `
         <tr>
           <td><strong>${kp.tag}</strong></td>
@@ -406,7 +414,10 @@ function renderKeypairList(): void {
             </span>
           </td>
           <td>
-            <button class="danger delete-btn" data-tag="${kp.tag}">Delete</button>
+            <div class="action-buttons">
+              ${exportActions}
+              <button class="small danger delete-btn" data-tag="${kp.tag}">Delete</button>
+            </div>
           </td>
         </tr>
       `;
@@ -419,7 +430,7 @@ function renderKeypairList(): void {
   listEl.innerHTML = "";
   listEl.appendChild(table);
 
-  // Add click handlers to public key cells (copies AgentPubKey base64)
+  // Add click handlers to public key cells
   table.querySelectorAll('.pubkey').forEach((cell) => {
     cell.addEventListener('click', async () => {
       const agentPubKey = (cell as HTMLElement).dataset.agentPubkey;
@@ -427,13 +438,12 @@ function renderKeypairList(): void {
         try {
           await navigator.clipboard.writeText(agentPubKey);
           const originalText = cell.textContent;
-          cell.textContent = '\u2713 Copied AgentPubKey!';
+          cell.textContent = '\u2713 Copied AgentPubKey';
           setTimeout(() => {
             cell.textContent = originalText;
           }, 1000);
         } catch (error) {
           console.error('Failed to copy:', error);
-          alert('Failed to copy to clipboard');
         }
       }
     });
@@ -448,13 +458,32 @@ function renderKeypairList(): void {
       }
     });
   });
+
+  // Add click handlers to export buttons
+  table.querySelectorAll('.export-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      const tag = (button as HTMLElement).dataset.tag;
+      if (tag) {
+        openExportModal(tag);
+      }
+    });
+  });
+
+  // Add click handlers to seed words buttons
+  table.querySelectorAll('.seed-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const tag = (button as HTMLElement).dataset.tag;
+      if (tag) {
+        await openSeedModal(tag);
+      }
+    });
+  });
 }
 
 /**
  * Update keypair select dropdowns
  */
 function updateKeypairSelects(): void {
-  // Sign keypair select
   const signSelect = document.getElementById("sign-keypair") as HTMLSelectElement;
   if (signSelect) {
     signSelect.innerHTML =
@@ -465,97 +494,6 @@ function updateKeypairSelects(): void {
             `<option value="${toBase64(kp.ed25519_pub_key)}">${kp.tag}</option>`
         )
         .join("");
-  }
-
-  // Export keypair select (only exportable ones)
-  const exportSelect = document.getElementById("export-keypair") as HTMLSelectElement;
-  if (exportSelect) {
-    const exportableKeypairs = keypairs.filter((kp) => kp.exportable);
-    exportSelect.innerHTML =
-      '<option value="">-- Select keypair --</option>' +
-      exportableKeypairs
-        .map((kp) => `<option value="${kp.tag}">${kp.tag}</option>`)
-        .join("");
-  }
-}
-
-/**
- * Populate the backup key select with exportable keypairs
- */
-function populateBackupKeySelect(entries: EntryInfo[]): void {
-  const select = document.getElementById("backup-key-select") as HTMLSelectElement;
-  if (!select) return;
-  select.innerHTML = '<option value="">-- Select a key --</option>';
-  for (const entry of entries) {
-    if (entry.exportable) {
-      const option = document.createElement("option");
-      option.value = entry.tag;
-      option.textContent = entry.tag;
-      select.appendChild(option);
-    }
-  }
-}
-
-/**
- * Show a message in the seed phrase message area
- */
-function showSeedMessage(text: string, type: "success" | "error"): void {
-  const el = document.getElementById("seed-phrase-message");
-  if (el) {
-    el.textContent = text;
-    el.className = `message ${type}`;
-    el.classList.remove("hidden");
-    setTimeout(() => el.classList.add("hidden"), 5000);
-  }
-}
-
-/**
- * Create a new keypair
- */
-async function createKeypair(): Promise<void> {
-  const tag = getValue("new-tag");
-  const exportable = isChecked("new-exportable");
-
-  console.log("[Lair UI] Creating keypair:", { tag, exportable });
-
-  setVisible("create-keypair-error", false);
-  setVisible("create-keypair-success", false);
-
-  if (!tag) {
-    setText("create-keypair-error", "Tag is required");
-    setVisible("create-keypair-error", true);
-    return;
-  }
-
-  try {
-    const response = await sendMessage(MessageType.LAIR_NEW_SEED, {
-      tag,
-      exportable,
-    });
-
-    console.log("[Lair UI] Create keypair response:", response);
-
-    if (response.type === MessageType.ERROR) {
-      setText("create-keypair-error", response.error || "Failed to create keypair");
-      setVisible("create-keypair-error", true);
-      return;
-    }
-
-    // Clear inputs and show success
-    setValue("new-tag", "");
-    setText("create-keypair-success", `Keypair "${tag}" created successfully`);
-    setVisible("create-keypair-success", true);
-
-    // Refresh list
-    console.log("[Lair UI] Refreshing list after create...");
-    await refreshKeypairList();
-
-    // Hide success message after 3 seconds
-    setTimeout(() => setVisible("create-keypair-success", false), 3000);
-  } catch (error) {
-    console.error("[Lair UI] Error creating keypair:", error);
-    setText("create-keypair-error", String(error));
-    setVisible("create-keypair-error", true);
   }
 }
 
@@ -578,6 +516,336 @@ async function deleteKeypair(tag: string): Promise<void> {
     await refreshKeypairList();
   } catch (error) {
     alert(`Error deleting keypair: ${error}`);
+  }
+}
+
+// ============================================================================
+// Export Modal
+// ============================================================================
+
+let exportModalTag = "";
+
+function openExportModal(tag: string): void {
+  exportModalTag = tag;
+  setText("export-modal-tag", tag);
+  setValue("export-passphrase", "");
+  setValue("export-passphrase-confirm", "");
+  setVisible("export-modal-error", false);
+  document.getElementById("export-modal")?.classList.add("active");
+}
+
+function closeExportModal(): void {
+  exportModalTag = "";
+  document.getElementById("export-modal")?.classList.remove("active");
+}
+
+/** Packed binary format: salt (16) + nonce (24) + ed25519_pub_key (32) + cipher (rest) */
+const EXPORT_SALT_LEN = 16;
+const EXPORT_NONCE_LEN = 24;
+const EXPORT_PUBKEY_LEN = 32;
+const EXPORT_HEADER_LEN = EXPORT_SALT_LEN + EXPORT_NONCE_LEN + EXPORT_PUBKEY_LEN; // 72
+
+let exportResultShort = "";
+let exportResultJson = "";
+
+function packExportShort(encrypted: EncryptedExport): string {
+  const salt = toUint8Array(encrypted.salt);
+  const nonce = toUint8Array(encrypted.nonce);
+  const pubkey = toUint8Array(encrypted.ed25519_pub_key);
+  const cipher = toUint8Array(encrypted.cipher);
+  const packed = new Uint8Array(EXPORT_HEADER_LEN + cipher.length);
+  packed.set(salt, 0);
+  packed.set(nonce, EXPORT_SALT_LEN);
+  packed.set(pubkey, EXPORT_SALT_LEN + EXPORT_NONCE_LEN);
+  packed.set(cipher, EXPORT_HEADER_LEN);
+  return toBase64(packed);
+}
+
+function unpackExportShort(base64: string): { salt: Uint8Array; nonce: Uint8Array; ed25519_pub_key: Uint8Array; cipher: Uint8Array } {
+  const packed = fromBase64(base64);
+  if (packed.length <= EXPORT_HEADER_LEN) {
+    throw new Error("Export data too short");
+  }
+  return {
+    salt: packed.slice(0, EXPORT_SALT_LEN),
+    nonce: packed.slice(EXPORT_SALT_LEN, EXPORT_SALT_LEN + EXPORT_NONCE_LEN),
+    ed25519_pub_key: packed.slice(EXPORT_SALT_LEN + EXPORT_NONCE_LEN, EXPORT_HEADER_LEN),
+    cipher: packed.slice(EXPORT_HEADER_LEN),
+  };
+}
+
+function updateExportResultDisplay(): void {
+  const format = getValue("export-format");
+  setText("export-result-data", format === "json" ? exportResultJson : exportResultShort);
+}
+
+function openExportResultModal(tag: string, shortData: string, jsonData: string): void {
+  exportResultShort = shortData;
+  exportResultJson = jsonData;
+  setText("export-result-tag", tag);
+  // Reset to default (short)
+  const formatSelect = document.getElementById("export-format") as HTMLSelectElement;
+  if (formatSelect) formatSelect.value = "short";
+  updateExportResultDisplay();
+  document.getElementById("export-result-modal")?.classList.add("active");
+}
+
+function closeExportResultModal(): void {
+  exportResultShort = "";
+  exportResultJson = "";
+  document.getElementById("export-result-modal")?.classList.remove("active");
+}
+
+async function submitExport(): Promise<void> {
+  const passphrase = getValue("export-passphrase");
+  const confirmPass = getValue("export-passphrase-confirm");
+
+  setVisible("export-modal-error", false);
+
+  if (!passphrase || passphrase.length < 8) {
+    setText("export-modal-error", "Passphrase must be at least 8 characters");
+    setVisible("export-modal-error", true);
+    return;
+  }
+
+  if (passphrase !== confirmPass) {
+    setText("export-modal-error", "Passphrases do not match");
+    setVisible("export-modal-error", true);
+    return;
+  }
+
+  try {
+    const response = await sendMessage(MessageType.LAIR_EXPORT_SEED, {
+      tag: exportModalTag,
+      passphrase,
+    });
+
+    if (response.type === MessageType.ERROR) {
+      setText("export-modal-error", response.error || "Failed to export");
+      setVisible("export-modal-error", true);
+      return;
+    }
+
+    const encrypted = (response.payload as { encrypted: EncryptedExport }).encrypted;
+
+    const exportData = {
+      version: encrypted.version,
+      tag: encrypted.tag,
+      ed25519_pub_key: toBase64(encrypted.ed25519_pub_key),
+      x25519_pub_key: toBase64(encrypted.x25519_pub_key),
+      salt: toBase64(encrypted.salt),
+      nonce: toBase64(encrypted.nonce),
+      cipher: toBase64(encrypted.cipher),
+      exportable: encrypted.exportable,
+      created_at: encrypted.created_at,
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+    const short = packExportShort(encrypted);
+
+    // Close passphrase modal and open result modal
+    closeExportModal();
+    openExportResultModal(exportModalTag, short, json);
+  } catch (error) {
+    setText("export-modal-error", String(error));
+    setVisible("export-modal-error", true);
+  }
+}
+
+// ============================================================================
+// Seed Words Modal
+// ============================================================================
+
+async function openSeedModal(tag: string): Promise<void> {
+  setText("seed-modal-tag", tag);
+  setVisible("seed-modal-error", false);
+  const wordsEl = document.getElementById("seed-modal-words");
+  if (wordsEl) wordsEl.innerHTML = "";
+  document.getElementById("seed-modal")?.classList.add("active");
+
+  try {
+    const message = createRequest(MessageType.LAIR_EXPORT_MNEMONIC, { tag });
+    const response: ResponseMessage = await chrome.runtime.sendMessage(message);
+
+    if (response.type === MessageType.ERROR) {
+      setText("seed-modal-error", (response.payload as { error?: string })?.error || "Export failed");
+      setVisible("seed-modal-error", true);
+      return;
+    }
+
+    const mnemonic = (response.payload as { mnemonic?: string })?.mnemonic || response.payload;
+    if (typeof mnemonic !== "string") {
+      setText("seed-modal-error", "Unexpected response format");
+      setVisible("seed-modal-error", true);
+      return;
+    }
+
+    const words = mnemonic.split(" ");
+    if (wordsEl) {
+      wordsEl.innerHTML = words
+        .map(
+          (word: string, i: number) =>
+            `<div class="word"><span class="word-num">${i + 1}.</span>${word}</div>`
+        )
+        .join("");
+    }
+  } catch (err) {
+    setText("seed-modal-error", `Error: ${err}`);
+    setVisible("seed-modal-error", true);
+  }
+}
+
+function closeSeedModal(): void {
+  document.getElementById("seed-modal")?.classList.remove("active");
+  const wordsEl = document.getElementById("seed-modal-words");
+  if (wordsEl) wordsEl.innerHTML = "";
+}
+
+// ============================================================================
+// Create / Import
+// ============================================================================
+
+function updateCreateMode(): void {
+  const mode = getValue("create-mode");
+  setVisible("import-export-fields", mode === "import-export");
+  setVisible("import-seed-fields", mode === "import-seed");
+
+  const btn = document.getElementById("create-btn");
+  if (btn) {
+    switch (mode) {
+      case "new":
+        btn.textContent = "Create";
+        break;
+      case "import-export":
+        btn.textContent = "Import";
+        break;
+      case "import-seed":
+        btn.textContent = "Restore";
+        break;
+    }
+  }
+}
+
+async function handleCreate(): Promise<void> {
+  const mode = getValue("create-mode");
+  const tag = getValue("create-tag");
+  const exportable = isChecked("create-exportable");
+
+  setVisible("create-error", false);
+  setVisible("create-success", false);
+
+  if (!tag) {
+    setText("create-error", "Tag is required");
+    setVisible("create-error", true);
+    return;
+  }
+
+  try {
+    let response: ResponseMessage;
+
+    switch (mode) {
+      case "new": {
+        response = await sendMessage(MessageType.LAIR_NEW_SEED, { tag, exportable });
+        break;
+      }
+      case "import-export": {
+        const importData = getValue("import-data").trim();
+        const passphrase = getValue("import-passphrase");
+
+        if (!importData || !passphrase) {
+          setText("create-error", "Export data and passphrase are required");
+          setVisible("create-error", true);
+          return;
+        }
+
+        let encrypted: EncryptedExport;
+        if (importData.startsWith("{")) {
+          // Full JSON format
+          const parsed = JSON.parse(importData);
+          encrypted = {
+            version: parsed.version,
+            tag: parsed.tag,
+            ed25519_pub_key: fromBase64(parsed.ed25519_pub_key),
+            x25519_pub_key: fromBase64(parsed.x25519_pub_key),
+            salt: fromBase64(parsed.salt),
+            nonce: fromBase64(parsed.nonce),
+            cipher: fromBase64(parsed.cipher),
+            exportable: parsed.exportable,
+            created_at: parsed.created_at,
+          };
+        } else {
+          // Short base64 format — unpack and fill in defaults for unused fields
+          const unpacked = unpackExportShort(importData);
+          encrypted = {
+            version: 1,
+            tag: "",
+            ed25519_pub_key: unpacked.ed25519_pub_key,
+            x25519_pub_key: new Uint8Array(0),
+            salt: unpacked.salt,
+            nonce: unpacked.nonce,
+            cipher: unpacked.cipher,
+            exportable: true,
+            created_at: 0,
+          };
+        }
+
+        response = await sendMessage(MessageType.LAIR_IMPORT_SEED, {
+          encrypted,
+          passphrase,
+          tag,
+          exportable,
+        });
+        break;
+      }
+      case "import-seed": {
+        const mnemonic = getValue("import-mnemonic").trim();
+
+        if (!mnemonic) {
+          setText("create-error", "Seed words are required");
+          setVisible("create-error", true);
+          return;
+        }
+
+        const words = mnemonic.split(/\s+/);
+        if (words.length !== 24) {
+          setText("create-error", `Expected 24 words, got ${words.length}`);
+          setVisible("create-error", true);
+          return;
+        }
+
+        const message = createRequest(MessageType.LAIR_IMPORT_MNEMONIC, {
+          mnemonic: words.join(" "),
+          tag,
+          exportable,
+        });
+        response = await chrome.runtime.sendMessage(message);
+        break;
+      }
+      default:
+        return;
+    }
+
+    if (response.type === MessageType.ERROR) {
+      setText("create-error", response.error || "Operation failed");
+      setVisible("create-error", true);
+      return;
+    }
+
+    // Clear inputs and show success
+    setValue("create-tag", "");
+    setValue("import-data", "");
+    setValue("import-passphrase", "");
+    setValue("import-mnemonic", "");
+    const actionWord = mode === "new" ? "created" : "imported";
+    setText("create-success", `Keypair "${tag}" ${actionWord} successfully`);
+    setVisible("create-success", true);
+
+    await refreshKeypairList();
+
+    setTimeout(() => setVisible("create-success", false), 3000);
+  } catch (error) {
+    setText("create-error", String(error));
+    setVisible("create-error", true);
   }
 }
 
@@ -653,7 +921,11 @@ async function verifySignature(): Promise<void> {
   }
 
   try {
-    const pubKey = fromBase64(pubKeyBase64);
+    let pubKey = fromBase64(pubKeyBase64);
+    // Accept 39-byte AgentPubKey: extract the 32-byte Ed25519 key from bytes 3..35
+    if (pubKey.length === 39 && pubKey[0] === 132 && pubKey[1] === 32 && pubKey[2] === 36) {
+      pubKey = pubKey.slice(3, 35);
+    }
     const dataBytes = parseDataInput(data, dataFormat);
     const signature = fromBase64(signatureBase64);
 
@@ -672,144 +944,14 @@ async function verifySignature(): Promise<void> {
     const valid = (response.payload as { valid: boolean }).valid;
 
     if (valid) {
-      setText("verify-result", "✓ Signature is valid");
+      setText("verify-result", "\u2713 Signature is valid");
     } else {
-      setText("verify-result", "✗ Signature is invalid");
+      setText("verify-result", "\u2717 Signature is invalid");
     }
     setVisible("verify-result", true);
   } catch (error) {
     setText("verify-error", String(error));
     setVisible("verify-error", true);
-  }
-}
-
-// ============================================================================
-// Export/Import Operations
-// ============================================================================
-
-/**
- * Export a keypair
- */
-async function exportKeypair(): Promise<void> {
-  const tag = getValue("export-keypair");
-  const passphrase = getValue("export-passphrase");
-
-  setVisible("export-error", false);
-  setVisible("export-result", false);
-
-  if (!tag) {
-    setText("export-error", "Please select a keypair");
-    setVisible("export-error", true);
-    return;
-  }
-
-  if (!passphrase || passphrase.length < 8) {
-    setText("export-error", "Passphrase must be at least 8 characters");
-    setVisible("export-error", true);
-    return;
-  }
-
-  try {
-    const response = await sendMessage(MessageType.LAIR_EXPORT_SEED, {
-      tag,
-      passphrase,
-    });
-
-    if (response.type === MessageType.ERROR) {
-      setText("export-error", response.error || "Failed to export");
-      setVisible("export-error", true);
-      return;
-    }
-
-    const encrypted = (response.payload as { encrypted: EncryptedExport }).encrypted;
-
-    // Convert Uint8Arrays to base64 for JSON serialization
-    const exportData = {
-      version: encrypted.version,
-      tag: encrypted.tag,
-      ed25519_pub_key: toBase64(encrypted.ed25519_pub_key),
-      x25519_pub_key: toBase64(encrypted.x25519_pub_key),
-      salt: toBase64(encrypted.salt),
-      nonce: toBase64(encrypted.nonce),
-      cipher: toBase64(encrypted.cipher),
-      exportable: encrypted.exportable,
-      created_at: encrypted.created_at,
-    };
-
-    const json = JSON.stringify(exportData, null, 2);
-
-    setText("export-result", json);
-    setVisible("export-result", true);
-
-    // Clear passphrase
-    setValue("export-passphrase", "");
-  } catch (error) {
-    setText("export-error", String(error));
-    setVisible("export-error", true);
-  }
-}
-
-/**
- * Import a keypair
- */
-async function importKeypair(): Promise<void> {
-  const importData = getValue("import-data");
-  const passphrase = getValue("import-passphrase");
-  const newTag = getValue("import-tag");
-  const exportable = isChecked("import-exportable");
-
-  setVisible("import-error", false);
-  setVisible("import-success", false);
-
-  if (!importData || !passphrase || !newTag) {
-    setText("import-error", "All fields are required");
-    setVisible("import-error", true);
-    return;
-  }
-
-  try {
-    // Parse JSON and convert base64 back to Uint8Arrays
-    const parsed = JSON.parse(importData);
-    const encrypted: EncryptedExport = {
-      version: parsed.version,
-      tag: parsed.tag,
-      ed25519_pub_key: fromBase64(parsed.ed25519_pub_key),
-      x25519_pub_key: fromBase64(parsed.x25519_pub_key),
-      salt: fromBase64(parsed.salt),
-      nonce: fromBase64(parsed.nonce),
-      cipher: fromBase64(parsed.cipher),
-      exportable: parsed.exportable,
-      created_at: parsed.created_at,
-    };
-
-    const response = await sendMessage(MessageType.LAIR_IMPORT_SEED, {
-      encrypted,
-      passphrase,
-      tag: newTag,
-      exportable,
-    });
-
-    if (response.type === MessageType.ERROR) {
-      setText("import-error", response.error || "Failed to import");
-      setVisible("import-error", true);
-      return;
-    }
-
-    // Clear inputs and show success
-    setValue("import-data", "");
-    setValue("import-passphrase", "");
-    setValue("import-tag", "");
-    setText("import-success", `Keypair imported as "${newTag}" successfully`);
-    setVisible("import-success", true);
-
-    // Refresh list
-    await refreshKeypairList();
-
-    // Hide success message after 3 seconds
-    setTimeout(() => setVisible("import-success", false), 3000);
-  } catch (error) {
-    setText("import-error", String(error));
-    setVisible("import-error", true);
   }
 }
 
@@ -823,125 +965,58 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("unlock-btn")?.addEventListener("click", unlock);
   document.getElementById("lock-btn")?.addEventListener("click", lock);
 
-  // Keypair management handlers
-  document.getElementById("create-keypair-btn")?.addEventListener("click", createKeypair);
+  // Create/Import handlers
+  document.getElementById("create-mode")?.addEventListener("change", updateCreateMode);
+  document.getElementById("create-btn")?.addEventListener("click", handleCreate);
 
   // Sign/Verify handlers
   document.getElementById("sign-btn")?.addEventListener("click", signData);
   document.getElementById("verify-btn")?.addEventListener("click", verifySignature);
 
   // Copy signature to clipboard
-  document.getElementById("sign-copy-btn")?.addEventListener("click", () => {
+  document.getElementById("sign-copy-btn")?.addEventListener("click", async () => {
     const text = document.getElementById("sign-result")?.textContent || "";
-    navigator.clipboard.writeText(text).catch(console.error);
-  });
-
-  // Export/Import handlers
-  document.getElementById("export-btn")?.addEventListener("click", exportKeypair);
-  document.getElementById("import-btn")?.addEventListener("click", importKeypair);
-
-  // Seed phrase backup handler
-  document.getElementById("show-seed-phrase-btn")?.addEventListener("click", async () => {
-    const select = document.getElementById("backup-key-select") as HTMLSelectElement;
-    const tag = select?.value;
-    if (!tag) {
-      showSeedMessage("Select a key first", "error");
-      return;
-    }
-
+    const btn = document.getElementById("sign-copy-btn") as HTMLButtonElement;
     try {
-      const message = createRequest(MessageType.LAIR_EXPORT_MNEMONIC, { tag });
-      const response: ResponseMessage = await chrome.runtime.sendMessage(message);
-      if (response.type === MessageType.ERROR) {
-        showSeedMessage((response.payload as { error?: string })?.error || "Export failed", "error");
-        return;
-      }
-
-      const mnemonic = (response.payload as { mnemonic?: string })?.mnemonic || response.payload;
-      if (typeof mnemonic !== "string") {
-        showSeedMessage("Unexpected response format", "error");
-        return;
-      }
-
-      const words = mnemonic.split(" ");
-      const grid = document.getElementById("seed-phrase-words");
-      if (grid) {
-        grid.innerHTML = words
-          .map(
-            (word: string, i: number) =>
-              `<div class="word"><span class="word-num">${i + 1}.</span>${word}</div>`
-          )
-          .join("");
-      }
-
-      const display = document.getElementById("seed-phrase-display");
-      if (display) display.classList.remove("hidden");
-    } catch (err) {
-      showSeedMessage(`Error: ${err}`, "error");
+      await navigator.clipboard.writeText(text);
+      const original = btn.textContent;
+      btn.textContent = "\u2713 Copied";
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    } catch (e) {
+      console.error("Failed to copy:", e);
     }
   });
 
-  // Copy seed phrase to clipboard handler
-  document.getElementById("copy-seed-phrase-btn")?.addEventListener("click", () => {
-    const grid = document.getElementById("seed-phrase-words");
-    if (!grid) return;
-    const words = Array.from(grid.querySelectorAll(".word")).map((el) => {
-      // Strip the number prefix (e.g. "1.")
-      return el.textContent?.replace(/^\d+\./, "").trim() || "";
-    });
-    navigator.clipboard.writeText(words.join(" ")).then(() => {
-      showSeedMessage("Copied to clipboard", "success");
-      // Auto-hide display after 3 seconds
-      setTimeout(() => {
-        const display = document.getElementById("seed-phrase-display");
-        if (display) display.classList.add("hidden");
-      }, 3000);
-    });
+  // Export modal handlers
+  document.getElementById("export-modal-submit")?.addEventListener("click", submitExport);
+  document.getElementById("export-modal-cancel")?.addEventListener("click", closeExportModal);
+  document.getElementById("export-modal")?.addEventListener("click", (e) => {
+    if (e.target === document.getElementById("export-modal")) closeExportModal();
   });
 
-  // Restore key from seed phrase handler
-  document.getElementById("restore-seed-btn")?.addEventListener("click", async () => {
-    const tagInput = document.getElementById("restore-tag") as HTMLInputElement;
-    const mnemonicInput = document.getElementById("restore-mnemonic") as HTMLTextAreaElement;
-
-    const tag = tagInput?.value?.trim();
-    const mnemonic = mnemonicInput?.value?.trim();
-
-    if (!tag) {
-      showSeedMessage("Enter a tag for the restored key", "error");
-      return;
-    }
-    if (!mnemonic) {
-      showSeedMessage("Enter the 24-word seed phrase", "error");
-      return;
-    }
-
-    const words = mnemonic.split(/\s+/);
-    if (words.length !== 24) {
-      showSeedMessage(`Expected 24 words, got ${words.length}`, "error");
-      return;
-    }
-
+  // Export result modal handlers
+  document.getElementById("export-format")?.addEventListener("change", updateExportResultDisplay);
+  document.getElementById("export-result-copy")?.addEventListener("click", async () => {
+    const text = document.getElementById("export-result-data")?.textContent || "";
+    const btn = document.getElementById("export-result-copy") as HTMLButtonElement;
     try {
-      const message = createRequest(MessageType.LAIR_IMPORT_MNEMONIC, {
-        mnemonic: words.join(" "),
-        tag,
-        exportable: true,
-      });
-      const response: ResponseMessage = await chrome.runtime.sendMessage(message);
-      if (response.type === MessageType.ERROR) {
-        showSeedMessage((response.payload as { error?: string })?.error || "Import failed", "error");
-        return;
-      }
-
-      showSeedMessage("Key restored successfully", "success");
-      tagInput.value = "";
-      mnemonicInput.value = "";
-      // Refresh keypair list
-      await refreshKeypairList();
-    } catch (err) {
-      showSeedMessage(`Error: ${err}`, "error");
+      await navigator.clipboard.writeText(text);
+      const original = btn.textContent;
+      btn.textContent = "\u2713 Copied";
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    } catch (e) {
+      console.error("Failed to copy:", e);
     }
+  });
+  document.getElementById("export-result-close")?.addEventListener("click", closeExportResultModal);
+  document.getElementById("export-result-modal")?.addEventListener("click", (e) => {
+    if (e.target === document.getElementById("export-result-modal")) closeExportResultModal();
+  });
+
+  // Seed modal handlers
+  document.getElementById("seed-modal-close")?.addEventListener("click", closeSeedModal);
+  document.getElementById("seed-modal")?.addEventListener("click", (e) => {
+    if (e.target === document.getElementById("seed-modal")) closeSeedModal();
   });
 
   // Initial state update
