@@ -15,7 +15,7 @@
       }
       h1 {
         font-size: 18px;
-        margin: 0 0 16px 0;
+        margin: 0;
         color: #333;
       }
       h2 {
@@ -25,16 +25,24 @@
         border-bottom: 1px solid #ddd;
         padding-bottom: 4px;
       }
-      .back-link {
-        display: inline-block;
-        margin-bottom: 12px;
-        color: #007bff;
+      .page-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .back-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px 4px 4px 0;
+        margin-left: -2px;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
         text-decoration: none;
-        font-size: 12px;
       }
-      .back-link:hover {
-        text-decoration: underline;
-      }
+      .back-btn:hover { color: #111827; }
       .lock-status {
         padding: 12px;
         border-radius: 4px;
@@ -298,8 +306,15 @@
     </style>
   </head>
   <body>
-    <a href="index.html" class="back-link">&larr; Back to Main</a>
-    <h1>Keystore Management</h1>
+    <div class="page-header">
+      <a href="index.html" class="back-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </a>
+      <img src="../icons/holo-mark.svg" alt="" style="width: 26px; height: 20px; object-fit: contain;" />
+      <h1>Holo Web Conductor: Keystore</h1>
+    </div>
 
     <!-- Lock Status -->
     <div id="lock-status" class="lock-status locked">

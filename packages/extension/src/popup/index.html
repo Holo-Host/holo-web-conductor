@@ -5,92 +5,272 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Holo Web Conductor</title>
     <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
       body {
-        width: 300px;
-        padding: 16px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          sans-serif;
-        margin: 0;
+        width: 340px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #f8f9fa;
       }
-      h1 {
-        font-size: 18px;
-        margin: 0 0 12px 0;
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .header-logo {
+        width: 28px;
+        height: 22px;
+        object-fit: contain;
+      }
+
+      .header-title {
+        font-size: 15px;
+        font-weight: 600;
         color: #333;
       }
-      .status {
-        padding: 8px 12px;
-        border-radius: 4px;
-        font-size: 14px;
-        margin-bottom: 12px;
+
+      .header-icons {
+        display: flex;
+        gap: 0px;
       }
-      .status.connected {
-        background: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-      }
-      .status.disconnected {
-        background: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-      }
-      .info {
-        font-size: 12px;
-        color: #666;
-      }
-      .nav {
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid #ddd;
-      }
-      .nav a {
-        display: block;
-        padding: 8px 12px;
-        background: #007bff;
-        color: white;
-        text-decoration: none;
-        border-radius: 4px;
-        text-align: center;
-        font-size: 14px;
-        margin-bottom: 8px;
-      }
-      .nav a:hover {
-        background: #0056b3;
-      }
-      .warning {
-        background: #fff3cd;
-        color: #856404;
-        border: 1px solid #ffc107;
-        padding: 8px 12px;
+
+      .icon-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 5px;
         border-radius: 6px;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+      }
+
+      .icon-btn:hover {
+        background: #f3f4f6;
+        color: #374151;
+      }
+
+      .icon-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .icon-btn.danger:hover {
+        background: #fee2e2;
+        color: #dc2626;
+      }
+
+      .icon-btn.warning-active {
+        color: #d97706;
+      }
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 16px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
         font-size: 12px;
-        margin-bottom: 12px;
+        color: #6b7280;
       }
-      .warning a {
-        color: #856404;
-        font-weight: bold;
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
       }
+
+      .status-dot.connected {
+        background: #10b981;
+        box-shadow: 0 0 4px #10b981;
+      }
+
+      .status-dot.disconnected {
+        background: #ef4444;
+      }
+
+      .body-content {
+        padding: 8px 0;
+      }
+
+      .domain-list {
+        list-style: none;
+      }
+
+      .domain-item {
+        display: flex;
+        align-items: center;
+        padding: 10px 16px;
+        cursor: pointer;
+        transition: background 0.15s;
+        text-decoration: none;
+        color: inherit;
+        border-bottom: 1px solid #f0f0f0;
+      }
+
+      .domain-item:hover {
+        background: #f3f4f6;
+      }
+
+      .domain-item:last-child {
+        border-bottom: none;
+      }
+
+      .domain-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: #e0e7ff;
+        color: #4f46e5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+        flex-shrink: 0;
+        text-transform: uppercase;
+      }
+
+      .domain-info {
+        flex: 1;
+        margin-left: 12px;
+        min-width: 0;
+      }
+
+      .domain-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: #111827;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .domain-meta {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 2px;
+      }
+
+      .domain-arrow {
+        color: #9ca3af;
+        margin-left: 8px;
+        flex-shrink: 0;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6b7280;
+      }
+
+      .empty-state-icon {
+        font-size: 36px;
+        margin-bottom: 8px;
+        opacity: 0.5;
+      }
+
+      .empty-state p {
+        margin: 4px 0;
+        font-size: 13px;
+      }
+
+      .warning-banner {
+        background: #fffbeb;
+        border-bottom: 1px solid #fcd34d;
+        padding: 8px 16px;
+        font-size: 12px;
+        color: #92400e;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .warning-banner a {
+        color: #92400e;
+        font-weight: 600;
+      }
+
       .hidden {
-        display: none;
+        display: none !important;
       }
     </style>
   </head>
   <body>
-    <h1>Holo Web Conductor</h1>
-    <div id="status" class="status disconnected">
-      Status: <span id="status-text">Loading...</span>
+    <div class="header">
+      <div class="header-left">
+        <img src="../icons/holo-mark.svg" alt="Holo" class="header-logo" />
+        <span class="header-title">Holo Web Conductor</span>
+      </div>
+      <div class="header-icons">
+        <button class="icon-btn" id="btn-keystore" title="Keystore Management">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+          </svg>
+        </button>
+        <button class="icon-btn danger" id="btn-revoke-all" title="Revoke All Permissions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btn-storage" title="Storage not persistent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btn-about" title="About">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+        </button>
+      </div>
     </div>
-    <div class="info">
-      <div id="active-page">No active page</div>
+
+    <div class="status-bar">
+      <span class="status-dot disconnected" id="status-dot"></span>
+      <span id="status-text">Loading...</span>
     </div>
-    <div id="storage-warning" class="warning hidden">
-      <strong>Storage not persistent.</strong> Browser data may be cleared on extension uninstall.
-      <a href="lair.html">Back up your seed phrase</a> to protect your identity.
+
+    <div id="storage-warning" class="warning-banner hidden">
+      Storage not persistent.
+      <a href="lair.html">Back up seed phrase</a>
     </div>
-    <div class="nav">
-      <a href="happs.html">Installed hApps</a>
-      <a href="lair.html">Manage Keystore</a>
-      <a href="permissions.html">Manage Permissions</a>
+
+    <div class="body-content">
+      <div id="domain-list-container">
+        <ul class="domain-list" id="domain-list"></ul>
+      </div>
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-state-icon">&#127760;</div>
+        <p><strong>No connected sites</strong></p>
+        <p>Sites you authorize will appear here.</p>
+      </div>
+      <div id="loading-state" class="empty-state">
+        <p>Loading...</p>
+      </div>
     </div>
+
     <script type="module" src="./index.ts"></script>
   </body>
 </html>

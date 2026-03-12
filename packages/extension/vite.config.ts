@@ -28,6 +28,8 @@ const htmlInputs: Record<string, string> = {
   authorize: resolve(__dirname, "src/popup/authorize.html"),
   permissions: resolve(__dirname, "src/popup/permissions.html"),
   happs: resolve(__dirname, "src/popup/happs.html"),
+  site: resolve(__dirname, "src/popup/site.html"),
+  about: resolve(__dirname, "src/popup/about.html"),
 };
 if (!isFirefox) {
   htmlInputs.offscreen = resolve(__dirname, "src/offscreen/offscreen.html");
@@ -288,7 +290,7 @@ export default defineConfig({
               mkdirSync(destPopupDir, { recursive: true });
             }
 
-            const popupHtmlFiles = ["index.html", "lair.html", "authorize.html", "permissions.html", "happs.html"];
+            const popupHtmlFiles = ["index.html", "lair.html", "authorize.html", "permissions.html", "happs.html", "site.html", "about.html"];
             popupHtmlFiles.forEach((file) => {
               const srcPath = resolve(srcPopupDir, file);
               const destPath = resolve(destPopupDir, file);

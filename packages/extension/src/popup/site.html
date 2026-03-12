@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site Details - Holo Web Conductor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8f9fa;
+      min-width: 340px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      gap: 12px;
+    }
+
+    .back-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 4px 4px 0;
+      margin-left: -2px;
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+    }
+
+    .back-btn:hover {
+      color: #111827;
+    }
+
+    .header-domain {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .header-hostname {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111827;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .header-origin {
+      font-size: 13px;
+      color: #374151;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .permission-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .permission-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .permission-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .permission-badge.granted {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .permission-badge.denied {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .permission-date {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .revoke-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .revoke-btn:hover {
+      background: #fee2e2;
+      border-color: #fca5a5;
+      color: #dc2626;
+    }
+
+    .section-title {
+      padding: 12px 16px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .happ-list {
+      padding: 0 8px 8px;
+    }
+
+    .happ-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 8px;
+      transition: border-color 0.15s;
+    }
+
+    .happ-card:hover {
+      border-color: #c7d2fe;
+    }
+
+    .happ-card.disabled {
+      opacity: 0.6;
+      background: #fafafa;
+    }
+
+    .happ-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 10px;
+    }
+
+    .happ-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .status-badge {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .status-badge.enabled {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-badge.disabled {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .status-badge.awaiting {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .happ-details {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      padding: 10px;
+      background: #f9fafb;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .detail-label {
+      color: #6b7280;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-value {
+      color: #111827;
+      font-family: monospace;
+      font-size: 11px;
+      word-break: break-all;
+    }
+
+    .pubkey {
+      cursor: pointer;
+      position: relative;
+    }
+
+    .pubkey:hover {
+      color: #4f46e5;
+    }
+
+    .pubkey.copied::after {
+      content: 'Copied';
+      position: absolute;
+      left: 0;
+      top: -18px;
+      background: #111827;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+
+    .happ-actions {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    button:hover {
+      filter: brightness(0.95);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: #4f46e5;
+      color: white;
+    }
+
+    button.secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    button.danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6b7280;
+      font-size: 13px;
+    }
+
+    .message {
+      margin: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .message.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .message.success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="index.html" class="back-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </a>
+    <img src="../icons/holo-mark.svg" alt="" style="width: 26px; height: 20px; object-fit: contain; flex-shrink: 0;" />
+    <div class="header-domain">
+      <div class="header-hostname" id="site-hostname">Loading...</div>
+      <div class="header-origin" id="site-origin"></div>
+    </div>
+  </div>
+
+  <div class="permission-bar" id="permission-bar">
+    <div class="permission-info">
+      <span class="permission-badge granted" id="permission-badge">Granted</span>
+      <span class="permission-date" id="permission-date"></span>
+    </div>
+    <button class="revoke-btn" id="revoke-btn">Revoke</button>
+  </div>
+
+  <div id="message"></div>
+
+  <div class="section-title">Installed hApps</div>
+
+  <div class="happ-list" id="happ-list"></div>
+  <div id="empty-happs" class="empty-state hidden">
+    No hApps installed from this site.
+  </div>
+
+  <script type="module" src="./site.ts"></script>
+</body>
+</html>

@@ -463,7 +463,16 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>Installed hApps</h1>
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+        <a href="index.html" style="color: #6b7280; display: flex; align-items: center; text-decoration: none; margin-left: -2px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </a>
+        <img src="../icons/holo-mark.svg" alt="" style="width: 26px; height: 20px; object-fit: contain;" />
+        <h1 style="margin: 0;">Holo Web Conductor: hApps</h1>
+        <a href="#" id="openInWindow" class="open-window-link" style="margin-left: auto;">Open in Window &#x2197;</a>
+      </div>
       <div class="stats">
         <div class="stat">
           <strong id="totalCount">0</strong> total
@@ -482,12 +491,6 @@
           <span class="status-indicator disconnected" id="wsIndicator"></span>
           <span id="wsStatusText">WS: ...</span>
         </div>
-      </div>
-      <div class="nav">
-        <a href="index.html">← Back to Home</a>
-        <a href="lair.html">Lair Keystore</a>
-        <a href="permissions.html">Permissions</a>
-        <a href="#" id="openInWindow" class="open-window-link">Open in Window ↗</a>
       </div>
     </div>
 
