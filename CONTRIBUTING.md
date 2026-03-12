@@ -156,3 +156,74 @@ Web-apps use standard `@holochain/client`. This project MUST maintain compatibil
 5. Linker HTTP responses: call `normalizeByteArraysFromJson()` to convert number arrays to Uint8Array
 6. Linker HTTP requests: use `encodeHashToBase64()` for hashes in URLs (adds `u` prefix)
 7. See `ARCHITECTURE.md` "Encoding/Decoding Boundaries" table for the full map
+
+---
+
+## Cross-Repository Development (Platform Developers)
+
+This repo publishes packages consumed by sibling repos. Changes here can silently break consumers. This section documents the dependency graph and how to work safely across repos.
+
+### Package dependency graph
+
+```
+@holo-host/lair  (packages/lair)
+  ↑
+  └── joining-service  (file: dep)
+
+@holo-host/joining-service  (../joining-service)
+  ↑
+  └── @holo-host/web-conductor-client  (packages/client, file: dep)
+
+@holo-host/web-conductor-client  (packages/client)
+  ↑
+  ├── mewsfeed/ui  (file: dep)
+  └── ziptest/ui   (file: dep)
+```
+
+All cross-repo references use npm `file:` dependencies. Changes propagate after a rebuild of the dependency — there is no version pinning.
+
+### What each repo needs cloned
+
+| You work on | Must also have |
+|---|---|
+| holo-web-conductor | joining-service (for client's `file:` dep on joining-service) |
+| joining-service | holo-web-conductor (for `file:` dep on lair) |
+| h2hc-linker | nothing (pure Rust, no npm deps) |
+
+All repos must be siblings in the same parent directory.
+
+### Setup
+
+```bash
+nix develop -c ./scripts/holo-dev-setup.sh
+```
+
+This verifies the layout, resolves `file:` deps, installs, and builds. Use `--check` to verify without building.
+
+### When changing a published package's API
+
+If you change the exports or types of `@holo-host/lair`, `@holo-host/joining-service`, or `@holo-host/web-conductor-client`:
+
+1. **Rebuild the package** you changed.
+2. **Typecheck consumers** — run `npm run typecheck` in each repo that depends on the changed package:
+   - Changed lair → typecheck joining-service
+   - Changed joining-service → typecheck web-conductor-client, then typecheck mewsfeed/ui
+   - Changed web-conductor-client → typecheck mewsfeed/ui, ziptest/ui
+3. **Bump the patch version** in the changed package's `package.json` (e.g., `0.1.0` → `0.1.1`). This costs nothing and builds version discipline for when we publish.
+
+### Checking the full graph
+
+To verify all consumers build cleanly after a change:
+
+```bash
+# From holo-web-conductor root
+nix develop -c ./scripts/holo-dev-setup.sh
+
+# Then in each consumer:
+cd ../mewsfeed && nix develop -c npm run typecheck
+cd ../ziptest && nix develop -c npm run typecheck
+```
+
+### When these packages are published to npm
+
+See [APP_DEVELOPER_GUIDE.md "Local Development Setup"](./APP_DEVELOPER_GUIDE.md#local-development-setup-before-npm-publish) for the publish sequence and the `npm link` workflow for continued local development after publishing.
