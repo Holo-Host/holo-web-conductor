@@ -12,6 +12,7 @@ import { Cascade, getNetworkCache, getNetworkService, getGetStrategyMode } from 
 import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
 import { hashFrom32AndType, HoloHashType, dhtLocationFrom32 } from "@holochain/client";
 import type { GetStrategy } from "../../types/holochain-types";
+import { encodeHashToBase64 } from "../../types/holochain-types";
 
 /**
  * Link structure (matches Holochain's Link type)
@@ -90,7 +91,6 @@ function processGetLinksInput(
   dnaHash: Uint8Array,
   agentPubKey: Uint8Array,
   cascade: Cascade,
-  toBase64: (arr: Uint8Array) => string,
   inputIndex: number
 ): Link[] {
   // Validate DHT location of base_address
@@ -100,7 +100,7 @@ function processGetLinksInput(
   const dhtLocValid = actualDhtLoc.every((b, i) => b === expectedDhtLoc[i]);
 
   console.log(`[get_links] Input ${inputIndex}: Getting links`, {
-    base_hash: toBase64(input.base_address),
+    base_hash: encodeHashToBase64(input.base_address),
     base_prefix: Array.from(input.base_address.slice(0, 3)),
     actualDhtLoc: Array.from(actualDhtLoc),
     expectedDhtLoc: Array.from(expectedDhtLoc),
@@ -165,7 +165,7 @@ function processGetLinksInput(
   for (let i = 0; i < links.length; i++) {
     try {
       const link = links[i];
-      const targetB64 = toBase64(link.target);
+      const targetB64 = encodeHashToBase64(link.target);
       const targetPrefix = Array.from(link.target.slice(0, 3));
       const isTargetAgent = targetPrefix[0] === 132 && targetPrefix[1] === 32 && targetPrefix[2] === 36;
 
@@ -205,12 +205,6 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log('[get_links] Processing batch of', inputs.length, 'queries');
 
-  // Convert to base64url for easier debugging (matches Holochain's hash display format)
-  const toBase64 = (arr: Uint8Array) => {
-    const base64 = btoa(String.fromCharCode(...arr));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
-
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Create cascade for this lookup
@@ -220,7 +214,7 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Process ALL inputs and collect results
   // HDK expects Vec<Vec<Link>> - one Vec<Link> per input query
   const allResults: Link[][] = inputs.map((input, index) =>
-    processGetLinksInput(input, dnaHash, agentPubKey, cascade, toBase64, index)
+    processGetLinksInput(input, dnaHash, agentPubKey, cascade, index)
   );
 
   console.log('[get_links] Batch complete. Results per query:', allResults.map(r => r.length));

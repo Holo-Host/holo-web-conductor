@@ -9,13 +9,7 @@ import {
   wasmInstantiationError,
   zomeFunctionNotFoundError,
 } from "./error";
-
-/**
- * Convert Uint8Array to base64 string for cache keys
- */
-function toBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
-}
+import { encodeHashToBase64 } from "../types/holochain-types";
 
 /**
  * Cached zome metadata (entry_defs, link_types)
@@ -82,7 +76,7 @@ export class RibosomeRuntime {
     dnaHash: Uint8Array,
     wasm: Uint8Array
   ): Promise<WebAssembly.Module> {
-    const key = toBase64(dnaHash);
+    const key = encodeHashToBase64(dnaHash);
 
     // Check cache first
     const cached = this.moduleCache.get(key);
@@ -107,7 +101,7 @@ export class RibosomeRuntime {
    * @returns Cached metadata or undefined if not cached
    */
   getZomeMetadata(dnaHash: Uint8Array, zomeName: string): ZomeMetadata | undefined {
-    const key = `${toBase64(dnaHash)}:${zomeName}`;
+    const key = `${encodeHashToBase64(dnaHash)}:${zomeName}`;
     return this.metadataCache.get(key);
   }
 
@@ -119,7 +113,7 @@ export class RibosomeRuntime {
    * @param metadata - Metadata to cache
    */
   setZomeMetadata(dnaHash: Uint8Array, zomeName: string, metadata: ZomeMetadata): void {
-    const key = `${toBase64(dnaHash)}:${zomeName}`;
+    const key = `${encodeHashToBase64(dnaHash)}:${zomeName}`;
     this.metadataCache.set(key, metadata);
     console.log(`[Ribosome] Cached metadata for ${zomeName}: ${metadata.entryDefs.length} entry_defs, ${metadata.linkTypeCount} link_types`);
   }

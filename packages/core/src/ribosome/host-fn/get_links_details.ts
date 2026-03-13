@@ -24,15 +24,7 @@ import { buildCreateLinkAction, buildDeleteLinkAction } from "../../types/holoch
 import { validateWasmGetLinksInputArray, type WasmGetLinksInput } from "../wasm-io-types";
 import { hashFrom32AndType, HoloHashType } from "@holochain/client";
 import { parseLinkTypeFilter } from "./get_links";
-
-// Helper to convert to base64url for logging
-const toBase64 = (arr: Uint8Array) => {
-  const base64 = btoa(String.fromCharCode(...arr));
-  return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-
-// Helper to convert to plain base64 for cache key lookups (matches cache.ts internals)
-const toCacheKey = (arr: Uint8Array) => btoa(String.fromCharCode(...arr));
+import { encodeHashToBase64 } from "../../types/holochain-types";
 
 /** Zero-filled 39-byte ActionHash used as fallback when prev_action is unavailable */
 const ZERO_ACTION_HASH = new Uint8Array(39);
@@ -121,7 +113,7 @@ function processGetLinksDetailsInput(
   inputIndex: number
 ): LinkDetails {
   console.log(`[get_links_details] Input ${inputIndex}: Getting link details`, {
-    base_hash: toBase64(input.base_address),
+    base_hash: encodeHashToBase64(input.base_address),
     linkType: JSON.stringify(input.link_type),
     tag_prefix: input.tag_prefix ? Array.from(input.tag_prefix) : null,
   });
@@ -151,7 +143,7 @@ function processGetLinksDetailsInput(
   // Build a map of create_link_hash -> StoredLink for delete lookup
   const localLinkMap = new Map<string, StoredLink>();
   for (const ll of localLinks) {
-    const key = toBase64(ll.createLinkHash);
+    const key = encodeHashToBase64(ll.createLinkHash);
     localLinkMap.set(key, ll);
   }
 
@@ -162,7 +154,7 @@ function processGetLinksDetailsInput(
   if (cachedDetails) {
     for (const d of cachedDetails) {
       if (d.deleteHashes.length > 0) {
-        cachedDeleteMap.set(toCacheKey(d.create.create_link_hash), d.deleteHashes);
+        cachedDeleteMap.set(encodeHashToBase64(d.create.create_link_hash), d.deleteHashes);
       }
     }
   }
@@ -173,14 +165,14 @@ function processGetLinksDetailsInput(
   // Build LinkDetails tuples: (CreateLink SignedActionHashed, [DeleteLink SignedActionHashed])
   const details: LinkDetails = filteredLinks.map(link => {
     const createAction = buildCreateLinkSignedAction(link);
-    const linkKey = toCacheKey(link.create_link_hash);
+    const linkKey = encodeHashToBase64(link.create_link_hash);
     const timestamp = typeof link.timestamp === 'bigint' ? Number(link.timestamp) : link.timestamp;
 
     const deleteHashes: Uint8Array[] = [];
     const deletes: SignedActionHashed[] = [];
 
     // Local storage deletes
-    const localLink = localLinkMap.get(toBase64(link.create_link_hash));
+    const localLink = localLinkMap.get(encodeHashToBase64(link.create_link_hash));
     if (localLink?.deleted && localLink.deleteHash) {
       deleteHashes.push(localLink.deleteHash);
       deletes.push(buildDeleteLinkSignedAction(
@@ -211,9 +203,9 @@ function processGetLinksDetailsInput(
   // Include cached creates no longer in network results (deleted network-wide)
   if (cachedDetails) {
     for (const d of cachedDetails) {
-      const key = toCacheKey(d.create.create_link_hash);
+      const key = encodeHashToBase64(d.create.create_link_hash);
       const inResults = detailsForCache.some(
-        dc => toCacheKey(dc.create.create_link_hash) === key
+        dc => encodeHashToBase64(dc.create.create_link_hash) === key
       );
       if (!inResults) {
         detailsForCache.push(d);

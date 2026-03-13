@@ -12,6 +12,7 @@ import { validateWasmCreateInput, type WasmCreateInput } from "../wasm-io-types"
 import { computeAppEntryHash, computeActionHashV2, serializeAction } from "../../hash";
 import { buildCreateAction, buildAppEntryType } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
+import { encodeHashToBase64 } from "../../types/holochain-types";
 
 /**
  * create host function implementation
@@ -31,12 +32,6 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   // Extract entry content from the validated structure
   const entryContent = input.entry.entry;
-
-  // Convert to base64url for easier debugging (matches Holochain's hash display format)
-  const toBase64 = (arr: Uint8Array) => {
-    const base64 = btoa(String.fromCharCode(...arr));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
 
   // Try to decode entry content as UTF-8 to see if it's a path
   let contentPreview = '';
@@ -135,9 +130,9 @@ export const create: HostFunctionImpl = (context, inputPtr, inputLen) => {
   callContext.pendingRecords.push({ action, entry });
 
   console.log('[create] Created entry', {
-    actionHash: toBase64(actionHash),
+    actionHash: encodeHashToBase64(actionHash),
     actionSeq,
-    entryHash: toBase64(entryHash),
+    entryHash: encodeHashToBase64(entryHash),
   });
 
   return serializeResult(instance, actionHash);

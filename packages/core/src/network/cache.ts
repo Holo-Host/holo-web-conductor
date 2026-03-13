@@ -18,13 +18,7 @@ import type {
   CachedLinkDetail,
 } from './types';
 import type { AnyDhtHash } from '../types/holochain-types';
-
-/**
- * Convert Uint8Array to base64 for use as cache key
- */
-function toBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
-}
+import { encodeHashToBase64 } from '../types/holochain-types';
 
 // ============================================================================
 // LRU Record Cache (no TTL -- records are immutable/content-addressed)
@@ -330,12 +324,12 @@ export class NetworkCache {
   // --- Records (LRU, no TTL, dual-keyed) ---
 
   getRecordSync(hash: AnyDhtHash): NetworkRecord | null {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     return this.records.get(key);
   }
 
   cacheRecordSync(hash: AnyDhtHash, record: NetworkRecord): void {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     this.records.set(key, record);
 
     // Dual-keying: create alias from the "other" hash
@@ -345,8 +339,8 @@ export class NetworkCache {
 
     if (actionHash instanceof Uint8Array && actionHash.length > 0 &&
         entryHash instanceof Uint8Array && entryHash.length > 0) {
-      const actionKey = toBase64(actionHash);
-      const entryKey = toBase64(entryHash);
+      const actionKey = encodeHashToBase64(actionHash);
+      const entryKey = encodeHashToBase64(entryHash);
       if (key === actionKey && entryKey !== actionKey) {
         this.records.setAlias(entryKey, actionKey);
       } else if (key === entryKey && actionKey !== entryKey) {
@@ -356,7 +350,7 @@ export class NetworkCache {
   }
 
   invalidateRecord(hash: AnyDhtHash): void {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     this.records.delete(key);
   }
 
@@ -364,8 +358,8 @@ export class NetworkCache {
 
   getLinksSync(baseAddress: AnyDhtHash, linkType?: number): NetworkLink[] | null {
     const key = linkType !== undefined
-      ? `${toBase64(baseAddress)}:${linkType}`
-      : toBase64(baseAddress);
+      ? `${encodeHashToBase64(baseAddress)}:${linkType}`
+      : encodeHashToBase64(baseAddress);
     return this.links.get(key);
   }
 
@@ -375,17 +369,17 @@ export class NetworkCache {
     linkType?: number
   ): void {
     const key = linkType !== undefined
-      ? `${toBase64(baseAddress)}:${linkType}`
-      : toBase64(baseAddress);
+      ? `${encodeHashToBase64(baseAddress)}:${linkType}`
+      : encodeHashToBase64(baseAddress);
     this.links.set(key, links);
   }
 
   invalidateLinks(baseAddress: AnyDhtHash, linkType?: number): void {
     if (linkType !== undefined) {
-      const key = `${toBase64(baseAddress)}:${linkType}`;
+      const key = `${encodeHashToBase64(baseAddress)}:${linkType}`;
       this.links.delete(key);
     } else {
-      const baseKey = toBase64(baseAddress);
+      const baseKey = encodeHashToBase64(baseAddress);
       this.links.deleteByPrefix(baseKey);
     }
   }
@@ -395,7 +389,7 @@ export class NetworkCache {
    * for the given base address. Called from create_link host function.
    */
   mergeLinkIntoCache(baseAddress: AnyDhtHash, link: NetworkLink): void {
-    const baseKey = toBase64(baseAddress);
+    const baseKey = encodeHashToBase64(baseAddress);
     for (const [key, links] of this.links.entries()) {
       if (key === baseKey || key === `${baseKey}:${link.link_type}`) {
         const exists = links.some(l =>
@@ -414,7 +408,7 @@ export class NetworkCache {
    * for the given base address. Called from delete_link host function.
    */
   removeLinkFromCache(baseAddress: AnyDhtHash, createLinkHash: Uint8Array): void {
-    const baseKey = toBase64(baseAddress);
+    const baseKey = encodeHashToBase64(baseAddress);
     for (const [key, links] of this.links.entries()) {
       if (key === baseKey || key.startsWith(baseKey + ':')) {
         const idx = links.findIndex(l =>
@@ -432,8 +426,8 @@ export class NetworkCache {
 
   getLinkDetailsSync(baseAddress: AnyDhtHash, linkType?: number): CachedLinkDetail[] | null {
     const key = linkType !== undefined
-      ? `${toBase64(baseAddress)}:${linkType}`
-      : toBase64(baseAddress);
+      ? `${encodeHashToBase64(baseAddress)}:${linkType}`
+      : encodeHashToBase64(baseAddress);
     return this.linkDetails.get(key);
   }
 
@@ -443,17 +437,17 @@ export class NetworkCache {
     linkType?: number
   ): void {
     const key = linkType !== undefined
-      ? `${toBase64(baseAddress)}:${linkType}`
-      : toBase64(baseAddress);
+      ? `${encodeHashToBase64(baseAddress)}:${linkType}`
+      : encodeHashToBase64(baseAddress);
     this.linkDetails.set(key, details);
   }
 
   invalidateLinkDetails(baseAddress: AnyDhtHash, linkType?: number): void {
     if (linkType !== undefined) {
-      const key = `${toBase64(baseAddress)}:${linkType}`;
+      const key = `${encodeHashToBase64(baseAddress)}:${linkType}`;
       this.linkDetails.delete(key);
     } else {
-      const baseKey = toBase64(baseAddress);
+      const baseKey = encodeHashToBase64(baseAddress);
       this.linkDetails.deleteByPrefix(baseKey);
     }
   }
@@ -464,7 +458,7 @@ export class NetworkCache {
    * If a detail with the same create_link_hash already exists, it is not duplicated.
    */
   mergeLinkDetailIntoCache(baseAddress: AnyDhtHash, link: NetworkLink): void {
-    const baseKey = toBase64(baseAddress);
+    const baseKey = encodeHashToBase64(baseAddress);
     for (const [key, details] of this.linkDetails.entries()) {
       if (key === baseKey || key === `${baseKey}:${link.link_type}`) {
         const exists = details.some(d =>
@@ -487,7 +481,7 @@ export class NetworkCache {
     createLinkHash: Uint8Array,
     deleteHash: Uint8Array
   ): void {
-    const baseKey = toBase64(baseAddress);
+    const baseKey = encodeHashToBase64(baseAddress);
     for (const [key, details] of this.linkDetails.entries()) {
       if (key === baseKey || key.startsWith(baseKey + ':')) {
         for (const detail of details) {
@@ -510,17 +504,17 @@ export class NetworkCache {
   // --- Details (TTL-based) ---
 
   getDetailsSync(hash: AnyDhtHash): any | null {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     return this.details.get(key);
   }
 
   cacheDetailsSync(hash: AnyDhtHash, details: any): void {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     this.details.set(key, details);
   }
 
   invalidateDetails(hash: AnyDhtHash): void {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     this.details.delete(key);
   }
 

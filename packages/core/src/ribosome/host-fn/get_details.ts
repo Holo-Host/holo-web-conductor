@@ -18,12 +18,7 @@ import { HoloHashType, getHashType } from "@holochain/client";
 import type { EntryHash, ActionHash } from "@holochain/client";
 import { Cascade, getNetworkCache, getNetworkService, getGetStrategyMode } from "../../network";
 import type { GetStrategy } from "../../types/holochain-types";
-
-// Helper to convert to base64url for logging
-const toBase64 = (arr: Uint8Array) => {
-  const base64 = btoa(String.fromCharCode(...arr));
-  return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
+import { encodeHashToBase64 } from "../../types/holochain-types";
 
 /**
  * Process a single get_details input and return the details or null
@@ -49,7 +44,7 @@ function processGetDetailsInput(
   const hashType = getHashType(inputHash);
 
   console.log(`[get_details] Input ${inputIndex}:`, {
-    hash: toBase64(inputHash),
+    hash: encodeHashToBase64(inputHash),
     hashType,
     ...(strategy ? { strategy } : {}),
   });
@@ -186,7 +181,7 @@ function processActionHashQuery(
   strategy?: GetStrategy
 ): any | null {
   console.log(`[get_details] Input ${inputIndex}: action hash query`, {
-    actionHash: toBase64(actionHash),
+    actionHash: encodeHashToBase64(actionHash),
   });
 
   // Use cascade for local-first with network fallback

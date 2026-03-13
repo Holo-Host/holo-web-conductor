@@ -30,6 +30,7 @@ import type {
   AgentValidationPkgAction,
   InitZomesCompleteAction,
 } from './types';
+import { encodeHashToBase64 } from '../types/holochain-types';
 
 const DB_NAME = 'hwc_source_chain';
 const DB_VERSION = 1;
@@ -350,8 +351,8 @@ export class SourceChainStorage {
    * Create cell ID string from DNA hash and agent pub key
    */
   private getCellId(dnaHash: Uint8Array, agentPubKey: Uint8Array): string {
-    const dnaB64 = btoa(String.fromCharCode(...dnaHash));
-    const agentB64 = btoa(String.fromCharCode(...agentPubKey));
+    const dnaB64 = encodeHashToBase64(dnaHash);
+    const agentB64 = encodeHashToBase64(agentPubKey);
     return `${dnaB64}:${agentB64}`;
   }
 

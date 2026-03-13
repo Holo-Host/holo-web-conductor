@@ -21,6 +21,7 @@ import type { Link as StoredLink } from '../storage/types';
 import {
   isEntryHash,
   isActionHash,
+  encodeHashToBase64,
   type DnaHash,
   type AnyDhtHash,
   type SignedActionHashed,
@@ -475,8 +476,7 @@ export class Cascade {
    * Convert hash to base64url string for logging (matches Holochain format like uhCEk...)
    */
   private hashToBase64(hash: Uint8Array): string {
-    const base64 = btoa(String.fromCharCode(...hash));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return encodeHashToBase64(hash);
   }
 
   /**

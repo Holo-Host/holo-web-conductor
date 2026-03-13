@@ -15,6 +15,7 @@ import { isStoredDeleteAction, type StoredAction } from "../../storage/types";
 import type { WireAction, RecordEntry, GetStrategy } from "../../types/holochain-types";
 import { validateWasmGetInputArray } from "../wasm-io-types";
 import { normalizeEntryBytes } from "./entry-utils";
+import { encodeHashToBase64 } from "../../types/holochain-types";
 
 
 /**
@@ -26,7 +27,6 @@ function processGetInput(
   agentPubKey: Uint8Array,
   storage: ReturnType<typeof getStorageProvider>,
   cascade: Cascade,
-  toBase64: (arr: Uint8Array) => string,
   inputIndex: number
 ): HolochainRecord | null {
   const { any_dht_hash } = input;
@@ -43,7 +43,7 @@ function processGetInput(
                    any_dht_hash[0] === 132 && any_dht_hash[1] === 41 ? 'ACTION' :
                    any_dht_hash[0] === 132 && any_dht_hash[1] === 32 ? 'AGENT' : 'UNKNOWN';
 
-  console.log(`[get] Input ${inputIndex}: Getting ${hashType} hash: ${toBase64(any_dht_hash)}${strategy ? ` strategy=${strategy}` : ''}`);
+  console.log(`[get] Input ${inputIndex}: Getting ${hashType} hash: ${encodeHashToBase64(any_dht_hash)}${strategy ? ` strategy=${strategy}` : ''}`);
 
   // Try cascade: local → cache → network
   const networkRecord = cascade.fetchRecord(dnaHash, any_dht_hash, undefined, strategy);
@@ -133,12 +133,6 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   console.log('[get] Processing batch of', inputs.length, 'queries');
 
-  // Convert to base64url for easier debugging
-  const toBase64 = (arr: Uint8Array) => {
-    const base64 = btoa(String.fromCharCode(...arr));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
-
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Create cascade for this lookup
@@ -147,7 +141,7 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Process ALL inputs and collect results
   // HDK expects Vec<Option<Record>> - one Option<Record> per input
   const allResults = inputs.map((input, index) =>
-    processGetInput(input, dnaHash, agentPubKey, storage, cascade, toBase64, index)
+    processGetInput(input, dnaHash, agentPubKey, storage, cascade, index)
   );
 
   console.log('[get] Batch complete. Found:', allResults.filter(r => r !== null).length, '/', inputs.length);

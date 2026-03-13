@@ -11,6 +11,7 @@ import type { CreateLinkAction, Link } from "../../storage/types";
 import { computeActionHashV2, serializeAction } from "../../hash";
 import { buildCreateLinkAction } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
+import { encodeHashToBase64 } from "../../types/holochain-types";
 
 /**
  * Create link input structure (matches Holochain HDK CreateLinkInput)
@@ -59,12 +60,6 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
 
-  // Convert to base64url for easier debugging (matches Holochain's hash display format)
-  const toBase64 = (arr: Uint8Array) => {
-    const base64 = btoa(String.fromCharCode(...arr));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
-
   // Try to decode tag as UTF-8 string (paths encode component names in tags)
   let tagString = '';
   try {
@@ -80,8 +75,8 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const isTargetAction = targetPrefix[0] === 132 && targetPrefix[1] === 41 && targetPrefix[2] === 36;
 
   console.log("[create_link] Creating link", {
-    base_hash: toBase64(input.base_address),
-    target_hash: toBase64(input.target_address),
+    base_hash: encodeHashToBase64(input.base_address),
+    target_hash: encodeHashToBase64(input.target_address),
     base_prefix: Array.from(input.base_address.slice(0, 3)),
     target_prefix: targetPrefix,
     target_is_entry: isTargetEntry,
