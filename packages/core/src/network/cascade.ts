@@ -419,6 +419,10 @@ export class Cascade {
       // Secondary fallback: derive live links from link details cache.
       // The details cache tracks deletes, so it can provide more accurate
       // offline results (won't show links that have been deleted).
+      // Note: this only ADDS links -- it does not filter links already
+      // returned by the primary link cache above. If the link cache shows
+      // a link as live but the details cache knows it's deleted, the link
+      // still appears. The link cache takes precedence when populated.
       const cachedDetails = this.cache.getLinkDetailsSync(baseAddress, linkType);
       if (cachedDetails && cachedDetails.length > 0) {
         log.debug(` Found ${cachedDetails.length} entries in link details cache (fallback)`);
