@@ -167,6 +167,34 @@ describe('Cascade.fetchLinks - link details cache fallback', () => {
     expect(result[0].create_link_hash).toEqual(linkFromNetwork.create_link_hash);
   });
 
+  it('preserves cache when network throws (does not overwrite with empty)', () => {
+    const linkA = makeNetworkLink(1);
+
+    // Pre-populate both caches with linkA
+    cache.cacheLinksSync(baseAddress, [linkA]);
+    cache.cacheLinkDetailsSync(baseAddress, [
+      { create: linkA, deleteHashes: [] },
+    ]);
+
+    // Network is available but throws on fetch (simulates linker HTTP error)
+    const errorNetwork: NetworkService = {
+      ...unavailableNetwork,
+      isAvailable: () => true,
+      getLinksSync: () => { throw new Error('502 No peers available'); },
+    };
+
+    const cascade = new Cascade(emptyStorage(), cache, errorNetwork);
+    const result = cascade.fetchLinks(dnaHash, agentPubKey, baseAddress);
+
+    // Should fall back to cached data, not return empty
+    expect(result).toHaveLength(1);
+    expect(result[0].create_link_hash).toEqual(linkA.create_link_hash);
+
+    // Cache should still have the original data (not overwritten with [])
+    expect(cache.getLinksSync(baseAddress)).toHaveLength(1);
+    expect(cache.getLinkDetailsSync(baseAddress)).toHaveLength(1);
+  });
+
   it('respects linkType filter when reading from details cache', () => {
     const linkType0 = makeNetworkLink(1, 0);
     const linkType3 = makeNetworkLink(2, 3);
