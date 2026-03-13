@@ -42,6 +42,7 @@ interface StorableDnaContext {
   wasm: number[];
   name?: string;
   properties?: Record<string, unknown>;
+  networkSeed?: string;
   manifest?: Record<string, unknown>;  // DnaManifestRuntime stored as plain object
 }
 
@@ -217,6 +218,7 @@ export class HappContextStorage {
         wasm: Array.from(dna.wasm),
         name: dna.name,
         properties: dna.properties,
+        networkSeed: dna.networkSeed,
         manifest: this.serializeManifest(dna.manifest),
       })),
       appName: context.appName,
@@ -247,6 +249,7 @@ export class HappContextStorage {
         wasm: new Uint8Array(dna.wasm),
         name: dna.name,
         properties: dna.properties,
+        networkSeed: dna.networkSeed,
         manifest: this.deserializeManifest(dna.manifest),
       })),
       appName: stored.appName,

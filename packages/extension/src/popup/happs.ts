@@ -10,7 +10,7 @@ import {
   type ResponseMessage,
   type PublishStatusPayload,
 } from "../lib/messaging";
-import { encodeHashToBase64 } from "@holochain/client";
+import { formatHash, formatHashFull, formatRelativeTime, copyToClipboard } from "./utils";
 
 interface HappContext {
   id: string;
@@ -22,7 +22,7 @@ interface HappContext {
   lastUsed: number;
   enabled: boolean;
   status?: 'enabled' | 'disabled' | 'awaitingMemproofs';
-  dnaCount: number;
+  dnas: Array<{ hash: Uint8Array | number[] | Record<string, number>; name?: string; networkSeed?: string }>;
   recoverySealed?: boolean;
 }
 
@@ -68,161 +68,100 @@ function showSuccess(message: string): void {
   }, 3000);
 }
 
-/**
- * Format timestamp to readable string
- */
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp);
-  const now = Date.now();
-  const diff = now - timestamp;
 
-  // Less than 1 minute
-  if (diff < 60000) {
-    return "Just now";
-  }
-
-  // Less than 1 hour
-  if (diff < 3600000) {
-    const minutes = Math.floor(diff / 60000);
-    return `${minutes}m ago`;
-  }
-
-  // Less than 24 hours
-  if (diff < 86400000) {
-    const hours = Math.floor(diff / 3600000);
-    return `${hours}h ago`;
-  }
-
-  // Less than 7 days
-  if (diff < 604800000) {
-    const days = Math.floor(diff / 86400000);
-    return `${days}d ago`;
-  }
-
-  // Otherwise show full date
-  return date.toLocaleDateString();
-}
-
-/**
- * Ensure value is a real Uint8Array (Chrome messaging converts to plain objects)
- */
-function toUint8Array(data: Uint8Array | number[] | Record<string, number>): Uint8Array {
-  if (data instanceof Uint8Array) return data;
-  if (Array.isArray(data)) return new Uint8Array(data);
-  return new Uint8Array(Object.values(data));
-}
-
-/**
- * Format public key for display (truncated base64)
- */
-function formatPubKey(pubKey: Uint8Array | number[] | Record<string, number>): string {
-  const b64 = encodeHashToBase64(toUint8Array(pubKey));
-  return `${b64.substring(0, 12)}...${b64.substring(b64.length - 8)}`;
-}
-
-/**
- * Format public key to full base64
- */
-function formatPubKeyFull(pubKey: Uint8Array | number[] | Record<string, number>): string {
-  return encodeHashToBase64(toUint8Array(pubKey));
-}
-
-/**
- * Copy text to clipboard
- */
-async function copyToClipboard(text: string, element: HTMLElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    element.classList.add("copied");
-    setTimeout(() => {
-      element.classList.remove("copied");
-    }, 2000);
-  } catch (error) {
-    console.error("Failed to copy:", error);
-  }
-}
 
 /**
  * Render hApp card
  */
 function renderHappCard(context: HappContext): string {
   const status = context.status || (context.enabled ? 'enabled' : 'disabled');
-  const statusClass = status === 'enabled' ? "enabled" : status === 'awaitingMemproofs' ? "awaiting" : "disabled";
-  const statusText = status === 'enabled' ? "Enabled" : status === 'awaitingMemproofs' ? "Awaiting Memproof" : "Disabled";
-  const disabledClass = status === 'enabled' ? "" : "disabled";
+  const isEnabled = status === 'enabled';
+  const isAwaiting = status === 'awaitingMemproofs';
+  const statusClass = isEnabled ? "enabled" : isAwaiting ? "awaiting" : "disabled";
+  const statusText = isEnabled ? "Enabled" : isAwaiting ? "Awaiting Memproof" : "Disabled";
+  const disabledClass = isEnabled ? "" : "disabled";
+  const toggleChecked = isEnabled ? "checked" : "";
 
   return `
     <div class="happ-card ${disabledClass}" data-id="${context.id}">
       <div class="happ-header">
         <div class="happ-title">
-          <div class="happ-name">${context.appName || "Unnamed hApp"}</div>
-          <div class="happ-domain">${context.domain}</div>
+          <span class="happ-name">${context.appName || "Unnamed hApp"}</span>
+          <span class="happ-version">v${context.appVersion || "?"}</span>
         </div>
         <div class="happ-status">
-          <span class="status-badge ${statusClass}">${statusText}</span>
+          ${isAwaiting
+            ? `<span class="status-badge awaiting">${statusText}</span>
+               <button class="primary provide-memproof-btn" data-id="${context.id}">Provide Memproof</button>`
+            : `<span class="status-badge ${statusClass}">${statusText}</span>
+               <label class="toggle" title="${isEnabled ? 'Disable' : 'Enable'} hApp">
+                 <input type="checkbox" class="toggle-input" data-id="${context.id}" ${toggleChecked}>
+                 <span class="toggle-slider"></span>
+               </label>`
+          }
         </div>
       </div>
+      <div class="happ-domain">${context.domain}</div>
 
       <div class="happ-details">
-        <div class="detail-item">
-          <div class="detail-label">Context ID</div>
-          <div class="detail-value">${context.id.substring(0, 8)}...</div>
+        <div class="detail-row">
+          <span class="detail-label">Installed</span> <span class="detail-value">${formatRelativeTime(context.installedAt)}</span>
+          <span class="detail-sep"></span>
+          <span class="detail-label">Last used</span> <span class="detail-value">${formatRelativeTime(context.lastUsed)}</span>
         </div>
-        <div class="detail-item">
-          <div class="detail-label">Version</div>
-          <div class="detail-value">${context.appVersion || "N/A"}</div>
+        <div class="detail-row">
+          <span class="detail-label">Agent</span>
+          <span class="detail-value pubkey" data-full="${formatHashFull(context.agentPubKey)}" title="Click to copy">
+            ${formatHash(context.agentPubKey)}
+          </span>
         </div>
-        <div class="detail-item">
-          <div class="detail-label">Installed</div>
-          <div class="detail-value">${formatTimestamp(context.installedAt)}</div>
+        <div class="dna-list">
+          <span class="detail-label">DNAs</span>
+          ${context.dnas.map((dna) => `
+            <div class="dna-item">
+              <span class="dna-name">${dna.name || "unnamed"}</span>
+              <span class="dna-hash" data-full="${formatHashFull(dna.hash)}" title="Click to copy">${formatHash(dna.hash)}</span>
+              ${dna.networkSeed ? `<span class="dna-seed" title="${dna.networkSeed}">seed: ${dna.networkSeed.length > 16 ? dna.networkSeed.substring(0, 16) + "..." : dna.networkSeed}</span>` : ""}
+            </div>
+          `).join("")}
         </div>
-        <div class="detail-item">
-          <div class="detail-label">Last Used</div>
-          <div class="detail-value">${formatTimestamp(context.lastUsed)}</div>
-        </div>
-        <div class="detail-item" style="grid-column: 1 / -1;">
-          <div class="detail-label">Agent Public Key</div>
-          <div class="detail-value pubkey" data-full="${formatPubKeyFull(context.agentPubKey)}" title="Click to copy">
-            ${formatPubKey(context.agentPubKey)}
+      </div>
+
+      <details class="section-debug" data-id="${context.id}">
+        <summary class="section-toggle">Debug</summary>
+        <div class="section-content" id="debug-${context.id}">
+          <div class="subsection">
+            <div class="subsection-title">Publishing</div>
+            <div class="debug-status">
+              <span class="badge pending" data-id="${context.id}">0 pending</span>
+              <span class="badge in-flight" data-id="${context.id}">0 in-flight</span>
+              <span class="badge failed" data-id="${context.id}">0 failed</span>
+            </div>
+            <div class="debug-actions">
+              <button class="secondary retry-failed-btn" data-id="${context.id}">Retry Failed</button>
+              <button class="primary republish-all-btn" data-id="${context.id}">Republish All</button>
+            </div>
+          </div>
+          <div class="subsection">
+            <div class="subsection-title">Linker</div>
+            <div class="linker-control">
+              <span class="linker-label">WebSocket:</span>
+              <button class="secondary linker-toggle-btn">Loading...</button>
+            </div>
           </div>
         </div>
-        <div class="detail-item">
-          <div class="detail-label">DNAs</div>
-          <div class="detail-value">${context.dnaCount} DNA${context.dnaCount !== 1 ? "s" : ""}</div>
-        </div>
-      </div>
+      </details>
 
-      <div class="happ-actions">
-        ${
-          status === 'awaitingMemproofs'
-            ? `<button class="primary provide-memproof-btn" data-id="${context.id}">Provide Memproof</button>`
-            : status === 'enabled'
-              ? `<button class="secondary disable-btn" data-id="${context.id}">Disable</button>`
-              : `<button class="primary enable-btn" data-id="${context.id}">Enable</button>`
-        }
-        <button class="secondary debug-btn" data-id="${context.id}">Debug</button>
-        ${context.recoverySealed !== true
-          ? `<button class="recover-btn secondary" data-context-id="${context.id}" title="Recover chain data from DHT">Recover Chain</button>`
-          : ''
-        }
-        <button class="danger uninstall-btn" data-id="${context.id}">Uninstall</button>
-      </div>
-
-      <div class="debug-section" id="debug-${context.id}" style="display: none;">
-        <div class="debug-status">
-          <span class="badge pending" data-id="${context.id}">0 pending</span>
-          <span class="badge in-flight" data-id="${context.id}">0 in-flight</span>
-          <span class="badge failed" data-id="${context.id}">0 failed</span>
+      <details class="section-danger">
+        <summary class="section-toggle danger-toggle">Danger Zone</summary>
+        <div class="section-content danger-content">
+          ${context.recoverySealed !== true
+            ? `<button class="secondary recover-btn" data-context-id="${context.id}" title="Recover chain data from DHT">Recover Chain</button>`
+            : ''
+          }
+          <button class="danger uninstall-btn" data-id="${context.id}">Uninstall</button>
         </div>
-        <div class="debug-actions">
-          <button class="secondary retry-failed-btn" data-id="${context.id}">Retry Failed</button>
-          <button class="primary republish-all-btn" data-id="${context.id}">Republish All</button>
-        </div>
-        <div class="linker-control" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;">
-          <span style="font-size: 12px; color: #6b7280;">WebSocket:</span>
-          <button class="secondary linker-toggle-btn" style="margin-left: 8px;">Loading...</button>
-        </div>
-      </div>
+      </details>
     </div>
   `;
 }
@@ -277,21 +216,12 @@ function renderHapps(): void {
  * Attach event listeners to buttons
  */
 function attachEventListeners(): void {
-  // Enable buttons
-  document.querySelectorAll(".enable-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const target = e.target as HTMLButtonElement;
+  // Toggle slider (enable/disable)
+  document.querySelectorAll(".toggle-input").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      const target = e.target as HTMLInputElement;
       const contextId = target.dataset.id!;
-      await toggleContext(contextId, true);
-    });
-  });
-
-  // Disable buttons
-  document.querySelectorAll(".disable-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const target = e.target as HTMLButtonElement;
-      const contextId = target.dataset.id!;
-      await toggleContext(contextId, false);
+      await toggleContext(contextId, target.checked);
     });
   });
 
@@ -304,8 +234,8 @@ function attachEventListeners(): void {
     });
   });
 
-  // Copy public key on click
-  document.querySelectorAll(".pubkey").forEach((el) => {
+  // Copy hash on click (agent keys and DNA hashes)
+  document.querySelectorAll(".pubkey, .dna-hash").forEach((el) => {
     el.addEventListener("click", async (e) => {
       const target = e.target as HTMLElement;
       const fullKey = target.dataset.full!;
@@ -313,12 +243,19 @@ function attachEventListeners(): void {
     });
   });
 
-  // Debug buttons - toggle debug section visibility
-  document.querySelectorAll(".debug-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const target = e.target as HTMLButtonElement;
-      const contextId = target.dataset.id!;
-      await toggleDebugSection(contextId);
+  // Debug section -- fetch publish status when opened
+  document.querySelectorAll(".section-debug").forEach((details) => {
+    details.addEventListener("toggle", async () => {
+      const el = details as HTMLDetailsElement;
+      const contextId = el.dataset.id!;
+      if (el.open) {
+        openDebugSections.add(contextId);
+        await fetchPublishStatus(contextId);
+        startDebugStatusPolling();
+      } else {
+        openDebugSections.delete(contextId);
+        stopDebugStatusPolling();
+      }
     });
   });
 
@@ -357,7 +294,6 @@ function attachEventListeners(): void {
 
       if (!confirm('Recover chain data from the DHT? This requires an active linker connection.')) return;
 
-      // Show recovery modal
       const modal = document.getElementById('recovery-modal');
       const progressBar = document.getElementById('recovery-progress-bar');
       const progressText = document.getElementById('recovery-progress-text');
@@ -370,11 +306,9 @@ function attachEventListeners(): void {
       if (errorsDiv) { errorsDiv.classList.add('hidden'); errorsDiv.textContent = ''; }
       if (closeBtn) closeBtn.classList.add('hidden');
 
-      // Start recovery (async, long-running)
       const recoverMessage = createRequest(MessageType.RECOVER_CHAIN, { contextId });
       const recoverPromise = chrome.runtime.sendMessage(recoverMessage);
 
-      // Poll for progress
       const pollInterval = setInterval(async () => {
         try {
           const progressMsg = createRequest(MessageType.GET_RECOVERY_PROGRESS, { contextId });
@@ -401,7 +335,6 @@ function attachEventListeners(): void {
         }
       }, 500);
 
-      // Wait for recovery to finish
       try {
         const result = await recoverPromise;
         clearInterval(pollInterval);
@@ -430,12 +363,10 @@ function attachEventListeners(): void {
         if (progressText) progressText.textContent = `Error: ${err}`;
       }
 
-      // Show close button
       if (closeBtn) {
         closeBtn.classList.remove('hidden');
         closeBtn.addEventListener('click', () => {
           if (modal) modal.classList.remove('active');
-          // Reset progress bar color
           if (progressBar) (progressBar as any).style.background = '#667eea';
         }, { once: true });
       }
@@ -511,28 +442,6 @@ function stopDebugStatusPolling(): void {
   }
 }
 
-/**
- * Toggle debug section visibility
- */
-async function toggleDebugSection(contextId: string): Promise<void> {
-  const debugSection = document.getElementById(`debug-${contextId}`);
-  if (!debugSection) return;
-
-  const isVisible = debugSection.style.display !== "none";
-
-  if (isVisible) {
-    debugSection.style.display = "none";
-    openDebugSections.delete(contextId);
-    stopDebugStatusPolling();
-  } else {
-    debugSection.style.display = "block";
-    openDebugSections.add(contextId);
-    // Fetch status immediately when opening
-    await fetchPublishStatus(contextId);
-    // Start polling if not already
-    startDebugStatusPolling();
-  }
-}
 
 /**
  * Retry failed publishes for a context

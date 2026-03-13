@@ -2,8 +2,8 @@
  * Storage Provider Abstraction
  *
  * Provides a common interface for storage implementations:
- * - SourceChainStorage: IndexedDB-based, uses pre-loading and session cache
- * - SQLiteStorage: SQLite WASM-based, fully synchronous with OPFS persistence
+ * - DirectSQLiteStorage (ribosome-worker.ts): Production -- SQLite WASM in browser
+ * - SourceChainStorage: Test only -- IndexedDB via fake-indexeddb in vitest
  *
  * This abstraction allows switching between implementations without changing
  * ribosome or host function code.
@@ -101,8 +101,8 @@ let storageProvider: StorageProvider | null = null;
  * Set the storage provider to use
  *
  * Call this during initialization:
- * - In browser: setStorageProvider(sqliteStorage) after worker init
- * - In tests: setStorageProvider(sourceChainStorage) in setup
+ * - Browser extension: ribosome-worker.ts sets DirectSQLiteStorage
+ * - Tests: ribosome/index.ts auto-falls back to SourceChainStorage (IndexedDB)
  */
 export function setStorageProvider(provider: StorageProvider): void {
   storageProvider = provider;

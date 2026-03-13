@@ -1,13 +1,18 @@
 /**
- * Source Chain Storage
+ * Source Chain Storage -- IndexedDB implementation (TEST ONLY)
  *
- * Persistent storage for Holochain source chain data:
+ * This is the IndexedDB-based StorageProvider used in vitest tests via
+ * fake-indexeddb. It is NOT used in the browser extension at runtime.
+ *
+ * Production uses DirectSQLiteStorage (ribosome-worker.ts) which requires
+ * browser-only APIs (SharedArrayBuffer, Atomics, OPFS, Web Workers) that
+ * are unavailable in Node.js test environments.
+ *
+ * Stores source chain data:
  * - Actions (Create, Update, Delete, CreateLink, DeleteLink, etc.)
  * - Entries (app entry content)
- * - Links (base → target relationships)
+ * - Links (base -> target relationships)
  * - Chain heads (per-cell sequence tracking)
- *
- * Supports atomic transactions for chain integrity.
  */
 
 import type {

@@ -169,6 +169,9 @@ export interface DnaContext {
   /** Properties for this DNA */
   properties?: Record<string, unknown>;
 
+  /** Network seed used to compute DNA hash (may differ from manifest default) */
+  networkSeed?: string;
+
   /** DNA manifest (from .happ bundle) */
   manifest?: import('./types/bundle-types').DnaManifestRuntime;
 }

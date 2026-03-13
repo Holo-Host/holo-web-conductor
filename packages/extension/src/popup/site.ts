@@ -9,7 +9,7 @@ import {
   type PublishStatusPayload,
 } from "../lib/messaging";
 import type { Permission } from "../lib/permissions";
-import { encodeHashToBase64 } from "@holochain/client";
+import { formatHash, formatHashFull, formatRelativeTime, formatDate, copyToClipboard } from "./utils";
 
 interface HappContext {
   id: string;
@@ -21,7 +21,7 @@ interface HappContext {
   lastUsed: number;
   enabled: boolean;
   status?: "enabled" | "disabled" | "awaitingMemproofs";
-  dnaCount: number;
+  dnas: Array<{ hash: Uint8Array | number[] | Record<string, number>; name?: string; networkSeed?: string }>;
   recoverySealed?: boolean;
 }
 
@@ -36,46 +36,6 @@ function getOriginFromUrl(): string {
   return params.get("origin") || "";
 }
 
-function toUint8Array(
-  data: Uint8Array | number[] | Record<string, number>
-): Uint8Array {
-  if (data instanceof Uint8Array) return data;
-  if (Array.isArray(data)) return new Uint8Array(data);
-  return new Uint8Array(Object.values(data));
-}
-
-function formatPubKey(
-  pubKey: Uint8Array | number[] | Record<string, number>
-): string {
-  const b64 = encodeHashToBase64(toUint8Array(pubKey));
-  return `${b64.substring(0, 12)}...${b64.substring(b64.length - 8)}`;
-}
-
-function formatPubKeyFull(
-  pubKey: Uint8Array | number[] | Record<string, number>
-): string {
-  return encodeHashToBase64(toUint8Array(pubKey));
-}
-
-function formatTimestamp(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  if (diff < 60000) return "Just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function showMessage(type: "error" | "success", text: string): void {
   const el = document.getElementById("message");
   if (!el) return;
@@ -83,19 +43,6 @@ function showMessage(type: "error" | "success", text: string): void {
   setTimeout(() => {
     el.innerHTML = "";
   }, 4000);
-}
-
-async function copyToClipboard(
-  text: string,
-  element: HTMLElement
-): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    element.classList.add("copied");
-    setTimeout(() => element.classList.remove("copied"), 2000);
-  } catch {
-    // ignore
-  }
 }
 
 async function loadPermission(): Promise<Permission | null> {
@@ -184,97 +131,95 @@ function renderHapps(): void {
 
 function renderHappCard(ctx: HappContext): string {
   const status = ctx.status || (ctx.enabled ? "enabled" : "disabled");
-  const statusClass =
-    status === "enabled"
-      ? "enabled"
-      : status === "awaitingMemproofs"
-        ? "awaiting"
-        : "disabled";
-  const statusText =
-    status === "enabled"
-      ? "Enabled"
-      : status === "awaitingMemproofs"
-        ? "Awaiting Memproof"
-        : "Disabled";
-  const disabledClass = status === "enabled" ? "" : "disabled";
+  const isEnabled = status === "enabled";
+  const isAwaiting = status === "awaitingMemproofs";
+  const statusClass = isEnabled ? "enabled" : isAwaiting ? "awaiting" : "disabled";
+  const statusText = isEnabled ? "Enabled" : isAwaiting ? "Awaiting Memproof" : "Disabled";
+  const disabledClass = isEnabled ? "" : "disabled";
+  const toggleChecked = isEnabled ? "checked" : "";
 
   return `
     <div class="happ-card ${disabledClass}" data-id="${ctx.id}">
       <div class="happ-header">
-        <div class="happ-name">${ctx.appName || "Unnamed hApp"}</div>
-        <span class="status-badge ${statusClass}">${statusText}</span>
+        <div class="happ-title">
+          <span class="happ-name">${ctx.appName || "Unnamed hApp"}</span>
+          <span class="happ-version">v${ctx.appVersion || "?"}</span>
+        </div>
+        <div class="happ-status">
+          ${isAwaiting
+            ? `<span class="status-badge awaiting">${statusText}</span>
+               <button class="primary provide-memproof-btn" data-id="${ctx.id}">Provide Memproof</button>`
+            : `<span class="status-badge ${statusClass}">${statusText}</span>
+               <label class="toggle" title="${isEnabled ? "Disable" : "Enable"} hApp">
+                 <input type="checkbox" class="toggle-input" data-id="${ctx.id}" ${toggleChecked}>
+                 <span class="toggle-slider"></span>
+               </label>`
+          }
+        </div>
       </div>
+
       <div class="happ-details">
-        <div class="detail-item">
-          <div class="detail-label">Context ID</div>
-          <div class="detail-value">${ctx.id.substring(0, 8)}...</div>
+        <div class="detail-row">
+          <span class="detail-label">Installed</span> <span class="detail-value">${formatRelativeTime(ctx.installedAt)}</span>
+          <span class="detail-sep"></span>
+          <span class="detail-label">Last used</span> <span class="detail-value">${formatRelativeTime(ctx.lastUsed)}</span>
         </div>
-        <div class="detail-item">
-          <div class="detail-label">Version</div>
-          <div class="detail-value">${ctx.appVersion || "N/A"}</div>
+        <div class="detail-row">
+          <span class="detail-label">Agent</span>
+          <span class="detail-value pubkey" data-full="${formatHashFull(ctx.agentPubKey)}" title="Click to copy">
+            ${formatHash(ctx.agentPubKey)}
+          </span>
         </div>
-        <div class="detail-item">
-          <div class="detail-label">Installed</div>
-          <div class="detail-value">${formatTimestamp(ctx.installedAt)}</div>
+        <div class="dna-list">
+          <span class="detail-label">DNAs</span>
+          ${ctx.dnas.map((dna) => `
+            <div class="dna-item">
+              <span class="dna-name">${dna.name || "unnamed"}</span>
+              <span class="dna-hash" data-full="${formatHashFull(dna.hash)}" title="Click to copy">${formatHash(dna.hash)}</span>
+              ${dna.networkSeed ? `<span class="dna-seed" title="${dna.networkSeed}">seed: ${dna.networkSeed.length > 16 ? dna.networkSeed.substring(0, 16) + "..." : dna.networkSeed}</span>` : ""}
+            </div>
+          `).join("")}
         </div>
-        <div class="detail-item">
-          <div class="detail-label">Last Used</div>
-          <div class="detail-value">${formatTimestamp(ctx.lastUsed)}</div>
-        </div>
-        <div class="detail-item" style="grid-column: 1 / -1;">
-          <div class="detail-label">Agent Public Key</div>
-          <div class="detail-value pubkey" data-full="${formatPubKeyFull(ctx.agentPubKey)}" title="Click to copy">
-            ${formatPubKey(ctx.agentPubKey)}
+      </div>
+
+      <details class="section-debug" data-id="${ctx.id}">
+        <summary class="section-toggle">Debug</summary>
+        <div class="section-content" id="debug-${ctx.id}">
+          <div class="subsection">
+            <div class="subsection-title">Publishing</div>
+            <div class="debug-status">
+              <span class="badge-pending badge" data-id="${ctx.id}">0 pending</span>
+              <span class="badge-inflight badge" data-id="${ctx.id}">0 in-flight</span>
+              <span class="badge-failed badge" data-id="${ctx.id}">0 failed</span>
+            </div>
+            <div class="debug-actions">
+              <button class="secondary retry-failed-btn" data-id="${ctx.id}">Retry Failed</button>
+              <button class="primary republish-all-btn" data-id="${ctx.id}">Republish All</button>
+            </div>
           </div>
         </div>
-        <div class="detail-item">
-          <div class="detail-label">DNAs</div>
-          <div class="detail-value">${ctx.dnaCount} DNA${ctx.dnaCount !== 1 ? "s" : ""}</div>
-        </div>
-      </div>
-      <div class="happ-actions">
-        ${
-          status === "awaitingMemproofs"
-            ? `<button class="primary provide-memproof-btn" data-id="${ctx.id}">Provide Memproof</button>`
-            : status === "enabled"
-              ? `<button class="secondary disable-btn" data-id="${ctx.id}">Disable</button>`
-              : `<button class="primary enable-btn" data-id="${ctx.id}">Enable</button>`
-        }
-        <button class="secondary debug-btn" data-id="${ctx.id}">Debug</button>
-        ${
-          ctx.recoverySealed !== true
-            ? `<button class="secondary recover-btn" data-context-id="${ctx.id}">Recover</button>`
+      </details>
+
+      <details class="section-danger">
+        <summary class="section-toggle danger-toggle">Danger Zone</summary>
+        <div class="section-content danger-content">
+          ${ctx.recoverySealed !== true
+            ? `<button class="secondary recover-btn" data-context-id="${ctx.id}" title="Recover chain data from DHT">Recover Chain</button>`
             : ""
-        }
-        <button class="danger uninstall-btn" data-id="${ctx.id}">Uninstall</button>
-      </div>
-      <div class="debug-section hidden" id="debug-${ctx.id}" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb; font-size: 12px;">
-        <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
-          <span style="padding: 3px 8px; border-radius: 10px; background: #fef3c7; color: #92400e; font-size: 11px;" class="badge-pending" data-id="${ctx.id}">0 pending</span>
-          <span style="padding: 3px 8px; border-radius: 10px; background: #dbeafe; color: #1e40af; font-size: 11px;" class="badge-inflight" data-id="${ctx.id}">0 in-flight</span>
-          <span style="padding: 3px 8px; border-radius: 10px; background: #fee2e2; color: #991b1b; font-size: 11px;" class="badge-failed" data-id="${ctx.id}">0 failed</span>
+          }
+          <button class="danger uninstall-btn" data-id="${ctx.id}">Uninstall</button>
         </div>
-        <div style="display: flex; gap: 6px; justify-content: flex-end;">
-          <button class="secondary retry-failed-btn" data-id="${ctx.id}">Retry Failed</button>
-          <button class="primary republish-all-btn" data-id="${ctx.id}">Republish All</button>
-        </div>
-      </div>
+      </details>
     </div>
   `;
 }
 
 function attachEventListeners(): void {
-  // Enable/Disable
-  document.querySelectorAll(".enable-btn").forEach((btn) =>
-    btn.addEventListener("click", async (e) => {
-      const id = (e.target as HTMLButtonElement).dataset.id!;
-      await toggleContext(id, true);
-    })
-  );
-  document.querySelectorAll(".disable-btn").forEach((btn) =>
-    btn.addEventListener("click", async (e) => {
-      const id = (e.target as HTMLButtonElement).dataset.id!;
-      await toggleContext(id, false);
+  // Toggle slider (enable/disable)
+  document.querySelectorAll(".toggle-input").forEach((input) =>
+    input.addEventListener("change", async (e) => {
+      const target = e.target as HTMLInputElement;
+      await toggleContext(target.dataset.id!, target.checked);
     })
   );
 
@@ -286,19 +231,36 @@ function attachEventListeners(): void {
     })
   );
 
-  // Copy pubkey
-  document.querySelectorAll(".pubkey").forEach((el) =>
+  // Copy hash on click (agent keys and DNA hashes)
+  document.querySelectorAll(".pubkey, .dna-hash").forEach((el) =>
     el.addEventListener("click", async (e) => {
       const target = e.target as HTMLElement;
       await copyToClipboard(target.dataset.full!, target);
     })
   );
 
-  // Debug toggle
-  document.querySelectorAll(".debug-btn").forEach((btn) =>
-    btn.addEventListener("click", async (e) => {
-      const id = (e.target as HTMLButtonElement).dataset.id!;
-      await toggleDebugSection(id);
+  // Debug section -- fetch publish status when opened
+  document.querySelectorAll(".section-debug").forEach((details) =>
+    details.addEventListener("toggle", async () => {
+      const el = details as HTMLDetailsElement;
+      const id = el.dataset.id!;
+      if (el.open) {
+        openDebugSections.add(id);
+        await fetchPublishStatus(id);
+        if (!debugStatusInterval) {
+          debugStatusInterval = window.setInterval(async () => {
+            for (const cid of openDebugSections) {
+              await fetchPublishStatus(cid);
+            }
+          }, 2000);
+        }
+      } else {
+        openDebugSections.delete(id);
+        if (openDebugSections.size === 0 && debugStatusInterval) {
+          clearInterval(debugStatusInterval);
+          debugStatusInterval = null;
+        }
+      }
     })
   );
 
@@ -396,31 +358,7 @@ async function uninstallHapp(id: string): Promise<void> {
   }
 }
 
-async function toggleDebugSection(id: string): Promise<void> {
-  const section = document.getElementById(`debug-${id}`);
-  if (!section) return;
 
-  const isVisible = !section.classList.contains("hidden");
-  if (isVisible) {
-    section.classList.add("hidden");
-    openDebugSections.delete(id);
-    if (openDebugSections.size === 0 && debugStatusInterval) {
-      clearInterval(debugStatusInterval);
-      debugStatusInterval = null;
-    }
-  } else {
-    section.classList.remove("hidden");
-    openDebugSections.add(id);
-    await fetchPublishStatus(id);
-    if (!debugStatusInterval) {
-      debugStatusInterval = window.setInterval(async () => {
-        for (const cid of openDebugSections) {
-          await fetchPublishStatus(cid);
-        }
-      }, 2000);
-    }
-  }
-}
 
 async function fetchPublishStatus(id: string): Promise<void> {
   try {

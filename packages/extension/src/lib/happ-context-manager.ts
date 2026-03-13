@@ -284,6 +284,9 @@ export class HappContextManager {
         const dnaHash = this.computeDnaHashFromBundle(dnaBundle, role.dna.modifiers);
 
         // Create DnaContext with manifest
+        const effectiveNetworkSeed = role.dna.modifiers?.network_seed ||
+          dnaBundle.manifest.integrity.network_seed || undefined;
+
         const dnaContext: DnaContext = {
           hash: dnaHash,
           wasm,
@@ -291,6 +294,7 @@ export class HappContextManager {
           properties:
             role.dna.modifiers?.properties ||
             dnaBundle.manifest.integrity.properties,
+          networkSeed: effectiveNetworkSeed,
           manifest: runtimeManifest,
         };
 

@@ -247,6 +247,26 @@ async function revokeAllPermissions(): Promise<void> {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // Hide open-in-window button when already in a standalone window
+  const currentWindow = await chrome.windows.getCurrent();
+  const isStandaloneWindow = currentWindow.type === "popup";
+  if (isStandaloneWindow) {
+    document.getElementById("btn-open-window")?.classList.add("hidden");
+    document.body.classList.add("windowed");
+  }
+
+  // Open popup in a standalone window
+  document.getElementById("btn-open-window")?.addEventListener("click", () => {
+    chrome.windows.create({
+      url: chrome.runtime.getURL("popup/index.html"),
+      type: "popup",
+      width: 540,
+      height: 600,
+      focused: true,
+    });
+    window.close();
+  });
+
   // Navigation buttons - all use page navigation (unified pattern)
   document.getElementById("btn-keystore")?.addEventListener("click", () => {
     window.location.href = "lair.html";

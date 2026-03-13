@@ -1034,7 +1034,11 @@ async function handleListHapps(
         lastUsed: context.lastUsed,
         enabled: context.enabled,
         status: context.status,
-        dnaCount: context.dnas.length,
+        dnas: context.dnas.map((dna) => ({
+          hash: Array.from(dna.hash),
+          name: dna.name,
+          networkSeed: dna.networkSeed,
+        })),
       })),
     });
   } catch (error) {
