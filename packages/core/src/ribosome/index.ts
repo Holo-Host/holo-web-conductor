@@ -90,7 +90,8 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
   startZomeCallMetrics(zome, fn);
 
   // Get or create storage provider
-  // Default to SourceChainStorage for backwards compatibility (tests)
+  // Fallback to IndexedDB-based SourceChainStorage for vitest (fake-indexeddb).
+  // In the browser extension, DirectSQLiteStorage is set before any zome calls.
   if (!hasStorageProvider()) {
     const sourceChainStorage = SourceChainStorage.getInstance();
     await sourceChainStorage.init();

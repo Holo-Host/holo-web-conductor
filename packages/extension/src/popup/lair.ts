@@ -12,6 +12,7 @@ import {
   type Message,
 } from "../lib/messaging";
 import type { EntryInfo, EncryptedExport } from "@holo-host/lair";
+import { toUint8Array } from "./utils";
 import {
   dhtLocationFrom32,
   HASH_TYPE_PREFIX,
@@ -66,17 +67,6 @@ function agentPubKeyFromEd25519(ed25519: Uint8Array): Uint8Array {
   return key;
 }
 
-/**
- * Normalize data to Uint8Array (handles Chrome messaging serialization)
- */
-function toUint8Array(data: Uint8Array | any): Uint8Array {
-  if (data instanceof Uint8Array) return data;
-  if (Array.isArray(data)) return new Uint8Array(data);
-  if (typeof data === 'object' && data !== null) {
-    return new Uint8Array(Object.values(data) as number[]);
-  }
-  throw new Error('Invalid data type for toUint8Array');
-}
 
 /**
  * Convert base64 string to Uint8Array

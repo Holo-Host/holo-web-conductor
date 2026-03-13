@@ -6,6 +6,7 @@
 
 import { createRequest, MessageType, type ResponseMessage } from "../lib/messaging";
 import type { Permission } from "../lib/permissions";
+import { formatDate } from "./utils";
 
 /**
  * Show error message
@@ -24,20 +25,6 @@ function showError(message: string): void {
 function hideError(): void {
   const errorContainer = document.getElementById("error-container");
   if (errorContainer) errorContainer.classList.add("hidden");
-}
-
-/**
- * Format timestamp to readable date/time
- */
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 /**
@@ -170,7 +157,7 @@ function renderPermissions(permissions: Permission[]): void {
     // Timestamp cell
     const timestampCell = document.createElement("td");
     timestampCell.className = "timestamp";
-    timestampCell.textContent = formatTimestamp(permission.timestamp);
+    timestampCell.textContent = formatDate(permission.timestamp);
     row.appendChild(timestampCell);
 
     // Action cell
