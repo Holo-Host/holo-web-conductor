@@ -171,19 +171,27 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   if (!callContext.pendingCacheOps) {
     callContext.pendingCacheOps = [];
   }
+  const networkLink = {
+    create_link_hash: actionHash,
+    base: input.base_address,
+    target: input.target_address,
+    zome_index: zomeIndex,
+    link_type: linkType,
+    tag: input.tag,
+    timestamp: timestampMicros,
+    author: agentPubKey,
+  };
+
   callContext.pendingCacheOps.push({
     type: 'mergeLink',
     baseAddress: input.base_address,
-    link: {
-      create_link_hash: actionHash,
-      base: input.base_address,
-      target: input.target_address,
-      zome_index: zomeIndex,
-      link_type: linkType,
-      tag: input.tag,
-      timestamp: timestampMicros,
-      author: agentPubKey,
-    },
+    link: networkLink,
+  });
+
+  callContext.pendingCacheOps.push({
+    type: 'mergeLinkDetail',
+    baseAddress: input.base_address,
+    link: networkLink,
   });
 
   // Track record for publishing after transaction commits (no entry for links)

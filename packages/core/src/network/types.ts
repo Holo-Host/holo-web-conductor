@@ -141,6 +141,18 @@ export interface NetworkLink {
 }
 
 /**
+ * Cached link detail - a CreateLink with its associated DeleteLink hashes.
+ * LinkDetails are monotonically growing: creates and deletes only ever
+ * accumulate, never shrink. This makes them safe to cache with LRU/no-TTL.
+ */
+export interface CachedLinkDetail {
+  /** The CreateLink data */
+  create: NetworkLink;
+  /** DeleteLink action hashes (monotonically growing set) */
+  deleteHashes: Uint8Array[];
+}
+
+/**
  * Options for network fetch operations
  */
 export interface NetworkFetchOptions {
@@ -284,6 +296,8 @@ export interface NetworkCacheOptions {
   recordMaxEntries?: number;
   /** Max link cache entries (default: 5000). Links are LRU, no TTL. */
   linkMaxEntries?: number;
+  /** Max link details cache entries (default: 5000). Link details are LRU, no TTL (monotonically growing). */
+  linkDetailsMaxEntries?: number;
   /** Max details cache entries (default: 1000). Details use TTL. */
   detailsMaxEntries?: number;
   /** Details TTL in milliseconds (default: 2 minutes) */

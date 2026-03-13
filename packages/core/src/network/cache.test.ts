@@ -344,11 +344,13 @@ describe('NetworkCache - Separate Pools', () => {
     const cache = new NetworkCache();
     cache.cacheRecordSync(createActionHash(1), createRecord(1));
     cache.cacheLinksSync(createActionHash(50), [createLink(1)]);
+    cache.cacheLinkDetailsSync(createActionHash(50), [{ create: createLink(1, 50), deleteHashes: [] }]);
     cache.cacheDetailsSync(createActionHash(1), { data: 'test' });
 
     cache.clear();
     expect(cache.getStats().records).toBe(0);
     expect(cache.getStats().links).toBe(0);
+    expect(cache.getStats().linkDetails).toBe(0);
     expect(cache.getStats().details).toBe(0);
   });
 });
@@ -447,6 +449,161 @@ describe('NetworkCache - Link Deletion Clears Cache', () => {
     cache.removeLinkFromCache(base, createActionHash(255));
 
     expect(cache.getLinksSync(base)).toHaveLength(1);
+  });
+});
+
+describe('NetworkCache - Link Details (LRU, no TTL)', () => {
+  let cache: NetworkCache;
+
+  beforeEach(() => {
+    cache = new NetworkCache({ linkDetailsMaxEntries: 3 });
+  });
+
+  it('should cache and retrieve link details by base address', () => {
+    const base = createActionHash(50);
+    const details = [{ create: createLink(1, 50), deleteHashes: [] as Uint8Array[] }];
+    cache.cacheLinkDetailsSync(base, details);
+    expect(cache.getLinkDetailsSync(base)).toBe(details);
+  });
+
+  it('should return null for uncached base', () => {
+    expect(cache.getLinkDetailsSync(createActionHash(99))).toBeNull();
+  });
+
+  it('should cache with linkType key separately', () => {
+    const base = createActionHash(50);
+    const d1 = [{ create: createLink(1, 50), deleteHashes: [] as Uint8Array[] }];
+    const d2 = [{ create: createLink(2, 50), deleteHashes: [] as Uint8Array[] }];
+
+    cache.cacheLinkDetailsSync(base, d1, 1);
+    cache.cacheLinkDetailsSync(base, d2, 2);
+
+    expect(cache.getLinkDetailsSync(base, 1)).toBe(d1);
+    expect(cache.getLinkDetailsSync(base, 2)).toBe(d2);
+    expect(cache.getLinkDetailsSync(base)).toBeNull();
+  });
+
+  it('should evict LRU entries at capacity', () => {
+    const base1 = createActionHash(50);
+    const base2 = createActionHash(51);
+    const base3 = createActionHash(52);
+    const base4 = createActionHash(53);
+
+    cache.cacheLinkDetailsSync(base1, [{ create: createLink(1, 50), deleteHashes: [] }]);
+    cache.cacheLinkDetailsSync(base2, [{ create: createLink(2, 51), deleteHashes: [] }]);
+    cache.cacheLinkDetailsSync(base3, [{ create: createLink(3, 52), deleteHashes: [] }]);
+
+    cache.getLinkDetailsSync(base1); // touch to make recently used
+
+    cache.cacheLinkDetailsSync(base4, [{ create: createLink(4, 53), deleteHashes: [] }]);
+
+    expect(cache.getLinkDetailsSync(base1)).not.toBeNull();
+    expect(cache.getLinkDetailsSync(base2)).toBeNull(); // evicted (LRU)
+    expect(cache.getLinkDetailsSync(base3)).not.toBeNull();
+    expect(cache.getLinkDetailsSync(base4)).not.toBeNull();
+  });
+
+  it('should invalidate by base address (all linkTypes)', () => {
+    const base = createActionHash(50);
+    cache.cacheLinkDetailsSync(base, [{ create: createLink(1, 50), deleteHashes: [] }], 1);
+    cache.cacheLinkDetailsSync(base, [{ create: createLink(2, 50), deleteHashes: [] }], 2);
+
+    cache.invalidateLinkDetails(base);
+    expect(cache.getLinkDetailsSync(base, 1)).toBeNull();
+    expect(cache.getLinkDetailsSync(base, 2)).toBeNull();
+  });
+
+  it('should invalidate by specific linkType', () => {
+    const base = createActionHash(50);
+    cache.cacheLinkDetailsSync(base, [{ create: createLink(1, 50), deleteHashes: [] }], 1);
+    cache.cacheLinkDetailsSync(base, [{ create: createLink(2, 50), deleteHashes: [] }], 2);
+
+    cache.invalidateLinkDetails(base, 1);
+    expect(cache.getLinkDetailsSync(base, 1)).toBeNull();
+    expect(cache.getLinkDetailsSync(base, 2)).not.toBeNull();
+  });
+
+  it('should report linkDetails in stats', () => {
+    cache.cacheLinkDetailsSync(createActionHash(50), [{ create: createLink(1, 50), deleteHashes: [] }]);
+    expect(cache.getStats().linkDetails).toBe(1);
+    expect(cache.getStats().linkDetailsMaxEntries).toBe(3);
+  });
+});
+
+describe('NetworkCache - Link Details Optimistic Updates', () => {
+  let cache: NetworkCache;
+
+  beforeEach(() => {
+    cache = new NetworkCache();
+  });
+
+  it('should merge new link detail into existing cached set', () => {
+    const base = createActionHash(50);
+    cache.cacheLinkDetailsSync(base, [{ create: createLink(1, 50), deleteHashes: [] as Uint8Array[] }]);
+
+    const newLink = createLink(2, 50);
+    cache.mergeLinkDetailIntoCache(base, newLink);
+
+    const result = cache.getLinkDetailsSync(base)!;
+    expect(result).toHaveLength(2);
+    expect(result[1].create).toBe(newLink);
+    expect(result[1].deleteHashes).toHaveLength(0);
+  });
+
+  it('should not duplicate on merge if same create_link_hash', () => {
+    const base = createActionHash(50);
+    const link = createLink(1, 50);
+    cache.cacheLinkDetailsSync(base, [{ create: link, deleteHashes: [] }]);
+
+    cache.mergeLinkDetailIntoCache(base, link);
+    expect(cache.getLinkDetailsSync(base)).toHaveLength(1);
+  });
+
+  it('should add delete hash to matching create', () => {
+    const base = createActionHash(50);
+    const link = createLink(1, 50);
+    cache.cacheLinkDetailsSync(base, [{ create: link, deleteHashes: [] }]);
+
+    const deleteHash = createActionHash(201);
+    cache.addDeleteToLinkDetailsCache(base, link.create_link_hash, deleteHash);
+
+    const result = cache.getLinkDetailsSync(base)!;
+    expect(result[0].deleteHashes).toHaveLength(1);
+    expect(result[0].deleteHashes[0]).toBe(deleteHash);
+  });
+
+  it('should not duplicate delete hashes', () => {
+    const base = createActionHash(50);
+    const link = createLink(1, 50);
+    const deleteHash = createActionHash(201);
+    cache.cacheLinkDetailsSync(base, [{ create: link, deleteHashes: [deleteHash] }]);
+
+    cache.addDeleteToLinkDetailsCache(base, link.create_link_hash, deleteHash);
+    expect(cache.getLinkDetailsSync(base)![0].deleteHashes).toHaveLength(1);
+  });
+
+  it('should no-op when create not found for delete', () => {
+    const base = createActionHash(50);
+    const link = createLink(1, 50);
+    cache.cacheLinkDetailsSync(base, [{ create: link, deleteHashes: [] }]);
+
+    cache.addDeleteToLinkDetailsCache(base, createActionHash(255), createActionHash(201));
+    expect(cache.getLinkDetailsSync(base)![0].deleteHashes).toHaveLength(0);
+  });
+
+  it('should derive live links by filtering out deleted creates', () => {
+    const base = createActionHash(50);
+    const liveLink = createLink(1, 50);
+    const deletedLink = createLink(2, 50);
+    cache.cacheLinkDetailsSync(base, [
+      { create: liveLink, deleteHashes: [] },
+      { create: deletedLink, deleteHashes: [createActionHash(201)] },
+    ]);
+
+    const details = cache.getLinkDetailsSync(base)!;
+    const liveLinks = details.filter(d => d.deleteHashes.length === 0).map(d => d.create);
+    expect(liveLinks).toHaveLength(1);
+    expect(liveLinks[0]).toBe(liveLink);
   });
 });
 

@@ -17,7 +17,7 @@ import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { Cascade, getNetworkCache, getNetworkService } from "../../network";
-import type { NetworkLink } from "../../network/types";
+import type { NetworkLink, CachedLinkDetail } from "../../network/types";
 import type { Link as StoredLink } from "../../storage/types";
 import type { LinkDetails, SignedActionHashed } from "../../types/holochain-types";
 import { buildCreateLinkAction, buildDeleteLinkAction } from "../../types/holochain-serialization";
@@ -30,6 +30,9 @@ const toBase64 = (arr: Uint8Array) => {
   const base64 = btoa(String.fromCharCode(...arr));
   return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
+
+// Helper to convert to plain base64 for cache key lookups (matches cache.ts internals)
+const toCacheKey = (arr: Uint8Array) => btoa(String.fromCharCode(...arr));
 
 /** Zero-filled 39-byte ActionHash used as fallback when prev_action is unavailable */
 const ZERO_ACTION_HASH = new Uint8Array(39);
@@ -152,26 +155,83 @@ function processGetLinksDetailsInput(
     localLinkMap.set(key, ll);
   }
 
+  // Check cache for prior delete info to merge (monotonically growing)
+  const cache = getNetworkCache();
+  const cachedDetails = cache.getLinkDetailsSync(input.base_address, linkTypeFilter.linkType);
+  const cachedDeleteMap = new Map<string, Uint8Array[]>();
+  if (cachedDetails) {
+    for (const d of cachedDetails) {
+      if (d.deleteHashes.length > 0) {
+        cachedDeleteMap.set(toCacheKey(d.create.create_link_hash), d.deleteHashes);
+      }
+    }
+  }
+
+  // Collect merged link details for caching
+  const detailsForCache: CachedLinkDetail[] = [];
+
   // Build LinkDetails tuples: (CreateLink SignedActionHashed, [DeleteLink SignedActionHashed])
   const details: LinkDetails = filteredLinks.map(link => {
     const createAction = buildCreateLinkSignedAction(link);
+    const linkKey = toCacheKey(link.create_link_hash);
+    const timestamp = typeof link.timestamp === 'bigint' ? Number(link.timestamp) : link.timestamp;
 
-    // Check if this link has been deleted (from local storage)
-    const localLink = localLinkMap.get(toBase64(link.create_link_hash));
+    const deleteHashes: Uint8Array[] = [];
     const deletes: SignedActionHashed[] = [];
 
+    // Local storage deletes
+    const localLink = localLinkMap.get(toBase64(link.create_link_hash));
     if (localLink?.deleted && localLink.deleteHash) {
+      deleteHashes.push(localLink.deleteHash);
       deletes.push(buildDeleteLinkSignedAction(
-        localLink.deleteHash,
-        link.create_link_hash,
-        link.base,
-        link.author,
-        typeof link.timestamp === 'bigint' ? Number(link.timestamp) : link.timestamp,
+        localLink.deleteHash, link.create_link_hash, link.base, link.author, timestamp,
       ));
     }
 
+    // Cached deletes (merge any not already present)
+    const cachedDeletes = cachedDeleteMap.get(linkKey);
+    if (cachedDeletes) {
+      for (const dh of cachedDeletes) {
+        const already = deleteHashes.some(
+          h => h.length === dh.length && h.every((b, i) => b === dh[i])
+        );
+        if (!already) {
+          deleteHashes.push(dh);
+          deletes.push(buildDeleteLinkSignedAction(
+            dh, link.create_link_hash, link.base, link.author, timestamp,
+          ));
+        }
+      }
+    }
+
+    detailsForCache.push({ create: link, deleteHashes });
     return [createAction, deletes];
   });
+
+  // Include cached creates no longer in network results (deleted network-wide)
+  if (cachedDetails) {
+    for (const d of cachedDetails) {
+      const key = toCacheKey(d.create.create_link_hash);
+      const inResults = detailsForCache.some(
+        dc => toCacheKey(dc.create.create_link_hash) === key
+      );
+      if (!inResults) {
+        detailsForCache.push(d);
+        const timestamp = typeof d.create.timestamp === 'bigint'
+          ? Number(d.create.timestamp) : d.create.timestamp;
+        const createAction = buildCreateLinkSignedAction(d.create);
+        const deletes: SignedActionHashed[] = d.deleteHashes.map(dh =>
+          buildDeleteLinkSignedAction(
+            dh, d.create.create_link_hash, d.create.base, d.create.author, timestamp,
+          )
+        );
+        details.push([createAction, deletes]);
+      }
+    }
+  }
+
+  // Cache the merged link details (only grows over time)
+  cache.cacheLinkDetailsSync(input.base_address, detailsForCache, linkTypeFilter.linkType);
 
   return details;
 }

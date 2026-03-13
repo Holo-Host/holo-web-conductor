@@ -414,6 +414,22 @@ export class Cascade {
           }
         }
       }
+
+      // Secondary fallback: derive live links from link details cache.
+      // The details cache tracks deletes, so it can provide more accurate
+      // offline results (won't show links that have been deleted).
+      const cachedDetails = this.cache.getLinkDetailsSync(baseAddress, linkType);
+      if (cachedDetails && cachedDetails.length > 0) {
+        log.debug(` Found ${cachedDetails.length} entries in link details cache (fallback)`);
+        const liveFromDetails = cachedDetails
+          .filter(d => d.deleteHashes.length === 0)
+          .map(d => d.create);
+        for (const link of liveFromDetails) {
+          if (!allLinks.some(l => this.linksEqual(l, link))) {
+            allLinks.push(link);
+          }
+        }
+      }
     }
 
     log.debug(` Returning ${allLinks.length} total links`);
