@@ -351,6 +351,10 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
           cache.mergeLinkIntoCache(op.baseAddress, op.link);
         } else if (op.type === 'removeLink') {
           cache.removeLinkFromCache(op.baseAddress, op.createLinkHash);
+        } else if (op.type === 'mergeLinkDetail') {
+          cache.mergeLinkDetailIntoCache(op.baseAddress, op.link);
+        } else if (op.type === 'addDeleteToLinkDetails') {
+          cache.addDeleteToLinkDetailsCache(op.baseAddress, op.createLinkHash, op.deleteHash);
         }
       }
       log.debug(` Applied ${context.pendingCacheOps.length} cache operations`);

@@ -21,6 +21,7 @@ import type { Link as StoredLink } from '../storage/types';
 import {
   isEntryHash,
   isActionHash,
+  encodeHashToBase64,
   type DnaHash,
   type AnyDhtHash,
   type SignedActionHashed,
@@ -414,6 +415,26 @@ export class Cascade {
           }
         }
       }
+
+      // Secondary fallback: derive live links from link details cache.
+      // The details cache tracks deletes, so it can provide more accurate
+      // offline results (won't show links that have been deleted).
+      // Note: this only ADDS links -- it does not filter links already
+      // returned by the primary link cache above. If the link cache shows
+      // a link as live but the details cache knows it's deleted, the link
+      // still appears. The link cache takes precedence when populated.
+      const cachedDetails = this.cache.getLinkDetailsSync(baseAddress, linkType);
+      if (cachedDetails && cachedDetails.length > 0) {
+        log.debug(` Found ${cachedDetails.length} entries in link details cache (fallback)`);
+        const liveFromDetails = cachedDetails
+          .filter(d => d.deleteHashes.length === 0)
+          .map(d => d.create);
+        for (const link of liveFromDetails) {
+          if (!allLinks.some(l => this.linksEqual(l, link))) {
+            allLinks.push(link);
+          }
+        }
+      }
     }
 
     log.debug(` Returning ${allLinks.length} total links`);
@@ -459,8 +480,7 @@ export class Cascade {
    * Convert hash to base64url string for logging (matches Holochain format like uhCEk...)
    */
   private hashToBase64(hash: Uint8Array): string {
-    const base64 = btoa(String.fromCharCode(...hash));
-    return 'u' + base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return encodeHashToBase64(hash);
   }
 
   /**

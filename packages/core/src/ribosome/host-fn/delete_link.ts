@@ -100,6 +100,13 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     createLinkHash: input.address,
   });
 
+  callContext.pendingCacheOps.push({
+    type: 'addDeleteToLinkDetails',
+    baseAddress: createLinkAction.baseAddress,
+    createLinkHash: input.address,
+    deleteHash: actionHash,
+  });
+
   // Track record for publishing after transaction commits (no entry for delete_link)
   if (!callContext.pendingRecords) {
     callContext.pendingRecords = [];

@@ -46,7 +46,9 @@ export interface PendingRecord {
  */
 export type PendingCacheOp =
   | { type: 'mergeLink'; baseAddress: Uint8Array; link: NetworkLink }
-  | { type: 'removeLink'; baseAddress: Uint8Array; createLinkHash: Uint8Array };
+  | { type: 'removeLink'; baseAddress: Uint8Array; createLinkHash: Uint8Array }
+  | { type: 'mergeLinkDetail'; baseAddress: Uint8Array; link: NetworkLink }
+  | { type: 'addDeleteToLinkDetails'; baseAddress: Uint8Array; createLinkHash: Uint8Array; deleteHash: Uint8Array };
 
 /**
  * Remote signal queued for delivery via kitsune2

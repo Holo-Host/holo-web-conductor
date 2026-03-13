@@ -26,6 +26,7 @@ import type {
   DeleteAction,
 } from './types';
 import { STATEMENTS } from './sqlite-schema';
+import { encodeHashToBase64 } from '../types/holochain-types';
 
 // Signal buffer layout: [requestId: i32, success: i32]
 const SIGNAL_BUFFER_SIZE = 8;
@@ -211,8 +212,8 @@ export class SQLiteStorage {
    * Create cell ID string from DNA hash and agent pub key
    */
   private getCellId(dnaHash: Uint8Array, agentPubKey: Uint8Array): string {
-    const dnaB64 = btoa(String.fromCharCode(...dnaHash));
-    const agentB64 = btoa(String.fromCharCode(...agentPubKey));
+    const dnaB64 = encodeHashToBase64(dnaHash);
+    const agentB64 = encodeHashToBase64(agentPubKey);
     return `${dnaB64}:${agentB64}`;
   }
 

@@ -14,13 +14,7 @@ import type {
   MustGetAgentActivityResponse,
 } from './types';
 import type { DnaHash, AnyDhtHash, AgentPubKey, ActionHash } from '../types/holochain-types';
-
-/**
- * Convert Uint8Array to base64 for use as map key
- */
-function toBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
-}
+import { encodeHashToBase64 } from '../types/holochain-types';
 
 /**
  * Mock network service for testing
@@ -47,7 +41,7 @@ export class MockNetworkService implements NetworkService {
    * Add a record that will be returned for the given hash
    */
   addRecord(hash: AnyDhtHash, record: NetworkRecord): void {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     this.records.set(key, record);
   }
 
@@ -55,7 +49,7 @@ export class MockNetworkService implements NetworkService {
    * Add links that will be returned for the given base address
    */
   addLinks(baseAddress: AnyDhtHash, links: NetworkLink[]): void {
-    const key = toBase64(baseAddress);
+    const key = encodeHashToBase64(baseAddress);
     const existing = this.links.get(key) || [];
     this.links.set(key, [...existing, ...links]);
   }
@@ -64,7 +58,7 @@ export class MockNetworkService implements NetworkService {
    * Add details that will be returned for the given hash
    */
   addDetails(hash: AnyDhtHash, details: any): void {
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     this.details.set(key, details);
   }
 
@@ -115,7 +109,7 @@ export class MockNetworkService implements NetworkService {
       throw new Error('Network unavailable');
     }
 
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     return this.records.get(key) || null;
   }
 
@@ -135,7 +129,7 @@ export class MockNetworkService implements NetworkService {
       throw new Error('Network unavailable');
     }
 
-    const key = toBase64(baseAddress);
+    const key = encodeHashToBase64(baseAddress);
     let links = this.links.get(key) || [];
 
     // Filter by link type if specified
@@ -160,7 +154,7 @@ export class MockNetworkService implements NetworkService {
       throw new Error('Network unavailable');
     }
 
-    const key = toBase64(hash);
+    const key = encodeHashToBase64(hash);
     return this.details.get(key) ?? null;
   }
 
@@ -180,7 +174,7 @@ export class MockNetworkService implements NetworkService {
       throw new Error('Network unavailable');
     }
 
-    const key = toBase64(baseAddress);
+    const key = encodeHashToBase64(baseAddress);
     let links = this.links.get(key) || [];
 
     if (linkType !== undefined) {
