@@ -287,11 +287,35 @@ Both executors inherit from `BaseExecutor` (`packages/extension/src/background/b
 **API Surface**:
 ```typescript
 window.holochain = {
+  // Identity
+  isWebConductor: boolean,
+  version: string,
+  myPubKey: Uint8Array | null,          // set after connect()
+  installedAppId: string | null,        // set after connect()
+
+  // Lifecycle
+  connect(): Promise<AppInfo>,
+  disconnect(): Promise<void>,
   callZome(request): Promise<any>,
-  appInfo(): Promise<AppInfo>,
-  installApp(bundle, networkConfig): Promise<AppInfo>,
-  on(event, callback): unsubscribe,
-  configureNetwork(config): Promise<void>
+  appInfo(installedAppId?): Promise<AppInfo>,
+
+  // Installation
+  installHapp(request): Promise<AppInfo>,       // legacy inline WASM install
+  installApp(request): Promise<AppInfo>,        // .happ bundle install (supports membraneProofs)
+  provideMemproofs(params): Promise<void>,      // post-install membrane proof delivery
+
+  // Events
+  on(event, callback): unsubscribe,             // "signal" events
+  onConnectionChange(callback): unsubscribe,    // connection status changes
+
+  // Network
+  configureNetwork(config): Promise<void>,
+  getNetworkStatus(): Promise<any>,
+  getConnectionStatus(): Promise<ConnectionStatus>,
+
+  // Joining service signing
+  signReconnectChallenge(timestamp): Promise<Uint8Array>,
+  signJoiningNonce(nonce): Promise<Uint8Array>,
 }
 ```
 
@@ -304,24 +328,22 @@ window.holochain = {
 
 ---
 
-### 4. Offscreen Document
+### 4. Offscreen Document (Chrome only)
 
 **File**: `packages/extension/src/offscreen/index.ts`
 
-**Purpose**: Provide sync primitives unavailable elsewhere
+**Purpose**: Provide sync primitives unavailable in Chrome's service worker
 
 **Responsibilities**:
 - Spawn and manage Ribosome Worker
 - Execute synchronous XHR for network requests
-- Maintain WebSocket connection to linker
 - Relay sign requests between worker and background
 - Coordinate via SharedArrayBuffer + Atomics
 
-**Why It Exists**:
-- **Only DOM context available in extensions** with sync XMLHttpRequest
-- Service workers deprecated sync XHR
-- Web workers never had sync XHR
-- Offscreen documents (Chrome 109+) have full DOM access
+**Why It Exists** (Chrome only):
+- Chrome MV3 service workers cannot do sync XHR or spawn Workers
+- Offscreen documents (Chrome 109+) have full DOM access including sync XMLHttpRequest
+- Firefox does not use this -- its background event page has DOM access, so `FirefoxDirectExecutor` spawns the worker directly
 
 **Sync Model**: Mixed
 - Async messaging from background
@@ -365,12 +387,11 @@ window.holochain = {
 - WASM needs dedicated thread (CPU intensive)
 - SQLite WASM runs directly in worker (sync access)
 - Isolated from extension's main thread
-- Can use Atomics.wait (blocks without burning CPU)
 
 **Sync Model**: Fully synchronous internally
 - Storage: Direct SQLite calls
-- Network: Atomics.wait until offscreen completes XHR
-- Signing: Atomics.wait until background completes
+- **Chrome**: Network and signing block via Atomics.wait (offscreen does sync XHR, background signs)
+- **Firefox**: Worker does sync XHR directly and creates its own LairClient from IndexedDB (no Atomics needed). Enabled via `firefoxMode` flag at initialization.
 
 ---
 
@@ -398,7 +419,8 @@ window.holochain = {
 
 **Client → Linker Messages**:
 ```typescript
-{ type: "auth", session_token: string }
+{ type: "auth", agent_pubkey: string }
+{ type: "auth_challenge_response", signature: string }
 { type: "register", dna_hash: string, agent_pubkey: string }
 { type: "unregister", dna_hash: string, agent_pubkey: string }
 { type: "ping" }
@@ -408,14 +430,18 @@ window.holochain = {
 
 **Linker → Client Messages**:
 ```typescript
-{ type: "auth_ok" }
+{ type: "auth_ok", session_token?: string }
+{ type: "auth_challenge", challenge: string }
 { type: "auth_error", message: string }
 { type: "registered", dna_hash: string, agent_pubkey: string }
-{ type: "signal", dna_hash: string, from_agent: string, zome_name: string, signal: string }
-{ type: "sign_request", request_id: string, agent_pubkey: string, message: string }
+{ type: "unregistered", dna_hash: string, agent_pubkey: string }
+{ type: "signal", dna_hash: string, to_agent: string, from_agent: string, zome_name: string, signal: string }
+{ type: "sign_agent_info", request_id: string, agent_pubkey: string, agent_info: AgentInfoFields }
 { type: "pong" }
 { type: "error", message: string }
 ```
+
+**Auth flow**: Challenge-response, not simple token. Browser sends `auth` with agent pubkey, linker replies with `auth_challenge`, browser signs the challenge and sends `auth_challenge_response`, linker replies with `auth_ok` (optionally including a session token for HTTP requests).
 
 ---
 
@@ -463,8 +489,9 @@ window.holochain = {
 |----------|--------|-----------------|-----------------|-----------------|
 | Page ↔ Content | JSON + type markers | `serializeMessage()` | `deserializeMessage()` | Chrome loses Uint8Array type |
 | Content ↔ Background | Chrome structured clone | (automatic) | `normalizeUint8Arrays()` | Chrome converts to `{0:..., 1:...}` |
-| Background ↔ Offscreen | Array format | `serializeForTransport()` | `new Uint8Array()` | Cleaner than object format |
-| Offscreen ↔ Worker | SharedArrayBuffer | `Atomics.store()` | `Atomics.wait()` + read | Sync blocking required |
+| Background ↔ Offscreen (Chrome) | Array format | `serializeForTransport()` | `new Uint8Array()` | Cleaner than object format |
+| Offscreen ↔ Worker (Chrome) | SharedArrayBuffer | `Atomics.store()` | `Atomics.wait()` + read | Sync blocking required |
+| Background ↔ Worker (Firefox) | postMessage | structured clone | structured clone | Firefox preserves types |
 | Worker ↔ WASM | MessagePack | `@msgpack/msgpack encode()` | `decode()` | Holochain wire format |
 | Extension ↔ Linker HTTP | JSON + base64 | `encodeHashToBase64()` | `normalizeByteArraysFromJson()` | URL-safe hashes |
 | Extension ↔ Linker WS | JSON + base64 | `btoa()` | `atob()` | Binary over text |
@@ -614,6 +641,8 @@ const bytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0));
 ---
 
 ## Data Flow Diagrams
+
+> **Note:** These diagrams show the Chrome path (Background → Offscreen → Worker via SharedArrayBuffer). On Firefox, the offscreen document layer is absent -- the background event page spawns the worker directly and the worker does sync XHR and local signing without Atomics. The overall flow (Page → Content → Background → Worker → Linker) is the same on both browsers.
 
 ### Zome Call Flow
 
@@ -889,9 +918,9 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 │   │      └─► Found? Return immediately                         │
 │   │                                                             │
 │   ├─► 2. CACHE: networkCache.get(base64(hash))                 │
-│   │      └─► In-memory Map lookup                              │
-│   │      └─► TTL: 5 minutes, max 1000 entries                  │
-│   │      └─► Found & not expired? Return                       │
+│   │      └─► LRU Record Cache (no TTL, content-addressed)     │
+│   │      └─► Dual-keyed: action hash + entry hash aliases     │
+│   │      └─► Found? Return immediately                        │
 │   │                                                             │
 │   └─► 3. NETWORK: networkService.getRecordSync(dnaHash, hash)  │
 │          └─► Sync XHR to linker                                │
@@ -1143,9 +1172,9 @@ export const my_function: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
 3. **Storage access is synchronous** -- `getStorageProvider()` returns a `StorageProvider` with sync methods. All reads/writes buffer in the active transaction and commit after the zome call completes.
 
-4. **Network access blocks** -- Host functions that need network data (e.g., `get()` with cascade) call `networkService.getRecordSync()` which blocks via Atomics until the offscreen document completes a sync XHR.
+4. **Network access blocks** -- Host functions that need network data (e.g., `get()` with cascade) call `networkService.getRecordSync()`. On Chrome, this blocks via Atomics until the offscreen document completes a sync XHR. On Firefox, the worker does sync XHR directly.
 
-5. **Signing blocks** -- `signAction()` blocks via the Lair proxy until the background script signs asynchronously.
+5. **Signing blocks** -- On Chrome, `signAction()` blocks via the Lair proxy (Atomics) until the background signs asynchronously. On Firefox, the worker has its own LairClient and signs locally.
 
 6. **Register new host functions** in `host-fn/index.ts` -- Map the function name (e.g., `__hc__get_1`) to the implementation.
 
@@ -1199,13 +1228,13 @@ The HWC architecture solves a fundamental impedance mismatch:
 
 The solution distributes responsibilities across multiple contexts:
 
-1. **Ribosome Worker**: Runs WASM with direct SQLite access, blocks via Atomics for I/O
-2. **Offscreen Document**: Provides sync XMLHttpRequest, proxies to worker
-3. **Background Service Worker**: Coordinates everything, manages keys and state
+1. **Ribosome Worker**: Runs WASM with direct SQLite access. On Chrome, blocks via Atomics for network/signing I/O. On Firefox, does sync XHR and local signing directly.
+2. **Offscreen Document** (Chrome only): Provides sync XMLHttpRequest and proxies to worker via SharedArrayBuffer
+3. **Background Service Worker / Event Page**: Coordinates everything, manages keys and state. Browser-agnostic via `ZomeExecutor` interface with `ChromeOffscreenExecutor` and `FirefoxDirectExecutor` implementations sharing a `BaseExecutor` base class.
 4. **Content Script + Injected Script**: Bridge the security boundary to web pages
-5. **Linker**: Bridges browser agents to Holochain's kitsune2 network
+5. **Linker**: Bridges browser agents to Holochain's kitsune2 network via challenge-response auth
 
 Each boundary has specific encoding/decoding requirements, primarily driven by:
-- Chrome's loss of Uint8Array type information during message passing
+- Chrome's loss of Uint8Array type information during message passing (no-op on Firefox)
 - Holochain's MessagePack wire format for WASM
 - HTTP/WebSocket's text-based JSON requiring base64 for binary data
