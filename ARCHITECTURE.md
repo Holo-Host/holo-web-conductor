@@ -943,10 +943,8 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 |---------------|-----------------|----------|--------------|
 | `get()` | `GET /dht/{dna}/record/{hash}` | `{ signed_action, entry }` | Yes |
 | `get_links()` | `GET /dht/{dna}/links?base=&type=&zome_index=` | `Vec<Link>` or `WireLinkOps` (dual-format) | Yes (always network) |
-| `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` | **No** (local only)* |
+| `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` | Yes |
 | `count_links()` | `GET /dht/{dna}/links/count?base=&type=` | `number` | Yes |
-
-*`get_details` currently only queries local storage. See `STEPS/12.2_GET_DETAILS_CASCADE.md` for planned fix.
 
 **Link response dual-format**: h2hc-linker can return links as either a flat `Vec<Link>` array (conductor mode) or `WireLinkOps { creates, deletes }` (direct kitsune2 mode). The extension parses both formats -- see `sync-xhr-service.ts` and `ribosome-worker.ts` for the dual-format parsing logic.
 
