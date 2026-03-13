@@ -82,6 +82,7 @@ The rest of this document covers testing procedures for the Holochain Web Conduc
 | Build validation | `npm run build` | None |
 | Type checking | `npm run typecheck` | None (tsc --noEmit all packages) |
 | Integration tests | `npm run test:integration` | None |
+| Browser tests (Playwright) | `npm run e2e:test:browsers` | `npm run build` (no nix, no conductor/linker) |
 | E2E (Playwright) | `npm run e2e:test:cross-browser` | nix shell, conductor, linker (auto-started) |
 | Manual browser tests | See "Manual Test Pages" section | Extension loaded in Chrome |
 
@@ -122,6 +123,29 @@ Test files in `packages/core/src/integration/`:
 - `profiles-integration.test.ts` - Profile CRUD operations
 - `serialization-fixtures.test.ts` - Cross-version serialization compatibility
 - `publish-integration.test.ts` - DhtOp generation and publishing
+
+---
+
+## Browser Tests (Chrome + Firefox)
+
+Automated Playwright tests that exercise the extension's local WASM execution on `happ-test.html`. No external dependencies — no nix shell, conductors, linker, or hApp repos required.
+
+```bash
+# Build the extension first
+npm run build
+
+# Run browser tests (Chrome + Firefox)
+npm run e2e:test:browsers
+```
+
+This runs the `happ-test.html` "Run All Tests" suite in both Chrome and Firefox, covering:
+- Extension detection and authorization
+- hApp installation (test.happ with test-zome.wasm)
+- Client connection via WebConductorAppClient
+- Zome functions: get_agent_info, CRUD entries, links, signals, query, signing, transaction rollback
+
+Test file: `packages/e2e/tests/browser-tests.test.ts`
+Config: `packages/e2e/playwright.browser-tests.cjs`
 
 ---
 
