@@ -17,6 +17,7 @@ export default defineConfig({
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
         'connect-with-ui': resolve(__dirname, 'src/connect-with-ui.ts'),
+        runtime: resolve(__dirname, 'src/runtime.ts'),
       },
       formats: ['es'],
     },

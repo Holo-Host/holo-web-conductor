@@ -74,7 +74,11 @@ function installFetchInterceptor(): void {
     (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith('.happ')) {
-        return Promise.resolve(new Response(new ArrayBuffer(100), { status: 200 }));
+        // Must start with gzip magic bytes (0x1f, 0x8b) to pass validation
+        const happBytes = new Uint8Array(100);
+        happBytes[0] = 0x1f;
+        happBytes[1] = 0x8b;
+        return Promise.resolve(new Response(happBytes.buffer, { status: 200 }));
       }
       return originalFetch(input, init);
     },

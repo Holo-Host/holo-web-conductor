@@ -499,14 +499,22 @@ export class WebConductorAppClient implements AppClient {
       ? [bundleUrl]
       : this.connectionConfig.happBundlePath
         ? [this.connectionConfig.happBundlePath]
-        : ['./app.happ', `./${this._roleName}.happ`, './bundle.happ'];
+        : ['/app.happ', `/${this._roleName}.happ`, '/bundle.happ'];
 
     for (const path of paths) {
       try {
         const response = await fetch(path);
         if (response.ok) {
-          console.log(`[WebConductorAppClient] Found hApp bundle at ${path}`);
-          return new Uint8Array(await response.arrayBuffer());
+          const buffer = await response.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          // Validate: gzip magic number (1f 8b) confirms this is a real .happ bundle,
+          // not an SPA fallback serving index.html with a 200 status.
+          if (bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
+            console.warn(`[WebConductorAppClient] ${path} is not a gzip bundle (got ${bytes.length} bytes), skipping`);
+            continue;
+          }
+          console.log(`[WebConductorAppClient] Found hApp bundle at ${path} (${bytes.length} bytes)`);
+          return bytes;
         }
       } catch {
         // Try next path
