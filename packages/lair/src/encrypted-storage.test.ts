@@ -43,10 +43,10 @@ describe("EncryptedKeyStorage", () => {
     // Inner storage should have encrypted seed (105 bytes, not 64)
     const innerEntry = await inner.getEntry("test");
     expect(innerEntry).not.toBeNull();
-    expect(innerEntry!.seed.length).toBe(105); // 1 marker + 24 nonce + 64 seed + 16 MAC
+    expect(innerEntry!.seed.length).toBe(108); // 4 magic + 24 nonce + 64 seed + 16 MAC
 
     // Encrypted seed should not match plaintext
-    const innerSeedPayload = innerEntry!.seed.slice(25); // skip marker + nonce
+    const innerSeedPayload = innerEntry!.seed.slice(28); // skip magic (4) + nonce (24)
     expect(innerSeedPayload).not.toEqual(originalSeed);
 
     // Decrypted seed should match original
@@ -111,7 +111,7 @@ describe("EncryptedKeyStorage", () => {
 
     // Now inner storage should have encrypted seeds
     const after = await inner.getEntry("plain1");
-    expect(after!.seed.length).toBe(105);
+    expect(after!.seed.length).toBe(108);
 
     // Should still decrypt correctly
     const decrypted = await storage.getEntry("plain1");
@@ -175,6 +175,40 @@ describe("EncryptedKeyStorage", () => {
     expect(await freshStorage.hasEntry("nopass")).toBe(true);
     const infos = await freshStorage.listEntries();
     expect(infos).toHaveLength(1);
+  });
+
+  it("should correctly migrate a plaintext seed starting with 0x01", async () => {
+    // This was the old marker collision bug: a plaintext seed with first byte
+    // 0x01 would be misidentified as encrypted, skipping migration.
+    const entry = makeEntry("collision");
+    entry.seed[0] = 0x01;
+    const originalSeed = new Uint8Array(entry.seed);
+
+    await inner.putEntry(entry);
+
+    // Should be detected as plaintext and migrated
+    const count = await storage.migrateToEncrypted();
+    expect(count).toBe(1);
+
+    // Should decrypt back to original
+    const decrypted = await storage.getEntry("collision");
+    expect(decrypted!.seed).toEqual(originalSeed);
+  });
+
+  it("should correctly migrate a plaintext seed starting with 0x45 (E)", async () => {
+    // Partial magic match — first byte matches but rest doesn't
+    const entry = makeEntry("partial");
+    entry.seed[0] = 0x45; // 'E' — first byte of magic
+    entry.seed[1] = 0x00; // not 'N'
+    const originalSeed = new Uint8Array(entry.seed);
+
+    await inner.putEntry(entry);
+
+    const count = await storage.migrateToEncrypted();
+    expect(count).toBe(1);
+
+    const decrypted = await storage.getEntry("partial");
+    expect(decrypted!.seed).toEqual(originalSeed);
   });
 
   it("should handle delete and clear", async () => {

@@ -17,14 +17,20 @@
  * random nonce prepended to the ciphertext.
  *
  * Wire format for the seed field:
- *   [marker (1 byte, 0x01)] [nonce (24 bytes)] [ciphertext (seed_len + 16 MAC bytes)]
+ *   [magic (4 bytes, "ENC\x01")] [nonce (24 bytes)] [ciphertext (seed_len + 16 MAC bytes)]
  */
 
 import sodium from "libsodium-wrappers";
 import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types";
 import type { KeyStorage } from "./storage";
 
-const ENCRYPTED_MARKER = 0x01;
+/**
+ * 4-byte magic header for encrypted seeds. Chosen to be extremely unlikely
+ * to appear at the start of a random Ed25519 seed (1 in ~4 billion).
+ * ASCII: "ENC\x01" — human-readable prefix plus version byte.
+ */
+const ENCRYPTED_MAGIC = new Uint8Array([0x45, 0x4e, 0x43, 0x01]); // "ENC\x01"
+const MAGIC_LEN = ENCRYPTED_MAGIC.length;
 const NONCE_LEN = 24; // crypto_secretbox_NONCEBYTES
 const MAC_LEN = 16; // crypto_secretbox_MACBYTES
 
@@ -97,11 +103,11 @@ export class EncryptedKeyStorage implements KeyStorage {
       sodium.crypto_secretbox_easy(entry.seed, nonce, this.masterKey)
     );
 
-    // Prepend marker and nonce to ciphertext
-    const encryptedSeed = new Uint8Array(1 + NONCE_LEN + cipher.length);
-    encryptedSeed[0] = ENCRYPTED_MARKER;
-    encryptedSeed.set(nonce, 1);
-    encryptedSeed.set(cipher, 1 + NONCE_LEN);
+    // Prepend magic header and nonce to ciphertext
+    const encryptedSeed = new Uint8Array(MAGIC_LEN + NONCE_LEN + cipher.length);
+    encryptedSeed.set(ENCRYPTED_MAGIC, 0);
+    encryptedSeed.set(nonce, MAGIC_LEN);
+    encryptedSeed.set(cipher, MAGIC_LEN + NONCE_LEN);
 
     await this.inner.putEntry({
       info: entry.info,
@@ -169,10 +175,10 @@ export class EncryptedKeyStorage implements KeyStorage {
           sodium.crypto_secretbox_easy(entry.seed, nonce, this.masterKey)
         );
 
-        const encryptedSeed = new Uint8Array(1 + NONCE_LEN + cipher.length);
-        encryptedSeed[0] = ENCRYPTED_MARKER;
-        encryptedSeed.set(nonce, 1);
-        encryptedSeed.set(cipher, 1 + NONCE_LEN);
+        const encryptedSeed = new Uint8Array(MAGIC_LEN + NONCE_LEN + cipher.length);
+        encryptedSeed.set(ENCRYPTED_MAGIC, 0);
+        encryptedSeed.set(nonce, MAGIC_LEN);
+        encryptedSeed.set(cipher, MAGIC_LEN + NONCE_LEN);
 
         await this.inner.putEntry({
           info: entry.info,
@@ -204,8 +210,8 @@ export class EncryptedKeyStorage implements KeyStorage {
       if (this.isPlaintext(stored.seed)) {
         plainSeed = stored.seed;
       } else {
-        const nonce = stored.seed.slice(1, 1 + NONCE_LEN);
-        const cipher = stored.seed.slice(1 + NONCE_LEN);
+        const nonce = stored.seed.slice(MAGIC_LEN, MAGIC_LEN + NONCE_LEN);
+        const cipher = stored.seed.slice(MAGIC_LEN + NONCE_LEN);
         plainSeed = asBytes(
           sodium.crypto_secretbox_open_easy(cipher, nonce, oldKey)
         );
@@ -218,10 +224,10 @@ export class EncryptedKeyStorage implements KeyStorage {
       );
       sodium.memzero(plainSeed);
 
-      const encryptedSeed = new Uint8Array(1 + NONCE_LEN + cipher.length);
-      encryptedSeed[0] = ENCRYPTED_MARKER;
-      encryptedSeed.set(nonce, 1);
-      encryptedSeed.set(cipher, 1 + NONCE_LEN);
+      const encryptedSeed = new Uint8Array(MAGIC_LEN + NONCE_LEN + cipher.length);
+      encryptedSeed.set(ENCRYPTED_MAGIC, 0);
+      encryptedSeed.set(nonce, MAGIC_LEN);
+      encryptedSeed.set(cipher, MAGIC_LEN + NONCE_LEN);
 
       updates.push({ info: stored.info, seed: encryptedSeed });
     }
@@ -235,7 +241,11 @@ export class EncryptedKeyStorage implements KeyStorage {
   // ---- Private helpers ----
 
   private isPlaintext(seed: Uint8Array): boolean {
-    return seed[0] !== ENCRYPTED_MARKER;
+    if (seed.length < MAGIC_LEN) return true;
+    for (let i = 0; i < MAGIC_LEN; i++) {
+      if (seed[i] !== ENCRYPTED_MAGIC[i]) return true;
+    }
+    return false;
   }
 
   private decryptSeed(storedSeed: Uint8Array): Uint8Array {
@@ -246,8 +256,8 @@ export class EncryptedKeyStorage implements KeyStorage {
 
     if (!this.masterKey) throw new Error("Storage is locked");
 
-    const nonce = storedSeed.slice(1, 1 + NONCE_LEN);
-    const cipher = storedSeed.slice(1 + NONCE_LEN);
+    const nonce = storedSeed.slice(MAGIC_LEN, MAGIC_LEN + NONCE_LEN);
+    const cipher = storedSeed.slice(MAGIC_LEN + NONCE_LEN);
 
     try {
       return asBytes(
