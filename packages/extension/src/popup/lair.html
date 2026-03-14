@@ -291,7 +291,7 @@
         <p style="font-size: 12px; color: #666;">No passphrase set. Set one to protect your keystore.</p>
         <div class="form-group">
           <label for="new-passphrase">New Passphrase (min 8 characters)</label>
-          <input type="password" id="new-passphrase" placeholder="Enter passphrase" />
+          <input type="password" id="new-passphrase" placeholder="Enter passphrase" autocomplete="new-password" />
         </div>
         <div class="button-row"><button id="set-passphrase-btn">Set Passphrase</button></div>
         <div id="set-passphrase-error" class="error hidden"></div>
@@ -300,7 +300,7 @@
       <div id="unlock-section" class="hidden">
         <div class="form-group">
           <label for="unlock-passphrase">Passphrase</label>
-          <input type="password" id="unlock-passphrase" placeholder="Enter passphrase" />
+          <input type="password" id="unlock-passphrase" placeholder="Enter passphrase" autocomplete="current-password" />
         </div>
         <div class="button-row"><button id="unlock-btn">Unlock</button></div>
         <div id="unlock-error" class="error hidden"></div>
@@ -309,6 +309,21 @@
       <div id="lock-section" class="hidden">
         <button id="lock-btn" class="secondary">Lock Keystore</button>
         <button id="change-passphrase-btn" class="secondary">Change Passphrase</button>
+        <div id="change-passphrase-form" class="hidden" style="margin-top: 8px;">
+          <div class="form-group">
+            <label for="current-passphrase">Current Passphrase</label>
+            <input type="password" id="current-passphrase" placeholder="Enter current passphrase" autocomplete="current-password" />
+          </div>
+          <div class="form-group">
+            <label for="change-new-passphrase">New Passphrase</label>
+            <input type="password" id="change-new-passphrase" placeholder="Enter new passphrase" autocomplete="new-password" />
+          </div>
+          <div class="button-row">
+            <button id="change-passphrase-submit-btn">Update</button>
+            <button id="change-passphrase-cancel-btn" class="secondary">Cancel</button>
+          </div>
+          <div id="change-passphrase-error" class="error hidden"></div>
+        </div>
       </div>
     </div>
 
@@ -352,7 +367,7 @@
         </div>
         <div class="form-group">
           <label for="import-passphrase">Decryption Passphrase</label>
-          <input type="password" id="import-passphrase" placeholder="Enter passphrase used during export" />
+          <input type="password" id="import-passphrase" placeholder="Enter passphrase used during export" autocomplete="off" />
         </div>
       </div>
 
@@ -431,11 +446,11 @@
         <h3>Export Keypair: <span id="export-modal-tag"></span></h3>
         <div class="form-group">
           <label for="export-passphrase">Encryption Passphrase (min 8 characters)</label>
-          <input type="password" id="export-passphrase" placeholder="Enter passphrase" />
+          <input type="password" id="export-passphrase" placeholder="Enter passphrase" autocomplete="off" />
         </div>
         <div class="form-group">
           <label for="export-passphrase-confirm">Confirm Passphrase</label>
-          <input type="password" id="export-passphrase-confirm" placeholder="Confirm passphrase" />
+          <input type="password" id="export-passphrase-confirm" placeholder="Confirm passphrase" autocomplete="off" />
         </div>
         <div id="export-modal-error" class="error hidden"></div>
         <div class="modal-actions">

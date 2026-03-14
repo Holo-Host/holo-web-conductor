@@ -1042,7 +1042,7 @@ export async function startSignalTest(
 // Export URLs for tests
 export { ZIPTEST_UI_URL };
 export const LINKER_URL = process.env.LINKER_URL ?? 'http://localhost:8000';
-export const MEWSFEED_UI_URL = `http://localhost:8082?linkerUrl=${encodeURIComponent(LINKER_URL)}`;
+export const MEWSFEED_UI_URL = `http://localhost:8082?runtime=hwc&linkerUrl=${encodeURIComponent(LINKER_URL)}`;
 
 // ============================================================================
 // Mewsfeed Testing Helpers

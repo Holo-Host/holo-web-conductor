@@ -585,13 +585,14 @@ start_mewsfeed_ui() {
     fi
 
     # Check if already running
-    if pgrep -f "python3 -m http.server $MEWSFEED_UI_PORT" > /dev/null 2>&1; then
+    if pgrep -f "serve.*-l $MEWSFEED_UI_PORT" > /dev/null 2>&1; then
         log_warn "Mewsfeed UI server already running on port $MEWSFEED_UI_PORT"
         return 0
     fi
 
     cd "$MEWSFEED_UI_DIR"
-    python3 -m http.server "$MEWSFEED_UI_PORT" -d dist > "$SANDBOX_DIR/mewsfeed-ui.log" 2>&1 &
+    # -s flag enables SPA fallback: serves index.html for routes that don't match files on disk
+    npx serve -s dist -l "$MEWSFEED_UI_PORT" --cors --no-clipboard > "$SANDBOX_DIR/mewsfeed-ui.log" 2>&1 &
     MEWSFEED_UI_PID=$!
     echo "$MEWSFEED_UI_PID" > "$SANDBOX_DIR/mewsfeed-ui.pid"
 
@@ -619,7 +620,7 @@ stop_mewsfeed_ui() {
         rm -f "$SANDBOX_DIR/mewsfeed-ui.pid"
     fi
     # Also check by process name
-    pkill -f "python3 -m http.server $MEWSFEED_UI_PORT" 2>/dev/null || true
+    pkill -f "serve.*-l $MEWSFEED_UI_PORT" 2>/dev/null || true
 }
 
 # Stop ziptest UI server
@@ -816,7 +817,7 @@ show_status() {
     # Check mewsfeed UI
     if [ -f "$SANDBOX_DIR/mewsfeed-ui.pid" ] && kill -0 "$(cat "$SANDBOX_DIR/mewsfeed-ui.pid" 2>/dev/null)" 2>/dev/null; then
         echo -e "Mewsfeed UI: ${GREEN}RUNNING${NC} on port $MEWSFEED_UI_PORT"
-    elif pgrep -f "python3 -m http.server $MEWSFEED_UI_PORT" > /dev/null 2>&1; then
+    elif pgrep -f "serve.*-l $MEWSFEED_UI_PORT" > /dev/null 2>&1; then
         echo -e "Mewsfeed UI: ${GREEN}RUNNING${NC} on port $MEWSFEED_UI_PORT"
     fi
 

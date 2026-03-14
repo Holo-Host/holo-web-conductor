@@ -181,6 +181,18 @@ export interface ZomeExecutor {
    */
   preloadSigningKey?(pubKey: Uint8Array): Promise<void>;
 
+  /**
+   * Send the master encryption key to the worker for encrypted storage access.
+   * On Chrome this is undefined — the worker doesn't access IndexedDB directly.
+   * On Firefox, the worker needs the key to decrypt seeds from shared IndexedDB.
+   */
+  sendMasterKeyToWorker?(masterKey: Uint8Array): Promise<void>;
+
+  /**
+   * Tell the worker to clear its master encryption key and preloaded signing keys.
+   */
+  clearWorkerMasterKey?(): Promise<void>;
+
   // --- Events (executor → background) ---
 
   /** Register callback for incoming remote signals from the linker. */

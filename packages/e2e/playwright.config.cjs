@@ -82,7 +82,8 @@ module.exports = defineConfig({
     },
     {
       // Mewsfeed UI server for mewsfeed and cross-browser tests
-      command: `npx http-server "${MEWSFEED_UI_PATH}" -p 8082 --cors -c-1`,
+      // -s flag enables SPA fallback: serves index.html for routes that don't match files on disk
+      command: `npx serve -s "${MEWSFEED_UI_PATH}" -l 8082 --cors --no-clipboard`,
       url: 'http://localhost:8082',
       reuseExistingServer: !process.env.CI,
     },

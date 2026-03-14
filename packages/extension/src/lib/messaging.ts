@@ -244,6 +244,8 @@ export interface ContextIdPayload {
  */
 export interface PassphrasePayload {
   passphrase: string;
+  /** Required when changing an existing passphrase */
+  oldPassphrase?: string;
 }
 
 /**

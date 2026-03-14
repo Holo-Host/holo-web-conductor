@@ -23,6 +23,9 @@ import type { KeyStorage } from "./storage";
 import { createKeyStorage } from "./storage";
 import { seedToMnemonic, mnemonicToSeed } from "./mnemonic";
 
+/** Minimum passphrase length for export/import operations */
+const MIN_PASSPHRASE_LENGTH = 8;
+
 /**
  * libsodium returns Uint8Array by default but the type defs don't narrow
  * the union. This narrows with a runtime guard instead of an `as` cast.
@@ -180,7 +183,9 @@ export class LairClient implements ILairClient {
     }
 
     // Sign the data
-    return asBytes(sodium.crypto_sign_detached(data, entry.seed));
+    const signature = asBytes(sodium.crypto_sign_detached(data, entry.seed));
+    sodium.memzero(entry.seed);
+    return signature;
   }
 
   /**
@@ -215,6 +220,7 @@ export class LairClient implements ILairClient {
       pubKey: new Uint8Array(pub_key),
       privateKey: new Uint8Array(entry.seed),
     });
+    sodium.memzero(entry.seed);
   }
 
   /**
@@ -292,6 +298,7 @@ export class LairClient implements ILairClient {
     // For each index in the path, derive a new seed
     // Extract the Ed25519 seed (first 32 bytes of the private key)
     let current_seed = new Uint8Array(source_entry.seed.slice(0, 32));
+    sodium.memzero(source_entry.seed);
 
     // Ensure the seed is exactly 32 bytes for KDF
     if (current_seed.length !== 32) {
@@ -303,6 +310,7 @@ export class LairClient implements ILairClient {
       const context = "LairDerv"; // 8-byte context
       const subkey_id = index;
 
+      const prev_seed = current_seed;
       // Derive 32 bytes for the new seed
       current_seed = new Uint8Array(
         asBytes(
@@ -314,10 +322,12 @@ export class LairClient implements ILairClient {
           )
         )
       );
+      sodium.memzero(prev_seed);
     }
 
     // Generate keypair from derived seed
     const keypair = asKeypair(sodium.crypto_sign_seed_keypair(current_seed));
+    sodium.memzero(current_seed);
 
     // Convert to X25519
     const x25519_pub_key = asBytes(
@@ -383,8 +393,9 @@ export class LairClient implements ILairClient {
       sodium.crypto_box_easy(data, nonce, recipient_pub_key, sender_x25519_secret)
     );
 
-    // Zero out the secret key from memory
+    // Zero out secret keys from memory
     sodium.memzero(sender_x25519_secret);
+    sodium.memzero(sender_entry.seed);
 
     return { nonce, cipher };
   }
@@ -425,8 +436,9 @@ export class LairClient implements ILairClient {
       sodium.crypto_box_open_easy(cipher, nonce, sender_pub_key, recipient_x25519_secret)
     );
 
-    // Zero out the secret key from memory
+    // Zero out secret keys from memory
     sodium.memzero(recipient_x25519_secret);
+    sodium.memzero(recipient_entry.seed);
 
     return decrypted;
   }
@@ -447,12 +459,14 @@ export class LairClient implements ILairClient {
 
     // Use first 32 bytes of seed as symmetric key
     const key = new Uint8Array(entry.seed.slice(0, sodium.crypto_secretbox_KEYBYTES));
+    sodium.memzero(entry.seed);
 
     // Generate nonce
     const nonce = asBytes(sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES));
 
     // Encrypt
     const cipher = asBytes(sodium.crypto_secretbox_easy(data, nonce, key));
+    sodium.memzero(key);
 
     return { nonce, cipher };
   }
@@ -474,9 +488,12 @@ export class LairClient implements ILairClient {
 
     // Use first 32 bytes of seed as symmetric key
     const key = new Uint8Array(entry.seed.slice(0, sodium.crypto_secretbox_KEYBYTES));
+    sodium.memzero(entry.seed);
 
     // Decrypt
-    return asBytes(sodium.crypto_secretbox_open_easy(cipher, nonce, key));
+    const decrypted = asBytes(sodium.crypto_secretbox_open_easy(cipher, nonce, key));
+    sodium.memzero(key);
+    return decrypted;
   }
 
   /**
@@ -495,8 +512,8 @@ export class LairClient implements ILairClient {
       throw new Error(`Key "${tag}" is not exportable`);
     }
 
-    if (!passphrase || passphrase.length < 8) {
-      throw new Error("Passphrase must be at least 8 characters");
+    if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters`);
     }
 
     // Generate salt for key derivation
@@ -531,8 +548,10 @@ export class LairClient implements ILairClient {
     const nonce = asBytes(sodium.randombytes_buf(24));
 
     // Encrypt the seed (first 32 bytes)
-    const seedToEncrypt = entry.seed.slice(0, 32);
+    const seedToEncrypt = new Uint8Array(entry.seed.slice(0, 32));
+    sodium.memzero(entry.seed);
     const cipher = asBytes(sodium.crypto_secretbox_easy(seedToEncrypt, nonce, key));
+    sodium.memzero(seedToEncrypt);
 
     return {
       version: 1,
@@ -563,8 +582,8 @@ export class LairClient implements ILairClient {
       throw new Error(`Entry with tag "${newTag}" already exists`);
     }
 
-    if (!passphrase || passphrase.length < 8) {
-      throw new Error("Passphrase must be at least 8 characters");
+    if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters`);
     }
 
     // Derive decryption key from passphrase using PBKDF2 (Web Crypto API)
@@ -653,7 +672,10 @@ export class LairClient implements ILairClient {
     }
 
     const rawSeed = new Uint8Array(entry.seed.slice(0, 32));
-    return seedToMnemonic(rawSeed);
+    sodium.memzero(entry.seed);
+    const mnemonic = seedToMnemonic(rawSeed);
+    sodium.memzero(rawSeed);
+    return mnemonic;
   }
 
   /**

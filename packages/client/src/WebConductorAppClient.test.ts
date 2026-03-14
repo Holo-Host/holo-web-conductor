@@ -374,10 +374,13 @@ describe('WebConductorAppClient', () => {
           ],
         });
 
-      // Mock fetch for hApp bundle
+      // Mock fetch for hApp bundle (must start with gzip magic bytes)
+      const happBytes = new Uint8Array(100);
+      happBytes[0] = 0x1f;
+      happBytes[1] = 0x8b;
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
+        arrayBuffer: () => Promise.resolve(happBytes.buffer),
       });
 
       await WebConductorAppClient.connect({
@@ -429,7 +432,11 @@ describe('WebConductorAppClient', () => {
     }
 
     function happBundleResponse(): Response {
-      return new Response(new ArrayBuffer(100), { status: 200 });
+      // Must start with gzip magic bytes (0x1f, 0x8b) to pass validation
+      const buf = new Uint8Array(100);
+      buf[0] = 0x1f;
+      buf[1] = 0x8b;
+      return new Response(buf.buffer, { status: 200 });
     }
 
     it('uses joining service when joiningServiceUrl is provided', async () => {

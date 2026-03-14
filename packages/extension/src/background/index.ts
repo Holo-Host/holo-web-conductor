@@ -41,7 +41,7 @@ import { rejectTabSender } from "../lib/sender-validation";
 import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
-import { createLairClient, type EncryptedExport } from "@holo-host/lair";
+import { createLairClient, createKeyStorage, EncryptedKeyStorage, type EncryptedExport } from "@holo-host/lair";
 import type { InstallHappRequest, HappContext } from "@hwc/core";
 import {
   toUint8Array,
@@ -291,11 +291,22 @@ const permissionManager = getPermissionManager();
 const authManager = getAuthManager();
 const happContextManager = getHappContextManager();
 let lairClient: Awaited<ReturnType<typeof createLairClient>> | null = null;
+let encryptedStorage: EncryptedKeyStorage | null = null;
 
-// Initialize Lair client
+// Initialize Lair client with encrypted storage
 async function getLairClient() {
   if (!lairClient) {
-    lairClient = await createLairClient();
+    const innerStorage = await createKeyStorage();
+    encryptedStorage = new EncryptedKeyStorage(innerStorage);
+    await encryptedStorage.init();
+
+    // If we have a master key (unlocked), set it on the storage
+    const masterKey = lairLock.getMasterKey();
+    if (masterKey) {
+      encryptedStorage.setMasterKey(masterKey);
+    }
+
+    lairClient = await createLairClient(encryptedStorage);
   }
   return lairClient;
 }
@@ -560,7 +571,7 @@ async function handleConnect(
 
   if (permission?.granted) {
     // Already approved - instant connection
-    logAuth.debug(`Origin ${origin} already approved`);
+    logAuth.debug(`Site ${origin} already connected to Holo Web Conductor`);
     const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
     // Firefox: preload signing key into worker for local signing
     await preloadSigningKeyIfNeeded(agentPubKey);
@@ -573,7 +584,7 @@ async function handleConnect(
 
   if (permission?.granted === false) {
     // Previously denied
-    logAuth.debug(`Origin ${origin} was previously denied`);
+    logAuth.debug(`Site ${origin} was previously denied connection to Holo Web Conductor`);
     return createErrorResponse(
       message.id,
       "Connection denied. This site was previously denied access to Holo Web Conductor."
@@ -581,13 +592,16 @@ async function handleConnect(
   }
 
   // No permission set - check if localhost (auto-approve for development)
-  logAuth.info(`No permission for ${origin} - checking origin`);
+  logAuth.info(`Site ${origin} has not connected to Holo Web Conductor - checking origin`);
 
   try {
     const parsedOrigin = new URL(origin);
     if (parsedOrigin.hostname === 'localhost' || parsedOrigin.hostname === '127.0.0.1') {
-      logAuth.info(`Auto-approving localhost origin: ${origin}`);
-      await permissionManager.grantPermission(origin);
+      logAuth.info(`Auto-approving localhost connection: ${origin}`);
+      await permissionManager.grantPermission(origin, {
+        title: sender.tab?.title,
+        faviconUrl: sender.tab?.favIconUrl,
+      });
       const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
       await preloadSigningKeyIfNeeded(agentPubKey);
       return createSuccessResponse(message.id, {
@@ -1202,11 +1216,34 @@ async function handleLairSetPassphrase(
   const blocked = rejectTabSender(sender, message.id, "LAIR_SET_PASSPHRASE");
   if (blocked) return blocked;
   try {
-    const { passphrase } = getPayload<MessageType.LAIR_SET_PASSPHRASE>(message);
+    const { passphrase, oldPassphrase } = getPayload<MessageType.LAIR_SET_PASSPHRASE>(message);
     if (!passphrase) {
       return createErrorResponse(message.id, "Passphrase is required");
     }
-    await lairLock.setPassphrase(passphrase);
+
+    const { oldMasterKey, newMasterKey } = await lairLock.setPassphrase(passphrase, oldPassphrase);
+
+    // Ensure encrypted storage is initialized
+    await getLairClient();
+
+    if (encryptedStorage) {
+      if (oldMasterKey) {
+        // Re-encrypt all seeds with new key
+        await encryptedStorage.reEncrypt(oldMasterKey, newMasterKey);
+        oldMasterKey.fill(0);
+      } else {
+        // First passphrase or migrating from v1 — encrypt any plaintext seeds
+        encryptedStorage.setMasterKey(newMasterKey);
+        await encryptedStorage.migrateToEncrypted();
+      }
+      encryptedStorage.setMasterKey(newMasterKey);
+
+      // Propagate master key to Firefox worker if applicable
+      if (executor.sendMasterKeyToWorker) {
+        await executor.sendMasterKeyToWorker(newMasterKey);
+      }
+    }
+
     return createSuccessResponse(message.id, { success: true });
   } catch (error) {
     return createErrorResponse(
@@ -1232,6 +1269,23 @@ async function handleLairUnlock(
     }
     const unlocked = await lairLock.unlock(passphrase);
     if (unlocked) {
+      const masterKey = lairLock.getMasterKey();
+
+      // Ensure encrypted storage is initialized
+      await getLairClient();
+
+      if (encryptedStorage && masterKey) {
+        encryptedStorage.setMasterKey(masterKey);
+
+        // Migrate any plaintext seeds from pre-encryption era
+        await encryptedStorage.migrateToEncrypted();
+
+        // Propagate master key to Firefox worker if applicable
+        if (executor.sendMasterKeyToWorker) {
+          await executor.sendMasterKeyToWorker(masterKey);
+        }
+      }
+
       return createSuccessResponse(message.id, { unlocked: true });
     } else {
       return createErrorResponse(message.id, "Incorrect passphrase");
@@ -1255,6 +1309,22 @@ async function handleLairLock(
   if (blocked) return blocked;
   try {
     await lairLock.lock();
+
+    // Wipe master key from encrypted storage
+    if (encryptedStorage) {
+      encryptedStorage.clearMasterKey();
+    }
+
+    // Clear preloaded signing keys from LairClient
+    if (lairClient) {
+      lairClient.clearAllPreloadedKeys();
+    }
+
+    // Tell Firefox worker to clear its master key
+    if (executor.clearWorkerMasterKey) {
+      await executor.clearWorkerMasterKey();
+    }
+
     return createSuccessResponse(message.id, { locked: true });
   } catch (error) {
     return createErrorResponse(
@@ -1604,9 +1674,19 @@ async function handlePermissionGrant(
       return createErrorResponse(message.id, "requestId and origin are required");
     }
 
+    // Get page metadata from the original requesting tab
+    const authReq = await authManager.getAuthRequest(requestId);
+    let tabMeta: { title?: string; faviconUrl?: string } = {};
+    if (authReq?.tabId) {
+      try {
+        const tab = await chrome.tabs.get(authReq.tabId);
+        tabMeta = { title: tab.title, faviconUrl: tab.favIconUrl };
+      } catch { /* tab may have closed */ }
+    }
+
     // Grant permission
-    await permissionManager.grantPermission(origin);
-    logAuth.info(`Permission granted for ${origin}`);
+    await permissionManager.grantPermission(origin, tabMeta);
+    logAuth.info(`Connection approved for ${origin}`);
 
     // Generate/retrieve agent key for this origin
     const agentPubKey = await happContextManager.getOrCreateAgentKey(origin);
@@ -1650,7 +1730,7 @@ async function handlePermissionDeny(
 
     // Deny permission
     await permissionManager.denyPermission(origin);
-    logAuth.info(`Permission denied for ${origin}`);
+    logAuth.info(`Connection denied for ${origin}`);
 
     // Resolve pending auth request with error
     const resolved = await authManager.resolveAuthRequest(
@@ -1708,7 +1788,7 @@ async function handlePermissionRevoke(
     }
 
     await permissionManager.revokePermission(origin);
-    logAuth.info(`Permission revoked for ${origin}`);
+    logAuth.info(`Site ${origin} disconnected from Holo Web Conductor`);
 
     return createSuccessResponse(message.id, { revoked: true });
   } catch (error) {

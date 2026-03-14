@@ -14,6 +14,10 @@
     "./ui": {
       "import": "./dist/connect-with-ui.js",
       "types": "./dist/connect-with-ui.d.ts"
+    },
+    "./runtime": {
+      "import": "./dist/runtime.js",
+      "types": "./dist/runtime.d.ts"
     }
   },
   "files": [

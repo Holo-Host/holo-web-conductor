@@ -580,23 +580,28 @@ async function initialize(): Promise<void> {
 
   const initial = siteHostname.charAt(0).toUpperCase();
   if (faviconContainer) faviconContainer.dataset.initial = initial;
-  if (faviconImg) faviconImg.src = `${siteOrigin}/favicon.ico`;
+  // Use stored favicon/title from permission (captured at grant time),
+  // fall back to defaults
+  const storedPerm = await loadPermission();
+  if (faviconImg) faviconImg.src = storedPerm?.faviconUrl || `${siteOrigin}/favicon.ico`;
   if (originEl) originEl.textContent = siteOrigin;
 
-  // Try to scrape title from open tabs
-  let siteTitle = siteHostname;
-  try {
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      if (!tab.url || !tab.title) continue;
-      try {
-        if (new URL(tab.url).origin === siteOrigin) {
-          siteTitle = tab.title;
-          break;
-        }
-      } catch { /* ignore */ }
-    }
-  } catch { /* tabs API may not be available */ }
+  let siteTitle = storedPerm?.title || siteHostname;
+  // Fall back to querying open tabs if no stored title
+  if (!storedPerm?.title) {
+    try {
+      const tabs = await chrome.tabs.query({});
+      for (const tab of tabs) {
+        if (!tab.url || !tab.title) continue;
+        try {
+          if (new URL(tab.url).origin === siteOrigin) {
+            siteTitle = tab.title;
+            break;
+          }
+        } catch { /* ignore */ }
+      }
+    } catch { /* tabs API may not be available */ }
+  }
   if (titleEl) titleEl.textContent = siteTitle;
 
   // Revoke button

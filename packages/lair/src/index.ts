@@ -34,6 +34,7 @@ export type {
 export type { KeyStorage } from "./storage";
 export { IndexedDBKeyStorage, createKeyStorage } from "./storage";
 export { MemoryKeyStorage } from "./memory-storage";
+export { EncryptedKeyStorage } from "./encrypted-storage";
 
 // Export client
 export { LairClient, createLairClient } from "./client";
