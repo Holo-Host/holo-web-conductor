@@ -270,9 +270,9 @@ export class WebConductorAppClient implements AppClient {
           // Skip challenges whose OR group is already satisfied
           if (challenge.group && satisfiedGroups.has(challenge.group)) continue;
 
-          if (challenge.type === 'agent_whitelist') {
+          if (challenge.type === 'agent_allow_list') {
             // Machine-verifiable: sign nonce via extension
-            const response = await this.signAgentWhitelistChallenge(holochain, challenge);
+            const response = await this.signAgentAllowListChallenge(holochain, challenge);
             if (response) {
               session = await session.verify(challenge.id, response);
               if (challenge.group) satisfiedGroups.add(challenge.group);
@@ -447,10 +447,10 @@ export class WebConductorAppClient implements AppClient {
   }
 
   /**
-   * Auto-handle an agent_whitelist challenge by signing the nonce via the extension.
+   * Auto-handle an agent_allow_list challenge by signing the nonce via the extension.
    * Returns the base64-encoded signature, or null if signing is unavailable/failed.
    */
-  private async signAgentWhitelistChallenge(
+  private async signAgentAllowListChallenge(
     holochain: HolochainAPI,
     challenge: Challenge,
   ): Promise<string | null> {

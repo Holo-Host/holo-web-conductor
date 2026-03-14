@@ -40,7 +40,7 @@ export interface ConnectWithJoiningUIOptions extends WebConductorAppClientOption
   mountTo?: HTMLElement;
 }
 
-const AUTO_METHODS = new Set<string>(['open', 'agent_whitelist']);
+const AUTO_METHODS = new Set<string>(['open', 'agent_allow_list']);
 
 // ---------------------------------------------------------------------------
 // Overlay helpers

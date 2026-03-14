@@ -408,7 +408,7 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
       const agentKeyBytes = agentKeyToBytes(agentKey);
 
       server = await startE2EServer({
-        auth_methods: ['agent_whitelist'],
+        auth_methods: ['agent_allow_list'],
         allowed_agents: [agentKey],
       });
 
@@ -430,13 +430,13 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
       expect(mock.signJoiningNonce).toHaveBeenCalled();
     });
 
-    it('non-whitelisted agent is rejected', async () => {
+    it('non-allowed agent is rejected', async () => {
       const agentKey = nextAgentKey();
       const agentKeyBytes = agentKeyToBytes(agentKey);
 
       server = await startE2EServer({
-        auth_methods: ['agent_whitelist'],
-        allowed_agents: [], // no agents whitelisted
+        auth_methods: ['agent_allow_list'],
+        allowed_agents: [], // no agents allowed
       });
 
       mock = createMockHolochain();
@@ -466,13 +466,13 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
       if (server) await server.close();
     });
 
-    it('non-whitelisted agent falls back to invite_code in OR group', async () => {
+    it('non-allowed agent falls back to invite_code in OR group', async () => {
       const agentKey = nextAgentKey();
       const agentKeyBytes = agentKeyToBytes(agentKey);
 
       server = await startE2EServer({
-        auth_methods: [{ any_of: ['agent_whitelist', 'invite_code'] }],
-        allowed_agents: [], // this agent is not whitelisted
+        auth_methods: [{ any_of: ['agent_allow_list', 'invite_code'] }],
+        allowed_agents: [], // this agent is not on the allow list
         invite_codes: ['FALLBACK-CODE'],
       });
 
@@ -497,8 +497,8 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
       const agentKeyBytes = agentKeyToBytes(agentKey);
 
       server = await startE2EServer({
-        auth_methods: [{ any_of: ['agent_whitelist'] }],
-        allowed_agents: [], // no agents whitelisted
+        auth_methods: [{ any_of: ['agent_allow_list'] }],
+        allowed_agents: [], // no agents allowed
       });
 
       mock = createMockHolochain();
