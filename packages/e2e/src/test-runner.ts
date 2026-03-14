@@ -5,6 +5,7 @@
  */
 
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { EnvironmentManager } from './environment.js';
@@ -146,7 +147,10 @@ export class TestRunner {
         args.push(options.testFile);
       }
 
-      args.push('--reporter=json');
+      // Don't override reporters — use the config's JSON file reporter
+      // (writes to test-results/results.json). Adding --reporter=json here
+      // would send JSON to stdout, but console.log from tests pollutes
+      // stdout and breaks JSON.parse.
 
       if (options.project) {
         args.push('--project', options.project);
@@ -162,19 +166,14 @@ export class TestRunner {
 
       const proc = spawn('npx', args, {
         cwd: E2E_PACKAGE,
-        stdio: ['inherit', 'pipe', 'pipe'],
+        stdio: ['inherit', 'inherit', 'pipe'],
         env: {
           ...process.env,
           LINKER_URL: this.env.getLinkerUrl(),
         },
       });
 
-      let stdout = '';
       let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
 
       proc.stderr?.on('data', (data) => {
         stderr += data.toString();
@@ -192,14 +191,15 @@ export class TestRunner {
         };
 
         try {
-          // Parse Playwright JSON output
-          const report = JSON.parse(stdout);
+          // Read from the JSON results file written by the config's reporter
+          const resultsFile = join(E2E_PACKAGE, 'test-results', 'results.json');
+          const report = JSON.parse(readFileSync(resultsFile, 'utf-8'));
 
           for (const suite of report.suites || []) {
             this.parseSuite(suite, results);
           }
         } catch {
-          // If we can't parse the output, create a summary result
+          // If we can't read the results file, create a summary result
           if (code === 0) {
             results.tests.push({
               name: 'All tests',
@@ -234,7 +234,7 @@ export class TestRunner {
       for (const test of spec.tests || []) {
         const result: TestResult = {
           name: `${suite.title} > ${spec.title}`,
-          status: test.status === 'passed' ? 'pass' : test.status === 'skipped' ? 'skip' : 'fail',
+          status: (test.status === 'passed' || test.status === 'expected') ? 'pass' : test.status === 'skipped' ? 'skip' : 'fail',
           duration: test.results?.[0]?.duration ?? 0,
         };
 

@@ -415,6 +415,53 @@ export async function callZome(
 }
 
 /**
+ * Poll a zome call until the check function returns true.
+ * Useful for waiting until data propagates across agents.
+ *
+ * @param check - function that receives the zome call result and returns true when satisfied
+ * @param interval - poll interval in ms (default 3000)
+ * @param timeout - total timeout in ms (default 120000)
+ * @returns the zome call result that satisfied the check
+ */
+export async function pollCallZome<T = any>(
+  page: Page,
+  params: {
+    zomeName: string;
+    fnName: string;
+    payload?: any;
+    appId?: string;
+  },
+  check: (result: T) => boolean,
+  timeout = 120000,
+  interval = 3000,
+): Promise<T> {
+  const startTime = Date.now();
+  let lastResult: T | undefined;
+  let lastError: string | undefined;
+
+  while (Date.now() - startTime < timeout) {
+    try {
+      lastResult = await callZome(page, params);
+      if (check(lastResult as T)) {
+        return lastResult as T;
+      }
+    } catch (e: any) {
+      lastError = e.message?.substring(0, 200);
+    }
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[pollCallZome] ${params.fnName}: ${elapsed}s elapsed, not satisfied yet`);
+    await page.waitForTimeout(interval);
+  }
+
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  throw new Error(
+    `pollCallZome timeout after ${elapsed}s for ${params.fnName}. ` +
+    `Last result: ${JSON.stringify(lastResult)?.substring(0, 200)}` +
+    (lastError ? `, last error: ${lastError}` : '')
+  );
+}
+
+/**
  * Helper to decode base64 hash to bytes
  */
 export function decodeHashFromB64(hashStr: string): number[] {
