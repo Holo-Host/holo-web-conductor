@@ -176,20 +176,28 @@ async function loadDomains(): Promise<void> {
       (a, b) => b.permission.timestamp - a.permission.timestamp
     );
 
-    // Try to get page titles from open tabs
-    try {
-      const tabs = await chrome.tabs.query({});
-      for (const tab of tabs) {
-        if (!tab.url || !tab.title) continue;
-        try {
-          const tabOrigin = new URL(tab.url).origin;
-          const info = domainMap.get(tabOrigin);
-          if (info && !info.title) {
-            info.title = tab.title;
-          }
-        } catch { /* ignore invalid URLs */ }
+    // Use stored title from permission (captured at grant time).
+    // Fall back to querying open tabs if permission has no title.
+    for (const [, info] of domainMap) {
+      if (!info.title && info.permission.title) {
+        info.title = info.permission.title;
       }
-    } catch { /* tabs API may not be available */ }
+    }
+    if ([...domainMap.values()].some(info => !info.title)) {
+      try {
+        const tabs = await chrome.tabs.query({});
+        for (const tab of tabs) {
+          if (!tab.url || !tab.title) continue;
+          try {
+            const tabOrigin = new URL(tab.url).origin;
+            const info = domainMap.get(tabOrigin);
+            if (info && !info.title) {
+              info.title = tab.title;
+            }
+          } catch { /* ignore invalid URLs */ }
+        }
+      } catch { /* tabs API may not be available */ }
+    }
 
     listEl.innerHTML = sorted.map(renderDomainItem).join("");
   } catch (error) {
@@ -217,7 +225,7 @@ function renderDomainItem(domain: DomainInfo): string {
   }
 
   const encodedOrigin = encodeURIComponent(domain.origin);
-  const faviconUrl = `${domain.origin}/favicon.ico`;
+  const faviconUrl = domain.permission.faviconUrl || `${domain.origin}/favicon.ico`;
   const title = domain.title || domain.hostname;
 
   return `

@@ -15,6 +15,8 @@ export interface Permission {
   granted: boolean;         // true = approved, false = denied
   timestamp: number;        // when permission was granted/denied
   userAgent?: string;       // Browser info for auditing
+  title?: string;           // Page title at time of connection
+  faviconUrl?: string;      // Favicon URL at time of connection
 }
 
 /**
@@ -110,7 +112,7 @@ export class PermissionManager {
   /**
    * Grant permission for an origin
    */
-  async grantPermission(origin: string): Promise<void> {
+  async grantPermission(origin: string, meta?: { title?: string; faviconUrl?: string }): Promise<void> {
     await this.ensureReady();
     if (!this.currentState) {
       throw new Error("Permissions state not initialized");
@@ -121,6 +123,8 @@ export class PermissionManager {
       granted: true,
       timestamp: Date.now(),
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+      title: meta?.title,
+      faviconUrl: meta?.faviconUrl,
     };
 
     this.currentState.permissions[origin] = permission;
