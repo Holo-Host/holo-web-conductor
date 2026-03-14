@@ -77,7 +77,7 @@ import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
 import { setNetworkService, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
 import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@holo-host/lair';
-import { createLairClient, type LairClient } from '@holo-host/lair';
+import { createLairClient, createKeyStorage, EncryptedKeyStorage, type LairClient } from '@holo-host/lair';
 import { recoverChainFromDHT, storeRecoveredRecords } from '@hwc/core/recovery';
 import { isEntryAction, type Action, type StoredEntry, type StoredRecord, type ChainHead, type Link, type RecordDetails, type EntryDetails, type EntryDhtStatus, type CreateAction, type UpdateAction, type DeleteAction } from '@hwc/core/storage/types';
 import { encodeHashToBase64, type ActionHash, type EntryHash, type DnaHash, type AgentPubKey, type AnyDhtHash } from '@holochain/client';
@@ -86,7 +86,7 @@ import { toUint8Array } from '@hwc/core';
 // Types
 interface WorkerMessage {
   id: number;
-  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN' | 'RUN_GENESIS' | 'PRELOAD_SIGNING_KEY';
+  type: 'INIT' | 'CALL_ZOME' | 'CONFIGURE_NETWORK' | 'RECOVER_CHAIN' | 'RUN_GENESIS' | 'PRELOAD_SIGNING_KEY' | 'SET_MASTER_KEY' | 'CLEAR_MASTER_KEY';
   payload?: any;
 }
 
@@ -130,6 +130,7 @@ let nextNetworkRequestId = 1;
 
 // Worker-local LairClient for Firefox mode (reads keys from shared IndexedDB)
 let workerLairClient: LairClient | null = null;
+let workerEncryptedStorage: EncryptedKeyStorage | null = null;
 
 // WASM cache - avoid re-sending 1.3MB on every call
 // Key: base64-encoded DNA hash, Value: Uint8Array of WASM
@@ -1625,9 +1626,13 @@ self.onmessage = async (event: MessageEvent) => {
           firefoxMode = true;
           console.log('[Ribosome Worker] Firefox mode enabled - direct sync XHR + local LairClient');
 
-          // Create worker-local LairClient backed by the same IndexedDB as background
-          workerLairClient = await createLairClient();
-          console.log('[Ribosome Worker] Worker LairClient initialized from IndexedDB');
+          // Create worker-local LairClient backed by the same IndexedDB as background,
+          // wrapped with EncryptedKeyStorage. Master key will be set via SET_MASTER_KEY.
+          const innerStorage = await createKeyStorage();
+          workerEncryptedStorage = new EncryptedKeyStorage(innerStorage);
+          await workerEncryptedStorage.init();
+          workerLairClient = await createLairClient(workerEncryptedStorage);
+          console.log('[Ribosome Worker] Worker LairClient initialized with encrypted storage');
 
           // Apply initial network config if provided
           if (payload.linkerUrl) linkerUrl = payload.linkerUrl;
@@ -1688,6 +1693,31 @@ self.onmessage = async (event: MessageEvent) => {
         const pubKeyBytes = new Uint8Array(pubKey) as Ed25519PubKey;
         await workerLairClient.preloadKeyForSync(pubKeyBytes);
         console.log(`[Ribosome Worker] Signing key preloaded from IndexedDB`);
+        result = { success: true };
+        break;
+      }
+
+      case 'SET_MASTER_KEY': {
+        // Receive master encryption key from background for encrypted IndexedDB access
+        if (!workerEncryptedStorage) {
+          throw new Error('Worker encrypted storage not initialized');
+        }
+        const masterKeyBytes = new Uint8Array(payload.masterKey);
+        workerEncryptedStorage.setMasterKey(masterKeyBytes);
+        console.log('[Ribosome Worker] Master encryption key set');
+        result = { success: true };
+        break;
+      }
+
+      case 'CLEAR_MASTER_KEY': {
+        // Clear master key and preloaded signing keys on lock
+        if (workerEncryptedStorage) {
+          workerEncryptedStorage.clearMasterKey();
+        }
+        if (workerLairClient) {
+          workerLairClient.clearAllPreloadedKeys();
+        }
+        console.log('[Ribosome Worker] Master key and preloaded keys cleared');
         result = { success: true };
         break;
       }

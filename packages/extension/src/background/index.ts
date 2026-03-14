@@ -41,7 +41,7 @@ import { rejectTabSender } from "../lib/sender-validation";
 import { getPermissionManager } from "../lib/permissions";
 import { getAuthManager } from "../lib/auth-manager";
 import { getHappContextManager } from "../lib/happ-context-manager";
-import { createLairClient, type EncryptedExport } from "@holo-host/lair";
+import { createLairClient, createKeyStorage, EncryptedKeyStorage, type EncryptedExport } from "@holo-host/lair";
 import type { InstallHappRequest, HappContext } from "@hwc/core";
 import {
   toUint8Array,
@@ -291,11 +291,22 @@ const permissionManager = getPermissionManager();
 const authManager = getAuthManager();
 const happContextManager = getHappContextManager();
 let lairClient: Awaited<ReturnType<typeof createLairClient>> | null = null;
+let encryptedStorage: EncryptedKeyStorage | null = null;
 
-// Initialize Lair client
+// Initialize Lair client with encrypted storage
 async function getLairClient() {
   if (!lairClient) {
-    lairClient = await createLairClient();
+    const innerStorage = await createKeyStorage();
+    encryptedStorage = new EncryptedKeyStorage(innerStorage);
+    await encryptedStorage.init();
+
+    // If we have a master key (unlocked), set it on the storage
+    const masterKey = lairLock.getMasterKey();
+    if (masterKey) {
+      encryptedStorage.setMasterKey(masterKey);
+    }
+
+    lairClient = await createLairClient(encryptedStorage);
   }
   return lairClient;
 }
@@ -1202,11 +1213,34 @@ async function handleLairSetPassphrase(
   const blocked = rejectTabSender(sender, message.id, "LAIR_SET_PASSPHRASE");
   if (blocked) return blocked;
   try {
-    const { passphrase } = getPayload<MessageType.LAIR_SET_PASSPHRASE>(message);
+    const { passphrase, oldPassphrase } = getPayload<MessageType.LAIR_SET_PASSPHRASE>(message);
     if (!passphrase) {
       return createErrorResponse(message.id, "Passphrase is required");
     }
-    await lairLock.setPassphrase(passphrase);
+
+    const { oldMasterKey, newMasterKey } = await lairLock.setPassphrase(passphrase, oldPassphrase);
+
+    // Ensure encrypted storage is initialized
+    await getLairClient();
+
+    if (encryptedStorage) {
+      if (oldMasterKey) {
+        // Re-encrypt all seeds with new key
+        await encryptedStorage.reEncrypt(oldMasterKey, newMasterKey);
+        oldMasterKey.fill(0);
+      } else {
+        // First passphrase or migrating from v1 — encrypt any plaintext seeds
+        encryptedStorage.setMasterKey(newMasterKey);
+        await encryptedStorage.migrateToEncrypted();
+      }
+      encryptedStorage.setMasterKey(newMasterKey);
+
+      // Propagate master key to Firefox worker if applicable
+      if (executor.sendMasterKeyToWorker) {
+        await executor.sendMasterKeyToWorker(newMasterKey);
+      }
+    }
+
     return createSuccessResponse(message.id, { success: true });
   } catch (error) {
     return createErrorResponse(
@@ -1232,6 +1266,23 @@ async function handleLairUnlock(
     }
     const unlocked = await lairLock.unlock(passphrase);
     if (unlocked) {
+      const masterKey = lairLock.getMasterKey();
+
+      // Ensure encrypted storage is initialized
+      await getLairClient();
+
+      if (encryptedStorage && masterKey) {
+        encryptedStorage.setMasterKey(masterKey);
+
+        // Migrate any plaintext seeds from pre-encryption era
+        await encryptedStorage.migrateToEncrypted();
+
+        // Propagate master key to Firefox worker if applicable
+        if (executor.sendMasterKeyToWorker) {
+          await executor.sendMasterKeyToWorker(masterKey);
+        }
+      }
+
       return createSuccessResponse(message.id, { unlocked: true });
     } else {
       return createErrorResponse(message.id, "Incorrect passphrase");
@@ -1255,6 +1306,22 @@ async function handleLairLock(
   if (blocked) return blocked;
   try {
     await lairLock.lock();
+
+    // Wipe master key from encrypted storage
+    if (encryptedStorage) {
+      encryptedStorage.clearMasterKey();
+    }
+
+    // Clear preloaded signing keys from LairClient
+    if (lairClient) {
+      lairClient.clearAllPreloadedKeys();
+    }
+
+    // Tell Firefox worker to clear its master key
+    if (executor.clearWorkerMasterKey) {
+      await executor.clearWorkerMasterKey();
+    }
+
     return createSuccessResponse(message.id, { locked: true });
   } catch (error) {
     return createErrorResponse(

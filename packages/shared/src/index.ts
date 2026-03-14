@@ -22,3 +22,6 @@ export function ok<T>(value: T): HwcResult<T, never> {
 export function err<E>(error: E): HwcResult<never, E> {
   return { ok: false, error };
 }
+
+// Passphrase policy
+export const MIN_PASSPHRASE_LENGTH = 8;

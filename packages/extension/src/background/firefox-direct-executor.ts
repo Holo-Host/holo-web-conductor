@@ -273,6 +273,20 @@ export class FirefoxDirectExecutor extends BaseExecutor {
     log.info(`Signing key preload requested for worker: ${btoa(String.fromCharCode(...pubKey)).substring(0, 20)}...`);
   }
 
+  async sendMasterKeyToWorker(masterKey: Uint8Array): Promise<void> {
+    await this.initWorker();
+    await this.sendToWorker("SET_MASTER_KEY", {
+      masterKey: Array.from(masterKey),
+    });
+    log.info("Master encryption key sent to worker");
+  }
+
+  async clearWorkerMasterKey(): Promise<void> {
+    if (!this.workerReady) return;
+    await this.sendToWorker("CLEAR_MASTER_KEY", {});
+    log.info("Worker master key cleared");
+  }
+
   // ============================================================================
   // Platform-specific: recovery progress storage
   // ============================================================================

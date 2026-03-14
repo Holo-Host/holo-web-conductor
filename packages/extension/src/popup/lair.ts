@@ -19,6 +19,7 @@ import {
   HoloHashType,
 } from "@holochain/client";
 import renderIdenticon from "@holo-host/identicon";
+import { MIN_PASSPHRASE_LENGTH } from "@hwc/shared";
 
 // ============================================================================
 // Utility Functions
@@ -258,8 +259,8 @@ async function setPassphrase(): Promise<void> {
   const passphrase = getValue("new-passphrase");
   setVisible("set-passphrase-error", false);
 
-  if (!passphrase || passphrase.length < 8) {
-    setText("set-passphrase-error", "Passphrase must be at least 8 characters");
+  if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    setText("set-passphrase-error", `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters`);
     setVisible("set-passphrase-error", true);
     return;
   }
@@ -280,6 +281,52 @@ async function setPassphrase(): Promise<void> {
   } catch (error) {
     setText("set-passphrase-error", String(error));
     setVisible("set-passphrase-error", true);
+  }
+}
+
+/**
+ * Change passphrase (requires current passphrase)
+ */
+async function changePassphrase(): Promise<void> {
+  const submitBtn = document.getElementById("change-passphrase-submit-btn") as HTMLButtonElement | null;
+  const oldPassphrase = getValue("current-passphrase");
+  const newPassphrase = getValue("change-new-passphrase");
+  setVisible("change-passphrase-error", false);
+
+  if (!oldPassphrase) {
+    setText("change-passphrase-error", "Current passphrase is required");
+    setVisible("change-passphrase-error", true);
+    return;
+  }
+
+  if (!newPassphrase || newPassphrase.length < MIN_PASSPHRASE_LENGTH) {
+    setText("change-passphrase-error", `New passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters`);
+    setVisible("change-passphrase-error", true);
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const response = await sendMessage(MessageType.LAIR_SET_PASSPHRASE, {
+      passphrase: newPassphrase,
+      oldPassphrase,
+    });
+
+    if (response.type === MessageType.ERROR) {
+      setText("change-passphrase-error", response.error || "Failed to change passphrase");
+      setVisible("change-passphrase-error", true);
+      return;
+    }
+
+    setValue("current-passphrase", "");
+    setValue("change-new-passphrase", "");
+    setVisible("change-passphrase-form", false);
+    await updateLockState();
+  } catch (error) {
+    setText("change-passphrase-error", String(error));
+    setVisible("change-passphrase-error", true);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 
@@ -608,8 +655,8 @@ async function submitExport(): Promise<void> {
 
   setVisible("export-modal-error", false);
 
-  if (!passphrase || passphrase.length < 8) {
-    setText("export-modal-error", "Passphrase must be at least 8 characters");
+  if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    setText("export-modal-error", `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters`);
     setVisible("export-modal-error", true);
     return;
   }
@@ -982,6 +1029,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("set-passphrase-btn")?.addEventListener("click", setPassphrase);
   document.getElementById("unlock-btn")?.addEventListener("click", unlock);
   document.getElementById("lock-btn")?.addEventListener("click", lock);
+
+  // Change passphrase handlers
+  document.getElementById("change-passphrase-btn")?.addEventListener("click", () => {
+    setVisible("change-passphrase-form", true);
+    setVisible("change-passphrase-error", false);
+  });
+  document.getElementById("change-passphrase-cancel-btn")?.addEventListener("click", () => {
+    setVisible("change-passphrase-form", false);
+    setValue("current-passphrase", "");
+    setValue("change-new-passphrase", "");
+  });
+  document.getElementById("change-passphrase-submit-btn")?.addEventListener("click", changePassphrase);
 
   // Create/Import handlers
   document.getElementById("create-mode")?.addEventListener("change", updateCreateMode);
