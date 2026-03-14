@@ -90,25 +90,22 @@ async function loadHapps(): Promise<void> {
 }
 
 function renderPermission(permission: Permission | null): void {
-  const badge = document.getElementById("permission-badge");
   const dateEl = document.getElementById("permission-date");
   const revokeBtn = document.getElementById("revoke-btn");
 
   if (!permission || !permission.granted) {
-    if (badge) {
-      badge.textContent = "No Permission";
-      badge.className = "permission-badge denied";
-    }
-    if (dateEl) dateEl.textContent = "";
+    if (dateEl) dateEl.textContent = "Not connected";
     if (revokeBtn) revokeBtn.classList.add("hidden");
     return;
   }
 
-  if (badge) {
-    badge.textContent = "Granted";
-    badge.className = "permission-badge granted";
+  const d = new Date(permission.timestamp);
+  const shortDate = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const fullDate = formatDate(permission.timestamp);
+  if (dateEl) {
+    dateEl.textContent = `Connected ${shortDate}`;
+    dateEl.title = fullDate;
   }
-  if (dateEl) dateEl.textContent = formatDate(permission.timestamp);
   if (revokeBtn) revokeBtn.classList.remove("hidden");
 }
 
@@ -537,7 +534,7 @@ async function recoverChain(contextId: string): Promise<void> {
 async function revokePermission(): Promise<void> {
   if (
     !confirm(
-      `Revoke permission for ${siteHostname}?\n\nThe site will need to request permission again.`
+      `Disconnect ${siteHostname} from the Holo Web Conductor?\n\nThe site will need to request permission again.`
     )
   )
     return;
@@ -575,11 +572,32 @@ async function initialize(): Promise<void> {
     siteHostname = siteOrigin;
   }
 
-  // Set header
-  const hostnameEl = document.getElementById("site-hostname");
+  // Set site bar favicon and title
+  const faviconContainer = document.getElementById("site-favicon");
+  const faviconImg = document.getElementById("favicon-img") as HTMLImageElement;
+  const titleEl = document.getElementById("site-title");
   const originEl = document.getElementById("site-origin");
-  if (hostnameEl) hostnameEl.textContent = "Holo Web Conductor:";
+
+  const initial = siteHostname.charAt(0).toUpperCase();
+  if (faviconContainer) faviconContainer.dataset.initial = initial;
+  if (faviconImg) faviconImg.src = `${siteOrigin}/favicon.ico`;
   if (originEl) originEl.textContent = siteOrigin;
+
+  // Try to scrape title from open tabs
+  let siteTitle = siteHostname;
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (!tab.url || !tab.title) continue;
+      try {
+        if (new URL(tab.url).origin === siteOrigin) {
+          siteTitle = tab.title;
+          break;
+        }
+      } catch { /* ignore */ }
+    }
+  } catch { /* tabs API may not be available */ }
+  if (titleEl) titleEl.textContent = siteTitle;
 
   // Revoke button
   document.getElementById("revoke-btn")?.addEventListener("click", () => {

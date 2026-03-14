@@ -18,6 +18,7 @@ import {
   HASH_TYPE_PREFIX,
   HoloHashType,
 } from "@holochain/client";
+import renderIdenticon from "@holo-host/identicon";
 
 // ============================================================================
 // Utility Functions
@@ -367,7 +368,7 @@ function renderKeypairList(): void {
     <thead>
       <tr>
         <th>Tag</th>
-        <th>AgentPubKey</th>
+        <th>Key</th>
         <th>Created</th>
         <th>Exportable</th>
         <th>Actions</th>
@@ -393,9 +394,10 @@ function renderKeypairList(): void {
           <td class="pubkey"
               data-agent-pubkey="${agentPubKeyB64}"
               data-ed25519="${ed25519B64}"
-              title="Click to copy AgentPubKey (39-byte)"
+              title="${agentPubKeyB64}\nClick to copy"
               style="cursor: pointer;">
-            ${agentPubKeyB64.substring(0, 20)}...
+            <canvas class="identicon-canvas" data-hash="${ed25519B64}" width="28" height="28"
+                    style="border-radius: 4px;"></canvas>
           </td>
           <td>${new Date(kp.created_at).toLocaleString()}</td>
           <td>
@@ -418,20 +420,34 @@ function renderKeypairList(): void {
   `;
 
   listEl.innerHTML = "";
-  listEl.appendChild(table);
+  const scrollWrap = document.createElement("div");
+  scrollWrap.className = "table-scroll";
+  scrollWrap.appendChild(table);
+  listEl.appendChild(scrollWrap);
+
+  // Render identicons on canvas elements
+  table.querySelectorAll('.identicon-canvas').forEach((canvas) => {
+    const hashB64 = (canvas as HTMLCanvasElement).dataset.hash;
+    if (hashB64) {
+      try {
+        const hashBytes = fromBase64(hashB64);
+        renderIdenticon({ hash: hashBytes, size: 24 }, canvas as HTMLCanvasElement);
+      } catch (e) {
+        console.warn('Failed to render identicon:', e);
+      }
+    }
+  });
 
   // Add click handlers to public key cells
   table.querySelectorAll('.pubkey').forEach((cell) => {
     cell.addEventListener('click', async () => {
-      const agentPubKey = (cell as HTMLElement).dataset.agentPubkey;
+      const el = cell as HTMLElement;
+      const agentPubKey = el.dataset.agentPubkey;
       if (agentPubKey) {
         try {
           await navigator.clipboard.writeText(agentPubKey);
-          const originalText = cell.textContent;
-          cell.textContent = '\u2713 Copied AgentPubKey';
-          setTimeout(() => {
-            cell.textContent = originalText;
-          }, 1000);
+          el.style.outline = '2px solid #10b981';
+          setTimeout(() => { el.style.outline = ''; }, 800);
         } catch (error) {
           console.error('Failed to copy:', error);
         }
@@ -459,12 +475,12 @@ function renderKeypairList(): void {
     });
   });
 
-  // Add click handlers to seed words buttons
+  // Add click handlers to seed words buttons (shows warning first)
   table.querySelectorAll('.seed-btn').forEach((button) => {
-    button.addEventListener('click', async () => {
+    button.addEventListener('click', () => {
       const tag = (button as HTMLElement).dataset.tag;
       if (tag) {
-        await openSeedModal(tag);
+        showSeedWarning(tag);
       }
     });
   });
@@ -643,8 +659,20 @@ async function submitExport(): Promise<void> {
 }
 
 // ============================================================================
-// Seed Words Modal
+// Seed Words Modal (with warning gate)
 // ============================================================================
+
+let pendingSeedTag = "";
+
+function showSeedWarning(tag: string): void {
+  pendingSeedTag = tag;
+  document.getElementById("seed-warning-modal")?.classList.add("active");
+}
+
+function closeSeedWarning(): void {
+  pendingSeedTag = "";
+  document.getElementById("seed-warning-modal")?.classList.remove("active");
+}
 
 async function openSeedModal(tag: string): Promise<void> {
   setText("seed-modal-tag", tag);
@@ -1001,6 +1029,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("export-result-close")?.addEventListener("click", closeExportResultModal);
   document.getElementById("export-result-modal")?.addEventListener("click", (e) => {
     if (e.target === document.getElementById("export-result-modal")) closeExportResultModal();
+  });
+
+  // Seed warning modal handlers
+  document.getElementById("seed-warning-cancel")?.addEventListener("click", closeSeedWarning);
+  document.getElementById("seed-warning-continue")?.addEventListener("click", async () => {
+    const tag = pendingSeedTag;
+    closeSeedWarning();
+    if (tag) {
+      await openSeedModal(tag);
+    }
+  });
+  document.getElementById("seed-warning-modal")?.addEventListener("click", (e) => {
+    if (e.target === document.getElementById("seed-warning-modal")) closeSeedWarning();
   });
 
   // Seed modal handlers

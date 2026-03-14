@@ -19,6 +19,7 @@ interface HappContext {
 interface DomainInfo {
   origin: string;
   hostname: string;
+  title?: string;
   permission: Permission;
   happs: HappContext[];
 }
@@ -175,6 +176,21 @@ async function loadDomains(): Promise<void> {
       (a, b) => b.permission.timestamp - a.permission.timestamp
     );
 
+    // Try to get page titles from open tabs
+    try {
+      const tabs = await chrome.tabs.query({});
+      for (const tab of tabs) {
+        if (!tab.url || !tab.title) continue;
+        try {
+          const tabOrigin = new URL(tab.url).origin;
+          const info = domainMap.get(tabOrigin);
+          if (info && !info.title) {
+            info.title = tab.title;
+          }
+        } catch { /* ignore invalid URLs */ }
+      }
+    } catch { /* tabs API may not be available */ }
+
     listEl.innerHTML = sorted.map(renderDomainItem).join("");
   } catch (error) {
     console.error("[Popup] Error loading domains:", error);
@@ -201,14 +217,19 @@ function renderDomainItem(domain: DomainInfo): string {
   }
 
   const encodedOrigin = encodeURIComponent(domain.origin);
+  const faviconUrl = `${domain.origin}/favicon.ico`;
+  const title = domain.title || domain.hostname;
 
   return `
     <li>
       <a class="domain-item" href="site.html?origin=${encodedOrigin}">
-        <div class="domain-icon">${initial}</div>
+        <div class="domain-icon" data-initial="${initial}">
+          <img src="${faviconUrl}" alt="" style="width: 20px; height: 20px; border-radius: 4px;"
+               onerror="this.style.display='none'; this.parentElement.textContent=this.parentElement.dataset.initial;" />
+        </div>
         <div class="domain-info">
-          <div class="domain-name">${domain.hostname}</div>
-          <div class="domain-meta">${meta}</div>
+          <div class="domain-name" title="${domain.hostname}">${title}</div>
+          <div class="domain-meta">${domain.hostname !== title ? domain.hostname + ' \u00b7 ' : ''}${meta}</div>
         </div>
         <div class="domain-arrow">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -222,7 +243,7 @@ function renderDomainItem(domain: DomainInfo): string {
 
 async function revokeAllPermissions(): Promise<void> {
   const confirmed = confirm(
-    "Revoke ALL permissions?\n\nAll sites will need to request permission again."
+    "Disconnect ALL sites from the Holo Web Conductor?\n\nAll sites will need to request permission again."
   );
   if (!confirmed) return;
 

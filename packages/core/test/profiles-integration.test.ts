@@ -1,7 +1,7 @@
 /**
  * Integration tests for profiles hApp
  *
- * Tests the fishy ribosome with the real profiles-test.happ bundle
+ * Tests the HWC ribosome with the real profiles-test.happ bundle
  * to verify entry and link type resolution works correctly.
  */
 

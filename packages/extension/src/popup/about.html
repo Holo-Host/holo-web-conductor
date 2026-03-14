@@ -4,42 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>About - Holo Web Conductor</title>
+  <link rel="stylesheet" href="header.css" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      width: 340px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f8f9fa;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      padding: 12px 16px;
-      background: #fff;
-      border-bottom: 1px solid #e5e7eb;
-      gap: 12px;
-    }
-
-    .back-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 4px 4px 4px 0;
-      margin-left: -2px;
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-    }
-
-    .back-btn:hover { color: #111827; }
-
-    .header-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: #333;
-    }
 
     .about-content {
       padding: 16px;
@@ -92,13 +58,13 @@
   </style>
 </head>
 <body>
-  <div class="header">
+  <div class="hwc-header">
     <a href="index.html" class="back-btn">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="15 18 9 12 15 6"/>
       </svg>
     </a>
-    <img src="../icons/holo-mark.svg" alt="" style="width: 26px; height: 20px; object-fit: contain;" />
+    <img src="../icons/holo-mark.svg" alt="" class="header-logo" />
     <span class="header-title">Holo Web Conductor: About</span>
   </div>
 
@@ -109,7 +75,7 @@
     </div>
     <div class="about-row">
       <span class="about-label">License</span>
-      <span class="about-value">CAL-1.0</span>
+      <span class="about-value"><a href="https://opensource.org/license/CAL-1.0" target="_blank" rel="noopener" style="color: #017FF8; text-decoration: none;">CAL-1.0</a></span>
     </div>
     <div class="about-row">
       <span class="about-label">Runtime</span>
@@ -117,8 +83,8 @@
     </div>
 
     <div class="about-footer">
-      &copy; Holo Ltd.<br>
-      Holochain in the browser.
+      &copy; <a href="https://holo.host" target="_blank" rel="noopener" style="color: #9ca3af;">Holo</a> Ltd.<br>
+      <a href="https://www.holochain.org" target="_blank" rel="noopener" style="color: #9ca3af;">Holochain</a> in the browser.
     </div>
   </div>
 

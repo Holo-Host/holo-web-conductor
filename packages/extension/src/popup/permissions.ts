@@ -32,7 +32,7 @@ function hideError(): void {
  */
 async function revokePermission(origin: string): Promise<void> {
   const confirmed = confirm(
-    `Revoke permission for ${origin}?\n\nThis will require re-authorization if the site attempts to connect again.`
+    `Disconnect ${origin} from the Holo Web Conductor?\n\nThis will require re-authorization if the site attempts to connect again.`
   );
 
   if (!confirmed) {
@@ -66,7 +66,7 @@ async function revokePermission(origin: string): Promise<void> {
  */
 async function revokeAllPermissions(): Promise<void> {
   const confirmed = confirm(
-    "Revoke ALL permissions?\n\nThis will clear all authorized domains. They will need to request permission again."
+    "Disconnect ALL sites from the Holo Web Conductor?\n\nThis will clear all authorized domains. They will need to request permission again."
   );
 
   if (!confirmed) {
@@ -150,7 +150,7 @@ function renderPermissions(permissions: Permission[]): void {
     const statusCell = document.createElement("td");
     const statusBadge = document.createElement("span");
     statusBadge.className = `status ${permission.granted ? "granted" : "denied"}`;
-    statusBadge.textContent = permission.granted ? "Granted" : "Denied";
+    statusBadge.textContent = permission.granted ? "Connected" : "Denied";
     statusCell.appendChild(statusBadge);
     row.appendChild(statusCell);
 
@@ -164,7 +164,8 @@ function renderPermissions(permissions: Permission[]): void {
     const actionCell = document.createElement("td");
     const revokeBtn = document.createElement("button");
     revokeBtn.className = "revoke-btn";
-    revokeBtn.textContent = "Revoke";
+    revokeBtn.textContent = "Disconnect";
+    revokeBtn.title = `Disconnect ${permission.origin} from the Holo Web Conductor`;
     revokeBtn.addEventListener("click", async () => {
       revokeBtn.disabled = true;
       await revokePermission(permission.origin);

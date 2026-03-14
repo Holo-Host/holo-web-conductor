@@ -3,31 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <title>Manage Permissions - Holo Web Conductor</title>
+  <link rel="stylesheet" href="header.css" />
   <style>
-    body {
-      width: 500px;
+
+    .perm-body {
       padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      margin: 0;
-      background: #f5f5f5;
-    }
-
-    .back-link {
-      display: inline-block;
-      color: #007bff;
-      text-decoration: none;
-      font-size: 14px;
-      margin-bottom: 16px;
-    }
-
-    .back-link:hover {
-      text-decoration: underline;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin: 0 0 20px 0;
-      color: #333;
     }
 
     .section {
@@ -120,16 +100,6 @@
       color: #666;
     }
 
-    button {
-      padding: 8px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
     .revoke-btn {
       background: #6c757d;
       color: white;
@@ -139,26 +109,10 @@
       background: #5a6268;
     }
 
-    .revoke-btn:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
-
     .danger-btn {
-      background: #dc3545;
-      color: white;
       margin-top: 16px;
       padding: 10px 16px;
       font-size: 14px;
-    }
-
-    .danger-btn:hover {
-      background: #c82333;
-    }
-
-    .danger-btn:disabled {
-      background: #ccc;
-      cursor: not-allowed;
     }
 
     .error {
@@ -183,19 +137,20 @@
   </style>
 </head>
 <body>
-  <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-    <a href="index.html" style="color: #6b7280; display: flex; align-items: center; text-decoration: none; margin-left: -2px;">
+  <div class="hwc-header">
+    <a href="index.html" class="back-btn">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="15 18 9 12 15 6"/>
       </svg>
     </a>
-    <img src="../icons/holo-mark.svg" alt="" style="width: 26px; height: 20px; object-fit: contain;" />
-    <h1 style="margin: 0;">Holo Web Conductor: Permissions</h1>
+    <img src="../icons/holo-mark.svg" alt="" class="header-logo" />
+    <span class="header-title">Holo Web Conductor: Permissions</span>
   </div>
+  <div class="perm-body">
 
   <div class="info-box">
-    Manage which websites can access your Holochain data through this extension.
-    You can revoke permissions at any time.
+    Manage which websites are connected to the Holo Web Conductor.
+    You can disconnect sites at any time.
   </div>
 
   <div id="error-container" class="hidden">
@@ -234,12 +189,13 @@
         </tbody>
       </table>
 
-      <button id="clear-all-btn" class="danger-btn">
-        Revoke All Permissions
+      <button id="clear-all-btn" class="danger danger-btn" title="Disconnect all sites from the Holo Web Conductor">
+        Disconnect All Sites
       </button>
     </div>
   </div>
 
+  </div><!-- .perm-body -->
   <script type="module" src="./permissions.ts"></script>
 </body>
 </html>

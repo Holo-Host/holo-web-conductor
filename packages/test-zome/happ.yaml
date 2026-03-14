@@ -1,7 +1,7 @@
 ---
 manifest_version: "0"
 name: test-zome-happ
-description: Test hApp for Fishy ribosome testing
+description: Test hApp for HWC ribosome testing
 
 roles:
   - name: test-role

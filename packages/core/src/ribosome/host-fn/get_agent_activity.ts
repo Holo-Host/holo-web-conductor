@@ -3,7 +3,7 @@
  *
  * Returns agent activity (chain status and action hashes) for an agent.
  * If the agent is self, reads from local source chain storage.
- * Otherwise queries the network via linker since fishy is a zero-arc node.
+ * Otherwise queries the network via linker since HWC is a zero-arc node.
  *
  * Input: GetAgentActivityInput { agent_pubkey, chain_query_filter, activity_request, get_options }
  * Output: AgentActivity { valid_activity, rejected_activity, status, highest_observed, warrants }

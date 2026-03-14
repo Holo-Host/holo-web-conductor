@@ -4,19 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Keystore - Holo Web Conductor</title>
+    <link rel="stylesheet" href="header.css" />
     <style>
-      body {
-        width: 500px;
+      .lair-body {
         padding: 16px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          sans-serif;
-        margin: 0;
-        font-size: 14px;
-      }
-      h1 {
-        font-size: 18px;
-        margin: 0;
-        color: #333;
       }
       h2 {
         font-size: 16px;
@@ -25,24 +16,6 @@
         border-bottom: 1px solid #ddd;
         padding-bottom: 4px;
       }
-      .page-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-      .back-btn {
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 4px 4px 4px 0;
-        margin-left: -2px;
-        color: #6b7280;
-        display: flex;
-        align-items: center;
-        text-decoration: none;
-      }
-      .back-btn:hover { color: #111827; }
       .lock-status {
         padding: 12px;
         border-radius: 4px;
@@ -100,41 +73,17 @@
       input[type="checkbox"] {
         margin-right: 6px;
       }
+      /* lair-specific button overrides: default to primary style */
       button {
-        padding: 8px 16px;
         background: #017FF8;
         color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
         margin-right: 8px;
         margin-top: 4px;
-        transition: all 0.15s;
       }
       button:hover {
         background: #0166d4;
       }
-      button:disabled {
-        background: #ccc;
-        cursor: not-allowed;
-      }
-      button.danger {
-        background: #dc3545;
-      }
-      button.danger:hover {
-        background: #c82333;
-      }
-      button.secondary {
-        background: #6c757d;
-      }
-      button.secondary:hover {
-        background: #545b62;
-      }
       button.small {
-        padding: 4px 8px;
-        font-size: 11px;
         margin-top: 0;
       }
       .error {
@@ -147,27 +96,37 @@
         font-size: 12px;
         margin-top: 4px;
       }
+      .table-scroll {
+        overflow-x: auto;
+      }
       table {
         width: 100%;
+        min-width: 340px;
         border-collapse: collapse;
         margin-top: 8px;
         background: white;
       }
       th,
       td {
-        padding: 8px;
+        padding: 6px 8px;
         text-align: left;
         border-bottom: 1px solid #ddd;
         font-size: 12px;
+        white-space: nowrap;
       }
       th {
         background: #f0f0f0;
         font-weight: 600;
       }
+      /* Key/Exportable columns: compact fixed */
+      th:nth-child(2), td:nth-child(2) { width: 44px; text-align: center; }
+      th:nth-child(4), td:nth-child(4) { width: 50px; text-align: center; }
       .pubkey {
-        font-family: monospace;
-        font-size: 11px;
-        word-break: break-all;
+        cursor: pointer;
+      }
+      .action-buttons {
+        display: flex;
+        gap: 4px;
       }
       .badge {
         display: inline-block;
@@ -308,15 +267,16 @@
     </style>
   </head>
   <body>
-    <div class="page-header">
+    <div class="hwc-header">
       <a href="index.html" class="back-btn">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
       </a>
-      <img src="../icons/holo-mark.svg" alt="" style="width: 26px; height: 20px; object-fit: contain;" />
-      <h1>Holo Web Conductor: Keystore</h1>
+      <img src="../icons/holo-mark.svg" alt="" class="header-logo" />
+      <span class="header-title">Holo Web Conductor: Keystore</span>
     </div>
+    <div class="lair-body">
 
     <!-- Lock Status -->
     <div id="lock-status" class="lock-status locked">
@@ -505,6 +465,26 @@
       </div>
     </div>
 
+    <!-- Seed Words Warning Modal -->
+    <div id="seed-warning-modal" class="modal-overlay">
+      <div class="modal">
+        <h3>Reveal Seed Phrase</h3>
+        <div class="warning-box" style="background: #f8d7da; color: #721c24; border-color: #f5c6cb;">
+          <strong>Warning:</strong> This will display your secret seed phrase on screen.
+          Anyone who sees these words can take full control of your identity and data.
+        </div>
+        <ul style="font-size: 13px; color: #333; margin: 12px 0; padding-left: 20px; line-height: 1.6;">
+          <li>Do not reveal your seed phrase while screen-sharing</li>
+          <li>Do not reveal your seed phrase in a public place</li>
+          <li>Make sure no one can see your screen</li>
+        </ul>
+        <div class="modal-actions">
+          <button id="seed-warning-cancel" class="secondary">Cancel</button>
+          <button id="seed-warning-continue" class="danger">I understand, show seed phrase</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Seed Words Modal -->
     <div id="seed-modal" class="modal-overlay">
       <div class="modal">
@@ -518,6 +498,7 @@
       </div>
     </div>
 
+    </div><!-- .lair-body -->
     <script type="module" src="./lair.ts"></script>
   </body>
 </html>

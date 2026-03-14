@@ -4,7 +4,7 @@ Minimal HDK test zome for validating Step 5 ribosome implementation.
 
 ## Purpose
 
-This zome tests the Fishy ribosome by calling real host functions from WASM:
+This zome tests the HWC ribosome by calling real host functions from WASM:
 - `agent_info` - Get agent public key and chain head
 - `random_bytes` - Generate cryptographically secure random data
 - `sys_time` - Get current system timestamp
