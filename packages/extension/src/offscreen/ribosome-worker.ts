@@ -846,9 +846,16 @@ class ProxyLairClient implements ILairClient {
     const dataLength = dv.getInt32(1, true); // little-endian
 
     if (!success) {
-      // Read error message
+      // Read error message — must copy from SharedArrayBuffer to regular
+      // ArrayBuffer because TextDecoder rejects SAB-backed views in Chrome
       const errorBytes = new Uint8Array(signResultBuffer!, 5, dataLength);
-      const errorMsg = new TextDecoder().decode(errorBytes);
+      const errorCopy = new Uint8Array(errorBytes);
+      const errorMsg = new TextDecoder().decode(errorCopy);
+
+      // Translate lair-internal errors to user-facing messages
+      if (errorMsg.includes('locked') || errorMsg.includes('master key')) {
+        throw new Error('Keystore is locked. Unlock it to sign data.');
+      }
       throw new Error(`Signing failed: ${errorMsg}`);
     }
 
