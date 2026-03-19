@@ -187,6 +187,15 @@ export class ConnectionMonitor {
     });
   }
 
+  /**
+   * Set a joining service error (e.g. session expired, agent revoked).
+   * This is separate from linker errors — it means the joining service
+   * could not provide a linker URL for this agent.
+   */
+  setJoiningServiceError(error: string): void {
+    this.updateState({ joiningServiceError: error });
+  }
+
   private async checkHealth(): Promise<void> {
     try {
       // Check extension's connection status
@@ -251,7 +260,8 @@ export class ConnectionMonitor {
       prevState.authenticated !== this.state.authenticated ||
       prevState.linkerUrl !== this.state.linkerUrl ||
       prevState.lastError !== this.state.lastError ||
-      prevState.reconnectAttempt !== this.state.reconnectAttempt;
+      prevState.reconnectAttempt !== this.state.reconnectAttempt ||
+      prevState.joiningServiceError !== this.state.joiningServiceError;
 
     if (changed) {
       this.emit('connection:change', this.getState());

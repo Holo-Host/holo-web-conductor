@@ -395,3 +395,136 @@ function collectClaims(
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ---------------------------------------------------------------------------
+// rejoinWithUI — re-join flow for an already-connected client
+// ---------------------------------------------------------------------------
+
+export interface RejoinWithUIOptions {
+  /** Element to mount the joining UI into. Defaults to document.body. */
+  mountTo?: HTMLElement;
+  /** Pre-filled claims (skips the claims form if sufficient). */
+  claims?: Record<string, string>;
+}
+
+/**
+ * Re-join the joining service with the full visual flow (claims form,
+ * challenge dialogs) for an already-connected WebConductorAppClient.
+ *
+ * Use this when the joining service session was lost but the hApp is
+ * still installed locally.
+ */
+export async function rejoinWithUI(
+  client: WebConductorAppClient,
+  opts: RejoinWithUIOptions = {},
+): Promise<void> {
+  await componentRegistration;
+
+  const mountTarget = opts.mountTo ?? document.body;
+  const { overlay, card } = createOverlay();
+  mountTarget.appendChild(overlay);
+
+  const cleanup = () => { overlay.remove(); };
+
+  let statusEl: StatusEl | null = null;
+  let challengeDialog: ChallengeDialogEl | null = null;
+
+  const ensureJoiningUI = () => {
+    if (!statusEl) {
+      statusEl = document.createElement('joining-status-sl') as StatusEl;
+      challengeDialog = document.createElement('joining-challenge-dialog-sl') as ChallengeDialogEl;
+    }
+    if (!card.contains(statusEl)) {
+      card.innerHTML = '';
+      card.appendChild(statusEl);
+      card.appendChild(challengeDialog!);
+    }
+    return { statusEl: statusEl!, challengeDialog: challengeDialog! };
+  };
+
+  // Discover joining service URL from the client's config
+  const connectionConfig = (client as any).connectionConfig as ConnectWithJoiningUIOptions;
+  const joiningServiceUrl = connectionConfig?.joiningServiceUrl;
+  const autoDiscover = connectionConfig?.autoDiscover;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      let claims = opts.claims;
+
+      if (joiningServiceUrl || autoDiscover) {
+        const joiningClient = joiningServiceUrl
+          ? JoiningClient.fromUrl(joiningServiceUrl)
+          : await JoiningClient.discover(window.location.origin);
+
+        const info = await joiningClient.getInfo();
+        const authMethods = info.auth_methods;
+
+        if (needsInteractiveClaims(authMethods) && !hasClaims(claims)) {
+          const ui = ensureJoiningUI();
+          ui.statusEl.status = 'collecting-claims';
+          claims = await collectClaims(card, authMethods);
+        }
+      }
+
+      const hasJoiningUI = !!statusEl;
+      if (hasJoiningUI) {
+        ensureJoiningUI().statusEl.status = 'joining';
+      }
+
+      await client.rejoin(
+        claims,
+        async (challenge) => {
+          const ui = ensureJoiningUI();
+          ui.statusEl.style.display = 'none';
+          const response = await ui.challengeDialog.prompt(challenge);
+          ui.statusEl.style.display = '';
+          ui.statusEl.status = 'joining';
+          return response;
+        },
+      );
+
+      if (hasJoiningUI) {
+        ensureJoiningUI().statusEl.status = 'ready';
+        await delay(800);
+      }
+      cleanup();
+      return;
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+
+      await new Promise<void>((resolve, reject) => {
+        card.innerHTML = '';
+        statusEl = null;
+        challengeDialog = null;
+
+        const errorEl = createErrorMessage(errMsg, resolve);
+
+        // Add a cancel button so the user can dismiss the overlay
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = [
+          'margin-top: 0.5rem',
+          'margin-left: 0.5rem',
+          'padding: 0.5rem 1.25rem',
+          'border: 1px solid #6b7280',
+          'border-radius: 0.375rem',
+          'background: transparent',
+          'color: #6b7280',
+          'cursor: pointer',
+          'font-size: 0.875rem',
+        ].join(';');
+        cancelBtn.addEventListener('click', () => {
+          cleanup();
+          reject(new Error('Rejoin cancelled'));
+        });
+
+        // Wrap buttons together
+        const btnContainer = errorEl.querySelector('button')?.parentElement ?? errorEl;
+        btnContainer.appendChild(cancelBtn);
+
+        card.appendChild(errorEl);
+      });
+    }
+  }
+}
