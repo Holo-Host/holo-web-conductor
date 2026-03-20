@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (versionEl) {
     try {
       const manifest = chrome.runtime.getManifest();
-      versionEl.textContent = manifest.version || "0.1.0";
+      versionEl.textContent = manifest.version_name || manifest.version || "0.1.0";
     } catch {
       // keep default
     }
