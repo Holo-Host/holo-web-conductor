@@ -82,7 +82,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         dna_hashes: ['uhC0kTestDna1'],
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       const agentKey = nextAgentKey();
       mock.myPubKey = agentKeyToBytes(agentKey);
       setupGlobalWindow(mock);
@@ -143,7 +147,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         email: { provider: 'file', output_dir: EMAIL_DIR },
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       const agentKey = nextAgentKey();
       mock.myPubKey = agentKeyToBytes(agentKey);
       setupGlobalWindow(mock);
@@ -224,7 +232,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         invite_codes: ['VALID-INVITE-1', 'VALID-INVITE-2'],
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       const agentKey = nextAgentKey();
       mock.myPubKey = agentKeyToBytes(agentKey);
       setupGlobalWindow(mock);
@@ -327,7 +339,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
 
       // Now: connect via WebConductorAppClient — should hit 409, attempt
       // reconnect (which fails due to fake signing), and propagate the error
-      const mock = createMockHolochain();
+      const mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       mock.myPubKey = agentKeyBytes;
       setupGlobalWindow(mock);
       installFetchInterceptor();
@@ -364,7 +380,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         allowed_agents: [agentKey],
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       mock.myPubKey = agentKeyBytes;
       setupGlobalWindow(mock);
       installFetchInterceptor();
@@ -391,7 +411,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         allowed_agents: [], // no agents allowed
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       mock.myPubKey = agentKeyBytes;
       setupGlobalWindow(mock);
       installFetchInterceptor();
@@ -428,7 +452,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         invite_codes: ['FALLBACK-CODE'],
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       mock.myPubKey = agentKeyBytes;
       setupGlobalWindow(mock);
       installFetchInterceptor();
@@ -453,7 +481,11 @@ describe('Integration: WebConductorAppClient ↔ joining-service', () => {
         allowed_agents: [], // no agents allowed
       });
 
-      mock = createMockHolochain();
+      mock = createMockHolochain({
+        appInfo: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(MOCK_APP_INFO),
+      });
       mock.myPubKey = agentKeyBytes;
       setupGlobalWindow(mock);
       installFetchInterceptor();
