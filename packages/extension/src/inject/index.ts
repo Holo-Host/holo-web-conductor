@@ -249,7 +249,7 @@ function restoreUint8Arrays(data: any): any {
 // Create the Holochain API
 const holochainAPI: HolochainAPI = {
   isWebConductor: true,
-  version: "0.0.1",
+  version: "0.6.1",
 
   get myPubKey(): Uint8Array | null {
     return _myPubKey;

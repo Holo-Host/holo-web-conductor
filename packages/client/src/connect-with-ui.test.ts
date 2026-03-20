@@ -1,3 +1,7 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the dynamic import of Shoelace components (runs at module level)
@@ -21,7 +25,7 @@ vi.mock('./WebConductorAppClient', () => ({
 import { connectWithJoiningUI } from './connect-with-ui';
 import { WebConductorAppClient } from './WebConductorAppClient';
 import { JoiningClient } from '@holo-host/joining-service/client';
-import type { HolochainAPI } from './types';
+import { createMockHolochain } from './test-helpers';
 
 // Stub custom elements so document.createElement returns elements with
 // the properties/methods that connectWithJoiningUI expects.
@@ -72,26 +76,13 @@ describe('connectWithJoiningUI', () => {
     mockConnect.mockReset();
     mockFromUrl.mockReset();
 
-    // Mock window.holochain so Phase 1 (extension detection) passes
-    window.holochain = {
-      isWebConductor: true,
-      version: '0.0.1',
+    // Mock window.holochain so Phase 1 (extension detection) passes.
+    // appInfo returns null to simulate a fresh install (no app installed yet),
+    // so the joining flow is exercised rather than the "already installed" shortcut.
+    window.holochain = createMockHolochain({
       myPubKey: new Uint8Array(39),
-      installedAppId: null,
-      connect: vi.fn().mockResolvedValue(undefined),
-      disconnect: vi.fn().mockResolvedValue(undefined),
-      callZome: vi.fn().mockResolvedValue(null),
       appInfo: vi.fn().mockResolvedValue(null),
-      installApp: vi.fn().mockResolvedValue(undefined),
-      provideMemproofs: vi.fn().mockResolvedValue(undefined),
-      configureNetwork: vi.fn().mockResolvedValue(undefined),
-      on: vi.fn().mockReturnValue(() => {}),
-      getConnectionStatus: vi.fn().mockResolvedValue({
-        httpHealthy: true, wsHealthy: true, authenticated: true,
-        linkerUrl: null, lastChecked: Date.now(),
-      }),
-      onConnectionChange: vi.fn().mockReturnValue(() => {}),
-    } as unknown as HolochainAPI;
+    });
   });
 
   afterEach(() => {

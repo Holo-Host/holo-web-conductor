@@ -10,7 +10,7 @@ import type { ConnectionState } from './connection/types';
 export interface HolochainAPI {
   /** Always true for Web Conductor extension */
   isWebConductor: boolean;
-  /** Extension version */
+  /** Holochain API compatibility version */
   version: string;
   /** Current agent's public key (if connected) */
   myPubKey: Uint8Array | null;

@@ -13,59 +13,7 @@ import { readFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { startE2EServer, fakeAgentKey, type E2EServer } from '@holo-host/joining-service/test';
 import { WebConductorAppClient } from './WebConductorAppClient';
 import { JoiningError } from '@holo-host/joining-service/client';
-import type { HolochainAPI, WebConductorAppInfo } from './types';
-
-// -- Mock window.holochain for non-browser environment --
-
-type MockHolochain = HolochainAPI & {
-  _lastInstallCall?: unknown;
-};
-
-const MOCK_APP_INFO: WebConductorAppInfo = {
-  contextId: 'test-app',
-  agentPubKey: [132, 32, 36, ...Array(36).fill(1)],
-  cells: [
-    [
-      [132, 36, 36, ...Array(36).fill(2)],
-      [132, 32, 36, ...Array(36).fill(1)],
-    ],
-  ],
-};
-
-function createMockHolochain(): MockHolochain {
-  const agentKey = new Uint8Array([132, 32, 36, ...Array(36).fill(1)]);
-
-  const mock: MockHolochain = {
-    isWebConductor: true,
-    version: '0.0.1',
-    myPubKey: agentKey,
-    installedAppId: null,
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    callZome: vi.fn().mockResolvedValue({ success: true }),
-    appInfo: vi.fn()
-      .mockResolvedValueOnce(null) // not installed initially
-      .mockResolvedValue(MOCK_APP_INFO), // installed after joinAndInstall
-    installApp: vi.fn().mockImplementation((args: unknown) => {
-      mock._lastInstallCall = args;
-      return Promise.resolve();
-    }),
-    on: vi.fn().mockReturnValue(() => {}),
-    provideMemproofs: vi.fn().mockResolvedValue(undefined),
-    configureNetwork: vi.fn().mockResolvedValue(undefined),
-    getConnectionStatus: vi.fn().mockResolvedValue({
-      httpHealthy: true,
-      wsHealthy: true,
-      linkerUrl: 'http://localhost:8090',
-      lastChecked: Date.now(),
-    }),
-    onConnectionChange: vi.fn().mockReturnValue(() => {}),
-    signReconnectChallenge: vi.fn().mockResolvedValue(new Uint8Array(64)),
-    signJoiningNonce: vi.fn().mockResolvedValue(new Uint8Array(64)),
-  };
-
-  return mock;
-}
+import { createMockHolochain, MOCK_APP_INFO, MOCK_AGENT_KEY, type MockHolochain } from './test-helpers';
 
 // Intercept only .happ URLs, let joining-service HTTP calls pass through
 function installFetchInterceptor(): void {

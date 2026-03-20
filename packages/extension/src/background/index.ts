@@ -629,7 +629,7 @@ async function handleConnect(
       url: `popup/authorize.html?requestId=${authRequest.id}`,
       type: "popup",
       width: 420,
-      height: 600,
+      height: 560,
       focused: true,
     });
   } catch (error) {

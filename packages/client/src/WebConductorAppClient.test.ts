@@ -1,76 +1,15 @@
 /**
  * Tests for WebConductorAppClient.
+ *
+ * @vitest-environment jsdom
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WebConductorAppClient } from './WebConductorAppClient';
 import { ConnectionStatus } from './connection';
 import { JoiningError } from '@holo-host/joining-service/client';
-import type { HolochainAPI, WebConductorAppInfo } from './types';
-
-// Extended mock type with test helpers
-type MockHolochain = HolochainAPI & {
-  _emitSignal: (signal: unknown) => void;
-  _emitConnectionChange: (status: any) => void;
-};
-
-// Mock HolochainAPI
-function createMockHolochain(overrides: Partial<HolochainAPI> = {}): MockHolochain {
-  const signalHandlers = new Set<(signal: unknown) => void>();
-  const connectionStatusHandlers = new Set<(status: any) => void>();
-
-  const mock: MockHolochain = {
-    isWebConductor: true,
-    version: '0.0.1',
-    myPubKey: null,
-    installedAppId: null,
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    callZome: vi.fn().mockResolvedValue({ success: true }),
-    appInfo: vi.fn().mockResolvedValue({
-      contextId: 'test-app',
-      agentPubKey: [132, 32, 36, ...Array(36).fill(1)], // Valid AgentPubKey
-      cells: [
-        [
-          [132, 36, 36, ...Array(36).fill(2)], // DnaHash
-          [132, 32, 36, ...Array(36).fill(1)], // AgentPubKey
-        ],
-      ],
-    } as WebConductorAppInfo),
-    installApp: vi.fn().mockResolvedValue(undefined),
-    on: vi.fn((event: string, callback: (signal: unknown) => void) => {
-      if (event === 'signal') {
-        signalHandlers.add(callback);
-        return () => signalHandlers.delete(callback);
-      }
-      return () => {};
-    }),
-    provideMemproofs: vi.fn().mockResolvedValue(undefined),
-    configureNetwork: vi.fn().mockResolvedValue(undefined),
-    getConnectionStatus: vi.fn().mockResolvedValue({
-      httpHealthy: true,
-      wsHealthy: true,
-      linkerUrl: 'http://localhost:8090',
-      lastChecked: Date.now(),
-    }),
-    onConnectionChange: vi.fn((callback: (status: any) => void) => {
-      connectionStatusHandlers.add(callback);
-      return () => connectionStatusHandlers.delete(callback);
-    }),
-    signReconnectChallenge: vi.fn().mockResolvedValue(new Uint8Array(64)),
-    signJoiningNonce: vi.fn().mockResolvedValue(new Uint8Array(64)),
-    // Test helper methods
-    _emitSignal: (signal: unknown) => {
-      signalHandlers.forEach((h) => h(signal));
-    },
-    _emitConnectionChange: (status: any) => {
-      connectionStatusHandlers.forEach((h) => h(status));
-    },
-    ...overrides,
-  };
-
-  return mock;
-}
+import type { HolochainAPI } from './types';
+import { createMockHolochain, type MockHolochain } from './test-helpers';
 
 describe('WebConductorAppClient', () => {
   let mockHolochain: ReturnType<typeof createMockHolochain>;
