@@ -50,21 +50,27 @@ export const mustGetAgentActivity: HostFunctionImpl = (
       .join("")}...`
   );
 
-  // Self short-circuit: own chain activity is in local storage
-  if (bytesEqual(authorHash, selfAgent)) {
-    console.log("[HostFn] must_get_agent_activity: author is self, querying local storage");
-    const storage = getStorageProvider();
-    const actions = storage.queryActions(dnaHash, authorHash, {});
-    return buildLocalResult(instance, callContext, actions, authorHash);
-  }
-
-  // Extract chain_top from the chain_filter for the network request
+  // Extract chain_top from the chain_filter
   let chainTop: ActionHash | null = null;
   if (chainFilter && typeof chainFilter === "object") {
     const cf = chainFilter as Record<string, unknown>;
     if (cf.chain_top instanceof Uint8Array) {
       chainTop = cf.chain_top as ActionHash;
     }
+  }
+
+  // Self short-circuit: own chain activity is in local storage
+  if (bytesEqual(authorHash, selfAgent)) {
+    console.log("[HostFn] must_get_agent_activity: author is self, querying local storage");
+    const storage = getStorageProvider();
+    const allActions = storage.queryActions(dnaHash, authorHash, {});
+
+    // Apply ChainFilter: only return actions up to and including chain_top.
+    // Without this, the current action being validated would be included,
+    // causing false positives in duplicate-detection validation rules.
+    const actions = applyChainFilter(allActions, chainTop);
+
+    return buildLocalResult(instance, callContext, actions, authorHash);
   }
 
   // Try network first (zero-arc node pattern) for other agents
@@ -107,7 +113,8 @@ export const mustGetAgentActivity: HostFunctionImpl = (
 
   // Fallback: query local storage (for non-self agents when network unavailable)
   const storage = getStorageProvider();
-  const actions = storage.queryActions(dnaHash, authorHash, {});
+  const allActions = storage.queryActions(dnaHash, authorHash, {});
+  const actions = applyChainFilter(allActions, chainTop);
 
   return buildLocalResult(instance, callContext, actions, authorHash);
 };
@@ -150,4 +157,37 @@ function buildLocalResult(
   });
 
   return serializeResult(instance, results);
+}
+
+/**
+ * Apply ChainFilter to a list of actions.
+ *
+ * Holochain's ChainFilter specifies a chain_top hash. The filter means:
+ * "return all actions from the beginning of the chain up to and including
+ * the action with this hash." Actions after chain_top are excluded.
+ *
+ * The actions are assumed to be sorted by actionSeq ascending.
+ */
+function applyChainFilter(
+  actions: StoredAction[],
+  chainTop: ActionHash | null
+): StoredAction[] {
+  if (!chainTop || actions.length === 0) {
+    return actions;
+  }
+
+  // Find the chain_top action by hash
+  const chainTopIdx = actions.findIndex((a) =>
+    bytesEqual(a.actionHash, chainTop)
+  );
+
+  if (chainTopIdx === -1) {
+    // chain_top not found - return all actions as fallback
+    // (this matches Holochain behavior where missing chain_top
+    // is handled by the caller)
+    return actions;
+  }
+
+  // Return actions from genesis up to and including chain_top
+  return actions.slice(0, chainTopIdx + 1);
 }
