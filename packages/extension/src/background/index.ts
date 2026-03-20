@@ -249,7 +249,36 @@ function setLinkerConfig(url: string, sessionToken?: string): void {
   linkerConfig = { linkerUrl: url, sessionToken };
   logLinker.info(`Linker config set: ${url}`);
   startHealthChecks();
+  // Persist to storage so config survives background page suspension (Firefox MV3)
+  chrome.storage.local.set({ hwc_linker_config: { linkerUrl: url, sessionToken } }).catch((err) => {
+    logLinker.warn('Failed to persist linker config:', err);
+  });
 }
+
+/**
+ * Restore linker config from storage after background page restart.
+ * Firefox MV3 uses non-persistent event pages that can be suspended,
+ * losing all in-memory state including linkerConfig and executor state.
+ */
+async function restoreLinkerConfigFromStorage(): Promise<void> {
+  try {
+    const data = await chrome.storage.local.get('hwc_linker_config');
+    const saved = data.hwc_linker_config;
+    if (saved?.linkerUrl) {
+      logLinker.info(`Restoring linker config from storage: ${saved.linkerUrl}`);
+      linkerConfig = { linkerUrl: saved.linkerUrl, sessionToken: saved.sessionToken };
+      startHealthChecks();
+      // Re-initialize executor and forward config to worker
+      await executor.initialize();
+      await executor.configureNetwork({ linkerUrl: saved.linkerUrl, sessionToken: saved.sessionToken });
+    }
+  } catch (err) {
+    logLinker.warn('Failed to restore linker config:', err);
+  }
+}
+
+// Restore linker config on background page load (handles Firefox MV3 suspension)
+restoreLinkerConfigFromStorage();
 
 /**
  * Register all agents from a hApp context with the linker via the executor

@@ -139,6 +139,38 @@ describe('ConnectionMonitor', () => {
       expect(state.httpHealthy).toBe(true);
       expect(state.lastError).toBeUndefined();
     });
+
+    it('setLinkerHealth propagates linkerUrl to state', () => {
+      monitor.setConnected();
+      monitor.setLinkerHealth(true, true, true, undefined, 'https://linker.example.com');
+
+      const state = monitor.getState();
+      expect(state.linkerUrl).toBe('https://linker.example.com');
+    });
+
+    it('setLinkerHealth emits change event when linkerUrl changes', () => {
+      monitor.setConnected();
+
+      const listener = vi.fn();
+      monitor.on('connection:change', listener);
+
+      monitor.setLinkerHealth(true, true, true, undefined, 'https://linker.example.com');
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          linkerUrl: 'https://linker.example.com',
+        })
+      );
+    });
+
+    it('setLinkerHealth with null linkerUrl clears it', () => {
+      monitor.setConnected();
+      monitor.setLinkerHealth(true, true, true, undefined, 'https://linker.example.com');
+      expect(monitor.getState().linkerUrl).toBe('https://linker.example.com');
+
+      monitor.setLinkerHealth(true, true, true, undefined, null);
+      expect(monitor.getState().linkerUrl).toBeNull();
+    });
   });
 
   describe('setReconnecting', () => {

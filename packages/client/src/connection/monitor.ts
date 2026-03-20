@@ -178,11 +178,12 @@ export class ConnectionMonitor {
    * Update linker health status without changing overall connection status.
    * Used when extension is connected but linker may be unreachable.
    */
-  setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, authenticated?: boolean, error?: string): void {
+  setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, authenticated?: boolean, error?: string, linkerUrl?: string | null): void {
     this.updateState({
       httpHealthy,
       wsHealthy,
       ...(authenticated !== undefined && { authenticated }),
+      ...(linkerUrl !== undefined && { linkerUrl }),
       lastError: error,
     });
   }

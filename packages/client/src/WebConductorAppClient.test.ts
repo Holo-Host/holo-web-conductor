@@ -69,6 +69,19 @@ describe('WebConductorAppClient', () => {
       expect(mockHolochain.onConnectionChange).toHaveBeenCalled();
       expect(mockHolochain.getConnectionStatus).toHaveBeenCalled();
     });
+
+    it('connection status subscription forwards linkerUrl to connection state', async () => {
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
+
+      mockHolochain._emitConnectionChange({
+        httpHealthy: true,
+        wsHealthy: true,
+        authenticated: true,
+        linkerUrl: 'https://fresh-linker.example.com',
+      });
+
+      expect(client.getConnectionState().linkerUrl).toBe('https://fresh-linker.example.com');
+    });
   });
 
   describe('myPubKey', () => {
