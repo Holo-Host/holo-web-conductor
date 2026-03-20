@@ -46,7 +46,7 @@ jobs:
       - run: npm ci
 
       - name: Run tests
-        run: npm test --workspaces --if-present
+        run: npm test
 
       - name: Package extension
         run: npm run release
