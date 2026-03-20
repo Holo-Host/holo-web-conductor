@@ -45,6 +45,13 @@ jobs:
 
       - run: npm ci
 
+      - name: Build joining-service client types
+        working-directory: ${{ github.workspace }}/_joining-service
+        run: |
+          ln -sf "$GITHUB_WORKSPACE" "$(dirname $GITHUB_WORKSPACE)/holo-web-conductor"
+          npm ci
+          npx tsc > /dev/null 2>&1 || true
+
       - name: Run tests
         run: npm test
 
