@@ -110,10 +110,14 @@ export abstract class BaseExecutor implements ZomeExecutor {
    * Skips if the WebSocket is already reconnecting/connecting/authenticating.
    */
   triggerReauth(): void {
-    if (!this.wsService) return;
+    if (!this.wsService) {
+      logNetwork.info("triggerReauth: no wsService");
+      return;
+    }
 
     const state = this.wsService.getState();
     if (state === "connecting" || state === "authenticating" || state === "reconnecting") {
+      logNetwork.info("triggerReauth: skipping, WS already in state: " + state);
       return;
     }
 

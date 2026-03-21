@@ -1014,7 +1014,8 @@ class ProxyNetworkService implements NetworkService {
 
     // Signal 401 to parent so it can trigger WebSocket re-auth
     if (xhr.status === 401) {
-      postMessage({ type: 'HTTP_401_DETECTED' });
+      console.log('[Ribosome Worker] HTTP 401 detected, signaling parent for re-auth');
+      self.postMessage({ type: 'HTTP_401_DETECTED' });
     }
 
     return { status: xhr.status, body: responseBody };
