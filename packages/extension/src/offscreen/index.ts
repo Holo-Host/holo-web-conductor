@@ -532,6 +532,10 @@ function initializeWebSocketService(config: {
     console.log("[Offscreen] onSessionToken fired! token:", token?.substring(0, 30), "workerReady:", workerReady, "hasWorker:", !!ribosomeWorker);
     logNetwork.info("Received session token from linker auth");
     sessionToken = token;
+    // Update publish service so it uses the new token for HTTP requests
+    if (publishService && token) {
+      publishService.setSessionToken(token);
+    }
     // Also update the worker so it includes Bearer token in DHT HTTP requests
     if (workerReady && ribosomeWorker) {
       console.log("[Offscreen] Sending CONFIGURE_NETWORK to worker with session token");
@@ -933,6 +937,12 @@ chrome.runtime.onMessage.addListener(
               sessionToken: sessionToken || undefined,
             });
             await publishService.init();
+          } else {
+            // Update config in case it changed (mirrors the app publish path)
+            publishService.setLinkerUrl(linkerUrl);
+            if (sessionToken) {
+              publishService.setSessionToken(sessionToken);
+            }
           }
 
           // Process queue for each DNA
