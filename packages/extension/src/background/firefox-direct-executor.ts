@@ -361,6 +361,12 @@ export class FirefoxDirectExecutor extends BaseExecutor {
       return;
     }
 
+    // HTTP 401 from worker's direct XHR — trigger WS re-auth for fresh token
+    if (type === "HTTP_401_DETECTED") {
+      this.triggerReauth();
+      return;
+    }
+
     // Recovery progress forwarding
     if (type === "RECOVER_CHAIN_PROGRESS") {
       const progress = event.data.progress;

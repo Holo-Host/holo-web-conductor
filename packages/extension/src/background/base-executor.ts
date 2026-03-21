@@ -104,6 +104,24 @@ export abstract class BaseExecutor implements ZomeExecutor {
     }
   }
 
+  /**
+   * Trigger WebSocket disconnect + reconnect to obtain a fresh session token.
+   * Called when an HTTP request returns 401 (session revoked or invalid).
+   * Skips if the WebSocket is already reconnecting/connecting/authenticating.
+   */
+  triggerReauth(): void {
+    if (!this.wsService) return;
+
+    const state = this.wsService.getState();
+    if (state === "connecting" || state === "authenticating" || state === "reconnecting") {
+      return;
+    }
+
+    logNetwork.info("401 detected — triggering WS re-auth (was: " + state + ")");
+    this.wsService.disconnect();
+    this.wsService.connect();
+  }
+
   // ============================================================================
   // Concrete: agent registration
   // ============================================================================
