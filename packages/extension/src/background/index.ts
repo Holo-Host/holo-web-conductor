@@ -299,7 +299,6 @@ async function restoreLinkerConfigFromStorage(): Promise<void> {
       // the WS connection but it may not have completed yet -- that's OK because
       // onWebSocketStateChange will fire a follow-up when it does.
       const wsState = await executor.getWebSocketState();
-      connectionStatus.httpHealthy = connectionStatus.httpHealthy; // preserve
       connectionStatus.wsHealthy = wsState.isConnected;
       connectionStatus.authenticated = wsState.authenticated;
       connectionStatus.linkerUrl = saved.linkerUrl;
