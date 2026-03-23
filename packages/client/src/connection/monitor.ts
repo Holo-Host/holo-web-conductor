@@ -179,6 +179,9 @@ export class ConnectionMonitor {
    * Used when extension is connected but linker may be unreachable.
    */
   setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, authenticated?: boolean, error?: string, linkerUrl?: string | null): void {
+    if (this.state.wsHealthy !== wsHealthy || this.state.authenticated !== (authenticated ?? this.state.authenticated)) {
+      console.log(`[ConnectionMonitor] setLinkerHealth: ws=${wsHealthy} auth=${authenticated} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
+    }
     this.updateState({
       httpHealthy,
       wsHealthy,
@@ -204,6 +207,11 @@ export class ConnectionMonitor {
         const status = await window.holochain.getConnectionStatus();
         const wasHealthy = this.state.httpHealthy;
         const isHealthy = status.httpHealthy;
+
+        // Diagnostic: log when WS/auth status changes
+        if (this.state.wsHealthy !== status.wsHealthy || this.state.authenticated !== (status.authenticated ?? false)) {
+          console.log(`[ConnectionMonitor] Status from extension: http=${status.httpHealthy} ws=${status.wsHealthy} auth=${status.authenticated} err=${status.lastError || 'none'} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
+        }
 
         if (wasHealthy && !isHealthy) {
           // Connection lost
