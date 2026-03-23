@@ -16,6 +16,7 @@ import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getNetworkService } from "../../network";
 import { getStorageProvider } from "../../storage/storage-provider";
 import { validateWasmGetAgentActivityInput } from "../wasm-io-types";
+import { HostFnError } from "../error";
 import { bytesEqual } from "./bytes-equal";
 import type { ChainItems } from "../../network/types";
 import type { ActionHash } from "../../types/holochain-types";
@@ -52,14 +53,7 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
   // Query network via linker for other agents (zero-arc node pattern)
   const networkService = getNetworkService();
   if (!networkService) {
-    console.log("[HostFn] get_agent_activity: no network service, returning empty");
-    return serializeResult(instance, {
-      valid_activity: [],
-      rejected_activity: [],
-      status: "Empty",
-      highest_observed: null,
-      warrants: [],
-    });
+    throw new HostFnError("Network service not available for get_agent_activity");
   }
 
   const response = networkService.getAgentActivitySync(
@@ -69,14 +63,7 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
   );
 
   if (!response) {
-    console.log("[HostFn] get_agent_activity: network returned null, returning empty");
-    return serializeResult(instance, {
-      valid_activity: [],
-      rejected_activity: [],
-      status: "Empty",
-      highest_observed: null,
-      warrants: [],
-    });
+    throw new HostFnError("Network request for agent activity failed");
   }
 
   // Convert AgentActivityResponse (wire format with ChainItems) to

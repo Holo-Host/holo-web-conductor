@@ -265,6 +265,31 @@ export function serializeResult(
 }
 
 /**
+ * Serialize a WasmError as Result::Err back to the WASM guest
+ *
+ * Produces the structure that Holochain's WasmError deserializes via serde:
+ * { Err: { file: string, line: number, error: { Host: message } } }
+ *
+ * @param instance - WebAssembly instance
+ * @param message - Error message for the Host variant
+ * @returns i64 result (ptr in high 32 bits, len in low 32 bits)
+ */
+export function serializeErrorResult(
+  instance: WebAssembly.Instance,
+  message: string
+): bigint {
+  const result = {
+    Err: {
+      file: "holo-web-conductor",
+      line: 0,
+      error: { Host: message },
+    },
+  };
+  const { ptr, len } = serializeToWasm(instance, result);
+  return createI64Result(ptr, len);
+}
+
+/**
  * Write a GuestPtr struct to WASM memory
  *
  * GuestPtr is an 8-byte structure with WASM-specific layout:

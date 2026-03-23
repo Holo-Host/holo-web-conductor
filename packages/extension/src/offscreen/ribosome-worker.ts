@@ -1404,6 +1404,7 @@ class ProxyNetworkService implements NetworkService {
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
         const data = JSON.parse(responseText);
+        if (!data) return null;
         console.log(`[ProxyNetwork] Agent activity fetched, status: ${data.status}`);
         return this.normalizeByteArrays(data) as AgentActivityResponse;
       } else if (response.status === 404) {

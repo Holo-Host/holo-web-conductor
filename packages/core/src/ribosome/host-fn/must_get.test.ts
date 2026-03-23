@@ -376,6 +376,8 @@ describe("must_get_agent_activity", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     setStorageProvider(mockStorage as StorageProvider);
+    setNetworkService(null);
+    resetNetworkCache();
 
     runtime = new RibosomeRuntime();
     const module = await runtime.compileModule(allocatorWasmBytes);
@@ -395,8 +397,8 @@ describe("must_get_agent_activity", () => {
     hostContext = { instance, callContext };
   });
 
-  it("should return agent activity when found", async () => {
-    const author = await fakeAgentPubKey();
+  it("should return self agent activity from local storage", async () => {
+    const selfAgent = callContext.cellId[1];
     const actionHash = await fakeActionHash();
 
     mockQueryActions.mockReturnValue([
@@ -404,7 +406,7 @@ describe("must_get_agent_activity", () => {
         actionHash,
         actionType: "Create",
         actionSeq: 1,
-        author,
+        author: selfAgent,
         timestamp: 1000n,
         prevActionHash: null,
         signature: new Uint8Array(64).fill(4),
@@ -414,7 +416,7 @@ describe("must_get_agent_activity", () => {
     ]);
 
     const input = {
-      author,
+      author: selfAgent,
       chain_filter: {
         chain_top: actionHash,
         filters: { Take: 50 },
@@ -434,13 +436,13 @@ describe("must_get_agent_activity", () => {
     expect(result.Ok[0].cached_entry).toBeNull();
   });
 
-  it("should return empty array in normal context when not found", async () => {
-    const author = await fakeAgentPubKey();
+  it("should return empty array for self with no chain data in coordinator context", async () => {
+    const selfAgent = callContext.cellId[1];
 
     mockQueryActions.mockReturnValue([]);
 
     const input = {
-      author,
+      author: selfAgent,
       chain_filter: {
         chain_top: await fakeActionHash(),
         filters: { Take: 50 },
@@ -456,8 +458,8 @@ describe("must_get_agent_activity", () => {
     expect(result.Ok).toEqual([]);
   });
 
-  it("should throw UnresolvedDependenciesError in validation context when not found", async () => {
-    const author = await fakeAgentPubKey();
+  it("should throw UnresolvedDependenciesError for self with no data in validation context", async () => {
+    const selfAgent = callContext.cellId[1];
 
     mockQueryActions.mockReturnValue([]);
 
@@ -471,7 +473,7 @@ describe("must_get_agent_activity", () => {
     };
 
     const input = {
-      author,
+      author: selfAgent,
       chain_filter: {
         chain_top: await fakeActionHash(),
         filters: { Take: 50 },
@@ -486,6 +488,99 @@ describe("must_get_agent_activity", () => {
     } catch (error: any) {
       expect(error.name).toBe("UnresolvedDependenciesError");
       expect(error.dependencies.Hashes).toHaveLength(1);
+    }
+  });
+
+  it("should throw HostFnError when network service is null for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+    setNetworkService(null);
+
+    const input = {
+      author: otherAgent,
+      chain_filter: {
+        chain_top: await fakeActionHash(),
+        filters: { Take: 50 },
+      },
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => mustGetAgentActivity(hostContext, ptr, len)).toThrow(
+      "Network service not available for must_get_agent_activity"
+    );
+  });
+
+  it("should throw HostFnError when network returns null for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+    const mockNetworkService = {
+      mustGetAgentActivitySync: vi.fn().mockReturnValue(null),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    const input = {
+      author: otherAgent,
+      chain_filter: {
+        chain_top: await fakeActionHash(),
+        filters: { Take: 50 },
+      },
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => mustGetAgentActivity(hostContext, ptr, len)).toThrow(
+      "Network request for must_get_agent_activity failed"
+    );
+  });
+
+  it("should throw HostFnError for IncompleteChain in coordinator context", async () => {
+    const otherAgent = await fakeAgentPubKey();
+    const mockNetworkService = {
+      mustGetAgentActivitySync: vi.fn().mockReturnValue("IncompleteChain"),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    const input = {
+      author: otherAgent,
+      chain_filter: {
+        chain_top: await fakeActionHash(),
+        filters: { Take: 50 },
+      },
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => mustGetAgentActivity(hostContext, ptr, len)).toThrow(
+      "must_get_agent_activity chain is incomplete for author"
+    );
+  });
+
+  it("should throw UnresolvedDependenciesError for IncompleteChain in validation context", async () => {
+    const otherAgent = await fakeAgentPubKey();
+    const mockNetworkService = {
+      mustGetAgentActivitySync: vi.fn().mockReturnValue("IncompleteChain"),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    const validationContext: CallContext = {
+      ...callContext,
+      isValidationContext: true,
+    };
+    const validationHostContext: HostFunctionContext = {
+      instance,
+      callContext: validationContext,
+    };
+
+    const input = {
+      author: otherAgent,
+      chain_filter: {
+        chain_top: await fakeActionHash(),
+        filters: { Take: 50 },
+      },
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    try {
+      mustGetAgentActivity(validationHostContext, ptr, len);
+      expect.fail("Should have thrown");
+    } catch (error: any) {
+      expect(error.name).toBe("UnresolvedDependenciesError");
     }
   });
 
@@ -666,5 +761,43 @@ describe("get_agent_activity", () => {
     expect(mockNetworkService.getAgentActivitySync).toHaveBeenCalled();
     // Local storage should NOT have been queried
     expect(mockQueryActions).not.toHaveBeenCalled();
+  });
+
+  it("should throw HostFnError when network service is null for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+    setNetworkService(null);
+
+    const input = {
+      agent_pubkey: otherAgent,
+      chain_query_filter: {},
+      activity_request: "Full",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => getAgentActivity(hostContext, ptr, len)).toThrow(
+      "Network service not available for get_agent_activity"
+    );
+  });
+
+  it("should throw HostFnError when network returns null for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+
+    const mockNetworkService = {
+      getAgentActivitySync: vi.fn().mockReturnValue(null),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    const input = {
+      agent_pubkey: otherAgent,
+      chain_query_filter: {},
+      activity_request: "Full",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => getAgentActivity(hostContext, ptr, len)).toThrow(
+      "Network request for agent activity failed"
+    );
   });
 });
