@@ -314,6 +314,13 @@ executor.onSignRequest((data) => {
   return handleSignRequest(data);
 });
 
+// Persist session token from WS auth so it survives Firefox background page suspension
+executor.onSessionToken((token) => {
+  if (linkerConfig) {
+    setLinkerConfig(linkerConfig.linkerUrl, token);
+  }
+});
+
 // Singleton instances
 const lairLock = getLairLock();
 const permissionManager = getPermissionManager();

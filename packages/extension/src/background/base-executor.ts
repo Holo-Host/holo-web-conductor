@@ -25,6 +25,7 @@ import type {
   RemoteSignalCallback,
   SignRequestCallback,
   WsStateChangeCallback,
+  SessionTokenCallback,
 } from "../lib/zome-executor";
 import type { ZomeCallRequest } from "@hwc/core/ribosome";
 import {
@@ -55,6 +56,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
   protected remoteSignalCallback: RemoteSignalCallback | null = null;
   protected signRequestCallback: SignRequestCallback | null = null;
   protected wsStateChangeCallback: WsStateChangeCallback | null = null;
+  protected sessionTokenChangeCallback: SessionTokenCallback | null = null;
 
   // ============================================================================
   // Concrete: network-configured getter
@@ -202,6 +204,10 @@ export abstract class BaseExecutor implements ZomeExecutor {
     this.wsStateChangeCallback = callback;
   }
 
+  onSessionToken(callback: SessionTokenCallback): void {
+    this.sessionTokenChangeCallback = callback;
+  }
+
   // ============================================================================
   // Protected: WebSocket service lifecycle
   // ============================================================================
@@ -273,6 +279,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
       logNetwork.info("Received session token from linker auth");
       this.sessionToken = token;
       this.onLinkerSessionToken(token);
+      this.sessionTokenChangeCallback?.(token);
     });
 
     this.wsService.connect();
