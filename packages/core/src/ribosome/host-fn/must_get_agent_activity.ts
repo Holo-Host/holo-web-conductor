@@ -6,16 +6,21 @@
  * Input: MustGetAgentActivityInput { author: AgentPubKey, chain_filter: ChainFilter }
  * Output: Vec<RegisterAgentActivity> (array of { action: SignedActionHashed, cached_entry: null })
  *
- * Queries the network via linker since HWC is a zero-arc node.
- * Falls back to local storage if network is unavailable.
- * In validation context, throws UnresolvedDependenciesError if data not found.
+ * For self: reads from local source chain storage.
+ * For other agents: queries the network via linker (zero-arc node pattern).
+ *
+ * Error handling matches Holochain's conductor:
+ * - Network/cascade failures → WasmError::Host (all contexts)
+ * - IncompleteChain/ChainTopNotFound in validation → UnresolvedDependencies (short-circuit)
+ * - IncompleteChain/ChainTopNotFound in coordinator → WasmError::Host (hard error)
+ * - EmptyRange → WasmError::Host (all contexts)
  */
 
 import { HostFunctionImpl } from "./base";
 import { deserializeTypedFromWasm, serializeResult } from "../serialization";
 import { getNetworkService } from "../../network";
 import { getStorageProvider } from "../../storage/storage-provider";
-import { UnresolvedDependenciesError } from "../error";
+import { HostFnError, UnresolvedDependenciesError } from "../error";
 import { toHolochainAction } from "./action-serialization";
 import { bytesEqual } from "./bytes-equal";
 import type { StoredAction } from "../../storage/types";
@@ -92,36 +97,49 @@ export const mustGetAgentActivity: HostFunctionImpl = (
         return serializeResult(instance, activity);
       }
 
-      // Non-success responses - in validation context, throw
-      if (callContext.isValidationContext) {
-        const errorType =
-          typeof response === "string"
-            ? response
-            : Object.keys(response)[0];
+      // Non-success responses: match Holochain's error handling per context
+      const errorType =
+        typeof response === "string"
+          ? response
+          : Object.keys(response)[0];
+
+      // In validation context, IncompleteChain/ChainTopNotFound → UnresolvedDependencies
+      if (callContext.isValidationContext && (errorType === "IncompleteChain" || errorType === "ChainTopNotFound")) {
         console.log(
-          `[HostFn] must_get_agent_activity: network returned ${errorType}, throwing`
+          `[HostFn] must_get_agent_activity: network returned ${errorType} in validation, deferring`
         );
         throw new UnresolvedDependenciesError({
           Hashes: [authorHash],
         });
       }
 
-      // In normal context, return empty
-      return serializeResult(instance, []);
+      // In coordinator context (or EmptyRange in any context) → WasmError::Host
+      if (errorType === "IncompleteChain") {
+        throw new HostFnError(
+          `must_get_agent_activity chain is incomplete for author`
+        );
+      } else if (errorType === "ChainTopNotFound") {
+        throw new HostFnError(
+          `must_get_agent_activity is missing action for author`
+        );
+      } else {
+        throw new HostFnError(
+          `must_get_agent_activity chain has produced an invalid range`
+        );
+      }
     }
+
+    // Network returned null (request failed)
+    throw new HostFnError("Network request for must_get_agent_activity failed");
   }
 
-  // Fallback: query local storage (for non-self agents when network unavailable)
-  const storage = getStorageProvider();
-  const allActions = storage.queryActions(dnaHash, authorHash, {});
-  const actions = applyChainFilter(allActions, chainTop);
-
-  return buildLocalResult(instance, callContext, actions, authorHash);
+  // No network service available for non-self agent
+  throw new HostFnError("Network service not available for must_get_agent_activity");
 };
 
 /**
  * Build RegisterAgentActivity[] result from local storage actions.
- * Shared by both self short-circuit and network-unavailable fallback paths.
+ * Used only for the self-agent path (own chain data).
  *
  * Rust serde contract (holochain_integrity_types::op::RegisterAgentActivity):
  *   { action: SignedActionHashed, cached_entry: Option<Entry> }
