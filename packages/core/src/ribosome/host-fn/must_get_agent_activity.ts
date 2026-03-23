@@ -78,63 +78,66 @@ export const mustGetAgentActivity: HostFunctionImpl = (
     return buildLocalResult(instance, callContext, actions, authorHash);
   }
 
-  // Try network first (zero-arc node pattern) for other agents
+  // chain_top is a required field on ChainFilter per the Rust type.
+  // If missing, the WASM guest sent malformed input.
+  if (!chainTop) {
+    throw new HostFnError("must_get_agent_activity: chain_filter missing required chain_top field");
+  }
+
+  // Try network (zero-arc node pattern) for other agents
   const networkService = getNetworkService();
-  if (networkService && chainTop) {
-    const response = networkService.mustGetAgentActivitySync(
-      dnaHash,
-      authorHash,
-      chainTop,
-      false, // include_cached_entries
-    );
+  if (!networkService) {
+    throw new HostFnError("Network service not available for must_get_agent_activity");
+  }
 
-    if (response) {
-      // MustGetAgentActivityResponse is an enum:
-      // Activity { ... } | IncompleteChain | ChainTopNotFound | EmptyRange
-      if (typeof response === "object" && "Activity" in response) {
-        const activity = response.Activity;
-        // Activity contains array of RegisterAgentActivity
-        return serializeResult(instance, activity);
-      }
+  const response = networkService.mustGetAgentActivitySync(
+    dnaHash,
+    authorHash,
+    chainTop,
+    false, // include_cached_entries
+  );
 
-      // Non-success responses: match Holochain's error handling per context
-      const errorType =
-        typeof response === "string"
-          ? response
-          : Object.keys(response)[0];
-
-      // In validation context, IncompleteChain/ChainTopNotFound → UnresolvedDependencies
-      if (callContext.isValidationContext && (errorType === "IncompleteChain" || errorType === "ChainTopNotFound")) {
-        console.log(
-          `[HostFn] must_get_agent_activity: network returned ${errorType} in validation, deferring`
-        );
-        throw new UnresolvedDependenciesError({
-          Hashes: [authorHash],
-        });
-      }
-
-      // In coordinator context (or EmptyRange in any context) → WasmError::Host
-      if (errorType === "IncompleteChain") {
-        throw new HostFnError(
-          `must_get_agent_activity chain is incomplete for author`
-        );
-      } else if (errorType === "ChainTopNotFound") {
-        throw new HostFnError(
-          `must_get_agent_activity is missing action for author`
-        );
-      } else {
-        throw new HostFnError(
-          `must_get_agent_activity chain has produced an invalid range`
-        );
-      }
-    }
-
-    // Network returned null (request failed)
+  if (!response) {
     throw new HostFnError("Network request for must_get_agent_activity failed");
   }
 
-  // No network service available for non-self agent
-  throw new HostFnError("Network service not available for must_get_agent_activity");
+  // MustGetAgentActivityResponse is an enum:
+  // Activity { ... } | IncompleteChain | ChainTopNotFound | EmptyRange
+  if (typeof response === "object" && "Activity" in response) {
+    const activity = response.Activity;
+    return serializeResult(instance, activity);
+  }
+
+  // Non-success responses: match Holochain's error handling per context
+  const errorType =
+    typeof response === "string"
+      ? response
+      : Object.keys(response)[0];
+
+  // In validation context, IncompleteChain/ChainTopNotFound → UnresolvedDependencies
+  if (callContext.isValidationContext && (errorType === "IncompleteChain" || errorType === "ChainTopNotFound")) {
+    console.log(
+      `[HostFn] must_get_agent_activity: network returned ${errorType} in validation, deferring`
+    );
+    throw new UnresolvedDependenciesError({
+      Hashes: [authorHash],
+    });
+  }
+
+  // In coordinator context (or EmptyRange in any context) → WasmError::Host
+  if (errorType === "IncompleteChain") {
+    throw new HostFnError(
+      `must_get_agent_activity chain is incomplete for author`
+    );
+  } else if (errorType === "ChainTopNotFound") {
+    throw new HostFnError(
+      `must_get_agent_activity is missing action for author`
+    );
+  } else {
+    throw new HostFnError(
+      `must_get_agent_activity chain has produced an invalid range`
+    );
+  }
 };
 
 /**
