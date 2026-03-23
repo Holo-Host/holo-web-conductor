@@ -212,8 +212,8 @@ async function checkLinkerHealth(): Promise<void> {
   } catch (error) {
     connectionStatus = {
       httpHealthy: false,
-      wsHealthy: false,
-      authenticated: false,
+      wsHealthy: connectionStatus.wsHealthy, // Preserve: WS is independent of HTTP
+      authenticated: connectionStatus.authenticated, // Preserve: auth is independent of HTTP
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: error instanceof Error ? error.message : 'Connection failed',
@@ -227,6 +227,7 @@ async function checkLinkerHealth(): Promise<void> {
     previousStatus.authenticated !== connectionStatus.authenticated ||
     previousStatus.lastError !== connectionStatus.lastError
   ) {
+    log.info(`Connection status changed: http=${connectionStatus.httpHealthy} ws=${connectionStatus.wsHealthy} auth=${connectionStatus.authenticated} err=${connectionStatus.lastError || 'none'}`);
     notifyConnectionStatusChange();
   }
 }
