@@ -132,22 +132,13 @@ chrome.runtime.onConnect.addListener((port) => {
   connectedPorts.add(port);
   log.info(`Content script port connected (${connectedPorts.size} total)`);
 
-  // Send current connection status immediately so the page has fresh state
+  // Send current connection status immediately so the page has fresh state.
+  // After background restart this may be stale (all-false) until
+  // restoreLinkerConfigFromStorage completes and pushes corrected state.
   port.postMessage({
     type: 'connectionStatusChange',
     payload: connectionStatus,
   });
-
-  // After background restart, the initial status may have stale wsHealthy/authenticated
-  // because the executor hasn't reconnected yet. Send a follow-up once state settles.
-  setTimeout(() => {
-    if (connectedPorts.has(port)) {
-      port.postMessage({
-        type: 'connectionStatusChange',
-        payload: connectionStatus,
-      });
-    }
-  }, 3000);
 
   port.onDisconnect.addListener(() => {
     connectedPorts.delete(port);
@@ -303,6 +294,16 @@ async function restoreLinkerConfigFromStorage(): Promise<void> {
       // Re-initialize executor and forward config to worker
       await executor.initialize();
       await executor.configureNetwork({ linkerUrl: saved.linkerUrl, sessionToken: saved.sessionToken });
+
+      // Sync WS state and push to any connected ports. configureNetwork starts
+      // the WS connection but it may not have completed yet -- that's OK because
+      // onWebSocketStateChange will fire a follow-up when it does.
+      const wsState = await executor.getWebSocketState();
+      connectionStatus.httpHealthy = connectionStatus.httpHealthy; // preserve
+      connectionStatus.wsHealthy = wsState.isConnected;
+      connectionStatus.authenticated = wsState.authenticated;
+      connectionStatus.linkerUrl = saved.linkerUrl;
+      notifyConnectionStatusChange();
     }
   } catch (err) {
     logLinker.warn('Failed to restore linker config:', err);
