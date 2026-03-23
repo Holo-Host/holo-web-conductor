@@ -122,8 +122,27 @@ let connectionStatus: ConnectionStatus = {
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 const HEALTH_CHECK_INTERVAL_MS = 5000;
 
-// Tabs subscribed to connection status updates
-const connectionStatusSubscribers = new Set<number>();
+// Long-lived ports from content scripts (used for push messages and keepalive)
+const connectedPorts = new Set<chrome.runtime.Port>();
+
+// Handle port connections from content scripts
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "hwc-content") return;
+
+  connectedPorts.add(port);
+  log.info(`Content script port connected (${connectedPorts.size} total)`);
+
+  // Send current connection status immediately so the page has fresh state
+  port.postMessage({
+    type: 'connectionStatusChange',
+    payload: connectionStatus,
+  });
+
+  port.onDisconnect.addListener(() => {
+    connectedPorts.delete(port);
+    log.info(`Content script port disconnected (${connectedPorts.size} remaining)`);
+  });
+});
 
 /**
  * Check linker health by making a simple HTTP request
@@ -210,11 +229,12 @@ function notifyConnectionStatusChange(): void {
     payload: connectionStatus,
   };
 
-  for (const tabId of connectionStatusSubscribers) {
-    chrome.tabs.sendMessage(tabId, message).catch(() => {
-      // Tab might be closed, remove from subscribers
-      connectionStatusSubscribers.delete(tabId);
-    });
+  for (const port of connectedPorts) {
+    try {
+      port.postMessage(message);
+    } catch {
+      connectedPorts.delete(port);
+    }
   }
 }
 
@@ -529,12 +549,6 @@ async function handleMessage(
       // Connection Status
       case MessageType.CONNECTION_STATUS_GET:
         return handleConnectionStatusGet(message);
-
-      case MessageType.CONNECTION_STATUS_SUBSCRIBE:
-        return handleConnectionStatusSubscribe(message, sender);
-
-      case MessageType.CONNECTION_STATUS_UNSUBSCRIBE:
-        return handleConnectionStatusUnsubscribe(message, sender);
 
       // DHT Publishing Debug
       case MessageType.PUBLISH_GET_STATUS:
@@ -1974,46 +1988,6 @@ async function handleConnectionStatusGet(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   return createSuccessResponse(message.id, connectionStatus);
-}
-
-/**
- * Handle CONNECTION_STATUS_SUBSCRIBE request
- * Subscribes the tab to receive connection status updates
- */
-async function handleConnectionStatusSubscribe(
-  message: RequestMessage,
-  sender: chrome.runtime.MessageSender
-): Promise<ResponseMessage> {
-  const tabId = sender.tab?.id;
-  if (!tabId) {
-    return createErrorResponse(message.id, "No tab ID available");
-  }
-
-  connectionStatusSubscribers.add(tabId);
-  log.info(`Tab ${tabId} subscribed to connection status updates`);
-
-  // Start health checks if not already running
-  startHealthChecks();
-
-  // Send current status immediately
-  return createSuccessResponse(message.id, connectionStatus);
-}
-
-/**
- * Handle CONNECTION_STATUS_UNSUBSCRIBE request
- * Unsubscribes the tab from connection status updates
- */
-async function handleConnectionStatusUnsubscribe(
-  message: RequestMessage,
-  sender: chrome.runtime.MessageSender
-): Promise<ResponseMessage> {
-  const tabId = sender.tab?.id;
-  if (tabId) {
-    connectionStatusSubscribers.delete(tabId);
-    log.info(`Tab ${tabId} unsubscribed from connection status updates`);
-  }
-
-  return createSuccessResponse(message.id, { unsubscribed: true });
 }
 
 // ============================================================================

@@ -59,7 +59,6 @@ const signalHandlers = new Set<(signal: any) => void>();
 
 // Connection status subscription handlers
 const connectionStatusHandlers = new Set<(status: ConnectionStatus) => void>();
-let isSubscribedToConnectionStatus = false;
 
 // Cached state from connection
 let _myPubKey: Uint8Array | null = null;
@@ -358,25 +357,8 @@ const holochainAPI: HolochainAPI = {
   onConnectionChange(callback: (status: ConnectionStatus) => void): () => void {
     connectionStatusHandlers.add(callback);
 
-    // Subscribe to connection status updates if not already subscribed
-    if (!isSubscribedToConnectionStatus) {
-      isSubscribedToConnectionStatus = true;
-      // Fire-and-forget subscription request
-      sendToContentScript("connection_status_subscribe", null).catch((e) => {
-        console.warn("[Holochain] Failed to subscribe to connection status:", e);
-      });
-    }
-
     return () => {
       connectionStatusHandlers.delete(callback);
-
-      // Unsubscribe if no more handlers
-      if (connectionStatusHandlers.size === 0 && isSubscribedToConnectionStatus) {
-        isSubscribedToConnectionStatus = false;
-        sendToContentScript("connection_status_unsubscribe", null).catch((e) => {
-          console.warn("[Holochain] Failed to unsubscribe from connection status:", e);
-        });
-      }
     };
   },
 
