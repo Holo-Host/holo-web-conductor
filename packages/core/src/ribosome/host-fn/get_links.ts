@@ -208,7 +208,7 @@ export const getLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Create cascade for this lookup
-  // Uses global network service if configured (MockNetworkService for testing, SyncXHRNetworkService for production)
+  // Uses global network service if configured (MockNetworkService for testing)
   const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
 
   // Process ALL inputs and collect results

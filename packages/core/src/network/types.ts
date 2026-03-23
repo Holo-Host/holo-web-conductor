@@ -167,7 +167,6 @@ export interface NetworkFetchOptions {
  *
  * Implementations:
  * - MockNetworkService: For unit testing
- * - SyncXHRNetworkService: For offscreen document with sync XHR
  * - AsyncNetworkService: For future async implementations (JSPI)
  */
 export interface NetworkService {

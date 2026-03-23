@@ -30,7 +30,6 @@ export { NetworkCache, getNetworkCache, resetNetworkCache } from './cache';
 
 // Services
 export { MockNetworkService } from './mock-service';
-export { SyncXHRNetworkService } from './sync-xhr-service';
 export {
   WebSocketNetworkService,
   getWebSocketService,
@@ -75,7 +74,7 @@ let globalNetworkService: NetworkService | null = null;
 
 /**
  * Set the global network service for cascade lookups
- * Use this to inject MockNetworkService for testing or SyncXHRNetworkService for production
+ * Use this to inject MockNetworkService for testing
  */
 export function setNetworkService(service: NetworkService | null): void {
   globalNetworkService = service;

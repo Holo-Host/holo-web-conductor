@@ -975,7 +975,7 @@ The `get()`, `get_links()`, and `get_details()` host functions use a **cascade p
 | `get_details()` | `GET /dht/{dna}/details/{hash}` | `{ type, content }` | Yes |
 | `count_links()` | `GET /dht/{dna}/links/count?base=&type=` | `number` | Yes |
 
-**Link response dual-format**: h2hc-linker can return links as either a flat `Vec<Link>` array (conductor mode) or `WireLinkOps { creates, deletes }` (direct kitsune2 mode). The extension parses both formats -- see `sync-xhr-service.ts` and `ribosome-worker.ts` for the dual-format parsing logic.
+**Link response dual-format**: h2hc-linker can return links as either a flat `Vec<Link>` array (conductor mode) or `WireLinkOps { creates, deletes }` (direct kitsune2 mode). The extension parses both formats -- see `ribosome-worker.ts` for the dual-format parsing logic.
 
 #### Hash Encoding in URLs
 
@@ -1049,7 +1049,6 @@ This ensures the browser agent sees links created by other agents, not just its 
 | `packages/core/src/ribosome/host-fn/*.ts` | Host function implementations |
 | `packages/core/src/ribosome/serialization.ts` | WASM I/O encoding |
 | `packages/core/src/storage/sqlite-storage.ts` | SQLite storage provider |
-| `packages/core/src/network/sync-xhr-service.ts` | Linker HTTP client |
 | `packages/core/src/network/websocket-service.ts` | Linker WebSocket client |
 | `packages/core/src/utils/bytes.ts` | Uint8Array conversion utilities |
 
