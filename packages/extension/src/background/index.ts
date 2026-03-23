@@ -138,6 +138,17 @@ chrome.runtime.onConnect.addListener((port) => {
     payload: connectionStatus,
   });
 
+  // After background restart, the initial status may have stale wsHealthy/authenticated
+  // because the executor hasn't reconnected yet. Send a follow-up once state settles.
+  setTimeout(() => {
+    if (connectedPorts.has(port)) {
+      port.postMessage({
+        type: 'connectionStatusChange',
+        payload: connectionStatus,
+      });
+    }
+  }, 3000);
+
   port.onDisconnect.addListener(() => {
     connectedPorts.delete(port);
     log.info(`Content script port disconnected (${connectedPorts.size} remaining)`);

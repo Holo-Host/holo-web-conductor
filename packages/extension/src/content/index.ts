@@ -27,7 +27,7 @@ console.log("Holochain content script loaded");
 
 let backgroundPort: chrome.runtime.Port | null = null;
 let portReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-const PORT_RECONNECT_DELAY_MS = 1000;
+const PORT_RECONNECT_DELAY_MS = 500;
 
 function connectPort(): void {
   if (portReconnectTimer) {
