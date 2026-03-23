@@ -5,7 +5,8 @@
  */
 
 import { CallContext } from "../call-context";
-import { hostFunctionError } from "../error";
+import { HostFnError, hostFunctionError } from "../error";
+import { serializeErrorResult } from "../serialization";
 import { recordHostFunction } from "../perf";
 
 /**
@@ -80,6 +81,13 @@ export function wrapHostFunction(
 
         return result;
       } catch (error) {
+        // HostFnError: serialize as Result::Err(WasmError::Host) back to guest
+        if (error instanceof HostFnError) {
+          if (!instanceRef.current) {
+            throw new Error(`Cannot serialize error: no WASM instance`);
+          }
+          return serializeErrorResult(instanceRef.current, error.hostMessage);
+        }
         // Re-throw RibosomeErrors as-is
         if (error instanceof Error && error.name === "RibosomeError") {
           throw error;

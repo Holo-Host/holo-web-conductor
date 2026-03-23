@@ -667,4 +667,42 @@ describe("get_agent_activity", () => {
     // Local storage should NOT have been queried
     expect(mockQueryActions).not.toHaveBeenCalled();
   });
+
+  it("should throw HostFnError when network service is null for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+    setNetworkService(null);
+
+    const input = {
+      agent_pubkey: otherAgent,
+      chain_query_filter: {},
+      activity_request: "Full",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => getAgentActivity(hostContext, ptr, len)).toThrow(
+      "Network service not available for get_agent_activity"
+    );
+  });
+
+  it("should throw HostFnError when network returns null for non-self agent", async () => {
+    const otherAgent = await fakeAgentPubKey();
+
+    const mockNetworkService = {
+      getAgentActivitySync: vi.fn().mockReturnValue(null),
+    };
+    setNetworkService(mockNetworkService as any);
+
+    const input = {
+      agent_pubkey: otherAgent,
+      chain_query_filter: {},
+      activity_request: "Full",
+      get_options: {},
+    };
+
+    const { ptr, len } = serializeToWasm(instance, input);
+    expect(() => getAgentActivity(hostContext, ptr, len)).toThrow(
+      "Network request for agent activity failed"
+    );
+  });
 });

@@ -14,6 +14,7 @@ import {
   deserializeFromWasm,
   createI64Result,
   serializeResult,
+  serializeErrorResult,
 } from "./serialization";
 import { RibosomeRuntime } from "./runtime";
 import { allocatorWasmBytes } from "./test/allocator-wasm-bytes";
@@ -288,6 +289,37 @@ describe("I64 Result Handling", () => {
       // Verify data is wrapped in Result::Ok
       const deserialized = deserializeFromWasm(instance, ptr, len);
       expect(deserialized).toEqual({ Ok: data });
+    });
+  });
+
+  describe("serializeErrorResult", () => {
+    let runtime: RibosomeRuntime;
+    let instance: WebAssembly.Instance;
+
+    beforeEach(async () => {
+      runtime = new RibosomeRuntime();
+      const module = await runtime.compileModule(allocatorWasmBytes);
+      instance = await runtime.instantiateModule(module, {});
+    });
+
+    it("should serialize as Result::Err with WasmError::Host structure", () => {
+      const message = "Network service not available";
+      const result = serializeErrorResult(instance, message);
+
+      const ptr = Number(result >> 32n);
+      const len = Number(result & 0xffffffffn);
+
+      expect(ptr).toBeGreaterThanOrEqual(0);
+      expect(len).toBeGreaterThan(0);
+
+      const deserialized = deserializeFromWasm(instance, ptr, len) as any;
+      expect(deserialized).toEqual({
+        Err: {
+          file: "holo-web-conductor",
+          line: 0,
+          error: { Host: message },
+        },
+      });
     });
   });
 });

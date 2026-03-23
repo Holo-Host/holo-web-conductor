@@ -107,6 +107,21 @@ export function memoryAllocationError(): RibosomeError {
 }
 
 /**
+ * Error thrown by host functions to signal a recoverable error that should be
+ * serialized as Result::Err(WasmError::Host(message)) back to the WASM guest,
+ * rather than crashing the JS execution.
+ *
+ * This matches Holochain's pattern where network/cascade errors are converted
+ * to WasmError { error: Host("message") } and the HDK handles them via ExternResult<T>.
+ */
+export class HostFnError extends Error {
+  constructor(public hostMessage: string) {
+    super(hostMessage);
+    this.name = "HostFnError";
+  }
+}
+
+/**
  * Error thrown by must_get_* host functions when data is not found
  * during a validation context. This short-circuits the validate callback
  * and converts to ValidateCallbackResult::UnresolvedDependencies.
