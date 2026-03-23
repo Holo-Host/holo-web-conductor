@@ -3,7 +3,7 @@
  *
  * Defines interfaces for network data retrieval, used by the cascade pattern.
  * These types abstract the network layer so it can be mocked for testing
- * or implemented with sync XHR in the offscreen document.
+ * or implemented with direct XHR in the ribosome worker.
  */
 
 import type {
@@ -167,7 +167,6 @@ export interface NetworkFetchOptions {
  *
  * Implementations:
  * - MockNetworkService: For unit testing
- * - SyncXHRNetworkService: For offscreen document with sync XHR
  * - AsyncNetworkService: For future async implementations (JSPI)
  */
 export interface NetworkService {
