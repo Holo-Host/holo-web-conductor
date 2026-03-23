@@ -159,8 +159,8 @@ export class PublishService {
           `[PublishService] Processing ${opsToPublish.length} ops for publish`
         );
 
-        // Group ops by batch for efficiency (max 50 per request)
-        const batches = this.batchOps(opsToPublish, 50);
+        // Serialize ops and batch by payload size
+        const batches = await this.batchOpsBySize(opsToPublish);
 
         for (const batch of batches) {
           await this.publishBatch(batch, dnaHash);
@@ -187,41 +187,74 @@ export class PublishService {
     return Date.now() - lastAttempt >= delay;
   }
 
+  // 4 MB target per batch - well under the linker's 20 MB limit,
+  // but keeps individual requests reasonable
+  private static readonly BATCH_SIZE_LIMIT = 4 * 1024 * 1024;
+
   /**
-   * Split ops into batches
+   * Serialize ops and group into batches by payload byte size.
+   * Always includes at least 1 op per batch, even if it exceeds the limit.
    */
-  private batchOps<T>(ops: T[], batchSize: number): T[][] {
-    const batches: T[][] = [];
-    for (let i = 0; i < ops.length; i += batchSize) {
-      batches.push(ops.slice(i, i + batchSize));
+  private async batchOpsBySize(
+    ops: Array<{ id: string; op: ChainOp; retryCount: number }>
+  ): Promise<
+    Array<{
+      items: Array<{ id: string; op: ChainOp; retryCount: number }>;
+      serialized: SignedDhtOpPayload[];
+    }>
+  > {
+    const batches: Array<{
+      items: Array<{ id: string; op: ChainOp; retryCount: number }>;
+      serialized: SignedDhtOpPayload[];
+    }> = [];
+
+    let currentItems: Array<{ id: string; op: ChainOp; retryCount: number }> = [];
+    let currentSerialized: SignedDhtOpPayload[] = [];
+    let currentSize = 0;
+
+    for (const item of ops) {
+      const payload = await this.serializeOpForLinkerPayload(item.op);
+      // Actual byte size of this op in the JSON payload
+      const opSize = payload.op_data.length + payload.signature.length;
+
+      if (currentItems.length > 0 && currentSize + opSize > PublishService.BATCH_SIZE_LIMIT) {
+        // Current batch would exceed limit, finalize it
+        batches.push({ items: currentItems, serialized: currentSerialized });
+        currentItems = [];
+        currentSerialized = [];
+        currentSize = 0;
+      }
+
+      currentItems.push(item);
+      currentSerialized.push(payload);
+      currentSize += opSize;
     }
+
+    if (currentItems.length > 0) {
+      batches.push({ items: currentItems, serialized: currentSerialized });
+    }
+
     return batches;
   }
 
   /**
-   * Publish a batch of ops to the linker
+   * Publish a batch of pre-serialized ops to the linker
    */
   private async publishBatch(
-    batch: Array<{
-      id: string;
-      op: ChainOp;
-      retryCount: number;
-    }>,
+    batch: {
+      items: Array<{ id: string; op: ChainOp; retryCount: number }>;
+      serialized: SignedDhtOpPayload[];
+    },
     dnaHash: DnaHash
   ): Promise<void> {
     // Mark all as in-flight
-    for (const item of batch) {
+    for (const item of batch.items) {
       await this.tracker.updateStatus(item.id, PublishStatus.InFlight);
     }
 
     try {
-      // Serialize ops for linker
-      const signedOps = await Promise.all(
-        batch.map((item) => this.serializeOpForLinkerPayload(item.op))
-      );
-
-      // Send to linker
-      const response = await this.sendToLinker(dnaHash, signedOps);
+      // Send pre-serialized ops to linker
+      const response = await this.sendToLinker(dnaHash, batch.serialized);
 
       // Check if ops were stored but not published to any peers
       // This happens when no DHT peers are available
@@ -234,8 +267,8 @@ export class PublishService {
       }
 
       // Update status based on response
-      for (let i = 0; i < batch.length; i++) {
-        const item = batch[i];
+      for (let i = 0; i < batch.items.length; i++) {
+        const item = batch.items[i];
         const result = response.results[i];
 
         if (result?.success) {
@@ -267,7 +300,7 @@ export class PublishService {
     } catch (err) {
       // Network or other error - mark all as failed
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      for (const item of batch) {
+      for (const item of batch.items) {
         await this.tracker.updateStatus(item.id, PublishStatus.Failed, errorMsg);
       }
       console.error("[PublishService] Batch publish failed:", errorMsg);

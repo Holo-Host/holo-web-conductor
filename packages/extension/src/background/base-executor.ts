@@ -25,6 +25,7 @@ import type {
   RemoteSignalCallback,
   SignRequestCallback,
   WsStateChangeCallback,
+  SessionTokenCallback,
 } from "../lib/zome-executor";
 import type { ZomeCallRequest } from "@hwc/core/ribosome";
 import {
@@ -55,6 +56,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
   protected remoteSignalCallback: RemoteSignalCallback | null = null;
   protected signRequestCallback: SignRequestCallback | null = null;
   protected wsStateChangeCallback: WsStateChangeCallback | null = null;
+  protected sessionTokenChangeCallback: SessionTokenCallback | null = null;
 
   // ============================================================================
   // Concrete: network-configured getter
@@ -102,6 +104,28 @@ export abstract class BaseExecutor implements ZomeExecutor {
     if (this.wsService) {
       this.wsService.setSessionToken(token || "");
     }
+  }
+
+  /**
+   * Trigger WebSocket disconnect + reconnect to obtain a fresh session token.
+   * Called when an HTTP request returns 401 (session revoked or invalid).
+   * Skips if the WebSocket is already reconnecting/connecting/authenticating.
+   */
+  triggerReauth(): void {
+    if (!this.wsService) {
+      logNetwork.info("triggerReauth: no wsService");
+      return;
+    }
+
+    const state = this.wsService.getState();
+    if (state === "connecting" || state === "authenticating" || state === "reconnecting") {
+      logNetwork.info("triggerReauth: skipping, WS already in state: " + state);
+      return;
+    }
+
+    logNetwork.info("401 detected — triggering WS re-auth (was: " + state + ")");
+    this.wsService.disconnect();
+    this.wsService.connect();
   }
 
   // ============================================================================
@@ -180,6 +204,10 @@ export abstract class BaseExecutor implements ZomeExecutor {
     this.wsStateChangeCallback = callback;
   }
 
+  onSessionToken(callback: SessionTokenCallback): void {
+    this.sessionTokenChangeCallback = callback;
+  }
+
   // ============================================================================
   // Protected: WebSocket service lifecycle
   // ============================================================================
@@ -251,6 +279,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
       logNetwork.info("Received session token from linker auth");
       this.sessionToken = token;
       this.onLinkerSessionToken(token);
+      this.sessionTokenChangeCallback?.(token);
     });
 
     this.wsService.connect();

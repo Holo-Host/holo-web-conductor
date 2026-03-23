@@ -1010,7 +1010,10 @@ class ProxyNetworkService implements NetworkService {
       responseBody[i] = raw.charCodeAt(i) & 0xFF;
     }
 
-    console.log('[Ribosome Worker] Direct XHR response, status:', xhr.status, 'bytes:', responseBody.length);
+    // Signal 401 to parent so it can trigger WebSocket re-auth
+    if (xhr.status === 401) {
+      self.postMessage({ type: 'HTTP_401_DETECTED' });
+    }
 
     return { status: xhr.status, body: responseBody };
   }

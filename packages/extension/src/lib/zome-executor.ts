@@ -95,6 +95,7 @@ export interface SignResponseData {
 export type RemoteSignalCallback = (data: RemoteSignalData) => void;
 export type SignRequestCallback = (data: SignRequestData) => Promise<SignResponseData>;
 export type WsStateChangeCallback = (state: string, authenticated: boolean) => void;
+export type SessionTokenCallback = (token: string) => void;
 
 // ============================================================================
 // Interface
@@ -203,4 +204,7 @@ export interface ZomeExecutor {
 
   /** Register callback for WebSocket state changes. */
   onWebSocketStateChange(callback: WsStateChangeCallback): void;
+
+  /** Register callback for session token changes (from WS auth). */
+  onSessionToken(callback: SessionTokenCallback): void;
 }
