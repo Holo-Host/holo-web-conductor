@@ -352,11 +352,6 @@ export class FirefoxDirectExecutor extends BaseExecutor {
   private handleWorkerMessage(event: MessageEvent): void {
     const { id, type, success, result, error } = event.data;
 
-    // Debug: log all non-response messages from worker
-    if (type) {
-      log.info(`[WorkerMsg] type=${type}`);
-    }
-
     // Note: Worker signs locally via its own LairClient in Firefox mode.
     // No SIGN_REQUEST from worker expected.
 
