@@ -36,6 +36,9 @@ import type {
   InitZomesCompleteAction,
 } from './types';
 import { encodeHashToBase64 } from '../types/holochain-types';
+import { createLogger } from '@hwc/shared';
+
+const log = createLogger('Storage');
 
 const DB_NAME = 'hwc_source_chain';
 const DB_VERSION = 1;
@@ -110,7 +113,7 @@ export class SourceChainStorage {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[SourceChainStorage] Initialized');
+        log.info('Initialized');
         resolve();
       };
 
@@ -151,7 +154,7 @@ export class SourceChainStorage {
           db.createObjectStore(STORES.CHAIN_HEADS, { keyPath: 'cellId' });
         }
 
-        console.log('[SourceChainStorage] Database upgraded to version', DB_VERSION);
+        log.info('Database upgraded to version', DB_VERSION);
       };
     });
 
@@ -185,7 +188,6 @@ export class SourceChainStorage {
     // DO NOT clear session cache here - it should already be pre-loaded
     // New writes during transaction will add to the cache
 
-    console.log('[SourceChainStorage] Transaction started');
   }
 
   /**
@@ -282,14 +284,6 @@ export class SourceChainStorage {
 
       // Handle transaction completion
       idbTx.oncomplete = () => {
-        console.log('[SourceChainStorage] Transaction committed', {
-          actions: tx.actions.length,
-          entries: tx.entries.length,
-          links: tx.links.length,
-          linkDeletes: tx.linkDeletes.length,
-          chainHeadUpdated: !!tx.chainHeadUpdate,
-        });
-
         // Note: Session cache is NOT cleared after commit.
         // Data stays in cache for synchronous reads via StorageProvider interface.
         // The cache will be cleared explicitly by clear() or when preloadChainForCell is called.
@@ -324,13 +318,6 @@ export class SourceChainStorage {
     if (!this.pendingTransaction) {
       throw new Error('No transaction in progress');
     }
-
-    console.log('[SourceChainStorage] Transaction rolled back', {
-      actions: this.pendingTransaction.actions.length,
-      entries: this.pendingTransaction.entries.length,
-      links: this.pendingTransaction.links.length,
-      linkDeletes: this.pendingTransaction.linkDeletes.length,
-    });
 
     this.pendingTransaction = null;
 
@@ -1248,21 +1235,16 @@ export class SourceChainStorage {
     await this.init();
     const cellId = this.getCellId(dnaHash, agentPubKey);
 
-    console.log('[SourceChainStorage] Pre-loading chain for cell', { cellId });
-
     // Load all actions for this cell
     const actions = await this.queryActionsFromDb(dnaHash, agentPubKey);
-    console.log(`[SourceChainStorage] Loaded ${actions.length} actions into cache`);
 
     for (const action of actions) {
       const key = this.hashToKey(action.actionHash);
       this.sessionCache.actions.set(key, action);
-      console.log(`[SourceChainStorage] Cached action: ${key.substring(0, 50)}... type=${action.actionType}`);
     }
 
     // Load all entries for this cell
     const entries = await this.getAllEntriesForCell(cellId);
-    console.log(`[SourceChainStorage] Loaded ${entries.length} entries into cache`);
 
     for (const entry of entries) {
       const key = this.hashToKey(entry.entryHash);
@@ -1271,7 +1253,6 @@ export class SourceChainStorage {
 
     // Load all links for this cell
     const links = await this.getAllLinksForCell(cellId);
-    console.log(`[SourceChainStorage] Loaded ${links.length} links into cache`);
 
     // Group links by base address
     const linksByBase = new Map<string, Link[]>();
@@ -1289,13 +1270,7 @@ export class SourceChainStorage {
     // IMPORTANT: Cache the result (even if null) so getChainHead() returns synchronously
     this.sessionCache.chainHeads.set(cellId, chainHead);
 
-    if (chainHead) {
-      console.log(`[SourceChainStorage] Loaded chain head: seq=${chainHead.actionSeq}`);
-    } else {
-      console.log(`[SourceChainStorage] No chain head found (new cell) - cached null`);
-    }
-
-    console.log('[SourceChainStorage] Pre-load complete', {
+    log.debug('Pre-load complete', {
       actions: actions.length,
       entries: entries.length,
       links: links.length,

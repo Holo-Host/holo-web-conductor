@@ -114,7 +114,7 @@ export class FirefoxDirectExecutor extends BaseExecutor {
 
   async executeZomeCall(contextId: string, request: ZomeCallRequest): Promise<ZomeCallResult> {
     const perfStart = performance.now();
-    logZome.info(`Executing: ${request.zome}::${request.fn}`);
+    logZome.debug(`Executing: ${request.zome}::${request.fn}`);
 
     await this.initWorker();
     const afterWorkerInit = performance.now();
@@ -394,7 +394,7 @@ export class FirefoxDirectExecutor extends BaseExecutor {
     if (!this.wsService || !data.signals?.length) return;
 
     const dnaHashB64 = encodeHashToBase64(new Uint8Array(data.dnaHash));
-    logSignal.info(`Sending ${data.signals.length} remote signals via WebSocket`);
+    logSignal.debug(`Sending ${data.signals.length} remote signals via WebSocket`);
     this.wsService.sendRemoteSignals(dnaHashB64, data.signals);
   }
 

@@ -47,14 +47,6 @@ export const mustGetAgentActivity: HostFunctionImpl = (
   const authorHash = input.author;
   const chainFilter = input.chain_filter;
 
-  console.log(
-    `[HostFn] must_get_agent_activity: author=${Array.from(
-      authorHash.slice(0, 4)
-    )
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}...`
-  );
-
   // Extract chain_top from the chain_filter
   let chainTop: ActionHash | null = null;
   if (chainFilter && typeof chainFilter === "object") {
@@ -66,7 +58,6 @@ export const mustGetAgentActivity: HostFunctionImpl = (
 
   // Self short-circuit: own chain activity is in local storage
   if (bytesEqual(authorHash, selfAgent)) {
-    console.log("[HostFn] must_get_agent_activity: author is self, querying local storage");
     const storage = getStorageProvider();
     const allActions = storage.queryActions(dnaHash, authorHash, {});
 
@@ -116,9 +107,6 @@ export const mustGetAgentActivity: HostFunctionImpl = (
 
   // In validation context, IncompleteChain/ChainTopNotFound → UnresolvedDependencies
   if (callContext.isValidationContext && (errorType === "IncompleteChain" || errorType === "ChainTopNotFound")) {
-    console.log(
-      `[HostFn] must_get_agent_activity: network returned ${errorType} in validation, deferring`
-    );
     throw new UnresolvedDependenciesError({
       Hashes: [authorHash],
     });

@@ -38,15 +38,8 @@ export const getAgentActivity: HostFunctionImpl = (context, inputPtr, inputLen) 
   const activityRequest: 'status' | 'full' =
     input.activity_request === 'Status' ? 'status' : 'full';
 
-  console.log(
-    `[HostFn] get_agent_activity: agent=${Array.from(agentPubKey.slice(0, 4))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}..., request=${activityRequest}`
-  );
-
   // Self short-circuit: own chain activity is in local storage
   if (bytesEqual(agentPubKey, selfAgent)) {
-    console.log("[HostFn] get_agent_activity: agent is self, querying local storage");
     return getAgentActivityFromLocal(instance, dnaHash, selfAgent);
   }
 

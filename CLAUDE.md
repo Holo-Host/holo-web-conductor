@@ -14,6 +14,31 @@ This file adds agent-specific instructions on top of those shared rules.
 
 ---
 
+## Quick Reference
+
+```sh
+# All commands require nix develop -c prefix
+
+# Run tests (per-workspace — do NOT use `npx vitest run` from root, it uses wrong env)
+nix develop -c npm test
+
+# Build all packages
+nix develop -c npm run build
+
+# Typecheck only
+nix develop -c npm run typecheck
+
+# Integration tests (WASM ribosome tests)
+nix develop -c npm run test:integration
+
+# E2E tests (requires conductor + linker)
+nix develop -c npm run e2e:test
+```
+
+See [TESTING.md](./TESTING.md) for full test matrix and debugging tips.
+
+---
+
 ## Documentation Structure
 
 | File | Purpose |

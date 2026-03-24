@@ -25,8 +25,6 @@ export const deallocate: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const ptr = guestPtrHigh;
   const len = guestPtrLow;
 
-  console.log(`[HostFn] deallocate called: ptr=${ptr}, len=${len}`);
-
   // Call the WASM's own deallocator if it exists
   const wasmDeallocate = instance.exports.__hc__deallocate_1 as
     | ((ptr: number) => void)

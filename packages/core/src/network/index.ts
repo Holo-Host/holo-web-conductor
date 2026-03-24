@@ -58,7 +58,6 @@ let getStrategyMode: GetStrategyMode = 'compatibility';
  */
 export function setGetStrategyMode(mode: GetStrategyMode): void {
   getStrategyMode = mode;
-  console.log('[Network] GetStrategy mode set:', mode);
 }
 
 export function getGetStrategyMode(): GetStrategyMode {
@@ -78,7 +77,6 @@ let globalNetworkService: NetworkService | null = null;
  */
 export function setNetworkService(service: NetworkService | null): void {
   globalNetworkService = service;
-  console.log('[Network] Global network service set:', service ? 'configured' : 'null');
 }
 
 /**

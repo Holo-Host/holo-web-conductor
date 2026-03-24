@@ -11,7 +11,6 @@ import type { CreateLinkAction, Link } from "../../storage/types";
 import { computeActionHashV2, serializeAction } from "../../hash";
 import { buildCreateLinkAction } from "../../types/holochain-serialization";
 import { signAction } from "../../signing";
-import { encodeHashToBase64 } from "../../types/holochain-types";
 
 /**
  * Create link input structure (matches Holochain HDK CreateLinkInput)
@@ -59,34 +58,6 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as CreateLinkInput;
-
-  // Try to decode tag as UTF-8 string (paths encode component names in tags)
-  let tagString = '';
-  try {
-    tagString = new TextDecoder().decode(input.tag);
-  } catch {
-    tagString = `[binary: ${input.tag.length} bytes]`;
-  }
-
-  // Detect target hash type
-  const targetPrefix = Array.from(input.target_address.slice(0, 3));
-  const isTargetEntry = targetPrefix[0] === 132 && targetPrefix[1] === 33 && targetPrefix[2] === 36;
-  const isTargetAgent = targetPrefix[0] === 132 && targetPrefix[1] === 32 && targetPrefix[2] === 36;
-  const isTargetAction = targetPrefix[0] === 132 && targetPrefix[1] === 41 && targetPrefix[2] === 36;
-
-  console.log("[create_link] Creating link", {
-    base_hash: encodeHashToBase64(input.base_address),
-    target_hash: encodeHashToBase64(input.target_address),
-    base_prefix: Array.from(input.base_address.slice(0, 3)),
-    target_prefix: targetPrefix,
-    target_is_entry: isTargetEntry,
-    target_is_agent: isTargetAgent,
-    target_is_action: isTargetAction,
-    target_length: input.target_address.length,
-    linkType: input.link_type,
-    zomeIndex: input.zome_index,
-    tag: tagString,
-  });
 
   const [dnaHash, agentPubKey] = callContext.cellId;
 
@@ -194,11 +165,6 @@ export const createLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     callContext.pendingRecords = [];
   }
   callContext.pendingRecords.push({ action });
-
-  console.log('[create_link] Created link', {
-    actionHash: Array.from(actionHash.slice(0, 8)),
-    actionSeq,
-  });
 
   return serializeResult(instance, actionHash);
 };

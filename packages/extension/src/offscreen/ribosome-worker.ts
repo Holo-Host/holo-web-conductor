@@ -16,7 +16,7 @@
 // Control logging via SET_LOG_FILTER message from offscreen
 // Filter: '*' = all, '' = none, 'Ribosome,PERF' = only matching prefixes
 
-let workerLogFilter = '*'; // Default: show all
+let workerLogFilter = ''; // Default: quiet (errors/warnings only, matching shared logger)
 
 // Save original console methods
 const originalConsoleLog = console.log.bind(console);
@@ -24,8 +24,12 @@ const originalConsoleWarn = console.warn.bind(console);
 const originalConsoleError = console.error.bind(console);
 
 function shouldWorkerLog(args: any[]): boolean {
-  if (workerLogFilter === '*') return true;
   if (workerLogFilter === '') return false;
+
+  const allowed = workerLogFilter.toLowerCase().split(',').map(p => p.trim());
+
+  // '*' anywhere in the list means match all prefixes
+  if (allowed.includes('*')) return true;
 
   // Check if first arg is a string with a bracket prefix like [Ribosome]
   const firstArg = args[0];
@@ -33,13 +37,11 @@ function shouldWorkerLog(args: any[]): boolean {
     const match = firstArg.match(/^\[([^\]]+)\]/);
     if (match) {
       const prefix = match[1].toLowerCase();
-      const allowed = workerLogFilter.toLowerCase().split(',').map(p => p.trim());
       return allowed.some(a => prefix.includes(a) || a.includes(prefix));
     }
     // Also check for emoji prefixes like "⏱️ [PERF]"
     const perfMatch = firstArg.match(/\[PERF\]/i);
     if (perfMatch) {
-      const allowed = workerLogFilter.toLowerCase().split(',').map(p => p.trim());
       return allowed.some(a => a.includes('perf'));
     }
   }
@@ -70,6 +72,7 @@ if (typeof document === 'undefined') {
   };
 }
 
+import { createLogger } from '../lib/logger';
 import { callZome, type ZomeCallRequest } from '@hwc/core/ribosome';
 import { encode, decode } from '@msgpack/msgpack';
 import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
@@ -82,6 +85,8 @@ import { recoverChainFromDHT, storeRecoveredRecords } from '@hwc/core/recovery';
 import { isEntryAction, type Action, type StoredEntry, type StoredRecord, type ChainHead, type Link, type RecordDetails, type EntryDetails, type EntryDhtStatus, type CreateAction, type UpdateAction, type DeleteAction } from '@hwc/core/storage/types';
 import { encodeHashToBase64, type ActionHash, type EntryHash, type DnaHash, type AgentPubKey, type AnyDhtHash } from '@holochain/client';
 import { toUint8Array } from '@hwc/core';
+
+const log = createLogger('RibosomeWorker');
 
 // Types
 interface WorkerMessage {
@@ -149,65 +154,48 @@ function getWasmCacheKey(dnaHash: DnaHash | number[]): string {
  * - opfs-sahpool uses FileSystemSyncAccessHandle directly (works in dedicated workers)
  */
 async function initSQLite(): Promise<void> {
-  console.log('[Ribosome Worker] Initializing SQLite...');
-
   const module = await import('@sqlite.org/sqlite-wasm');
   const sqlite3InitModule = module.default;
 
   sqlite3 = await sqlite3InitModule({
-    print: (...args: any[]) => console.log('[SQLite]', ...args),
     printErr: (...args: any[]) => console.error('[SQLite Error]', ...args),
   });
 
-  console.log('[Ribosome Worker] SQLite loaded, version:', sqlite3.version.libVersion);
-
-  // Check available VFS options
-  const vfsList = sqlite3.capi.sqlite3_js_vfs_list();
-  console.log('[Ribosome Worker] Available VFS:', vfsList);
-
   // Try to install and use opfs-sahpool for synchronous OPFS access
   // This doesn't require spawning a nested worker like the regular opfs VFS
-  let dbPath = ':memory:';
   let usingOpfs = false;
 
   try {
     // Install opfs-sahpool VFS if available
     if (sqlite3.installOpfsSAHPoolVfs) {
-      console.log('[Ribosome Worker] Installing opfs-sahpool VFS...');
       const poolUtil = await sqlite3.installOpfsSAHPoolVfs({
         name: 'opfs-sahpool',
         directory: '/hwc-data',  // OPFS directory for our files
         initialCapacity: 10,  // Pre-allocate 10 file handles
       });
 
-      console.log('[Ribosome Worker] opfs-sahpool installed, opening database...');
       db = new poolUtil.OpfsSAHPoolDb('/hwc-chain.sqlite3');
-      dbPath = '/hwc-chain.sqlite3';
       usingOpfs = true;
     }
   } catch (e) {
-    console.warn('[Ribosome Worker] Failed to install opfs-sahpool:', e);
+    log.warn('Failed to install opfs-sahpool:', e);
   }
 
   // Fallback to in-memory if OPFS failed
   if (!usingOpfs) {
-    console.warn('[Ribosome Worker] OPFS not available, using in-memory database (data will not persist)');
+    log.warn('OPFS not available, using in-memory database (data will not persist)');
     db = new sqlite3.oo1.DB(':memory:');
   }
 
-  console.log('[Ribosome Worker] Database opened:', dbPath, usingOpfs ? '(OPFS persistent)' : '(in-memory)');
-
   // Create schema
   db.exec(SCHEMA_SQL);
-  console.log('[Ribosome Worker] Schema created');
 
   // WAL mode is not supported with opfs-sahpool, skip for OPFS
   if (!usingOpfs) {
     try {
       db.exec('PRAGMA journal_mode=WAL');
-      console.log('[Ribosome Worker] WAL mode enabled');
     } catch (e) {
-      console.log('[Ribosome Worker] WAL mode not available');
+      // WAL mode not available - continue without it
     }
   }
 }
@@ -501,13 +489,11 @@ class DirectSQLiteStorage implements StorageProvider {
     }
 
     if (!originatingAction) {
-      console.log('[SQLiteStorage.getDetails] No originating action found for entryHash');
       return null;
     }
 
     const entry = this.getEntry(entryHash);
     if (!entry) {
-      console.log('[SQLiteStorage.getDetails] Entry not found in storage');
       return null;
     }
 
@@ -564,7 +550,6 @@ class DirectSQLiteStorage implements StorageProvider {
     // Get the entry itself
     const entry = this.getEntry(entryHash);
     if (!entry) {
-      console.log('[SQLiteStorage.getEntryDetails] Entry not found for hash');
       return null;
     }
 
@@ -616,13 +601,6 @@ class DirectSQLiteStorage implements StorageProvider {
     // Determine entry DHT status
     // Live if there are no deletes, Dead if there are deletes
     const entryDhtStatus: EntryDhtStatus = deletes.length > 0 ? 'Dead' : 'Live';
-
-    console.log('[SQLiteStorage.getEntryDetails] Found entry details', {
-      actionsCount: actions.length,
-      updatesCount: updates.length,
-      deletesCount: deletes.length,
-      status: entryDhtStatus,
-    });
 
     return {
       entry,
@@ -761,7 +739,7 @@ function toBytes(value: any): Uint8Array | null {
   if (Array.isArray(value) || (typeof value === 'object' && 'length' in value)) {
     return new Uint8Array(value);
   }
-  console.warn('[DirectSQLiteStorage] Unknown byte type:', typeof value, value);
+  log.warn('[DirectSQLiteStorage] Unknown byte type:', typeof value, value);
   return new Uint8Array(value);
 }
 
@@ -803,7 +781,6 @@ class ProxyLairClient implements ILairClient {
   async preloadKeyForSync(pub_key: Ed25519PubKey): Promise<void> {
     // Mark as preloaded - we don't actually preload since we proxy to background
     this.preloadedKeys.add(this.keyToString(pub_key));
-    console.log(`[ProxyLairClient] Key marked as preloaded: ${this.keyToString(pub_key).substring(0, 20)}...`);
   }
 
   signSync(pub_key: Ed25519PubKey, data: Uint8Array): Ed25519Signature {
@@ -819,8 +796,6 @@ class ProxyLairClient implements ILairClient {
       throw new Error('Sign buffers not initialized');
     }
 
-    console.log(`[ProxyLairClient] signSync called, data length: ${data.length}`);
-
     // Reset signal
     Atomics.store(signSignalView!, 0, 0);
 
@@ -832,7 +807,6 @@ class ProxyLairClient implements ILairClient {
     });
 
     // Block until offscreen responds
-    console.log('[ProxyLairClient] Waiting for sign response...');
     const waitResult = Atomics.wait(signSignalView!, 0, 0, 30000);
 
     if (waitResult === 'timed-out') {
@@ -861,7 +835,6 @@ class ProxyLairClient implements ILairClient {
 
     // Read signature (64 bytes)
     const signature = new Uint8Array(signResultBuffer!, 5, 64);
-    console.log(`[ProxyLairClient] Sign response received, signature length: ${signature.length}`);
 
     return new Uint8Array(signature) as Ed25519Signature;
   }
@@ -955,7 +928,6 @@ class ProxyNetworkService implements NetworkService {
     });
 
     // Block until offscreen responds
-    console.log('[Ribosome Worker] Waiting for network response...');
     const waitResult = Atomics.wait(networkSignalView!, 0, 0, 30000);
 
     if (waitResult === 'timed-out') {
@@ -967,8 +939,6 @@ class ProxyNetworkService implements NetworkService {
     const status = dv.getInt32(0);
     const bodyLength = dv.getInt32(4);
     const responseBody = new Uint8Array(networkResultBuffer!, 8, bodyLength);
-
-    console.log('[Ribosome Worker] Network response received, status:', status);
 
     return { status, body: new Uint8Array(responseBody) };
   }
@@ -1125,7 +1095,7 @@ class ProxyNetworkService implements NetworkService {
         entry: this.parseEntry(data.entry),
       };
     } catch (error) {
-      console.error('[ProxyNetwork] Failed to parse record response:', error);
+      log.error('[ProxyNetwork] Failed to parse record response:', error);
       return null;
     }
   }
@@ -1162,17 +1132,13 @@ class ProxyNetworkService implements NetworkService {
 
       // Check if this is WireLinkOps format (direct kitsune2 mode)
       if (data && typeof data === 'object' && 'creates' in data && Array.isArray(data.creates)) {
-        console.log(`[ProxyNetwork] Parsing WireLinkOps format with ${data.creates.length} creates, ${data.deletes?.length || 0} deletes`);
         return this.parseWireLinkOps(data, baseAddress);
       }
 
       // Otherwise expect Vec<Link> format (conductor mode)
       if (!Array.isArray(data)) {
-        console.log('[ProxyNetwork] Links response is not an array:', typeof data);
         return [];
       }
-
-      console.log(`[ProxyNetwork] Parsing ${data.length} links from linker (Link array format)`);
 
       return data.map((link: any) => ({
         create_link_hash: this.normalizeByteArrays(link.create_link_hash),
@@ -1185,7 +1151,7 @@ class ProxyNetworkService implements NetworkService {
         author: this.normalizeByteArrays(link.author),
       }));
     } catch (error) {
-      console.error('[ProxyNetwork] Failed to parse links response:', error);
+      log.error('[ProxyNetwork] Failed to parse links response:', error);
       return [];
     }
   }
@@ -1202,7 +1168,7 @@ class ProxyNetworkService implements NetworkService {
       return [];
     }
 
-    return wireOps.creates.map((create: any, idx: number) => {
+    return wireOps.creates.map((create: any) => {
       const author = this.normalizeByteArrays(create.author);
       // WireCreateLink uses target_address, not target
       const target = this.normalizeByteArrays(create.target_address);
@@ -1214,13 +1180,6 @@ class ProxyNetworkService implements NetworkService {
 
       // Use provided baseAddress or create empty placeholder
       const base = baseAddress || new Uint8Array(39);
-
-      console.log(`[ProxyNetwork] WireLinkOps create ${idx}:`, {
-        target_prefix: target instanceof Uint8Array ? Array.from(target.slice(0, 3)) : 'N/A',
-        author_prefix: author instanceof Uint8Array ? Array.from(author.slice(0, 3)) : 'N/A',
-        zome_index: create.zome_index,
-        link_type: create.link_type,
-      });
 
       return {
         create_link_hash: createLinkHash,
@@ -1272,25 +1231,21 @@ class ProxyNetworkService implements NetworkService {
     }
 
     const url = this.buildRecordUrl(dnaHash, hash);
-    console.log(`[ProxyNetwork] Fetching record: ${url}`);
 
     try {
       const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
 
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
-        const record = this.parseRecordResponse(responseText);
-        console.log(`[ProxyNetwork] Record fetched successfully`);
-        return record;
+        return this.parseRecordResponse(responseText);
       } else if (response.status === 404) {
-        console.log(`[ProxyNetwork] Record not found (404)`);
         return null;
       } else {
-        console.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`[ProxyNetwork] Network error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      console.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`[ProxyNetwork] Request failed:`, error);
       return null;
     }
   }
@@ -1301,25 +1256,21 @@ class ProxyNetworkService implements NetworkService {
     }
 
     const url = this.buildLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
-    console.log(`[ProxyNetwork] Fetching links: ${url}`);
 
     try {
       const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
 
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
-        const links = this.parseLinksResponse(responseText, baseAddress);
-        console.log(`[ProxyNetwork] Fetched ${links.length} links`);
-        return links;
+        return this.parseLinksResponse(responseText, baseAddress);
       } else if (response.status === 404) {
-        console.log(`[ProxyNetwork] No links found (404)`);
         return [];
       } else {
-        console.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`[ProxyNetwork] Network error: ${response.status}`);
         return [];
       }
     } catch (error) {
-      console.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`[ProxyNetwork] Request failed:`, error);
       return [];
     }
   }
@@ -1330,25 +1281,21 @@ class ProxyNetworkService implements NetworkService {
     }
 
     const url = this.buildDetailsUrl(dnaHash, hash);
-    console.log(`[ProxyNetwork] Fetching details: ${url}`);
 
     try {
       const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
 
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
-        const details = JSON.parse(responseText);
-        console.log(`[ProxyNetwork] Details fetched successfully`);
-        return this.normalizeByteArrays(details);
+        return this.normalizeByteArrays(JSON.parse(responseText));
       } else if (response.status === 404) {
-        console.log(`[ProxyNetwork] Details not found (404)`);
         return null;
       } else {
-        console.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`[ProxyNetwork] Network error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      console.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`[ProxyNetwork] Request failed:`, error);
       return null;
     }
   }
@@ -1359,7 +1306,6 @@ class ProxyNetworkService implements NetworkService {
     }
 
     const url = this.buildCountLinksUrl(dnaHash, baseAddress, linkType, zomeIndex);
-    console.log(`[ProxyNetwork] Counting links: ${url}`);
 
     try {
       const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
@@ -1367,21 +1313,19 @@ class ProxyNetworkService implements NetworkService {
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
         const count = JSON.parse(responseText);
-        console.log(`[ProxyNetwork] Link count:`, typeof count, Array.isArray(count) ? `array(${count.length})` : count);
         // CountLinksResponse is Vec<ActionHash> (array) in kitsune mode, or number in conductor mode
         if (Array.isArray(count)) {
           return count.length;
         }
         return typeof count === 'number' ? count : 0;
       } else if (response.status === 404) {
-        console.log(`[ProxyNetwork] No links found (404)`);
         return 0;
       } else {
-        console.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`[ProxyNetwork] Network error: ${response.status}`);
         return 0;
       }
     } catch (error) {
-      console.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`[ProxyNetwork] Request failed:`, error);
       return 0;
     }
   }
@@ -1398,24 +1342,21 @@ class ProxyNetworkService implements NetworkService {
     const dnaHashB64 = this.getDnaHashB64(dnaHash);
     const agentB64 = this.toHolochainBase64(agentPubKey);
     const url = `${linkerUrl}/dht/${dnaHashB64}/agent_activity/${agentB64}?request=${activityRequest}`;
-    console.log(`[ProxyNetwork] Fetching agent activity: ${url}`);
     try {
       const response = this.fetchSync('GET', url, { 'Accept': 'application/json' });
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
         const data = JSON.parse(responseText);
         if (!data) return null;
-        console.log(`[ProxyNetwork] Agent activity fetched, status: ${data.status}`);
         return this.normalizeByteArrays(data) as AgentActivityResponse;
       } else if (response.status === 404) {
-        console.log(`[ProxyNetwork] Agent activity not found (404)`);
         return null;
       } else {
-        console.error(`[ProxyNetwork] Agent activity error: ${response.status}`);
+        log.error(`[ProxyNetwork] Agent activity error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      console.error(`[ProxyNetwork] Agent activity request failed:`, error);
+      log.error(`[ProxyNetwork] Agent activity request failed:`, error);
       return null;
     }
   }
@@ -1437,7 +1378,6 @@ class ProxyNetworkService implements NetworkService {
       chain_top: Array.from(chainTop),
       include_cached_entries: includeCachedEntries,
     });
-    console.log(`[ProxyNetwork] Fetching must_get_agent_activity: ${url}`);
     try {
       const response = this.fetchSync('POST', url, {
         'Accept': 'application/json',
@@ -1445,15 +1385,13 @@ class ProxyNetworkService implements NetworkService {
       }, new TextEncoder().encode(body));
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
-        const data = JSON.parse(responseText);
-        console.log(`[ProxyNetwork] must_get_agent_activity fetched`);
-        return this.normalizeByteArrays(data) as MustGetAgentActivityResponse;
+        return this.normalizeByteArrays(JSON.parse(responseText)) as MustGetAgentActivityResponse;
       } else {
-        console.error(`[ProxyNetwork] must_get_agent_activity error: ${response.status}`);
+        log.error(`[ProxyNetwork] must_get_agent_activity error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      console.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
+      log.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
       return null;
     }
   }
@@ -1496,7 +1434,6 @@ let zomeCallChain: Promise<void> = Promise.resolve();
 async function handleCallZome(payload: any): Promise<any> {
   const workerCallStart = performance.now();
   const { dnaWasm, cellId, zome, fn, payloadBytes, provenance, dnaManifest } = payload;
-  console.log(`[Ribosome Worker] >>> handleCallZome START: ${zome}::${fn}`);
 
   // Set cell context for storage
   const cellIdBytes: [DnaHash, AgentPubKey] = [
@@ -1513,9 +1450,6 @@ async function handleCallZome(payload: any): Promise<any> {
     // First time seeing this DNA - cache the WASM
     cachedWasm = new Uint8Array(dnaWasm);
     wasmCache.set(dnaHashKey, cachedWasm);
-    console.log(`[Ribosome Worker] Cached WASM for ${dnaHashKey.substring(0, 16)}... (${cachedWasm.length} bytes)`);
-  } else if (cachedWasm) {
-    console.log(`[Ribosome Worker] Using cached WASM for ${dnaHashKey.substring(0, 16)}...`);
   }
 
   if (!cachedWasm) {
@@ -1547,10 +1481,8 @@ async function handleCallZome(payload: any): Promise<any> {
   };
   const afterBuildRequest = performance.now();
 
-  console.log(`[Ribosome Worker] >>> calling WASM: ${zome}::${fn}`);
   const zomeResult = await callZome(request);
   const afterZomeCall = performance.now();
-  console.log(`[Ribosome Worker] <<< WASM returned: ${zome}::${fn} in ${(afterZomeCall - afterBuildRequest).toFixed(0)}ms`);
 
   // Convert pending records for transport (Uint8Array -> Array)
   let pendingRecordsForTransport: any[] | undefined;
@@ -1589,13 +1521,11 @@ async function handleCallZome(payload: any): Promise<any> {
         entry: entryForTransport,
       };
     });
-    console.log(`[Ribosome Worker] ${pendingRecordsForTransport.length} pending records for publishing`);
   }
 
   // Send remote signals immediately via postMessage (fire-and-forget)
   // This mirrors Holochain's tokio::spawn pattern for send_remote_signal
   if (zomeResult.remoteSignals && zomeResult.remoteSignals.length > 0) {
-    console.log(`[Ribosome Worker] Sending ${zomeResult.remoteSignals.length} remote signals`);
     // Send as separate message - offscreen will forward to WebSocket
     // Include DNA hash so offscreen knows which linker connection to use
     self.postMessage({
@@ -1605,9 +1535,7 @@ async function handleCallZome(payload: any): Promise<any> {
     });
   }
 
-  console.log(`[Ribosome Worker] Returning ${(zomeResult.signals || []).length} emitted signals`);
-
-  console.log(`[PERF Worker] CALL_ZOME message handling:
+  log.debug(`[PERF Worker] CALL_ZOME message handling:
    ├─ setContext:     ${(afterSetContext - workerCallStart).toFixed(1)}ms
    ├─ buildRequest:   ${(afterBuildRequest - afterSetContext).toFixed(1)}ms
    ├─ callZome:       ${(afterZomeCall - afterBuildRequest).toFixed(1)}ms
@@ -1635,7 +1563,7 @@ self.onmessage = async (event: MessageEvent) => {
           // Firefox mode: no SharedArrayBuffer, worker does sync XHR directly
           // and signing uses a worker-local LairClient (reads keys from shared IndexedDB)
           firefoxMode = true;
-          console.log('[Ribosome Worker] Firefox mode enabled - direct sync XHR + local LairClient');
+          log.info('Firefox mode enabled - direct sync XHR + local LairClient');
 
           // Create worker-local LairClient backed by the same IndexedDB as background,
           // wrapped with EncryptedKeyStorage. Master key will be set via SET_MASTER_KEY.
@@ -1643,7 +1571,7 @@ self.onmessage = async (event: MessageEvent) => {
           workerEncryptedStorage = new EncryptedKeyStorage(innerStorage);
           await workerEncryptedStorage.init();
           workerLairClient = await createLairClient(workerEncryptedStorage);
-          console.log('[Ribosome Worker] Worker LairClient initialized with encrypted storage');
+          log.info('Worker LairClient initialized with encrypted storage');
 
           // Apply initial network config if provided
           if (payload.linkerUrl) linkerUrl = payload.linkerUrl;
@@ -1666,7 +1594,6 @@ self.onmessage = async (event: MessageEvent) => {
             signSignalView = new Int32Array(ssb);
             signResultBuffer = srb;
             signResultView = new Uint8Array(srb);
-            console.log('[Ribosome Worker] Sign buffers initialized');
           }
         }
 
@@ -1676,16 +1603,15 @@ self.onmessage = async (event: MessageEvent) => {
 
         // Set Lair client for signing
         setLairClient(proxyLairClient);
-        console.log('[Ribosome Worker] Lair client set');
+        log.info('Lair client set');
 
         result = { success: true };
-        console.log('[Ribosome Worker] Initialized');
+        log.info('Initialized');
         break;
 
       case 'CONFIGURE_NETWORK':
         linkerUrl = payload.linkerUrl || '';
         sessionToken = payload.sessionToken || null;
-        console.log('[Ribosome Worker] Network configured:', linkerUrl);
         result = { success: true };
         break;
 
@@ -1703,7 +1629,6 @@ self.onmessage = async (event: MessageEvent) => {
         const { pubKey } = payload;
         const pubKeyBytes = new Uint8Array(pubKey) as Ed25519PubKey;
         await workerLairClient.preloadKeyForSync(pubKeyBytes);
-        console.log(`[Ribosome Worker] Signing key preloaded from IndexedDB`);
         result = { success: true };
         break;
       }
@@ -1715,7 +1640,7 @@ self.onmessage = async (event: MessageEvent) => {
         }
         const masterKeyBytes = new Uint8Array(payload.masterKey);
         workerEncryptedStorage.setMasterKey(masterKeyBytes);
-        console.log('[Ribosome Worker] Master encryption key set');
+        log.info('Master encryption key set');
         result = { success: true };
         break;
       }
@@ -1728,7 +1653,7 @@ self.onmessage = async (event: MessageEvent) => {
         if (workerLairClient) {
           workerLairClient.clearAllPreloadedKeys();
         }
-        console.log('[Ribosome Worker] Master key and preloaded keys cleared');
+        log.info('Master key and preloaded keys cleared');
         result = { success: true };
         break;
       }
@@ -1754,9 +1679,7 @@ self.onmessage = async (event: MessageEvent) => {
         const dnaHashBytes = new Uint8Array(dnaHashArr) as DnaHash;
         const agentPubKeyBytes = new Uint8Array(agentPubKeyArr) as AgentPubKey;
 
-        console.log('[Ribosome Worker] Getting all records for republishing');
         const records = storage.getAllRecords(dnaHashBytes, agentPubKeyBytes);
-        console.log(`[Ribosome Worker] Found ${records.length} records`);
 
         // Convert records to transport format (Uint8Array -> Array)
         const recordsForTransport = records.map(record => {
@@ -1804,7 +1727,6 @@ self.onmessage = async (event: MessageEvent) => {
 
         for (const dnaHashArr of recoverDnaHashes) {
           const dnaHashBytes = new Uint8Array(dnaHashArr);
-          console.log(`[Ribosome Worker] Recovering chain for DNA ${encodeHashToBase64(dnaHashBytes).substring(0, 15)}...`);
 
           // Set cell context for storage writes
           storage.setCellContext(dnaHashBytes, agentBytes);
@@ -1833,7 +1755,6 @@ self.onmessage = async (event: MessageEvent) => {
           allErrors.push(...storeResult.errors);
         }
 
-        console.log(`[Ribosome Worker] Recovery complete: ${totalRecovered} recovered, ${totalFailed} failed, ${totalVerified} verified, ${totalUnverified} unverified`);
         result = { recoveredCount: totalRecovered, failedCount: totalFailed, verifiedCount: totalVerified, unverifiedCount: totalUnverified, errors: allErrors };
         break;
       }
@@ -1930,7 +1851,7 @@ self.onmessage = async (event: MessageEvent) => {
 
     self.postMessage({ id, success: true, result });
   } catch (error) {
-    console.error('[Ribosome Worker] Error:', error);
+    log.error('Error:', error);
     self.postMessage({
       id,
       success: false,
@@ -1941,4 +1862,4 @@ self.onmessage = async (event: MessageEvent) => {
 
 // Signal ready
 self.postMessage({ type: 'READY' });
-console.log('[Ribosome Worker] Started');
+log.info('Started');

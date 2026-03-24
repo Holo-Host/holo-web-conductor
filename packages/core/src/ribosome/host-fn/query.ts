@@ -30,12 +30,6 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // WasmQueryInput.action_type is string[] but storage expects single string
   const actionTypeFilter = input.action_type?.[0];
 
-  console.log("[query] Querying source chain", {
-    sequenceRange: input.sequence_range,
-    actionType: actionTypeFilter,
-    includeEntries: input.include_entries,
-  });
-
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Query actions from storage (always synchronous with StorageProvider)
@@ -48,17 +42,7 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
     // Fetch entry if needed and if action has one
     if (input.include_entries !== false && "entryHash" in action && action.entryHash) {
-      console.log("[query] Looking up entry for action:", {
-        actionType: action.actionType,
-        entryHash: Array.from(action.entryHash.slice(0, 8)),
-      });
-
       entry = storage.getEntry(action.entryHash);
-
-      console.log("[query] Entry result:", {
-        isNull: entry === null,
-        hasValue: !!entry,
-      });
     }
 
     // Build record structure with Holochain-formatted action
@@ -86,15 +70,8 @@ export const query: HostFunctionImpl = (context, inputPtr, inputLen) => {
       entry: recordEntry,
     };
 
-    console.log(`[query] Record ${records.length}:`, {
-      actionType: actionContent.type,
-      entryType: typeof recordEntry === 'string' ? recordEntry : 'Present',
-    });
-
     records.push(record);
   }
-
-  console.log("[query] Found records:", records.length);
 
   return serializeResult(instance, records);
 };

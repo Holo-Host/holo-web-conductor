@@ -27,6 +27,9 @@ import type {
 } from './types';
 import { STATEMENTS } from './sqlite-schema';
 import { encodeHashToBase64 } from '../types/holochain-types';
+import { createLogger } from '@hwc/shared';
+
+const log = createLogger('Storage');
 
 // Signal buffer layout: [requestId: i32, success: i32]
 const SIGNAL_BUFFER_SIZE = 8;
@@ -80,7 +83,7 @@ export class SQLiteStorage {
   async init(workerUrl: string): Promise<void> {
     if (this.initialized) return;
 
-    console.log('[SQLiteStorage] Initializing worker...');
+    log.debug('Initializing worker...');
 
     // Create worker
     this.worker = new Worker(workerUrl);
@@ -90,7 +93,7 @@ export class SQLiteStorage {
       const { id, success, result, error } = event.data;
 
       if (id === 0 && result?.type === 'READY') {
-        console.log('[SQLiteStorage] Worker ready');
+        log.debug('Worker ready');
         return;
       }
 
@@ -124,7 +127,7 @@ export class SQLiteStorage {
     await this.sendMessageAsync({ id: this.nextRequestId++, type: 'INIT' });
 
     this.initialized = true;
-    console.log('[SQLiteStorage] Initialized');
+    log.info('Initialized');
   }
 
   /**
@@ -251,7 +254,6 @@ export class SQLiteStorage {
    */
   beginTransaction(): void {
     this.callSync('BEGIN');
-    console.log('[SQLiteStorage] Transaction started');
   }
 
   /**
@@ -259,7 +261,6 @@ export class SQLiteStorage {
    */
   commitTransaction(): void {
     this.callSync('COMMIT');
-    console.log('[SQLiteStorage] Transaction committed (durable)');
   }
 
   /**
@@ -267,7 +268,6 @@ export class SQLiteStorage {
    */
   rollbackTransaction(): void {
     this.callSync('ROLLBACK');
-    console.log('[SQLiteStorage] Transaction rolled back');
   }
 
   /**
@@ -604,12 +604,7 @@ export class SQLiteStorage {
     dnaHash: Uint8Array,
     agentPubKey: Uint8Array
   ): RecordDetails | null {
-    console.log('[SQLiteStorage.getDetails] Looking up entry', {
-      entryHash: Array.from(entryHash.slice(0, 8)),
-    });
-
     const allActions = this.queryActions(dnaHash, agentPubKey);
-    console.log('[SQLiteStorage.getDetails] Found actions count:', allActions.length);
 
     // Find action that created/updated this entry
     let originatingAction = allActions.find(
@@ -618,43 +613,20 @@ export class SQLiteStorage {
            this.hashesEqual((a as CreateAction).entryHash, entryHash)
     ) as CreateAction | UpdateAction | undefined;
 
-    if (originatingAction) {
-      console.log('[SQLiteStorage.getDetails] Found Create action', {
-        actionHash: Array.from(originatingAction.actionHash.slice(0, 8)),
-      });
-    }
-
     if (!originatingAction) {
       originatingAction = allActions.find(
         a => a.actionType === 'Update' &&
              'entryHash' in a &&
              this.hashesEqual((a as UpdateAction).entryHash, entryHash)
       ) as UpdateAction | undefined;
-
-      if (originatingAction) {
-        console.log('[SQLiteStorage.getDetails] Found Update action', {
-          actionHash: Array.from(originatingAction.actionHash.slice(0, 8)),
-        });
-      }
     }
 
     if (!originatingAction) {
-      console.log('[SQLiteStorage.getDetails] No originating action found for entryHash');
-      // Log all Create/Update actions to see what we have
-      allActions.filter(a => a.actionType === 'Create' || a.actionType === 'Update').forEach(a => {
-        if ('entryHash' in a) {
-          console.log('[SQLiteStorage.getDetails] Existing action:', {
-            type: a.actionType,
-            entryHash: Array.from((a as CreateAction).entryHash.slice(0, 8)),
-          });
-        }
-      });
       return null;
     }
 
     const entry = this.getEntry(entryHash);
     if (!entry) {
-      console.log('[SQLiteStorage.getDetails] Entry not found in storage');
       return null;
     }
 
@@ -781,7 +753,6 @@ export class SQLiteStorage {
    */
   async preloadChainForCell(_dnaHash: Uint8Array, _agentPubKey: Uint8Array): Promise<void> {
     // No-op - SQLite queries on demand, no pre-loading needed
-    console.log('[SQLiteStorage] preloadChainForCell called (no-op)');
   }
 
   /**
@@ -792,7 +763,6 @@ export class SQLiteStorage {
     this.callSync('EXEC', { sql: STATEMENTS.CLEAR_ENTRIES });
     this.callSync('EXEC', { sql: STATEMENTS.CLEAR_LINKS });
     this.callSync('EXEC', { sql: STATEMENTS.CLEAR_CHAIN_HEADS });
-    console.log('[SQLiteStorage] All data cleared');
   }
 
   /**
@@ -804,7 +774,6 @@ export class SQLiteStorage {
       this.worker.terminate();
       this.worker = null;
       this.initialized = false;
-      console.log('[SQLiteStorage] Closed');
     }
   }
 }

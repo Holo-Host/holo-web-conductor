@@ -384,5 +384,3 @@ Object.defineProperty(window, "holochain", {
 
 // Notify page that Holochain extension is ready
 window.dispatchEvent(new Event("holochain:ready"));
-
-console.log("Holochain API injected into page");

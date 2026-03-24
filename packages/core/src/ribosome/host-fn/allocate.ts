@@ -22,8 +22,6 @@ export const allocate: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Read the allocation size from WASM memory (u32)
   const len = view.getUint32(inputPtr, true);
 
-  console.log(`[HostFn] allocate called: ${len} bytes`);
-
   // Call the WASM's own allocator if it exists
   const wasmAllocate = instance.exports.__hc__allocate_1 as
     | ((len: number) => number)

@@ -32,10 +32,6 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
   // Deserialize input
   const input = deserializeFromWasm(instance, inputPtr, inputLen) as DeleteLinkInput;
 
-  console.log("[delete_link] Deleting link", {
-    linkAddHash: Array.from(input.address.slice(0, 8)),
-  });
-
   // Get the CreateLink action
   const createLinkAction = storage.getAction(input.address);
   if (!createLinkAction || createLinkAction.actionType !== "CreateLink") {
@@ -112,11 +108,6 @@ export const deleteLink: HostFunctionImpl = (context, inputPtr, inputLen) => {
     callContext.pendingRecords = [];
   }
   callContext.pendingRecords.push({ action });
-
-  console.log("[delete_link] Deleted link", {
-    actionHash: Array.from(actionHash.slice(0, 8)),
-    actionSeq,
-  });
 
   return serializeResult(instance, actionHash);
 };

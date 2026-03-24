@@ -28,10 +28,6 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
     validateWasmDeleteInput, 'WasmDeleteInput'
   );
 
-  console.log("[delete] Deleting entry", {
-    deletesActionHash: Array.from(input.deletes_action_hash.slice(0, 8)),
-  });
-
   // Get action being deleted
   const deletesAction = storage.getAction(input.deletes_action_hash);
   if (!deletesAction || !isEntryAction(deletesAction)) {
@@ -89,11 +85,6 @@ export const deleteEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
     callContext.pendingRecords = [];
   }
   callContext.pendingRecords.push({ action });
-
-  console.log("[delete] Deleted entry", {
-    actionHash: Array.from(actionHash.slice(0, 8)),
-    actionSeq,
-  });
 
   return serializeResult(instance, actionHash);
 };

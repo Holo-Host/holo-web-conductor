@@ -106,7 +106,6 @@ let storageProvider: StorageProvider | null = null;
  */
 export function setStorageProvider(provider: StorageProvider): void {
   storageProvider = provider;
-  console.log('[StorageProvider] Set storage provider:', provider.constructor.name);
 }
 
 /**

@@ -75,7 +75,6 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
   if (isCoordinator && currentZome) {
     // Coordinator zome: get entry_defs and link_types from dependent integrity zomes
     const dependencies = currentZome.dependencies || [];
-    console.log(`[zome_info] Coordinator zome '${callContext.zome}' dependencies:`, dependencies);
 
     for (const depName of dependencies) {
       const integrityZome = integrityZomes.find((z) => z.name === depName);
@@ -94,11 +93,6 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
           zomeTypes.links.push([integrityZome.index, linkTypeIndices]);
         }
 
-        console.log(`[zome_info] Added from integrity zome '${depName}':`, {
-          zomeIndex: integrityZome.index,
-          entryDefsCount: integrityZome.entryDefs?.length || 0,
-          linkTypeCount,
-        });
       }
     }
   } else if (currentZome) {
@@ -116,13 +110,6 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
     }
   }
 
-  console.log('[zome_info] entry_defs:', {
-    hasCurrentZome: !!currentZome,
-    isCoordinator,
-    entryDefsLength: allEntryDefs.length,
-    zomeTypesEntries: zomeTypes.entries,
-  });
-
   const zomeInfoData: ZomeInfo = {
     name: callContext.zome,
     id: zomeIndex,
@@ -131,14 +118,6 @@ export const zomeInfo: HostFunctionImpl = (context, inputPtr, inputLen) => {
     extern_fns: [], // TODO: Extract from manifest
     zome_types: zomeTypes,
   };
-
-  console.log(`[zome_info] Returning info for zome: ${callContext.zome}`, {
-    index: zomeIndex,
-    hasManifest: !!manifest,
-    integrityZomes: integrityZomes.length,
-    coordinatorZomes: coordinatorZomes.length,
-    entryDefs: allEntryDefs.length,
-  });
 
   return serializeResult(instance, zomeInfoData);
 };

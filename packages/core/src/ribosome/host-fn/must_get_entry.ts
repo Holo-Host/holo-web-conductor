@@ -39,12 +39,6 @@ export const mustGetEntry: HostFunctionImpl = (context, inputPtr, inputLen) => {
     "MustGetEntryInput (EntryHash)"
   );
 
-  console.log(
-    `[HostFn] must_get_entry: hash=${Array.from(entryHash.slice(0, 4))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}...`
-  );
-
   // Cascade lookup: local → cache → network
   const cascade = new Cascade(
     storage,

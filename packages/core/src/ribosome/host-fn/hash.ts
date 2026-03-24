@@ -69,24 +69,8 @@ export const hash: HostFunctionImpl = (context, inputPtr, inputLen) => {
       : new Uint8Array(Object.values(input as Record<string, number>));
   }
 
-  // Log ALL hash calls to trace path entry computation
-  let decoded = '';
-  try {
-    decoded = new TextDecoder().decode(dataToHash).substring(0, 100);
-  } catch {
-    decoded = '[binary]';
-  }
-
-  console.log('[hash] 🔑 Hashing:', {
-    inputLength: dataToHash.length,
-    inputBytes: Array.from(dataToHash.slice(0, 50)),
-    decoded: decoded,
-  });
-
   // Compute Blake2b-256 hash (32 bytes output) - same as Holochain
   const hash32 = blake2b(dataToHash, undefined, 32);
-
-  console.log('[hash] 🔑 Blake2b result:', Array.from(hash32));
 
   return serializeResult(instance, hash32);
 };

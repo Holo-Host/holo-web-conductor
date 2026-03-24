@@ -215,7 +215,7 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
     };
 
     const afterBuild = performance.now();
-    logZome.info(
+    logZome.debug(
       `Sending zome call to offscreen: ${request.zome}::${request.fn} (context: ${contextId})`
     );
 
