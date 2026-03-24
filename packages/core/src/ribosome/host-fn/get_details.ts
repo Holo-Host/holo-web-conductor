@@ -43,12 +43,6 @@ function processGetDetailsInput(
   // Detect hash type from prefix bytes
   const hashType = getHashType(inputHash);
 
-  console.log(`[get_details] Input ${inputIndex}:`, {
-    hash: encodeHashToBase64(inputHash),
-    hashType,
-    ...(strategy ? { strategy } : {}),
-  });
-
   // Route based on hash type
   if (hashType === HoloHashType.Entry) {
     return processEntryHashQuery(inputHash as EntryHash, dnaHash, agentPubKey, storage, cascade, inputIndex, strategy);
@@ -74,8 +68,6 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
     get_options?: unknown;
   }>;
 
-  console.log('[get_details] Processing batch of', inputs.length, 'queries');
-
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Create cascade for network fallback
@@ -86,8 +78,6 @@ export const getDetails: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const allResults = inputs.map((input, index) =>
     processGetDetailsInput(input, dnaHash, agentPubKey, storage, cascade, index)
   );
-
-  console.log('[get_details] Batch complete. Found:', allResults.filter(r => r !== null).length, '/', inputs.length);
 
   return serializeResult(instance, allResults);
 };
@@ -104,19 +94,15 @@ function processEntryHashQuery(
   inputIndex: number,
   strategy?: GetStrategy
 ): any | null {
-  console.log(`[get_details] Input ${inputIndex}: entry hash query`);
-
   // Use cascade for local-first with network fallback
   const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, entryHash, undefined, strategy);
 
   if (!cascadeResult) {
-    console.log(`[get_details] Input ${inputIndex}: No entry details found`);
     return null;
   }
 
   // Check if result is from network (already formatted) or local (needs formatting)
   if (cascadeResult.source === 'network') {
-    console.log(`[get_details] Input ${inputIndex}: Returning network entry details`);
     return cascadeResult.details;
   }
 
@@ -160,11 +146,6 @@ function processEntryHashQuery(
     },
   };
 
-  console.log(`[get_details] Input ${inputIndex}: local entry details`, {
-    actionsCount: entryDetails.actions.length,
-    updatesCount: entryDetails.updates.length,
-  });
-
   return result;
 }
 
@@ -180,21 +161,15 @@ function processActionHashQuery(
   inputIndex: number,
   strategy?: GetStrategy
 ): any | null {
-  console.log(`[get_details] Input ${inputIndex}: action hash query`, {
-    actionHash: encodeHashToBase64(actionHash),
-  });
-
   // Use cascade for local-first with network fallback
   const cascadeResult = cascade.fetchDetails(dnaHash, agentPubKey, actionHash, undefined, strategy);
 
   if (!cascadeResult) {
-    console.log(`[get_details] Input ${inputIndex}: No record details found`);
     return null;
   }
 
   // Check if result is from network (already formatted) or local (needs formatting)
   if (cascadeResult.source === 'network') {
-    console.log(`[get_details] Input ${inputIndex}: Returning network record details`);
     return cascadeResult.details;
   }
 
@@ -203,14 +178,8 @@ function processActionHashQuery(
   const action = cascadeResult.action;
 
   if (!details || !details.record) {
-    console.log(`[get_details] Input ${inputIndex}: No details.record found`);
     return null;
   }
-
-  console.log(`[get_details] Input ${inputIndex}: local record details`, {
-    updatesCount: details?.updates?.length ?? 0,
-    deletesCount: details?.deletes?.length ?? 0,
-  });
 
   // Build RecordDetails structure
   const recordDetails = {

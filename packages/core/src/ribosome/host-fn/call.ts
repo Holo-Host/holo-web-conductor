@@ -74,8 +74,6 @@ export const call: HostFunctionImpl = (context, inputPtr, inputLen) => {
     throw new Error(`[HostFn:call] Missing zome_name or fn_name`);
   }
 
-  console.log(`[HostFn:call] Cross-zome call: ${targetZome}::${targetFn}`);
-
   // Find the target zome's WASM from the DNA manifest
   const dnaManifest = callContext.dnaManifest;
   if (!dnaManifest) {
@@ -167,14 +165,11 @@ export const call: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const { ptr: inputGuestPtr, len: inputLen2 } = serializeToWasm(targetInstance, payloadBytes);
 
   // Call the target zome function with BOTH ptr and len
-  console.log(`[HostFn:call] Executing ${targetZome}::${targetFn} (ptr=${inputGuestPtr}, len=${inputLen2})...`);
   const resultI64 = wasmFn(inputGuestPtr, inputLen2);
 
   // Extract result from the target instance's memory
   const { ptr: resultPtr, len: resultLen } = extractPtrAndLen(resultI64);
   const result = deserializeFromWasm(targetInstance, resultPtr, resultLen);
-
-  console.log(`[HostFn:call] ${targetZome}::${targetFn} completed`);
 
   // Propagate side effects from target context back to caller context
   if (targetContext.pendingRecords && targetContext.pendingRecords.length > 0) {

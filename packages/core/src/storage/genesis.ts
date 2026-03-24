@@ -27,6 +27,9 @@ import {
 } from '../types/holochain-serialization';
 import { signAction } from '../signing';
 import type { PendingRecord } from '../ribosome/call-context';
+import { createLogger } from '@hwc/shared';
+
+const log = createLogger('Genesis');
 
 /**
  * Result of genesis initialization
@@ -56,23 +59,16 @@ export async function initializeGenesis(
   agentPubKey: Uint8Array,
   membraneProof?: Uint8Array
 ): Promise<GenesisResult> {
-  console.log('[Genesis] Checking if chain needs initialization...');
-
   // Check if chain already has genesis actions
   const chainHead = await storage.getChainHead(dnaHash, agentPubKey);
 
-  console.log('[Genesis] Chain head check result:', chainHead ? `seq=${chainHead.actionSeq}` : 'null');
-
   if (chainHead !== null) {
     // Chain already initialized
-    console.log('[Genesis] Chain already initialized, skipping genesis');
     return { initialized: false, pendingRecords: [] };
   }
 
   // Collect pending records for publishing
   const pendingRecords: PendingRecord[] = [];
-
-  console.log('[Genesis] Initializing genesis actions for new cell');
 
   const timestampMicros = Date.now() * 1000; // Microseconds as number for serialization
   const timestampBigInt = BigInt(timestampMicros); // BigInt for storage
@@ -223,7 +219,7 @@ export async function initializeGenesis(
     timestampBigInt
   );
 
-  console.log('[Genesis] Genesis complete - chain initialized at seq: 3', {
+  log.info('Genesis complete - chain initialized at seq: 3', {
     dnaActionHash: Array.from(dnaActionHash.slice(0, 8)),
     agentValidationActionHash: Array.from(agentValidationActionHash.slice(0, 8)),
     agentCreateActionHash: Array.from(agentCreateActionHash.slice(0, 8)),

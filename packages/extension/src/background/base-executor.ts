@@ -223,7 +223,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
 
     // Signal forwarding: invoke the callback registered by background/index.ts
     this.wsService.onSignal((signal) => {
-      logSignal.info(`Remote signal: dna=${signal.dna_hash.substring(0, 15)}..., zome=${signal.zome_name}`);
+      logSignal.debug(`Remote signal: dna=${signal.dna_hash.substring(0, 15)}..., zome=${signal.zome_name}`);
       if (this.remoteSignalCallback) {
         this.remoteSignalCallback({
           dna_hash: signal.dna_hash,

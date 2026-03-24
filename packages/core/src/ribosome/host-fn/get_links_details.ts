@@ -110,14 +110,7 @@ function processGetLinksDetailsInput(
   agentPubKey: Uint8Array,
   cascade: Cascade,
   storage: ReturnType<typeof getStorageProvider>,
-  inputIndex: number
 ): LinkDetails {
-  console.log(`[get_links_details] Input ${inputIndex}: Getting link details`, {
-    base_hash: encodeHashToBase64(input.base_address),
-    linkType: JSON.stringify(input.link_type),
-    tag_prefix: input.tag_prefix ? Array.from(input.tag_prefix) : null,
-  });
-
   const linkTypeFilter = parseLinkTypeFilter(input.link_type);
 
   // Fetch links via cascade (same as get_links)
@@ -134,8 +127,6 @@ function processGetLinksDetailsInput(
       return true;
     });
   }
-
-  console.log(`[get_links_details] Input ${inputIndex}: Found ${filteredLinks.length} links`);
 
   // Also get local links to check for delete info
   const localLinks = storage.getLinks(input.base_address, dnaHash, agentPubKey, linkTypeFilter.linkType);
@@ -244,19 +235,15 @@ export const getLinksDetails: HostFunctionImpl = (context, inputPtr, inputLen) =
     validateWasmGetLinksInputArray, 'WasmGetLinksInput[]'
   );
 
-  console.log('[get_links_details] Processing batch of', inputs.length, 'queries');
-
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   const cascade = new Cascade(storage, getNetworkCache(), getNetworkService());
 
   // Process ALL inputs and collect results
   // HDK expects Vec<LinkDetails> — one LinkDetails per input query
-  const allResults = inputs.map((input, index) =>
-    processGetLinksDetailsInput(input, dnaHash, agentPubKey, cascade, storage, index)
+  const allResults = inputs.map((input) =>
+    processGetLinksDetailsInput(input, dnaHash, agentPubKey, cascade, storage)
   );
-
-  console.log('[get_links_details] Batch complete. Results per query:', allResults.map(r => r.length));
 
   return serializeResult(instance, allResults);
 };

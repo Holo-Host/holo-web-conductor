@@ -81,12 +81,10 @@ export class RibosomeRuntime {
     // Check cache first
     const cached = this.moduleCache.get(key);
     if (cached) {
-      console.log(`[Ribosome] Using cached module for DNA ${key.substring(0, 8)}...`);
       return cached;
     }
 
     // Compile and cache
-    console.log(`[Ribosome] Compiling WASM for DNA ${key.substring(0, 8)}...`);
     const module = await this.compileModule(wasm);
     this.moduleCache.set(key, module);
 
@@ -115,7 +113,6 @@ export class RibosomeRuntime {
   setZomeMetadata(dnaHash: Uint8Array, zomeName: string, metadata: ZomeMetadata): void {
     const key = `${encodeHashToBase64(dnaHash)}:${zomeName}`;
     this.metadataCache.set(key, metadata);
-    console.log(`[Ribosome] Cached metadata for ${zomeName}: ${metadata.entryDefs.length} entry_defs, ${metadata.linkTypeCount} link_types`);
   }
 
   /**

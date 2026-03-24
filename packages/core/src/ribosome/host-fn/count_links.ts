@@ -59,7 +59,5 @@ export const countLinks: HostFunctionImpl = (context, inputPtr, inputLen) => {
 
   const count = links.length;
 
-  console.log('[count_links] Counted links (cascade):', count);
-
   return serializeResult(instance, count);
 };

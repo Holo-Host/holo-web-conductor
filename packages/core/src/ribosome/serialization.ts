@@ -118,19 +118,9 @@ export function serializeToWasm(
   data: unknown
 ): { ptr: number; len: number } {
   try {
-    // Debug: log what we're encoding
-    if (data && typeof data === 'object' && 'Ok' in data) {
-      const okValue = (data as any).Ok;
-      console.log(`[serializeToWasm] Encoding Ok value:`,
-        okValue instanceof Uint8Array ? `Uint8Array(${okValue.length})` : typeof okValue,
-        `first bytes:`, okValue instanceof Uint8Array ? Array.from(okValue.slice(0, 10)) : 'N/A');
-    }
-
     // Encode as MessagePack
     const bytes = encode(data);
     const len = bytes.length;
-
-    console.log(`[serializeToWasm] Encoded to ${len} bytes, first 20:`, Array.from(bytes.slice(0, 20)));
 
     // Allocate memory in WASM
     const ptr = wasmAllocate(instance, len);
@@ -167,19 +157,8 @@ export function deserializeFromWasm(
     // Read bytes from WASM memory
     const bytes = readFromWasmMemory(instance, ptr, len);
 
-    // Debug: log first 20 bytes
-    console.log(`[deserializeFromWasm] Bytes (first 20):`, Array.from(bytes.slice(0, 20)));
-
     // Decode from MessagePack
     const decoded = decode(bytes);
-
-    // Debug: log what we decoded
-    if (decoded && typeof decoded === 'object' && 'Ok' in decoded) {
-      const okValue = (decoded as any).Ok;
-      console.log(`[deserializeFromWasm] Ok value type:`,
-        okValue instanceof Uint8Array ? `Uint8Array(${okValue.length})` : typeof okValue,
-        `first bytes:`, okValue instanceof Uint8Array ? Array.from(okValue.slice(0, 10)) : 'N/A');
-    }
 
     return decoded;
   } catch (error) {
@@ -316,17 +295,6 @@ export function writeGuestPtr(
   const view = new DataView(memory.buffer);
   view.setUint32(guestPtrPtr, dataLen, true); // length at offset 0
   view.setUint32(guestPtrPtr + 4, dataPtr, true); // offset at offset 4
-
-  // Verify the GuestPtr was written correctly
-  const readLength = view.getUint32(guestPtrPtr, true);
-  const readOffset = view.getUint32(guestPtrPtr + 4, true);
-  console.log(
-    `[writeGuestPtr] Wrote GuestPtr@${guestPtrPtr}: length=${readLength}, offset=${readOffset}`
-  );
-
-  // Also log the actual data at that location
-  const dataBytes = new Uint8Array(memory.buffer, dataPtr, Math.min(dataLen, 20));
-  console.log(`[writeGuestPtr] Data at ${dataPtr}:`, Array.from(dataBytes));
 
   return guestPtrPtr;
 }

@@ -48,12 +48,6 @@ export const mustGetValidRecord: HostFunctionImpl = (
     "MustGetValidRecordInput (ActionHash)"
   );
 
-  console.log(
-    `[HostFn] must_get_valid_record: hash=${Array.from(actionHash.slice(0, 4))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}...`
-  );
-
   // Cascade lookup: local → cache → network
   const cascade = new Cascade(
     storage,

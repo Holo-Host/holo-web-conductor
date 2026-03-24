@@ -46,6 +46,9 @@ if (typeof document === 'undefined') {
 
 // Import schema types (these don't need document)
 import { SCHEMA_SQL, type WorkerRequest, type WorkerResponse } from '@hwc/core/storage/sqlite-schema';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('SQLiteWorker');
 
 // sqlite3InitModule will be dynamically imported after polyfill is set up
 let sqlite3InitModule: any = null;
@@ -67,8 +70,6 @@ const pendingResults = new Map<number, any>();
  * Initialize SQLite with OPFS VFS
  */
 async function initDatabase(): Promise<void> {
-  console.log('[SQLite Worker] Initializing SQLite WASM...');
-
   try {
     // Dynamically import sqlite-wasm after polyfill is in place
     if (!sqlite3InitModule) {
@@ -78,15 +79,11 @@ async function initDatabase(): Promise<void> {
 
     // Initialize sqlite - the module will fetch WASM using the corrected baseURI
     sqlite3 = await sqlite3InitModule({
-      print: (...args: any[]) => console.log('[SQLite]', ...args),
       printErr: (...args: any[]) => console.error('[SQLite Error]', ...args),
     });
 
-    console.log('[SQLite Worker] SQLite loaded, version:', sqlite3.version.libVersion);
-
     // Check available VFS options
     const vfsList = sqlite3.capi.sqlite3_js_vfs_list();
-    console.log('[SQLite Worker] Available VFS:', vfsList);
 
     // Try to use opfs-sahpool for synchronous OPFS access
     // If not available, fall back to OPFS (async) or memory
@@ -94,7 +91,6 @@ async function initDatabase(): Promise<void> {
     let dbPath = ':memory:';
 
     if (vfsList.includes('opfs-sahpool')) {
-      console.log('[SQLite Worker] Using opfs-sahpool VFS for sync OPFS access');
       vfsName = 'opfs-sahpool';
       dbPath = 'hwc-chain.sqlite3';
 
@@ -105,17 +101,15 @@ async function initDatabase(): Promise<void> {
             name: 'opfs-sahpool',
             directory: undefined, // Use default OPFS root
           });
-          console.log('[SQLite Worker] opfs-sahpool VFS installed');
         } catch (e) {
-          console.log('[SQLite Worker] opfs-sahpool already installed or error:', e);
+          // opfs-sahpool already installed or error - continue
         }
       }
     } else if (vfsList.includes('opfs')) {
-      console.log('[SQLite Worker] Using OPFS VFS (async fallback)');
       vfsName = 'opfs';
       dbPath = 'hwc-chain.sqlite3';
     } else {
-      console.warn('[SQLite Worker] OPFS not available, using in-memory database');
+      log.warn('OPFS not available, using in-memory database');
     }
 
     // Open database
@@ -134,22 +128,18 @@ async function initDatabase(): Promise<void> {
       db = new sqlite3.oo1.OpfsDb(dbPath);
     }
 
-    console.log('[SQLite Worker] Database opened:', dbPath);
-
     // Create schema
     db.exec(SCHEMA_SQL);
-    console.log('[SQLite Worker] Schema created');
 
     // Enable WAL mode for better performance (if supported)
     try {
       db.exec('PRAGMA journal_mode=WAL');
-      console.log('[SQLite Worker] WAL mode enabled');
     } catch (e) {
-      console.log('[SQLite Worker] WAL mode not available:', e);
+      // WAL mode not available - continue without it
     }
 
   } catch (error) {
-    console.error('[SQLite Worker] Failed to initialize database:', error);
+    log.error('Failed to initialize database:', error);
     throw error;
   }
 }
@@ -218,7 +208,6 @@ function setupSharedBuffers(signalBuffer: SharedArrayBuffer, resultBuf: SharedAr
   int32View = new Int32Array(sharedBuffer);
   resultBuffer = resultBuf;
   resultView = new Uint8Array(resultBuffer);
-  console.log('[SQLite Worker] SharedArrayBuffers configured');
 }
 
 /**
@@ -226,7 +215,7 @@ function setupSharedBuffers(signalBuffer: SharedArrayBuffer, resultBuf: SharedAr
  */
 function signalComplete(requestId: number, success: boolean): void {
   if (!int32View) {
-    console.warn('[SQLite Worker] No signal buffer configured');
+    log.warn('No signal buffer configured');
     return;
   }
 
@@ -342,7 +331,7 @@ self.onmessage = async (event: MessageEvent) => {
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[SQLite Worker] Error:', errorMessage);
+    log.error('Error:', errorMessage);
 
     storeResult(id, { error: errorMessage });
 
@@ -356,4 +345,3 @@ self.onmessage = async (event: MessageEvent) => {
 
 // Signal that worker is ready
 self.postMessage({ id: 0, success: true, result: { type: 'READY' } });
-console.log('[SQLite Worker] Worker started and ready');

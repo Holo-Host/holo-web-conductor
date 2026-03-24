@@ -1,16 +1,25 @@
 /**
  * Centralized logging utility with filterable prefixes
  *
+ * Log levels:
+ *   error, warn  - Always shown
+ *   info         - Always shown (lifecycle milestones, state changes)
+ *   debug        - Filtered by prefix (component-level operational detail)
+ *   trace        - Filtered by prefix + TRACE keyword
+ *   perf         - Filtered by prefix + PERF keyword
+ *
  * Usage:
  *   import { createLogger, setLogFilter } from '@hwc/shared';
  *   const log = createLogger('Background');
- *   log.info('message');  // [Background] message
- *   log.debug('details'); // Only shows if 'Background' matches filter
+ *   log.info('connected');   // Always shown: [Background] connected
+ *   log.debug('details');    // Only if filter includes 'Background'
  *
  * Runtime filter control (in any extension console):
- *   setHwcLogFilter('Background,Offscreen'); // Show only these
- *   setHwcLogFilter('*'); // Show all (default)
- *   setHwcLogFilter(''); // Show none
+ *   setHwcLogFilter('Background,Offscreen'); // Show debug logs for these prefixes
+ *   setHwcLogFilter('*');                    // All debug logs
+ *   setHwcLogFilter('*,PERF');               // All debug + performance metrics
+ *   setHwcLogFilter('*,TRACE');              // All debug + trace detail
+ *   setHwcLogFilter('');                     // Quiet: errors, warnings, info only (default)
  *
  * Filter syncs across all contexts (background, offscreen, worker) via chrome.runtime messaging
  */
@@ -52,7 +61,7 @@ const LOG_FILTER_MESSAGE_TYPE = 'HWC_LOG_FILTER_CHANGE';
 
 // Initialize filter on globalThis if not set
 if (typeof globalThis !== 'undefined' && globalThis.hwcLogFilter === undefined) {
-  globalThis.hwcLogFilter = '*'; // Default until loaded from storage
+  globalThis.hwcLogFilter = ''; // Default: quiet (errors/warnings/info only)
 }
 
 // Load filter from storage on init (for persistence across restarts)
@@ -84,11 +93,14 @@ if (typeof globalThis !== 'undefined' && globalThis.hwcLogFilter === undefined) 
  * Check if a prefix should be logged based on the current filter
  */
 function shouldLog(prefix: string): boolean {
-  const filter = globalThis.hwcLogFilter ?? '*';
-  if (filter === '*') return true;
+  const filter = globalThis.hwcLogFilter ?? '';
   if (filter === '') return false;
 
   const allowedPrefixes = filter.split(',').map(p => p.trim().toLowerCase());
+
+  // '*' anywhere in the list means match all prefixes
+  if (allowedPrefixes.includes('*')) return true;
+
   const prefixLower = prefix.toLowerCase();
   return allowedPrefixes.some(allowed =>
     prefixLower.includes(allowed) || allowed.includes(prefixLower)
@@ -120,21 +132,21 @@ export function setLogFilter(filter: string): void {
  * Get current log filter
  */
 export function getLogFilter(): string {
-  return globalThis.hwcLogFilter ?? '*';
+  return globalThis.hwcLogFilter ?? '';
 }
 
 export interface Logger {
-  /** Always shown - important info */
+  /** Always shown - lifecycle milestones, state changes */
   info: (...args: unknown[]) => void;
-  /** Filtered - debug details */
+  /** Filtered by prefix - component-level operational detail */
   debug: (...args: unknown[]) => void;
   /** Always shown - warnings */
   warn: (...args: unknown[]) => void;
   /** Always shown - errors */
   error: (...args: unknown[]) => void;
-  /** Performance logging - filtered */
+  /** Filtered by prefix + PERF - performance metrics */
   perf: (...args: unknown[]) => void;
-  /** Trace-level detail - filtered */
+  /** Filtered by prefix + TRACE - per-call data dumps */
   trace: (...args: unknown[]) => void;
 }
 
@@ -146,9 +158,8 @@ export function createLogger(prefix: string): Logger {
 
   return {
     info: (...args: unknown[]) => {
-      if (shouldLog(prefix)) {
-        console.log(tag, ...args);
-      }
+      // Info always shown - use for lifecycle milestones and state changes
+      console.log(tag, ...args);
     },
     debug: (...args: unknown[]) => {
       if (shouldLog(prefix)) {

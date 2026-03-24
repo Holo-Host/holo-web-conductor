@@ -10,6 +10,9 @@ import type { DnaHash, Record as HolochainRecord } from "@holochain/client";
 import type { ChainOp, PendingPublish, OpBasis } from "./dht-op-types";
 import { PublishStatus, ChainOpType } from "./dht-op-types";
 import { produceOpsFromRecord, computeOpBasis, getOpAction } from "./produce-ops";
+import { createLogger } from '@hwc/shared';
+
+const log = createLogger('Publish');
 
 const DB_NAME = "hwc_publish_tracker";
 const DB_VERSION = 2; // v2: Changed dnaHash from number[] to dnaHashStr string for proper indexing
@@ -90,7 +93,7 @@ export class PublishTracker {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.db = request.result;
-        console.log("[PublishTracker] Initialized");
+        log.info("Initialized");
         resolve();
       };
 
@@ -129,10 +132,10 @@ export class PublishTracker {
             unique: false,
           });
 
-          console.log("[PublishTracker] Migrated indexes from v1 to v2");
+          log.info("Migrated indexes from v1 to v2");
         }
 
-        console.log("[PublishTracker] Database upgraded to version", DB_VERSION);
+        log.info("Database upgraded to version", DB_VERSION);
       };
     });
 
@@ -219,11 +222,6 @@ export class PublishTracker {
       await this.storePendingPublish(pending, dnaHash);
       publishIds.push(id);
     }
-
-    console.log(
-      `[PublishTracker] Queued ${publishIds.length} ops for publishing`,
-      { dnaHash: Array.from(dnaHash).slice(0, 8) }
-    );
 
     return publishIds;
   }
@@ -551,9 +549,6 @@ export class PublishTracker {
           }
           cursor.continue();
         } else {
-          console.log(
-            `[PublishTracker] Reset ${resetCount} failed ops to pending`
-          );
           resolve(resetCount);
         }
       };

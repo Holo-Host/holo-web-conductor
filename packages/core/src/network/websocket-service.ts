@@ -258,13 +258,13 @@ export class WebSocketNetworkService {
     this.intentionalClose = false;
     this.setState("connecting");
 
-    console.log(`[WebSocketService] Connecting to ${this.options.linkerWsUrl}`);
+    log.info(`Connecting to ${this.options.linkerWsUrl}`);
 
     try {
       this.ws = new WebSocket(this.options.linkerWsUrl);
 
       this.ws.onopen = () => {
-        console.log("[WebSocketService] WS onopen fired");
+        log.info("WS onopen fired");
         this.handleOpen();
       };
       this.ws.onmessage = (event) => this.handleMessage(event);
@@ -273,7 +273,7 @@ export class WebSocketNetworkService {
         this.handleError(event);
       };
       this.ws.onclose = (event) => {
-        console.log(`[WebSocketService] WS onclose: code=${event.code} reason=${event.reason} wasClean=${event.wasClean}`);
+        log.info(`WS onclose: code=${event.code} reason=${event.reason} wasClean=${event.wasClean}`);
         this.handleClose(event);
       };
     } catch (error) {
@@ -489,15 +489,13 @@ export class WebSocketNetworkService {
   }
 
   private authenticate(agentPubkey: string): void {
-    console.log(`[WebSocketService] Authenticating with agent: ${agentPubkey.substring(0, 20)}...`);
+    log.debug(`Authenticating with agent: ${agentPubkey.substring(0, 20)}...`);
     this.pendingAuthAgent = agentPubkey;
     this.setState("authenticating");
     this.send({ type: "auth", agent_pubkey: agentPubkey });
   }
 
   private handleAuthOk(message: Extract<ServerMessage, { type: "auth_ok" }>): void {
-    console.log("[WebSocketService] handleAuthOk - full message:", JSON.stringify(message));
-    console.log("[WebSocketService] handleAuthOk - session_token present:", !!message.session_token, "value:", message.session_token?.substring(0, 30));
     log.debug("Authenticated");
     this.authenticated = true;
     this.pendingAuthAgent = null;
@@ -505,7 +503,6 @@ export class WebSocketNetworkService {
     // Capture session token for HTTP auth
     if (message.session_token) {
       this.options.sessionToken = message.session_token;
-      console.log("[WebSocketService] Calling sessionTokenCallback, callback exists:", !!this.sessionTokenCallback);
       this.sessionTokenCallback?.(message.session_token);
     } else {
       console.warn("[WebSocketService] auth_ok has NO session_token - HTTP auth will fail");
@@ -524,7 +521,6 @@ export class WebSocketNetworkService {
     // Track the failed agent and try the next one
     if (this.pendingAuthAgent) {
       this.failedAuthAgents.add(this.pendingAuthAgent);
-      console.log(`[WebSocketService] Agent ${this.pendingAuthAgent.substring(0, 20)}... failed auth, trying next`);
       this.pendingAuthAgent = null;
       this.tryAuthenticateNextAgent();
       // If tryAuthenticateNextAgent started a new auth attempt, don't change state
@@ -535,8 +531,6 @@ export class WebSocketNetworkService {
   }
 
   private async handleAuthChallenge(message: Extract<ServerMessage, { type: "auth_challenge" }>): Promise<void> {
-    console.log("[WebSocketService] Received auth challenge, pendingAuthAgent:", this.pendingAuthAgent?.substring(0, 20));
-
     if (!this.pendingAuthAgent) {
       console.error("[WebSocketService] Received auth challenge but no pending auth agent");
       return;

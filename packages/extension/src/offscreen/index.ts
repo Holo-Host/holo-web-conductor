@@ -262,7 +262,7 @@ function handleWorkerMessage(event: MessageEvent): void {
  * Handle network request from worker - do sync XHR and signal back
  */
 function handleNetworkRequest(request: { id: number; method: string; url: string; headers?: Record<string, string>; body?: number[] }): void {
-  console.log("[Offscreen] handleNetworkRequest:", request.method, request.url, "sessionToken:", sessionToken ? sessionToken.substring(0, 20) + "..." : "NULL");
+  log.debug("handleNetworkRequest:", request.method, request.url, "sessionToken:", sessionToken ? sessionToken.substring(0, 20) + "..." : "NULL");
 
   try {
     // Build full URL
@@ -276,7 +276,7 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
     if (sessionToken) {
       headers['Authorization'] = `Bearer ${sessionToken}`;
     } else {
-      console.warn("[Offscreen] No session token for HTTP request - will get 401");
+      log.warn("No session token for HTTP request - will get 401");
     }
 
     // Make synchronous XHR
@@ -303,7 +303,7 @@ function handleNetworkRequest(request: { id: number; method: string; url: string
     dv.setInt32(4, responseBody.length);
     new Uint8Array(networkResultBuffer!, 8).set(responseBody);
 
-    log.info("Network response:", xhr.status, responseBody.length, "bytes");
+    log.debug("Network response:", xhr.status, responseBody.length, "bytes");
 
     // If 401, session token is expired/invalid - trigger WS re-auth to get a fresh one
     if (xhr.status === 401) {
@@ -410,7 +410,7 @@ function handleSendRemoteSignals(data: { dnaHash: number[]; signals: any[] }): v
   }
 
   const dnaHashB64 = encodeHashToBase64(new Uint8Array(data.dnaHash));
-  logSignal.info(`Sending ${data.signals.length} remote signals via WebSocket`);
+  logSignal.debug(`Sending ${data.signals.length} remote signals via WebSocket`);
   wsService.sendRemoteSignals(dnaHashB64, data.signals);
 }
 
@@ -452,7 +452,7 @@ function initializeWebSocketService(config: {
 
   // Set up signal callback to forward signals to background
   wsService.onSignal((signal) => {
-    logSignal.info(`Received remote signal via WebSocket: dna=${signal.dna_hash.substring(0, 15)}..., to=${signal.to_agent.substring(0, 15)}..., from=${signal.from_agent}, zome=${signal.zome_name}, len=${signal.signal.length}`);
+    logSignal.debug(`Received remote signal via WebSocket: dna=${signal.dna_hash.substring(0, 15)}..., to=${signal.to_agent.substring(0, 15)}..., from=${signal.from_agent}, zome=${signal.zome_name}, len=${signal.signal.length}`);
 
     // Forward to background script which will dispatch to the right tab
     chrome.runtime.sendMessage({
@@ -529,17 +529,17 @@ function initializeWebSocketService(config: {
 
   // When linker auth succeeds, capture session token for HTTP Bearer auth
   wsService.onSessionToken((token) => {
-    console.log("[Offscreen] onSessionToken fired! token:", token?.substring(0, 30), "workerReady:", workerReady, "hasWorker:", !!ribosomeWorker);
+    log.debug("onSessionToken fired, token:", token?.substring(0, 30), "workerReady:", workerReady, "hasWorker:", !!ribosomeWorker);
     logNetwork.info("Received session token from linker auth");
     sessionToken = token;
     // Also update the worker so it includes Bearer token in DHT HTTP requests
     if (workerReady && ribosomeWorker) {
-      console.log("[Offscreen] Sending CONFIGURE_NETWORK to worker with session token");
+      log.debug("Sending CONFIGURE_NETWORK to worker with session token");
       sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
-        .then(() => console.log("[Offscreen] Worker CONFIGURE_NETWORK succeeded"))
-        .catch((err) => console.error("[Offscreen] Worker CONFIGURE_NETWORK failed:", err));
+        .then(() => log.debug("Worker CONFIGURE_NETWORK succeeded"))
+        .catch((err) => log.error("Worker CONFIGURE_NETWORK failed:", err));
     } else {
-      console.warn("[Offscreen] Worker not ready when session token received - token will be sent later");
+      log.warn("Worker not ready when session token received - token will be sent later");
     }
   });
 
@@ -601,7 +601,7 @@ async function publishPendingRecords(
   dnaHash: DnaHash
 ): Promise<void> {
   if (!linkerUrl) {
-    log.info("No linker URL configured, skipping publish");
+    log.debug("No linker URL configured, skipping publish");
     return;
   }
 
@@ -635,7 +635,7 @@ async function publishPendingRecords(
     }
   }
 
-  log.info("Publish requests queued");
+  log.debug("Publish requests queued");
 }
 
 /**
@@ -643,7 +643,7 @@ async function publishPendingRecords(
  */
 async function executeZomeCall(request: MinimalZomeCallRequest): Promise<{ result: unknown; signals: any[]; didWrite: boolean }> {
   const perfStart = performance.now();
-  logZome.info(`Executing zome call: ${request.zome}::${request.fn}`);
+  logZome.debug(`Executing zome call: ${request.zome}::${request.fn}`);
 
   // Ensure worker is initialized
   await initRibosomeWorker();
@@ -765,7 +765,7 @@ chrome.runtime.onMessage.addListener(
     sender: chrome.runtime.MessageSender,
     sendResponse: (response: OffscreenResponse) => void
   ) => {
-    log.info("Received message:", message);
+    log.debug("Received message:", message);
 
     if (message.target !== "offscreen") {
       return false;
@@ -783,7 +783,7 @@ chrome.runtime.onMessage.addListener(
       // Also configure the worker if it's ready
       if (workerReady && ribosomeWorker) {
         sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
-          .catch(console.error);
+          .catch((err) => log.error("CONFIGURE_NETWORK failed:", err));
       }
 
       // Initialize or reconfigure WebSocket service for remote signals
@@ -813,7 +813,7 @@ chrome.runtime.onMessage.addListener(
       sessionToken = message.sessionToken || null;
       if (workerReady && ribosomeWorker) {
         sendToWorker('CONFIGURE_NETWORK', { linkerUrl, sessionToken })
-          .catch(console.error);
+          .catch((err) => log.error("CONFIGURE_NETWORK failed:", err));
       }
       if (wsService) {
         wsService.setSessionToken(sessionToken || "");
@@ -1107,7 +1107,7 @@ chrome.runtime.onMessage.addListener(
 );
 
 // Start worker initialization
-initRibosomeWorker().catch(console.error);
+initRibosomeWorker().catch((err) => log.error("Worker initialization failed:", err));
 
 // Notify background that offscreen document is ready
 log.info("Sending ready signal");

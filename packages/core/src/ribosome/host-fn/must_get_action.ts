@@ -44,12 +44,6 @@ export const mustGetAction: HostFunctionImpl = (
     "MustGetActionInput (ActionHash)"
   );
 
-  console.log(
-    `[HostFn] must_get_action: hash=${Array.from(actionHash.slice(0, 4))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}...`
-  );
-
   // Cascade lookup: local → cache → network
   const cascade = new Cascade(
     storage,

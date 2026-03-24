@@ -60,11 +60,6 @@ export async function callZomeAsExtension(
       ? decode(unwrappedResult)
       : unwrappedResult;
 
-  console.log('[callZomeAsExtension] Final result type:',
-    decodedResult instanceof Uint8Array ? `Uint8Array(${decodedResult.length})` :
-    Array.isArray(decodedResult) ? `Array(${decodedResult.length})` :
-    typeof decodedResult);
-
   return {
     result: decodedResult,
     signals,

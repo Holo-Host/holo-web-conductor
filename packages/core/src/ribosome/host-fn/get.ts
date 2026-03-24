@@ -43,13 +43,10 @@ function processGetInput(
                    any_dht_hash[0] === 132 && any_dht_hash[1] === 41 ? 'ACTION' :
                    any_dht_hash[0] === 132 && any_dht_hash[1] === 32 ? 'AGENT' : 'UNKNOWN';
 
-  console.log(`[get] Input ${inputIndex}: Getting ${hashType} hash: ${encodeHashToBase64(any_dht_hash)}${strategy ? ` strategy=${strategy}` : ''}`);
-
   // Try cascade: local → cache → network
   const networkRecord = cascade.fetchRecord(dnaHash, any_dht_hash, undefined, strategy);
 
   if (!networkRecord) {
-    console.log(`[get] Input ${inputIndex}: NOT FOUND`);
     return null;
   }
 
@@ -69,7 +66,6 @@ function processGetInput(
     });
 
     if (isDeleted) {
-      console.log(`[get] Input ${inputIndex}: Record deleted`);
       return null;
     }
   }
@@ -107,11 +103,6 @@ function processGetInput(
     entry: entry as unknown as HolochainRecord['entry'],
   };
 
-  console.log(`[get] Input ${inputIndex}: Found ${hashType} record`, {
-    actionType: actionContent.type || localActionType,
-    hasEntry: typeof entry === 'object' && 'Present' in entry,
-  });
-
   return record;
 }
 
@@ -131,8 +122,6 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
     validateWasmGetInputArray, 'WasmGetInput[]'
   );
 
-  console.log('[get] Processing batch of', inputs.length, 'queries');
-
   const [dnaHash, agentPubKey] = callContext.cellId;
 
   // Create cascade for this lookup
@@ -143,8 +132,6 @@ export const get: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const allResults = inputs.map((input, index) =>
     processGetInput(input, dnaHash, agentPubKey, storage, cascade, index)
   );
-
-  console.log('[get] Batch complete. Found:', allResults.filter(r => r !== null).length, '/', inputs.length);
 
   return serializeResult(instance, allResults);
 };

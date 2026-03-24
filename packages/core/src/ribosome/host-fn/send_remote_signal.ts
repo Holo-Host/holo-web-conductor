@@ -111,10 +111,6 @@ export const sendRemoteSignal: HostFunctionImpl = (context, inputPtr, inputLen) 
   }
   callContext.remoteSignals.push(...remoteSignals);
 
-  console.log(
-    `[send_remote_signal] Queued ${remoteSignals.length} signals from ${zomeName}`
-  );
-
   // Return null (void) - fire-and-forget semantics
   return serializeResult(instance, null);
 };

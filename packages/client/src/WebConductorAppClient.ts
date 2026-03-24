@@ -22,6 +22,7 @@
  * ```
  */
 
+import { createLogger } from '@hwc/shared';
 import {
   CellType,
   SignalType,
@@ -46,9 +47,6 @@ import {
   type Signal,
 } from '@holochain/client';
 
-/** Unsubscribe function type */
-type UnsubscribeFunction = () => void;
-
 import {
   ConnectionMonitor,
   ReconnectionManager,
@@ -66,6 +64,11 @@ import {
   type Challenge,
   type JoinProvision,
 } from '@holo-host/joining-service/client';
+
+const log = createLogger('AppClient');
+
+/** Unsubscribe function type */
+type UnsubscribeFunction = () => void;
 
 /**
  * Options for creating a WebConductorAppClient.
@@ -208,13 +211,13 @@ export class WebConductorAppClient implements AppClient {
         // Reconnect failed — but the app IS installed. Proceed with degraded
         // connectivity so the user can still access their local data.
         // The linker may already be configured from a previous session.
-        console.log('[WebConductorAppClient] Reconnect failed but app is installed, proceeding with degraded connectivity');
+        log.info('Reconnect failed but app is installed, proceeding with degraded connectivity');
         this.connection.setConnected();
         this.subscribeToExtensionConnectionStatus();
         return;
       }
     } catch (e) {
-      console.log('[WebConductorAppClient] hApp not installed, will install...');
+      log.debug('hApp not installed, will install...');
     }
 
     // Not installed — use joining service if configured
@@ -301,7 +304,7 @@ export class WebConductorAppClient implements AppClient {
       installedAppId: this._roleName,
       membraneProofs,
     });
-    console.log('[WebConductorAppClient] hApp installed via joining service');
+    log.info('hApp installed via joining service');
   }
 
   /** Shared join logic: join the service, handle challenges, configure linker. */
@@ -398,17 +401,12 @@ export class WebConductorAppClient implements AppClient {
     // Configure linker from provision, falling back to config linkerUrl
     const linkerUrl = provision.linker_urls?.[0]?.url
       ?? this.connectionConfig.linkerUrl;
-    console.log('[WebConductorAppClient] join linker config:', {
-      provisionUrls: provision.linker_urls,
-      fallbackUrl: this.connectionConfig.linkerUrl,
-      resolvedUrl: linkerUrl,
-    });
     if (linkerUrl) {
-      console.log('[WebConductorAppClient] Calling configureNetwork with:', linkerUrl);
+      log.debug('Configuring linker:', linkerUrl, '(provision:', provision.linker_urls?.[0]?.url, ', fallback:', this.connectionConfig.linkerUrl, ')');
       await holochain.configureNetwork({ linkerUrl });
-      console.log('[WebConductorAppClient] configureNetwork returned');
+      log.info('Linker configured via joining service:', linkerUrl);
     } else {
-      console.log('[WebConductorAppClient] No linker URL from joining service or config');
+      log.debug('No linker URL from joining service or config');
     }
   }
 
@@ -471,23 +469,23 @@ export class WebConductorAppClient implements AppClient {
         );
 
         if (response.linker_urls && response.linker_urls.length > 0) {
-          console.log('[WebConductorAppClient] Configuring linker from joining service:', response.linker_urls[0].url);
+          log.debug('Configuring linker from joining service:', response.linker_urls[0].url);
           await holochain.configureNetwork({ linkerUrl: response.linker_urls[0].url });
           return true;
         }
-        console.log('[WebConductorAppClient] Reconnect succeeded but no linker_urls returned');
+        log.debug('Reconnect succeeded but no linker_urls returned');
         return true;
       } catch (e: any) {
         let joiningError: string;
         if (e?.code === 'agent_not_joined' || e?.httpStatus === 403) {
           joiningError = 'Agent session not found in joining service (may have been removed)';
-          console.log('[WebConductorAppClient] Agent not found in joining service:', e?.message);
+          log.warn('Agent not found in joining service:', e?.message);
         } else if (e?.code === 'agent_revoked') {
           joiningError = 'Agent has been revoked by administrator';
-          console.log('[WebConductorAppClient] Agent revoked by administrator:', e?.message);
+          log.warn('Agent revoked by administrator:', e?.message);
         } else {
           joiningError = `Joining service reconnect failed: ${e?.message ?? e}`;
-          console.log('[WebConductorAppClient] Joining service reconnect failed:', e);
+          log.warn('Joining service reconnect failed:', e);
         }
         this.connection.setJoiningServiceError(joiningError);
         // Fall through to try configured linkerUrl fallback
@@ -496,12 +494,12 @@ export class WebConductorAppClient implements AppClient {
 
     // Fall back to configured linkerUrl
     if (this.connectionConfig.linkerUrl) {
-      console.log('[WebConductorAppClient] Configuring linker from config:', this.connectionConfig.linkerUrl);
+      log.debug('Configuring linker from config:', this.connectionConfig.linkerUrl);
       await holochain.configureNetwork({ linkerUrl: this.connectionConfig.linkerUrl });
       return true;
     }
 
-    console.log('[WebConductorAppClient] No linkerUrl available — proceeding without linker');
+    log.debug('No linkerUrl available — proceeding without linker');
     return false;
   }
 
@@ -569,10 +567,10 @@ export class WebConductorAppClient implements AppClient {
           // Validate: gzip magic number (1f 8b) confirms this is a real .happ bundle,
           // not an SPA fallback serving index.html with a 200 status.
           if (bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
-            console.warn(`[WebConductorAppClient] ${path} is not a gzip bundle (got ${bytes.length} bytes), skipping`);
+            log.warn(`${path} is not a gzip bundle (got ${bytes.length} bytes), skipping`);
             continue;
           }
-          console.log(`[WebConductorAppClient] Found hApp bundle at ${path} (${bytes.length} bytes)`);
+          log.info(`Found hApp bundle at ${path} (${bytes.length} bytes)`);
           return bytes;
         }
       } catch {
@@ -646,13 +644,13 @@ export class WebConductorAppClient implements AppClient {
 
     const bundle = await this.fetchHappBundle();
 
-    console.log('[WebConductorAppClient] Installing hApp...');
+    log.info('Installing hApp...');
     await holochain.installApp({
       bundle,
       installedAppId: this._roleName,
       membraneProofs: this.connectionConfig.membraneProofs,
     });
-    console.log('[WebConductorAppClient] hApp installed successfully');
+    log.info('hApp installed successfully');
   }
 
   private setupSignalForwarding(): void {
@@ -691,7 +689,7 @@ export class WebConductorAppClient implements AppClient {
         try {
           handler(signal);
         } catch (e) {
-          console.error('[WebConductorAppClient] Signal handler error:', e);
+          log.error('Signal handler error:', e);
         }
       });
     });
@@ -908,14 +906,14 @@ export class WebConductorAppClient implements AppClient {
   // --- Stub implementations for methods not supported by Web Conductor ---
 
   async dumpNetworkStats(): Promise<AppDumpNetworkStatsResponse> {
-    console.warn('[WebConductorAppClient] dumpNetworkStats not supported in Web Conductor mode');
+    log.warn('dumpNetworkStats not supported in Web Conductor mode');
     return { peer_urls: [], connections: [] } as unknown as AppDumpNetworkStatsResponse;
   }
 
   async dumpNetworkMetrics(
     _args: DumpNetworkMetricsRequest
   ): Promise<DumpNetworkMetricsResponse> {
-    console.warn('[WebConductorAppClient] dumpNetworkMetrics not supported in Web Conductor mode');
+    log.warn('dumpNetworkMetrics not supported in Web Conductor mode');
     return {} as DumpNetworkMetricsResponse;
   }
 

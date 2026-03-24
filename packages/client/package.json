@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@holo-host/joining-service": "file:../../../joining-service",
+    "@hwc/shared": "*",
     "@msgpack/msgpack": "^2.8.0 || ^3.0.0"
   },
   "peerDependencies": {

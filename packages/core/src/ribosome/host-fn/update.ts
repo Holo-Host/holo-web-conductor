@@ -28,13 +28,6 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
     validateWasmUpdateInput, 'WasmUpdateInput'
   );
 
-  console.log("[update] Input:", {
-    hasOriginalActionAddress: !!input.original_action_address,
-    hasEntry: !!input.entry,
-    entryType: input.entry.entry_type,
-    chainTopOrdering: input.chain_top_ordering,
-  });
-
   // Extract entry content from validated input
   const entryContent = input.entry.entry;
 
@@ -44,13 +37,6 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
   const currentZome = manifest?.integrity_zomes?.find(z => z.name === callContext.zome);
   const zomeIndex = currentZome?.index ?? 0;
   const entryDefIndex = 0; // Will be overridden from original action if available
-
-  console.log("[update] Updating entry", {
-    originalActionHash: Array.from(input.original_action_address.slice(0, 8)),
-    entrySize: entryContent.length,
-    zomeIndex,
-    entryDefIndex,
-  });
 
   // Hash the new entry - App entries hash the serialized Entry enum { entry_type: "App", entry: content }
   const entryHash = computeAppEntryHash(entryContent);
@@ -137,12 +123,6 @@ export const update: HostFunctionImpl = (context, inputPtr, inputLen) => {
     callContext.pendingRecords = [];
   }
   callContext.pendingRecords.push({ action, entry });
-
-  console.log("[update] Updated entry", {
-    actionHash: Array.from(actionHash.slice(0, 8)),
-    actionSeq,
-    entryHash: Array.from(entryHash.slice(0, 8)),
-  });
 
   return serializeResult(instance, actionHash);
 };

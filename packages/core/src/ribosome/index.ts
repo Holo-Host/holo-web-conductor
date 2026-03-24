@@ -373,7 +373,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
       try {
         await invokePostCommit(instance, context, allPendingRecords);
       } catch (postCommitError) {
-        console.error('[Ribosome] post_commit error (non-fatal):', postCommitError);
+        log.error('post_commit error (non-fatal):', postCommitError);
       }
     }
 
@@ -397,8 +397,8 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
           log.debug(' First built record entry type:', pendingRecords[0]?.entry);
         }
       } catch (error) {
-        console.error('[Ribosome] Failed to convert records for publishing:', error);
-        console.error('[Ribosome] Error stack:', error instanceof Error ? error.stack : 'no stack');
+        log.error('Failed to convert records for publishing:', error);
+        log.error('Error stack:', error instanceof Error ? error.stack : 'no stack');
         // Don't fail the zome call - publishing is secondary
       }
     }
@@ -416,7 +416,7 @@ export async function callZome(request: ZomeCallRequest): Promise<ZomeCallResult
     // Rollback transaction on any error - discard all chain updates
     if (storage.isTransactionActive()) {
       storage.rollbackTransaction();
-      console.error('[Ribosome] Transaction rolled back due to error:', error);
+      log.error('Transaction rolled back due to error:', error);
     }
 
     // Re-throw error for caller to handle
@@ -482,7 +482,7 @@ async function invokePostCommit(
     if (result && typeof result === 'object' && 'Err' in result) {
       const errPayload = (result as any).Err;
       const errorMsg = errPayload?.Guest || errPayload?.message || JSON.stringify(errPayload);
-      console.error(`[post_commit] post_commit returned error: ${errorMsg}`);
+      log.error(`post_commit returned error: ${errorMsg}`);
       // Don't throw - post_commit errors are non-fatal
     } else {
       log.debug('[post_commit] post_commit completed successfully');
@@ -493,7 +493,7 @@ async function invokePostCommit(
     log.debug(`[post_commit] Total signals after post_commit: ${signalCount}`);
   } catch (error) {
     // Log error but don't propagate - post_commit is fire-and-forget
-    console.error('[post_commit] Exception during post_commit:', error);
+    log.error('Exception during post_commit:', error);
   }
 }
 
@@ -552,7 +552,7 @@ async function initializeEntryDefs(
       }
     }
   } catch (error) {
-    console.warn(`[initializeEntryDefs] Failed to initialize entry_defs:`, error);
+    log.warn(`Failed to initialize entry_defs:`, error);
   }
 
   return [];

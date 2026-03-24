@@ -804,8 +804,8 @@ async function handleCallZome(
 
     // DIAGNOSTIC: log raw and normalized payload for failing calls
     if (fn_name === 'get_joining_timestamp_for_agent' || fn_name === 'get_batch_mews_with_context') {
-      console.log(`[DIAG handleCallZome] ${zome_name}::${fn_name} raw payload:`, JSON.stringify(payload));
-      console.log(`[DIAG handleCallZome] ${zome_name}::${fn_name} normalized payload:`, JSON.stringify(normalizedPayload));
+      logZome.debug(`[DIAG] ${zome_name}::${fn_name} raw payload:`, JSON.stringify(payload));
+      logZome.debug(`[DIAG] ${zome_name}::${fn_name} normalized payload:`, JSON.stringify(normalizedPayload));
     }
 
     // Serialize payload to MessagePack
@@ -830,7 +830,7 @@ async function handleCallZome(
       dnaManifest: undefined, // Not used - offscreen fetches from storage
     };
 
-    logZome.info(`Executing ${zome_name}::${fn_name} via offscreen (context: ${context.id})`);
+    logZome.debug(`Executing ${zome_name}::${fn_name} via offscreen (context: ${context.id})`);
     const beforeOffscreen = performance.now();
 
     // Execute via offscreen document (which can make sync XHR calls)
@@ -843,7 +843,7 @@ async function handleCallZome(
     if (signals && signals.length > 0) {
       const tabId = sender.tab?.id;
       if (tabId) {
-        logSignal.info(`Delivering ${signals.length} signals to tab ${tabId}`);
+        logSignal.debug(`Delivering ${signals.length} signals to tab ${tabId}`);
         for (const signal of signals) {
           try {
             // Convert signal payload from Array back to Uint8Array and decode
@@ -2509,7 +2509,7 @@ async function handleRemoteSignal(signalData: {
   zome_name: string;
   signal: number[]; // Uint8Array converted to array for transport
 }): Promise<void> {
-  logSignal.info(`handleRemoteSignal: dna=${signalData.dna_hash.substring(0, 15)}..., to=${signalData.to_agent.substring(0, 15)}..., from=${signalData.from_agent}, zome=${signalData.zome_name}, len=${signalData.signal.length}`);
+  logSignal.debug(`handleRemoteSignal: dna=${signalData.dna_hash.substring(0, 15)}..., to=${signalData.to_agent.substring(0, 15)}..., from=${signalData.from_agent}, zome=${signalData.zome_name}, len=${signalData.signal.length}`);
 
   try {
     // Find the context for this agent

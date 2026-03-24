@@ -10,6 +10,9 @@ import type { ChainOp } from "./dht-op-types";
 import { PublishStatus } from "./dht-op-types";
 import { PublishTracker } from "./publish-tracker";
 import { serializeOpForLinker } from "./op-serialization";
+import { createLogger } from '@hwc/shared';
+
+const log = createLogger('Publish');
 
 /**
  * Options for the publish service
@@ -107,7 +110,7 @@ export class PublishService {
 
     // Trigger async processing (don't await - let it run in background)
     this.processQueue(dnaHash).catch((err) => {
-      console.error("[PublishService] Background queue processing error:", err);
+      log.error("Background queue processing error:", err);
     });
 
     return publishIds;
@@ -120,7 +123,6 @@ export class PublishService {
    */
   async processQueue(dnaHash: DnaHash): Promise<void> {
     if (this.processingQueue) {
-      console.log("[PublishService] Queue already being processed, skipping");
       return;
     }
 
@@ -150,14 +152,9 @@ export class PublishService {
         const opsToPublish = [...pendingOps, ...retryableOps];
 
         if (opsToPublish.length === 0) {
-          console.log("[PublishService] No more ops to publish");
           hasMoreOps = false;
           break;
         }
-
-        console.log(
-          `[PublishService] Processing ${opsToPublish.length} ops for publish`
-        );
 
         // Serialize ops and batch by payload size
         const batches = await this.batchOpsBySize(opsToPublish);
@@ -261,8 +258,8 @@ export class PublishService {
       const noPeersAvailable = response.queued > 0 && response.published === 0;
 
       if (noPeersAvailable) {
-        console.warn(
-          `[PublishService] Ops stored but no DHT peers available - ${response.queued} ops need retry`
+        log.warn(
+          `Ops stored but no DHT peers available - ${response.queued} ops need retry`
         );
       }
 
@@ -279,12 +276,10 @@ export class PublishService {
               PublishStatus.Failed,
               "No DHT peers available - stored but not published"
             );
-            console.log(`[PublishService] Op ${item.id} stored but needs retry (no peers)`);
           } else {
             // Op was stored AND published to at least one peer
             await this.tracker.updateStatus(item.id, PublishStatus.Published);
             await this.tracker.removePendingPublish(item.id);
-            console.log(`[PublishService] Op ${item.id} published successfully`);
           }
         } else {
           await this.tracker.updateStatus(
@@ -292,8 +287,8 @@ export class PublishService {
             PublishStatus.Failed,
             result?.error ?? "Unknown error"
           );
-          console.warn(
-            `[PublishService] Op ${item.id} failed: ${result?.error}`
+          log.warn(
+            `Op ${item.id} failed: ${result?.error}`
           );
         }
       }
@@ -303,7 +298,7 @@ export class PublishService {
       for (const item of batch.items) {
         await this.tracker.updateStatus(item.id, PublishStatus.Failed, errorMsg);
       }
-      console.error("[PublishService] Batch publish failed:", errorMsg);
+      log.error("Batch publish failed:", errorMsg);
     }
   }
 
@@ -340,7 +335,6 @@ export class PublishService {
     // Use @holochain/client's encodeHashToBase64 for proper HoloHash format (u prefix)
     const dnaHashB64 = encodeHashToBase64(dnaHash);
     const url = `${this.options.linkerUrl}/dht/${dnaHashB64}/publish`;
-    console.log(`[PublishService] Publishing to: ${url}`);
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",

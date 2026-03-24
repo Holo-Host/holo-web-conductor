@@ -172,7 +172,7 @@ export class Cascade {
           return networkRecord;
         }
       } catch (error) {
-        console.warn(`[Cascade] Network fetch failed:`, error);
+        log.warn(`Network fetch failed:`, error);
       }
     } else if (opts.useNetwork) {
       if (!this.network) {
@@ -221,7 +221,7 @@ export class Cascade {
           return networkRecord;
         }
       } catch (error) {
-        console.warn(`[Cascade] Network fetch by entry hash failed:`, error);
+        log.warn(`Network fetch by entry hash failed:`, error);
       }
     } else if (opts.useNetwork) {
       if (!this.network) {
@@ -371,10 +371,10 @@ export class Cascade {
     // Links are non-deterministic: we can't know we have them all without querying.
     let networkLinks: NetworkLink[] | null = null;
     if (opts.useNetwork && this.network && this.network.isAvailable()) {
-      log.info(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, zomeIndex=${zomeIndex}, linkType=${linkType}`);
+      log.debug(`🌐 Fetching links from NETWORK for base ${this.hashToBase64(baseAddress)}, zomeIndex=${zomeIndex}, linkType=${linkType}`);
       try {
         networkLinks = this.network.getLinksSync(dnaHash, baseAddress, linkType, zomeIndex);
-        log.info(`🌐 Network returned ${networkLinks.length} links`);
+        log.debug(`🌐 Network returned ${networkLinks.length} links`);
 
         if (opts.cacheNetworkResults) {
           this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
@@ -590,7 +590,7 @@ export class Cascade {
           return result;
         }
       } catch (error) {
-        console.warn(`[Cascade] Network details fetch failed:`, error);
+        log.warn(`Network details fetch failed:`, error);
       }
     }
 
@@ -645,7 +645,7 @@ export class Cascade {
           return result;
         }
       } catch (error) {
-        console.warn(`[Cascade] Network details fetch failed:`, error);
+        log.warn(`Network details fetch failed:`, error);
       }
     }
 

@@ -46,10 +46,6 @@ export function unpackHappBundle(bytes: Uint8Array): AppBundle {
       resources.set(key, toUint8Array(value));
     }
 
-    console.log(`[unpackHappBundle] Unpacked hApp: ${manifest.name}`);
-    console.log(`[unpackHappBundle] Roles: ${manifest.roles.length}`);
-    console.log(`[unpackHappBundle] Resources: ${resources.size}`);
-
     return { manifest, resources };
 
   } catch (error) {
@@ -89,11 +85,6 @@ export function unpackDnaBundle(bytes: Uint8Array): DnaBundle {
     for (const [key, value] of Object.entries(resourcesObj || {})) {
       resources.set(key, toUint8Array(value));
     }
-
-    console.log(`[unpackDnaBundle] Unpacked DNA: ${manifest.name}`);
-    console.log(`[unpackDnaBundle] Integrity zomes: ${manifest.integrity.zomes.length}`);
-    console.log(`[unpackDnaBundle] Coordinator zomes: ${manifest.coordinator.zomes.length}`);
-    console.log(`[unpackDnaBundle] Resources: ${resources.size}`);
 
     return { manifest, resources };
 
