@@ -20,8 +20,6 @@ export const PAGE_ALLOWED_TYPES = new Set<string>([
   "linker_configure",
   "linker_get_status",
   "connection_status_get",
-  "connection_status_subscribe",
-  "connection_status_unsubscribe",
   "sign_reconnect_challenge",
   "sign_joining_nonce",
 ]);

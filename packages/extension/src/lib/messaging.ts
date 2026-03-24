@@ -71,8 +71,6 @@ export enum MessageType {
 
   // Connection status (real-time health monitoring)
   CONNECTION_STATUS_GET = "connection_status_get",
-  CONNECTION_STATUS_SUBSCRIBE = "connection_status_subscribe",
-  CONNECTION_STATUS_UNSUBSCRIBE = "connection_status_unsubscribe",
 
   // DHT Publishing Debug (per-hApp)
   PUBLISH_GET_STATUS = "publish_get_status",
@@ -143,8 +141,6 @@ export interface RequestMessage extends BaseMessage {
     | MessageType.LINKER_DISCONNECT
     | MessageType.LINKER_RECONNECT
     | MessageType.CONNECTION_STATUS_GET
-    | MessageType.CONNECTION_STATUS_SUBSCRIBE
-    | MessageType.CONNECTION_STATUS_UNSUBSCRIBE
     | MessageType.PUBLISH_GET_STATUS
     | MessageType.PUBLISH_RETRY_FAILED
     | MessageType.PUBLISH_ALL_RECORDS
@@ -508,8 +504,6 @@ export interface RequestPayloadMap {
   [MessageType.LINKER_DISCONNECT]: undefined;
   [MessageType.LINKER_RECONNECT]: undefined;
   [MessageType.CONNECTION_STATUS_GET]: undefined;
-  [MessageType.CONNECTION_STATUS_SUBSCRIBE]: undefined;
-  [MessageType.CONNECTION_STATUS_UNSUBSCRIBE]: undefined;
   [MessageType.PUBLISH_GET_STATUS]: ContextIdPayload;
   [MessageType.PUBLISH_RETRY_FAILED]: ContextIdPayload;
   [MessageType.PUBLISH_ALL_RECORDS]: ContextIdPayload;
@@ -662,8 +656,6 @@ export function isRequestMessage(message: Message): message is RequestMessage {
     message.type === MessageType.LINKER_DISCONNECT ||
     message.type === MessageType.LINKER_RECONNECT ||
     message.type === MessageType.CONNECTION_STATUS_GET ||
-    message.type === MessageType.CONNECTION_STATUS_SUBSCRIBE ||
-    message.type === MessageType.CONNECTION_STATUS_UNSUBSCRIBE ||
     message.type === MessageType.PUBLISH_GET_STATUS ||
     message.type === MessageType.PUBLISH_RETRY_FAILED ||
     message.type === MessageType.PUBLISH_ALL_RECORDS ||

@@ -122,8 +122,29 @@ let connectionStatus: ConnectionStatus = {
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 const HEALTH_CHECK_INTERVAL_MS = 5000;
 
-// Tabs subscribed to connection status updates
-const connectionStatusSubscribers = new Set<number>();
+// Long-lived ports from content scripts (used for push messages and keepalive)
+const connectedPorts = new Set<chrome.runtime.Port>();
+
+// Handle port connections from content scripts
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "hwc-content") return;
+
+  connectedPorts.add(port);
+  log.info(`Content script port connected (${connectedPorts.size} total)`);
+
+  // Send current connection status immediately so the page has fresh state.
+  // After background restart this may be stale (all-false) until
+  // restoreLinkerConfigFromStorage completes and pushes corrected state.
+  port.postMessage({
+    type: 'connectionStatusChange',
+    payload: connectionStatus,
+  });
+
+  port.onDisconnect.addListener(() => {
+    connectedPorts.delete(port);
+    log.info(`Content script port disconnected (${connectedPorts.size} remaining)`);
+  });
+});
 
 /**
  * Check linker health by making a simple HTTP request
@@ -182,8 +203,8 @@ async function checkLinkerHealth(): Promise<void> {
   } catch (error) {
     connectionStatus = {
       httpHealthy: false,
-      wsHealthy: false,
-      authenticated: false,
+      wsHealthy: connectionStatus.wsHealthy, // Preserve: WS is independent of HTTP
+      authenticated: connectionStatus.authenticated, // Preserve: auth is independent of HTTP
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: error instanceof Error ? error.message : 'Connection failed',
@@ -197,6 +218,7 @@ async function checkLinkerHealth(): Promise<void> {
     previousStatus.authenticated !== connectionStatus.authenticated ||
     previousStatus.lastError !== connectionStatus.lastError
   ) {
+    log.info(`Connection status changed: http=${connectionStatus.httpHealthy} ws=${connectionStatus.wsHealthy} auth=${connectionStatus.authenticated} err=${connectionStatus.lastError || 'none'}`);
     notifyConnectionStatusChange();
   }
 }
@@ -210,11 +232,12 @@ function notifyConnectionStatusChange(): void {
     payload: connectionStatus,
   };
 
-  for (const tabId of connectionStatusSubscribers) {
-    chrome.tabs.sendMessage(tabId, message).catch(() => {
-      // Tab might be closed, remove from subscribers
-      connectionStatusSubscribers.delete(tabId);
-    });
+  for (const port of connectedPorts) {
+    try {
+      port.postMessage(message);
+    } catch {
+      connectedPorts.delete(port);
+    }
   }
 }
 
@@ -271,6 +294,15 @@ async function restoreLinkerConfigFromStorage(): Promise<void> {
       // Re-initialize executor and forward config to worker
       await executor.initialize();
       await executor.configureNetwork({ linkerUrl: saved.linkerUrl, sessionToken: saved.sessionToken });
+
+      // Sync WS state and push to any connected ports. configureNetwork starts
+      // the WS connection but it may not have completed yet -- that's OK because
+      // onWebSocketStateChange will fire a follow-up when it does.
+      const wsState = await executor.getWebSocketState();
+      connectionStatus.wsHealthy = wsState.isConnected;
+      connectionStatus.authenticated = wsState.authenticated;
+      connectionStatus.linkerUrl = saved.linkerUrl;
+      notifyConnectionStatusChange();
     }
   } catch (err) {
     logLinker.warn('Failed to restore linker config:', err);
@@ -529,12 +561,6 @@ async function handleMessage(
       // Connection Status
       case MessageType.CONNECTION_STATUS_GET:
         return handleConnectionStatusGet(message);
-
-      case MessageType.CONNECTION_STATUS_SUBSCRIBE:
-        return handleConnectionStatusSubscribe(message, sender);
-
-      case MessageType.CONNECTION_STATUS_UNSUBSCRIBE:
-        return handleConnectionStatusUnsubscribe(message, sender);
 
       // DHT Publishing Debug
       case MessageType.PUBLISH_GET_STATUS:
@@ -1974,46 +2000,6 @@ async function handleConnectionStatusGet(
   message: RequestMessage
 ): Promise<ResponseMessage> {
   return createSuccessResponse(message.id, connectionStatus);
-}
-
-/**
- * Handle CONNECTION_STATUS_SUBSCRIBE request
- * Subscribes the tab to receive connection status updates
- */
-async function handleConnectionStatusSubscribe(
-  message: RequestMessage,
-  sender: chrome.runtime.MessageSender
-): Promise<ResponseMessage> {
-  const tabId = sender.tab?.id;
-  if (!tabId) {
-    return createErrorResponse(message.id, "No tab ID available");
-  }
-
-  connectionStatusSubscribers.add(tabId);
-  log.info(`Tab ${tabId} subscribed to connection status updates`);
-
-  // Start health checks if not already running
-  startHealthChecks();
-
-  // Send current status immediately
-  return createSuccessResponse(message.id, connectionStatus);
-}
-
-/**
- * Handle CONNECTION_STATUS_UNSUBSCRIBE request
- * Unsubscribes the tab from connection status updates
- */
-async function handleConnectionStatusUnsubscribe(
-  message: RequestMessage,
-  sender: chrome.runtime.MessageSender
-): Promise<ResponseMessage> {
-  const tabId = sender.tab?.id;
-  if (tabId) {
-    connectionStatusSubscribers.delete(tabId);
-    log.info(`Tab ${tabId} unsubscribed from connection status updates`);
-  }
-
-  return createSuccessResponse(message.id, { unsubscribed: true });
 }
 
 // ============================================================================

@@ -21,6 +21,64 @@ import { PAGE_ALLOWED_TYPES } from "../lib/page-allowed-types";
 
 console.log("Holochain content script loaded");
 
+// ============================================================================
+// Long-lived port to background (keepalive + push messages)
+// ============================================================================
+
+let backgroundPort: chrome.runtime.Port | null = null;
+let portReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const PORT_RECONNECT_DELAY_MS = 500;
+
+function connectPort(): void {
+  if (portReconnectTimer) {
+    clearTimeout(portReconnectTimer);
+    portReconnectTimer = null;
+  }
+
+  try {
+    backgroundPort = chrome.runtime.connect({ name: "hwc-content" });
+  } catch (e) {
+    console.warn("[Content] Failed to open port, retrying:", e);
+    schedulePortReconnect();
+    return;
+  }
+
+  backgroundPort.onMessage.addListener((message) => {
+    // Forward push messages from background to page
+    if (message.type === "connectionStatusChange") {
+      window.postMessage(
+        {
+          source: "hwc-content",
+          type: "connectionStatusChange",
+          payload: message.payload,
+        },
+        "*"
+      );
+    }
+  });
+
+  backgroundPort.onDisconnect.addListener(() => {
+    backgroundPort = null;
+    // Background was suspended or restarted -- reconnect to wake it
+    schedulePortReconnect();
+  });
+}
+
+function schedulePortReconnect(): void {
+  if (portReconnectTimer) return;
+  portReconnectTimer = setTimeout(() => {
+    portReconnectTimer = null;
+    connectPort();
+  }, PORT_RECONNECT_DELAY_MS);
+}
+
+// Open port immediately
+connectPort();
+
+// ============================================================================
+// Request/response messaging
+// ============================================================================
+
 /**
  * Pending requests waiting for responses from background
  */
@@ -171,19 +229,6 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       {
         source: "hwc-content",
         type: "signal",
-        payload: message.payload,
-      },
-      "*"
-    );
-    return false; // No async response needed
-  }
-
-  // Handle connection status change messages
-  if (message.type === "connectionStatusChange") {
-    window.postMessage(
-      {
-        source: "hwc-content",
-        type: "connectionStatusChange",
         payload: message.payload,
       },
       "*"
