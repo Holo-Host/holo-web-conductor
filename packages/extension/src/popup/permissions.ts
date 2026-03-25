@@ -32,7 +32,8 @@ function hideError(): void {
  */
 async function revokePermission(origin: string): Promise<void> {
   const confirmed = await showConfirm(
-    `Disconnect ${origin} from the Holo Web Conductor?\n\nThis will require re-authorization if the site attempts to connect again.`
+    `Disconnect ${origin} from the Holo Web Conductor?\n\nThis will require re-authorization if the site attempts to connect again.`,
+    { variant: "danger" }
   );
 
   if (!confirmed) {
@@ -66,7 +67,8 @@ async function revokePermission(origin: string): Promise<void> {
  */
 async function revokeAllPermissions(): Promise<void> {
   const confirmed = await showConfirm(
-    "Disconnect ALL sites from the Holo Web Conductor?\n\nThis will clear all authorized domains. They will need to request permission again."
+    "Disconnect ALL sites from the Holo Web Conductor?\n\nThis will clear all authorized domains. They will need to request permission again.",
+    { variant: "danger" }
   );
 
   if (!confirmed) {

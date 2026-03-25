@@ -330,7 +330,8 @@ async function uninstallHapp(id: string): Promise<void> {
   const name = ctx?.appName || "this hApp";
   if (
     !(await showConfirm(
-      `Uninstall "${name}"?\n\nThis deletes the context and agent key permanently.`
+      `Uninstall "${name}"?\n\nThis deletes the context and agent key permanently.`,
+      { variant: "danger" }
     ))
   )
     return;
@@ -534,7 +535,8 @@ async function recoverChain(contextId: string): Promise<void> {
 async function revokePermission(): Promise<void> {
   if (
     !(await showConfirm(
-      `Disconnect ${siteHostname} from the Holo Web Conductor?\n\nThe site will need to request permission again.`
+      `Disconnect ${siteHostname} from the Holo Web Conductor?\n\nThe site will need to request permission again.`,
+      { variant: "danger" }
     ))
   )
     return;

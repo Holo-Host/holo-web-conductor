@@ -561,7 +561,7 @@ async function uninstallHapp(contextId: string): Promise<void> {
   if (!context) return;
 
   const appName = context.appName || "this hApp";
-  if (!(await showConfirm(`Are you sure you want to uninstall "${appName}"?\n\nThis will delete the context and agent key. This action cannot be undone.`))) {
+  if (!(await showConfirm(`Are you sure you want to uninstall "${appName}"?\n\nThis will delete the context and agent key. This action cannot be undone.`, { variant: "danger" }))) {
     return;
   }
 

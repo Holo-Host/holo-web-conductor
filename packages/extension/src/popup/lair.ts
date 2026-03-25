@@ -554,7 +554,7 @@ function updateKeypairSelects(): void {
  * Delete a keypair
  */
 async function deleteKeypair(tag: string): Promise<void> {
-  if (!(await showConfirm(`Are you sure you want to delete keypair "${tag}"? This cannot be undone.`))) {
+  if (!(await showConfirm(`Are you sure you want to delete keypair "${tag}"? This cannot be undone.`, { variant: "danger" }))) {
     return;
   }
 
