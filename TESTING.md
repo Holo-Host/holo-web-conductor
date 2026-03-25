@@ -281,6 +281,60 @@ npm run build
 
 ---
 
+## Runtime Log Filtering
+
+The extension uses a centralized logger with filterable prefixes. By default, only `info`, `warn`, and `error` messages are shown. Use `setHwcLogFilter()` in any extension console to enable `debug`/`perf`/`trace` output.
+
+```javascript
+setHwcLogFilter('*');              // All debug logs
+setHwcLogFilter('*,PERF');         // All debug + performance metrics
+setHwcLogFilter('*,TRACE');        // All debug + trace detail
+setHwcLogFilter('CallZome,Cascade'); // Specific prefixes only
+setHwcLogFilter('');               // Quiet (default): info/warn/error only
+```
+
+The filter persists across restarts (via `chrome.storage.local`) and syncs across all extension contexts.
+
+### Available prefixes
+
+| Prefix | Package | What it covers |
+|--------|---------|----------------|
+| `Background` | extension | Service worker lifecycle, message routing |
+| `Auth` | extension | Permission/authorization flow |
+| `CallZome` | extension | Zome call dispatch from background to offscreen |
+| `Linker` | extension | Linker configuration, network setup |
+| `Signal` | extension | Remote signal send/receive/delivery |
+| `Lair` | extension | Key storage operations |
+| `HappContext` | extension | hApp install/uninstall/enable/disable |
+| `HappContextStorage` | extension | IndexedDB context persistence |
+| `Offscreen` | extension | Offscreen document lifecycle, message handling |
+| `OffscreenMgr` | extension | Chrome offscreen document management |
+| `ZomeCall` | extension | Zome call execution in offscreen |
+| `Network` | extension | Network configuration, WS state |
+| `Publish` | extension/core | DHT op publishing and tracking |
+| `RibosomeWorker` | extension | WASM worker init, network proxy, SQLite |
+| `SQLiteWorker` | extension | SQLite WASM worker |
+| `FirefoxExec` | extension | Firefox direct executor |
+| `BaseExec` | extension | Base executor (shared WS/signal logic) |
+| `AppClient` | client | WebConductorAppClient lifecycle |
+| `ConnectionMonitor` | client | Connection state tracking |
+| `Reconnect` | client | Reconnection attempts |
+| `Ribosome` | core | WASM runtime, performance metrics |
+| `HostFn` | core | Host function dispatch |
+| `Storage` | core | Source chain and SQLite storage |
+| `Genesis` | core | Genesis initialization |
+| `GenesisSelfCheck` | core | Genesis validation |
+| `Validate` | core | Entry/action validation |
+| `Cascade` | core | Data retrieval (local + network) |
+| `WebSocket` | core | WebSocket connection, auth, heartbeat |
+| `ChainRecovery` | core | Source chain recovery |
+
+Special filter keywords:
+- `PERF` — enable performance timing breakdowns (requires prefix match too)
+- `TRACE` — enable trace-level detail (requires prefix match too)
+
+---
+
 ## Troubleshooting
 
 **"holochain not found"**: Make sure you're in the nix shell (`nix develop -c bash`)

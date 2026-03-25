@@ -739,7 +739,7 @@ function toBytes(value: any): Uint8Array | null {
   if (Array.isArray(value) || (typeof value === 'object' && 'length' in value)) {
     return new Uint8Array(value);
   }
-  log.warn('[DirectSQLiteStorage] Unknown byte type:', typeof value, value);
+  log.warn('Unknown byte type:', typeof value, value);
   return new Uint8Array(value);
 }
 
@@ -1095,7 +1095,7 @@ class ProxyNetworkService implements NetworkService {
         entry: this.parseEntry(data.entry),
       };
     } catch (error) {
-      log.error('[ProxyNetwork] Failed to parse record response:', error);
+      log.error('Failed to parse record response:', error);
       return null;
     }
   }
@@ -1151,7 +1151,7 @@ class ProxyNetworkService implements NetworkService {
         author: this.normalizeByteArrays(link.author),
       }));
     } catch (error) {
-      log.error('[ProxyNetwork] Failed to parse links response:', error);
+      log.error('Failed to parse links response:', error);
       return [];
     }
   }
@@ -1243,12 +1243,12 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status >= 500) {
         throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
+        log.warn(`Unexpected HTTP ${response.status}, treating as not found`);
         return null;
       }
     } catch (error) {
       if (isNetworkError(error)) throw error;
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return null;
     }
   }
@@ -1271,12 +1271,12 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status >= 500) {
         throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
+        log.warn(`Unexpected HTTP ${response.status}, treating as not found`);
         return [];
       }
     } catch (error) {
       if (isNetworkError(error)) throw error;
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return [];
     }
   }
@@ -1299,12 +1299,12 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status >= 500) {
         throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
+        log.warn(`Unexpected HTTP ${response.status}, treating as not found`);
         return null;
       }
     } catch (error) {
       if (isNetworkError(error)) throw error;
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return null;
     }
   }
@@ -1332,12 +1332,12 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status >= 500) {
         throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
+        log.warn(`Unexpected HTTP ${response.status}, treating as not found`);
         return 0;
       }
     } catch (error) {
       if (isNetworkError(error)) throw error;
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return 0;
     }
   }
@@ -1366,12 +1366,12 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status >= 500) {
         throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
+        log.warn(`Unexpected HTTP ${response.status}, treating as not found`);
         return null;
       }
     } catch (error) {
       if (isNetworkError(error)) throw error;
-      log.error(`[ProxyNetwork] Agent activity request failed:`, error);
+      log.error(`Agent activity request failed:`, error);
       return null;
     }
   }
@@ -1404,12 +1404,12 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status >= 500) {
         throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.warn(`[ProxyNetwork] must_get_agent_activity unexpected HTTP ${response.status}`);
+        log.warn(`must_get_agent_activity unexpected HTTP ${response.status}`);
         return null;
       }
     } catch (error) {
       if (isNetworkError(error)) throw error;
-      log.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
+      log.error(`must_get_agent_activity request failed:`, error);
       return null;
     }
   }
