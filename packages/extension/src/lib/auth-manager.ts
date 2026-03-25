@@ -6,6 +6,8 @@
  */
 
 import type { ResponseMessage } from "./messaging";
+import { createLogger } from '@hwc/shared';
+const log = createLogger('Auth');
 
 /**
  * Pending authorization request
@@ -57,7 +59,7 @@ export class AuthManager {
     };
 
     this.pendingRequests.set(id, request);
-    console.log(`[AuthManager] Created auth request ${id} for ${origin}`);
+    log.debug(`Created auth request ${id} for ${origin}`);
 
     return request;
   }
@@ -102,7 +104,7 @@ export class AuthManager {
     // Cleanup
     this.pendingRequests.delete(requestId);
 
-    console.log(`[AuthManager] Resolved auth request ${requestId}`);
+    log.debug(`Resolved auth request ${requestId}`);
     return true;
   }
 
@@ -158,7 +160,7 @@ export class AuthManager {
     }
 
     if (expiredRequests.length > 0) {
-      console.log(`[AuthManager] Cleaned up ${expiredRequests.length} expired requests`);
+      log.debug(`Cleaned up ${expiredRequests.length} expired requests`);
     }
   }
 

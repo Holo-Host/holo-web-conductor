@@ -3,6 +3,8 @@
  */
 
 import type { ConnectionConfig, ConnectionState } from './types';
+import { createLogger } from '@hwc/shared';
+const log = createLogger('Reconnect');
 
 /**
  * Handles automatic reconnection with exponential backoff.
@@ -38,9 +40,7 @@ export class ReconnectionManager {
       nextReconnectMs: delay,
     });
 
-    console.log(
-      `[ReconnectionManager] Reconnect attempt ${this.attempt} in ${delay}ms`
-    );
+    log.debug(`Reconnect attempt ${this.attempt} in ${delay}ms`);
 
     await this.wait(delay);
 
@@ -53,7 +53,7 @@ export class ReconnectionManager {
       await this.reconnectFn();
       // Success - reset counter
       this.reset();
-      console.log('[ReconnectionManager] Reconnection successful');
+      log.info('Reconnection successful');
     } catch (e) {
       console.error('[ReconnectionManager] Reconnection failed:', e);
       this.isReconnecting = false;

@@ -25,6 +25,8 @@ import {
 import { encodeHashToBase64, HoloHashType, hashFrom32AndType } from "@holochain/client";
 import { encode as msgpackEncode } from "@msgpack/msgpack";
 import type { AppBundle, DnaBundle, DnaManifestRuntime } from "@hwc/core";
+import { createLogger } from '@hwc/shared';
+const log = createLogger('HappContext');
 
 /**
  * Convert a raw Ed25519 public key (32 bytes) to an AgentPubKey HoloHash (39 bytes)
@@ -76,7 +78,7 @@ export class HappContextManager {
       this.storage["ready"],
       this.permissionManager["ready"],
     ]);
-    console.log("[HappContextManager] Initialized");
+    log.info("Initialized");
   }
 
   /**
@@ -167,17 +169,6 @@ export class HappContextManager {
     // Compute DNA hash
     const dnaHash = computeDnaHashFromDef(modifiers, integrityZomes);
 
-    console.log(`[HappContextManager] Computed DNA hash:`, {
-      networkSeed,
-      propertiesBytes: Array.from(propertiesBytes),
-      integrityZomes: integrityZomes.map(z => ({
-        name: z.name,
-        wasmHash: encodeHashToBase64(z.wasmHash),
-        dependencies: z.dependencies,
-      })),
-      hash: encodeHashToBase64(dnaHash),
-    });
-
     return dnaHash;
   }
 
@@ -190,7 +181,7 @@ export class HappContextManager {
   async installHapp(domain: string, request: InstallHappRequest): Promise<HappContext> {
     await this.ensureReady();
 
-    console.log(`[HappContextManager] Installing hApp for domain: ${domain}`);
+    log.info(`Installing hApp for domain: ${domain}`);
 
     try {
       // 1. Check permission
@@ -206,38 +197,26 @@ export class HappContextManager {
       }
 
       // 3. Unpack .happ bundle
-      console.log(
-        `[HappContextManager] Unpacking .happ bundle (${request.happBundle.length} bytes)`
-      );
       const appBundle: AppBundle = unpackHappBundle(request.happBundle);
-
-      console.log(`[HappContextManager] hApp manifest:`, {
-        name: appBundle.manifest.name,
-        roles: appBundle.manifest.roles.length,
-        resources: appBundle.resources.size,
-      });
 
       // 4. Create or reuse agent key for this domain
       // If the caller provides an agentKeyTag (pre-existing key for one-step genesis
       // with membrane proof), use it; otherwise derive from domain.
       const agentKeyTag = request.agentKeyTag || `${domain}:agent`;
-      console.log(`[HappContextManager] Creating/reusing agent key: ${agentKeyTag}`);
+      log.debug(`Creating/reusing agent key: ${agentKeyTag}`);
 
       const lair = await this.getLairClient();
       let rawEd25519Key: Uint8Array;
 
       const existingEntry = await lair.getEntry(agentKeyTag);
       if (existingEntry) {
-        console.log(`[HappContextManager] Reusing existing key: ${agentKeyTag}`);
         rawEd25519Key = existingEntry.ed25519_pub_key;
       } else {
         const keyResult = await lair.newSeed(agentKeyTag, true);
         rawEd25519Key = keyResult.entry_info.ed25519_pub_key;
       }
-      console.log(`[HappContextManager] Ed25519 key (first 8 bytes): ${Array.from(rawEd25519Key.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
       // Wrap raw Ed25519 key (32 bytes) as AgentPubKey HoloHash (39 bytes)
       const agentPubKey = wrapAsAgentPubKey(rawEd25519Key);
-      console.log(`[HappContextManager] Wrapped as AgentPubKey (first 8 bytes): ${Array.from(agentPubKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`);
 
       // 5. Process each DNA role
       const dnaContexts: DnaContext[] = [];
@@ -260,9 +239,6 @@ export class HappContextManager {
         }
 
         // Unpack DNA bundle
-        console.log(
-          `[HappContextManager] Unpacking DNA bundle for role: ${role.name}`
-        );
         const dnaBundle: DnaBundle = unpackDnaBundle(dnaBytes);
 
         // Create runtime manifest
@@ -303,7 +279,7 @@ export class HappContextManager {
         // Store DNA WASM separately for deduplication
         await this.storage.putDnaWasm(dnaHash, wasm);
 
-        console.log(`[HappContextManager] Processed DNA: ${dnaContext.name}`, {
+        log.debug(`Processed DNA: ${dnaContext.name}`, {
           hash: encodeHashToBase64(dnaHash),
           wasmSize: wasm.length,
           integrityZomes: runtimeManifest.integrity_zomes.length,
@@ -328,7 +304,7 @@ export class HappContextManager {
 
       if (awaitingMemproofs) {
         const memproofsProvided = request.membraneProofs !== undefined;
-        console.log(`[HappContextManager] App has allow_deferred_memproofs=true - context awaiting genesis (memproofs ${memproofsProvided ? 'provided, will run immediately' : 'not provided, deferred'})`);
+        log.debug(`App has allow_deferred_memproofs=true - context awaiting genesis (memproofs ${memproofsProvided ? 'provided, will run immediately' : 'not provided, deferred'})`);
       }
 
       // 7. Create HappContext
@@ -351,7 +327,7 @@ export class HappContextManager {
       // 8. Store context
       await this.storage.putContext(context);
 
-      console.log(`[HappContextManager] Installed hApp: ${context.appName}`, {
+      log.info(`Installed hApp: ${context.appName}`, {
         id: context.id,
         dnas: context.dnas.length,
       });
@@ -422,13 +398,12 @@ export class HappContextManager {
       throw new Error(`Context ${contextId} not found`);
     }
 
-    console.log(`[HappContextManager] Uninstalling hApp ${contextId} (${context.domain})`);
+    log.info(`Uninstalling hApp ${contextId} (${context.domain})`);
 
     // 1. Delete agent key from Lair
     try {
       const lair = await this.getLairClient();
       await lair.deleteEntry(context.agentKeyTag);
-      console.log(`[HappContextManager] Deleted agent key: ${context.agentKeyTag}`);
     } catch (error) {
       console.warn(`[HappContextManager] Failed to delete agent key:`, error);
       // Continue with uninstall even if key deletion fails
@@ -447,7 +422,7 @@ export class HappContextManager {
     // 3. Delete context
     await this.storage.deleteContext(contextId);
 
-    console.log(`[HappContextManager] Uninstalled hApp ${contextId}`);
+    log.info(`Uninstalled hApp ${contextId}`);
   }
 
   /**
@@ -469,9 +444,7 @@ export class HappContextManager {
     context.status = enabled ? 'enabled' : 'disabled';
     await this.storage.putContext(context);
 
-    console.log(
-      `[HappContextManager] ${enabled ? "Enabled" : "Disabled"} context ${contextId}`
-    );
+    log.info(`${enabled ? "Enabled" : "Disabled"} context ${contextId}`);
   }
 
   /**
@@ -512,7 +485,7 @@ export class HappContextManager {
     context.enabled = true;
     await this.storage.putContext(context);
 
-    console.log(`[HappContextManager] Membrane proofs accepted for context ${contextId} - status set to 'enabled'`);
+    log.info(`Membrane proofs accepted for context ${contextId} - status set to 'enabled'`);
 
     return context;
   }
@@ -529,7 +502,7 @@ export class HappContextManager {
     if (context.recoverySealed === true) return;
     context.recoverySealed = false;
     await this.storage.putContext(context);
-    console.log(`[HappContextManager] Recovery run marked for context ${contextId}`);
+    log.debug(`Recovery run marked for context ${contextId}`);
   }
 
   /**
@@ -543,7 +516,7 @@ export class HappContextManager {
     if (context.recoverySealed === true) return;
     context.recoverySealed = true;
     await this.storage.putContext(context);
-    console.log(`[HappContextManager] Recovery sealed for context ${contextId}`);
+    log.debug(`Recovery sealed for context ${contextId}`);
   }
 
   /**

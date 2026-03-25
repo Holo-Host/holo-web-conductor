@@ -50,8 +50,6 @@ async function revokePermission(origin: string): Promise<void> {
       return;
     }
 
-    console.log(`[Permissions] Revoked permission for ${origin}`);
-
     // Reload permissions list
     await loadPermissions();
   } catch (error) {
@@ -94,8 +92,6 @@ async function revokeAllPermissions(): Promise<void> {
         createRequest(MessageType.PERMISSION_REVOKE, { origin: permission.origin })
       );
     }
-
-    console.log(`[Permissions] Revoked all ${permissions.length} permissions`);
 
     // Reload permissions list
     await loadPermissions();
@@ -196,8 +192,6 @@ async function loadPermissions(): Promise<void> {
     }
 
     const { permissions } = response.payload as { permissions: Permission[] };
-    console.log(`[Permissions] Loaded ${permissions.length} permissions`);
-
     renderPermissions(permissions);
   } catch (error) {
     console.error("[Permissions] Error loading permissions:", error);
