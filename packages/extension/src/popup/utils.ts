@@ -51,6 +51,84 @@ export function formatDate(timestamp: number): string {
   });
 }
 
+export interface ConfirmOptions {
+  /** Button style for the OK button. Defaults to "primary". */
+  variant?: "primary" | "danger";
+}
+
+/**
+ * Custom confirm dialog that works consistently in both Chrome and Firefox.
+ * Native confirm() renders inside the popup viewport in Firefox, cropping the dialog.
+ * This renders a full-viewport overlay with OK/Cancel buttons instead.
+ */
+export function showConfirm(message: string, options?: ConfirmOptions): Promise<boolean> {
+  const variant = options?.variant ?? "primary";
+
+  return new Promise((resolve) => {
+    // Remove any existing modal
+    document.getElementById("hwc-confirm-overlay")?.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "hwc-confirm-overlay";
+    overlay.className = "hwc-confirm-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "hwc-confirm-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "hwc-confirm-msg");
+
+    const msg = document.createElement("div");
+    msg.id = "hwc-confirm-msg";
+    msg.className = "hwc-confirm-message";
+    msg.textContent = message;
+
+    const buttons = document.createElement("div");
+    buttons.className = "hwc-confirm-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "secondary";
+    cancelBtn.textContent = "Cancel";
+
+    const okBtn = document.createElement("button");
+    okBtn.className = variant;
+    okBtn.textContent = "OK";
+
+    // Extension popups auto-size to content. A fixed overlay doesn't grow
+    // the viewport, so force a minimum body height so the dialog isn't cropped.
+    const prevMinHeight = document.body.style.minHeight;
+    document.body.style.minHeight = "320px";
+
+    function cleanup(result: boolean): void {
+      document.removeEventListener("keydown", onKeydown);
+      overlay.remove();
+      document.body.style.minHeight = prevMinHeight;
+      resolve(result);
+    }
+
+    function onKeydown(e: KeyboardEvent): void {
+      if (e.key === "Escape") { e.preventDefault(); cleanup(false); }
+      if (e.key === "Enter") { e.preventDefault(); cleanup(true); }
+    }
+
+    cancelBtn.addEventListener("click", () => cleanup(false));
+    okBtn.addEventListener("click", () => cleanup(true));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cleanup(false);
+    });
+    document.addEventListener("keydown", onKeydown);
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(okBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(buttons);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    okBtn.focus();
+  });
+}
+
 /**
  * Copy text to clipboard with visual feedback on the element
  */

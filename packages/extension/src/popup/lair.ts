@@ -12,7 +12,7 @@ import {
   type Message,
 } from "../lib/messaging";
 import type { EntryInfo, EncryptedExport } from "@holo-host/lair";
-import { toUint8Array } from "./utils";
+import { toUint8Array, showConfirm } from "./utils";
 import {
   dhtLocationFrom32,
   HASH_TYPE_PREFIX,
@@ -554,7 +554,7 @@ function updateKeypairSelects(): void {
  * Delete a keypair
  */
 async function deleteKeypair(tag: string): Promise<void> {
-  if (!confirm(`Are you sure you want to delete keypair "${tag}"? This cannot be undone.`)) {
+  if (!(await showConfirm(`Are you sure you want to delete keypair "${tag}"? This cannot be undone.`, { variant: "danger" }))) {
     return;
   }
 
