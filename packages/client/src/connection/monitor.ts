@@ -13,6 +13,8 @@ import type {
   ConnectionEventListener,
 } from './types';
 import { ConnectionStatus } from './types';
+import { createLogger } from '@hwc/shared';
+const log = createLogger('ConnectionMonitor');
 
 /**
  * Monitors linker connection health and emits events on state changes.
@@ -180,7 +182,7 @@ export class ConnectionMonitor {
    */
   setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, authenticated?: boolean, error?: string, linkerUrl?: string | null): void {
     if (this.state.wsHealthy !== wsHealthy || this.state.authenticated !== (authenticated ?? this.state.authenticated)) {
-      console.log(`[ConnectionMonitor] setLinkerHealth: ws=${wsHealthy} auth=${authenticated} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
+      log.debug(`setLinkerHealth: ws=${wsHealthy} auth=${authenticated} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
     }
     this.updateState({
       httpHealthy,
@@ -210,7 +212,7 @@ export class ConnectionMonitor {
 
         // Diagnostic: log when WS/auth status changes
         if (this.state.wsHealthy !== status.wsHealthy || this.state.authenticated !== (status.authenticated ?? false)) {
-          console.log(`[ConnectionMonitor] Status from extension: http=${status.httpHealthy} ws=${status.wsHealthy} auth=${status.authenticated} err=${status.lastError || 'none'} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
+          log.debug(`Status from extension: http=${status.httpHealthy} ws=${status.wsHealthy} auth=${status.authenticated} err=${status.lastError || 'none'} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
         }
 
         if (wasHealthy && !isHealthy) {

@@ -9,6 +9,8 @@
  */
 
 import type { HappContext, HappContextStatus, DnaContext } from "@hwc/core";
+import { createLogger } from '@hwc/shared';
+const log = createLogger('HappContextStorage');
 
 const DB_NAME = "hwc_happ_contexts";
 const DB_VERSION = 1;
@@ -86,7 +88,7 @@ export class HappContextStorage {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log(`[HappContextStorage] Database opened: ${DB_NAME}`);
+        log.debug(`Database opened: ${DB_NAME}`);
         resolve();
       };
 
@@ -101,7 +103,6 @@ export class HappContextStorage {
           contextsStore.createIndex("domain", "domain", { unique: true });
           contextsStore.createIndex("installedAt", "installedAt", { unique: false });
           contextsStore.createIndex("lastUsed", "lastUsed", { unique: false });
-          console.log(`[HappContextStorage] Created ${CONTEXTS_STORE} store`);
         }
 
         // Create DNA WASM store
@@ -109,7 +110,6 @@ export class HappContextStorage {
           db.createObjectStore(DNA_WASM_STORE, {
             keyPath: "hash",
           });
-          console.log(`[HappContextStorage] Created ${DNA_WASM_STORE} store`);
         }
       };
     });
@@ -146,7 +146,6 @@ export class HappContextStorage {
           this.domainToIdCache.set(context.domain, context.id);
         }
         this.cacheInitialized = true;
-        console.log(`[HappContextStorage] Cache initialized with ${stored.length} contexts`);
         resolve();
       };
 
@@ -293,7 +292,6 @@ export class HappContextStorage {
         // Update cache
         this.contextCache.set(context.id, context);
         this.domainToIdCache.set(context.domain, context.id);
-        console.log(`[HappContextStorage] Stored context ${context.id} for ${context.domain}`);
         resolve();
       };
 
@@ -413,7 +411,6 @@ export class HappContextStorage {
         if (domain) {
           this.domainToIdCache.delete(domain);
         }
-        console.log(`[HappContextStorage] Deleted context ${id}`);
         resolve();
       };
 
@@ -499,9 +496,6 @@ export class HappContextStorage {
       const request = store.put(entry);
 
       request.onsuccess = () => {
-        console.log(
-          `[HappContextStorage] Stored DNA WASM (${wasm.length} bytes) with hash ${hashKey.substring(0, 16)}...`
-        );
         resolve();
       };
 
@@ -551,7 +545,6 @@ export class HappContextStorage {
       const request = store.delete(hashKey);
 
       request.onsuccess = () => {
-        console.log(`[HappContextStorage] Deleted DNA WASM ${hashKey.substring(0, 16)}...`);
         resolve();
       };
 
@@ -582,7 +575,7 @@ export class HappContextStorage {
         this.contextCache.clear();
         this.domainToIdCache.clear();
         this.cacheInitialized = false;
-        console.log("[HappContextStorage] Cleared all data");
+        log.info("Cleared all data");
         resolve();
       };
 
