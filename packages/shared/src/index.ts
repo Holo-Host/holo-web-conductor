@@ -25,3 +25,20 @@ export function err<E>(error: E): HwcResult<never, E> {
 
 // Passphrase policy
 export const MIN_PASSPHRASE_LENGTH = 8;
+
+/**
+ * Linker connection status reported by the extension.
+ *
+ * Canonical definition — used by background, client library, and (manually
+ * mirrored in) the inject script which cannot import shared modules.
+ */
+export interface ConnectionStatus {
+  httpHealthy: boolean;
+  wsHealthy: boolean;
+  authenticated: boolean;
+  linkerUrl: string | null;
+  lastChecked: number;
+  lastError?: string;
+  /** Network peers known to the linker (from WebSocket pong). */
+  peerCount?: number;
+}

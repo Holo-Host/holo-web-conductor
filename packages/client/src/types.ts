@@ -3,6 +3,7 @@
  */
 
 import type { ConnectionState } from './connection/types';
+import type { ConnectionStatus } from '@hwc/shared';
 
 /**
  * The window.holochain API provided by the Web Conductor extension.
@@ -35,22 +36,8 @@ export interface HolochainAPI {
   configureNetwork(config: { linkerUrl: string }): Promise<void>;
 
   // Connection status (real-time health monitoring)
-  getConnectionStatus(): Promise<{
-    httpHealthy: boolean;
-    wsHealthy: boolean;
-    authenticated: boolean;
-    linkerUrl: string | null;
-    lastChecked: number;
-    lastError?: string;
-  }>;
-  onConnectionChange(callback: (status: {
-    httpHealthy: boolean;
-    wsHealthy: boolean;
-    authenticated: boolean;
-    linkerUrl: string | null;
-    lastChecked: number;
-    lastError?: string;
-  }) => void): () => void;
+  getConnectionStatus(): Promise<ConnectionStatus>;
+  onConnectionChange(callback: (status: ConnectionStatus) => void): () => void;
   reconnectWebSocket?(): Promise<void>;
 
   // Joining service reconnect: signs a timestamp with the agent's ed25519 key.

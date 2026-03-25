@@ -480,6 +480,7 @@ function initializeWebSocketService(config: {
       type: "WS_STATE_CHANGE",
       state,
       authenticated: wsService?.isAuthenticated() || false,
+      peerCount: wsService?.getPeerCount() ?? 0,
     }).catch(() => {
       // Ignore errors if background is not listening
     });
@@ -747,6 +748,7 @@ interface OffscreenResponse {
   isConnected?: boolean;
   authenticated?: boolean;
   registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
+  peerCount?: number;
   valid?: boolean;
   didWrite?: boolean;
   recoveredCount?: number;
@@ -850,6 +852,7 @@ chrome.runtime.onMessage.addListener(
         isConnected: wsService?.isConnected() || false,
         authenticated: wsService?.isAuthenticated() || false,
         registrations: wsService?.getRegistrations() || [],
+        peerCount: wsService?.getPeerCount() ?? 0,
       });
       return true;
     }

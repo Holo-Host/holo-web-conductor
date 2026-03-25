@@ -179,18 +179,13 @@ export class ConnectionMonitor {
   /**
    * Update linker health status without changing overall connection status.
    * Used when extension is connected but linker may be unreachable.
+   * Accepts a partial state object so new fields flow through automatically.
    */
-  setLinkerHealth(httpHealthy: boolean, wsHealthy: boolean, authenticated?: boolean, error?: string, linkerUrl?: string | null): void {
-    if (this.state.wsHealthy !== wsHealthy || this.state.authenticated !== (authenticated ?? this.state.authenticated)) {
-      log.debug(`setLinkerHealth: ws=${wsHealthy} auth=${authenticated} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
+  setLinkerHealth(status: Partial<ConnectionState>): void {
+    if (this.state.wsHealthy !== (status.wsHealthy ?? this.state.wsHealthy) || this.state.authenticated !== (status.authenticated ?? this.state.authenticated)) {
+      log.debug(`setLinkerHealth: ws=${status.wsHealthy} auth=${status.authenticated} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
     }
-    this.updateState({
-      httpHealthy,
-      wsHealthy,
-      ...(authenticated !== undefined && { authenticated }),
-      ...(linkerUrl !== undefined && { linkerUrl }),
-      lastError: error,
-    });
+    this.updateState(status);
   }
 
   /**
@@ -224,6 +219,7 @@ export class ConnectionMonitor {
             authenticated: status.authenticated ?? false,
             linkerUrl: status.linkerUrl,
             lastError: status.lastError || 'Linker connection lost',
+            peerCount: status.peerCount,
           });
           this.emit('connection:error', {
             error: status.lastError || 'Linker connection lost',
@@ -238,6 +234,7 @@ export class ConnectionMonitor {
             authenticated: status.authenticated ?? false,
             linkerUrl: status.linkerUrl,
             lastError: undefined,
+            peerCount: status.peerCount,
           });
           if (this.state.status === ConnectionStatus.Reconnecting) {
             this.emit('connection:reconnected', undefined as void);
@@ -250,6 +247,7 @@ export class ConnectionMonitor {
             authenticated: status.authenticated ?? false,
             linkerUrl: status.linkerUrl,
             lastError: status.lastError,
+            peerCount: status.peerCount,
           });
         }
       }
@@ -272,7 +270,8 @@ export class ConnectionMonitor {
       prevState.linkerUrl !== this.state.linkerUrl ||
       prevState.lastError !== this.state.lastError ||
       prevState.reconnectAttempt !== this.state.reconnectAttempt ||
-      prevState.joiningServiceError !== this.state.joiningServiceError;
+      prevState.joiningServiceError !== this.state.joiningServiceError ||
+      prevState.peerCount !== this.state.peerCount;
 
     if (changed) {
       this.emit('connection:change', this.getState());

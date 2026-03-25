@@ -70,7 +70,7 @@ export type ServerMessage =
       zome_name: string;
       signal: string; // base64-encoded signal payload
     }
-  | { type: "pong" }
+  | { type: "pong"; peer_count?: number }
   | { type: "error"; message: string }
   | {
       type: "sign_agent_info";
@@ -168,6 +168,7 @@ export class WebSocketNetworkService {
   /** Agent pubkeys that failed auth (so we can try the next one) */
   private failedAuthAgents = new Set<string>();
   private sessionTokenCallback: ((token: string) => void) | null = null;
+  private lastPeerCount: number = 0;
 
   constructor(options: WebSocketServiceOptions) {
     this.options = {
@@ -200,6 +201,13 @@ export class WebSocketNetworkService {
    */
   isAuthenticated(): boolean {
     return this.authenticated;
+  }
+
+  /**
+   * Get the last known network peer count (from most recent pong)
+   */
+  getPeerCount(): number {
+    return this.lastPeerCount;
   }
 
   /**
@@ -449,7 +457,7 @@ export class WebSocketNetworkService {
           break;
 
         case "pong":
-          this.handlePong();
+          this.handlePong(message);
           break;
 
         case "error":
@@ -594,11 +602,19 @@ export class WebSocketNetworkService {
     }
   }
 
-  private handlePong(): void {
+  private handlePong(message: Extract<ServerMessage, { type: "pong" }>): void {
     // Clear the timeout - server is alive
     if (this.heartbeatTimeoutTimer) {
       clearTimeout(this.heartbeatTimeoutTimer);
       this.heartbeatTimeoutTimer = null;
+    }
+
+    // Track peer count from linker
+    if (message.peer_count !== undefined) {
+      if (message.peer_count !== this.lastPeerCount) {
+        log.info(`Network peer count: ${message.peer_count}`);
+      }
+      this.lastPeerCount = message.peer_count;
     }
   }
 

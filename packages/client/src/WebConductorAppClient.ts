@@ -599,14 +599,8 @@ export class WebConductorAppClient implements AppClient {
     // Disable client-side auto-reconnection since extension handles health monitoring
     this.reconnectionManager.cancel();
 
-    const applyStatus = (status: { httpHealthy: boolean; wsHealthy: boolean; authenticated: boolean; linkerUrl?: string | null; lastError?: string }) => {
-      this.connection.setLinkerHealth(
-        status.httpHealthy,
-        status.wsHealthy,
-        status.authenticated,
-        status.lastError,
-        status.linkerUrl,
-      );
+    const applyStatus = (status: { httpHealthy: boolean; wsHealthy: boolean; authenticated?: boolean; linkerUrl?: string | null; lastError?: string; peerCount?: number }) => {
+      this.connection.setLinkerHealth(status);
     };
 
     // Subscribe to future changes

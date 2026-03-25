@@ -58,6 +58,7 @@ export interface WsStateInfo {
   isConnected: boolean;
   authenticated: boolean;
   registrations?: Array<{ dna_hash: string; agent_pubkey: string }>;
+  peerCount?: number;
 }
 
 /**

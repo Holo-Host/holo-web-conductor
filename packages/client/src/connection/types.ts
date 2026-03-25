@@ -40,6 +40,8 @@ export interface ConnectionState {
   nextReconnectMs?: number;
   /** Error from joining service reconnect (e.g. session expired, agent revoked) */
   joiningServiceError?: string;
+  /** Number of network peers known to the linker (from WebSocket pong) */
+  peerCount?: number;
 }
 
 /**

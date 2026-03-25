@@ -82,6 +82,36 @@ describe('WebConductorAppClient', () => {
 
       expect(client.getConnectionState().linkerUrl).toBe('https://fresh-linker.example.com');
     });
+
+    it('connection status subscription forwards peerCount to connection state', async () => {
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
+
+      mockHolochain._emitConnectionChange({
+        httpHealthy: true,
+        wsHealthy: true,
+        authenticated: true,
+        peerCount: 7,
+      });
+
+      expect(client.getConnectionState().peerCount).toBe(7);
+    });
+
+    it('peerCount updates are reflected in connection:change events', async () => {
+      const client = await WebConductorAppClient.connect({ linkerUrl: 'http://localhost:8090' });
+      const handler = vi.fn();
+      client.onConnection('connection:change', handler);
+
+      mockHolochain._emitConnectionChange({
+        httpHealthy: true,
+        wsHealthy: true,
+        authenticated: true,
+        peerCount: 3,
+      });
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ peerCount: 3 })
+      );
+    });
   });
 
   describe('myPubKey', () => {
@@ -279,10 +309,11 @@ describe('WebConductorAppClient', () => {
         lastError: 'Down',
       });
 
-      // Linker comes back up
+      // Linker comes back up (extension always includes lastError field)
       mockHolochain._emitConnectionChange({
         httpHealthy: true,
         wsHealthy: true,
+        lastError: undefined,
       });
 
       const state = client.getConnectionState();
