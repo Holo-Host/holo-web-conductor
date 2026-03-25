@@ -9,7 +9,7 @@ import {
   type PublishStatusPayload,
 } from "../lib/messaging";
 import type { Permission } from "../lib/permissions";
-import { formatHash, formatHashFull, formatRelativeTime, formatDate, copyToClipboard } from "./utils";
+import { formatHash, formatHashFull, formatRelativeTime, formatDate, copyToClipboard, showConfirm } from "./utils";
 
 interface HappContext {
   id: string;
@@ -289,9 +289,9 @@ function attachEventListeners(): void {
       const contextId = (e.target as HTMLElement).dataset.contextId;
       if (!contextId) return;
       if (
-        !confirm(
+        !(await showConfirm(
           "Recover chain data from the DHT? This requires an active linker connection."
-        )
+        ))
       )
         return;
       await recoverChain(contextId);
@@ -329,9 +329,9 @@ async function uninstallHapp(id: string): Promise<void> {
   const ctx = contexts.find((c) => c.id === id);
   const name = ctx?.appName || "this hApp";
   if (
-    !confirm(
+    !(await showConfirm(
       `Uninstall "${name}"?\n\nThis deletes the context and agent key permanently.`
-    )
+    ))
   )
     return;
 
@@ -411,9 +411,9 @@ async function republishAll(id: string): Promise<void> {
   const ctx = contexts.find((c) => c.id === id);
   const name = ctx?.appName || "this hApp";
   if (
-    !confirm(
+    !(await showConfirm(
       `Republish all records for "${name}"?\n\nThis re-queues all DHT operations from local chain data.`
-    )
+    ))
   )
     return;
 
@@ -533,9 +533,9 @@ async function recoverChain(contextId: string): Promise<void> {
 
 async function revokePermission(): Promise<void> {
   if (
-    !confirm(
+    !(await showConfirm(
       `Disconnect ${siteHostname} from the Holo Web Conductor?\n\nThe site will need to request permission again.`
-    )
+    ))
   )
     return;
 

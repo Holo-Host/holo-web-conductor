@@ -135,3 +135,39 @@ button.small {
   padding: 4px 8px;
   font-size: 11px;
 }
+
+/* ── Confirm modal ────────────────────────────────── */
+
+.hwc-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+}
+
+.hwc-confirm-dialog {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 340px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.hwc-confirm-message {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1f2937;
+  margin-bottom: 18px;
+  white-space: pre-line;
+}
+
+.hwc-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

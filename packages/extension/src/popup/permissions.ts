@@ -6,7 +6,7 @@
 
 import { createRequest, MessageType, type ResponseMessage } from "../lib/messaging";
 import type { Permission } from "../lib/permissions";
-import { formatDate } from "./utils";
+import { formatDate, showConfirm } from "./utils";
 
 /**
  * Show error message
@@ -31,7 +31,7 @@ function hideError(): void {
  * Revoke permission for a specific origin
  */
 async function revokePermission(origin: string): Promise<void> {
-  const confirmed = confirm(
+  const confirmed = await showConfirm(
     `Disconnect ${origin} from the Holo Web Conductor?\n\nThis will require re-authorization if the site attempts to connect again.`
   );
 
@@ -65,7 +65,7 @@ async function revokePermission(origin: string): Promise<void> {
  * Revoke all permissions
  */
 async function revokeAllPermissions(): Promise<void> {
-  const confirmed = confirm(
+  const confirmed = await showConfirm(
     "Disconnect ALL sites from the Holo Web Conductor?\n\nThis will clear all authorized domains. They will need to request permission again."
   );
 

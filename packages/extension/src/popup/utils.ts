@@ -52,6 +52,66 @@ export function formatDate(timestamp: number): string {
 }
 
 /**
+ * Custom confirm dialog that works consistently in both Chrome and Firefox.
+ * Native confirm() renders inside the popup viewport in Firefox, cropping the dialog.
+ * This renders a full-viewport overlay with OK/Cancel buttons instead.
+ */
+export function showConfirm(message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    // Remove any existing modal
+    document.getElementById("hwc-confirm-overlay")?.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "hwc-confirm-overlay";
+    overlay.className = "hwc-confirm-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "hwc-confirm-dialog";
+
+    const msg = document.createElement("div");
+    msg.className = "hwc-confirm-message";
+    msg.textContent = message;
+
+    const buttons = document.createElement("div");
+    buttons.className = "hwc-confirm-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "secondary";
+    cancelBtn.textContent = "Cancel";
+
+    const okBtn = document.createElement("button");
+    okBtn.className = "danger";
+    okBtn.textContent = "OK";
+
+    // Extension popups auto-size to content. A fixed overlay doesn't grow
+    // the viewport, so force a minimum body height so the dialog isn't cropped.
+    const prevMinHeight = document.body.style.minHeight;
+    document.body.style.minHeight = "320px";
+
+    function cleanup(result: boolean): void {
+      overlay.remove();
+      document.body.style.minHeight = prevMinHeight;
+      resolve(result);
+    }
+
+    cancelBtn.addEventListener("click", () => cleanup(false));
+    okBtn.addEventListener("click", () => cleanup(true));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cleanup(false);
+    });
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(okBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(buttons);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    okBtn.focus();
+  });
+}
+
+/**
  * Copy text to clipboard with visual feedback on the element
  */
 export async function copyToClipboard(text: string, element: HTMLElement): Promise<void> {

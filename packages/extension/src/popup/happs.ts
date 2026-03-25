@@ -10,7 +10,7 @@ import {
   type ResponseMessage,
   type PublishStatusPayload,
 } from "../lib/messaging";
-import { formatHash, formatHashFull, formatRelativeTime, copyToClipboard } from "./utils";
+import { formatHash, formatHashFull, formatRelativeTime, copyToClipboard, showConfirm } from "./utils";
 
 interface HappContext {
   id: string;
@@ -292,7 +292,7 @@ function attachEventListeners(): void {
       const contextId = (e.target as HTMLElement).dataset.contextId;
       if (!contextId) return;
 
-      if (!confirm('Recover chain data from the DHT? This requires an active linker connection.')) return;
+      if (!(await showConfirm('Recover chain data from the DHT? This requires an active linker connection.'))) return;
 
       const modal = document.getElementById('recovery-modal');
       const progressBar = document.getElementById('recovery-progress-bar');
@@ -475,10 +475,10 @@ async function republishAllRecords(contextId: string): Promise<void> {
 
   const appName = context.appName || "this hApp";
   if (
-    !confirm(
+    !(await showConfirm(
       `Are you sure you want to republish all records for "${appName}"?\n\n` +
         `This will regenerate and re-queue all DHT operations from local chain data.`
-    )
+    ))
   ) {
     return;
   }
@@ -561,7 +561,7 @@ async function uninstallHapp(contextId: string): Promise<void> {
   if (!context) return;
 
   const appName = context.appName || "this hApp";
-  if (!confirm(`Are you sure you want to uninstall "${appName}"?\n\nThis will delete the context and agent key. This action cannot be undone.`)) {
+  if (!(await showConfirm(`Are you sure you want to uninstall "${appName}"?\n\nThis will delete the context and agent key. This action cannot be undone.`))) {
     return;
   }
 

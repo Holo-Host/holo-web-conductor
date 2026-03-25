@@ -7,6 +7,7 @@
 
 import { createRequest, MessageType, type ResponseMessage } from "../lib/messaging";
 import type { Permission } from "../lib/permissions";
+import { showConfirm } from "./utils";
 
 interface HappContext {
   id: string;
@@ -250,7 +251,7 @@ function renderDomainItem(domain: DomainInfo): string {
 }
 
 async function revokeAllPermissions(): Promise<void> {
-  const confirmed = confirm(
+  const confirmed = await showConfirm(
     "Disconnect ALL sites from the Holo Web Conductor?\n\nAll sites will need to request permission again."
   );
   if (!confirmed) return;
