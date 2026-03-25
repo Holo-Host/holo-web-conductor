@@ -25,6 +25,9 @@ export type {
   HighestObserved,
 } from './types';
 
+// Errors
+export { NetworkError } from './types';
+
 // Cache
 export { NetworkCache, getNetworkCache, resetNetworkCache } from './cache';
 
@@ -50,6 +53,12 @@ export type { CascadeOptions } from './cascade';
 export type GetStrategyMode = 'compatibility' | 'honor';
 let getStrategyMode: GetStrategyMode = 'compatibility';
 
+// NetworkError mode: controls whether server errors (HTTP 5xx) are propagated to the zome
+// - 'swallow' (default): errors are caught and logged, null/empty returned (legacy behavior)
+// - 'propagate': errors bubble up as WasmError::Host to the zome (matches real conductor)
+export type NetworkErrorMode = 'swallow' | 'propagate';
+let networkErrorMode: NetworkErrorMode = 'swallow';
+
 /**
  * Set the GetStrategy mode.
  * - 'compatibility' (default): forces all get/get_links to Network strategy,
@@ -66,6 +75,18 @@ export function getGetStrategyMode(): GetStrategyMode {
 
 export function resetGetStrategyMode(): void {
   getStrategyMode = 'compatibility';
+}
+
+export function setNetworkErrorMode(mode: NetworkErrorMode): void {
+  networkErrorMode = mode;
+}
+
+export function getNetworkErrorMode(): NetworkErrorMode {
+  return networkErrorMode;
+}
+
+export function resetNetworkErrorMode(): void {
+  networkErrorMode = 'swallow';
 }
 
 // Global network service configuration

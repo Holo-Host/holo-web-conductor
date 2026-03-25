@@ -306,3 +306,24 @@ export interface NetworkCacheOptions {
   /** @deprecated Use detailsTtl. Legacy: mapped to detailsTtl. */
   ttl?: number;
 }
+
+/**
+ * Error thrown when the linker returns a server error (HTTP 5xx).
+ *
+ * This is the HWC equivalent of a network error that the real Holochain
+ * conductor would propagate as CascadeError::NetworkError. It is distinct
+ * from "not found" (HTTP 404 → null) and "network unreachable" (connection
+ * failure → null, equivalent to NoPeersForLocation).
+ *
+ * The Cascade re-throws this so host functions can convert it to
+ * WasmError::Host, matching the real conductor's behavior.
+ */
+export class NetworkError extends Error {
+  constructor(
+    public statusCode: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
