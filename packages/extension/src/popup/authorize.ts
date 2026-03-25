@@ -41,8 +41,6 @@ function showMainContent(): void {
  */
 async function handleApprove(requestId: string, origin: string): Promise<void> {
   try {
-    console.log(`[Authorize] Approving ${origin}`);
-
     const response = (await chrome.runtime.sendMessage(
       createRequest(MessageType.PERMISSION_GRANT, { requestId, origin })
     )) as ResponseMessage;
@@ -53,7 +51,6 @@ async function handleApprove(requestId: string, origin: string): Promise<void> {
       return;
     }
 
-    console.log(`[Authorize] Permission granted for ${origin}`);
     window.close();
   } catch (error) {
     console.error("[Authorize] Error approving:", error);
@@ -68,8 +65,6 @@ async function handleApprove(requestId: string, origin: string): Promise<void> {
  */
 async function handleDeny(requestId: string, origin: string): Promise<void> {
   try {
-    console.log(`[Authorize] Denying ${origin}`);
-
     const response = (await chrome.runtime.sendMessage(
       createRequest(MessageType.PERMISSION_DENY, { requestId, origin })
     )) as ResponseMessage;
@@ -80,7 +75,6 @@ async function handleDeny(requestId: string, origin: string): Promise<void> {
       return;
     }
 
-    console.log(`[Authorize] Permission denied for ${origin}`);
     window.close();
   } catch (error) {
     console.error("[Authorize] Error denying:", error);
@@ -143,10 +137,6 @@ async function initialize(): Promise<void> {
 
     // Show main content
     showMainContent();
-
-    console.log(
-      `[Authorize] Initialized for ${origin} (request ${requestId}, created ${new Date(timestamp).toISOString()})`
-    );
   } catch (error) {
     console.error("[Authorize] Error initializing:", error);
     showError(

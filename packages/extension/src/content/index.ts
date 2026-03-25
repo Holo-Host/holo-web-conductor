@@ -19,8 +19,6 @@ import {
 } from "../lib/messaging";
 import { PAGE_ALLOWED_TYPES } from "../lib/page-allowed-types";
 
-console.log("Holochain content script loaded");
-
 // ============================================================================
 // Long-lived port to background (keepalive + push messages)
 // ============================================================================
@@ -224,7 +222,6 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   // Handle signal messages
   if (message.type === "signal") {
-    console.log("[Content] Forwarding signal to page:", message.payload);
     window.postMessage(
       {
         source: "hwc-content",

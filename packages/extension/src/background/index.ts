@@ -802,12 +802,6 @@ async function handleCallZome(
     // Chrome's message passing converts Uint8Arrays to objects like {0: byte0, 1: byte1, ...}
     const normalizedPayload = normalizeUint8Arrays(payload);
 
-    // DIAGNOSTIC: log raw and normalized payload for failing calls
-    if (fn_name === 'get_joining_timestamp_for_agent' || fn_name === 'get_batch_mews_with_context') {
-      logZome.debug(`[DIAG] ${zome_name}::${fn_name} raw payload:`, JSON.stringify(payload));
-      logZome.debug(`[DIAG] ${zome_name}::${fn_name} normalized payload:`, JSON.stringify(normalizedPayload));
-    }
-
     // Serialize payload to MessagePack
     const payloadBytes = new Uint8Array(encode(normalizedPayload));
     logZome.trace(`Payload serialized: ${payloadBytes.length} bytes`);
