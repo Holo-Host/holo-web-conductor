@@ -223,9 +223,7 @@ export class HappContextManager {
 
       for (const role of appBundle.manifest.roles) {
         if (!role.dna.path) {
-          console.warn(
-            `[HappContextManager] Role ${role.name} has no DNA path, skipping`
-          );
+          log.warn(`Role ${role.name} has no DNA path, skipping`);
           continue;
         }
 
@@ -334,7 +332,7 @@ export class HappContextManager {
 
       return context;
     } catch (error) {
-      console.error("[HappContextManager] Failed to install hApp:", error);
+      log.error("Failed to install hApp:", error);
       throw error;
     }
   }
@@ -351,7 +349,7 @@ export class HappContextManager {
       // Validate that the agent key still exists in Lair
       const keyValid = await this.validateAgentKey(context);
       if (!keyValid) {
-        console.warn(`[HappContextManager] Agent key for context ${context.id} no longer exists in Lair - deleting stale context`);
+        log.warn(`Agent key for context ${context.id} no longer exists in Lair - deleting stale context`);
         await this.storage.deleteContext(context.id);
         return null;
       }
@@ -369,7 +367,7 @@ export class HappContextManager {
       const entry = await lair.getEntry(context.agentKeyTag);
       return entry !== null;
     } catch (error) {
-      console.warn(`[HappContextManager] Failed to validate agent key:`, error);
+      log.warn(`Failed to validate agent key:`, error);
       return false;
     }
   }
@@ -405,7 +403,7 @@ export class HappContextManager {
       const lair = await this.getLairClient();
       await lair.deleteEntry(context.agentKeyTag);
     } catch (error) {
-      console.warn(`[HappContextManager] Failed to delete agent key:`, error);
+      log.warn('Failed to delete agent key:', error);
       // Continue with uninstall even if key deletion fails
     }
 
@@ -414,7 +412,7 @@ export class HappContextManager {
       try {
         await this.storage.deleteDnaWasm(dna.hash);
       } catch (error) {
-        console.warn(`[HappContextManager] Failed to delete DNA WASM:`, error);
+        log.warn(`Failed to delete DNA WASM:`, error);
         // Continue with uninstall
       }
     }

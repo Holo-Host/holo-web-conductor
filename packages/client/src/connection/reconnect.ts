@@ -55,7 +55,7 @@ export class ReconnectionManager {
       this.reset();
       log.info('Reconnection successful');
     } catch (e) {
-      console.error('[ReconnectionManager] Reconnection failed:', e);
+      log.error('Reconnection failed:', e);
       this.isReconnecting = false;
       // Schedule another attempt
       this.reconnect();
