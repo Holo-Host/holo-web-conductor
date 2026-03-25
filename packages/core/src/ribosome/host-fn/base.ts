@@ -93,6 +93,8 @@ export function wrapHostFunction(
         // NetworkError from cascade/network: serialize as WasmError::Host
         // This matches the real conductor which propagates CascadeError::NetworkError
         // as WasmError { error: Host("message") } to the zome.
+        // Defense-in-depth: the cascade also checks the mode before re-throwing,
+        // but a host function could call network directly without going through cascade.
         if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') {
           if (!instanceRef.current) {
             throw new Error(`Cannot serialize error: no WASM instance`);
