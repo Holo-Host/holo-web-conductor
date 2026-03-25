@@ -739,7 +739,7 @@ function toBytes(value: any): Uint8Array | null {
   if (Array.isArray(value) || (typeof value === 'object' && 'length' in value)) {
     return new Uint8Array(value);
   }
-  log.warn('[DirectSQLiteStorage] Unknown byte type:', typeof value, value);
+  log.warn('Unknown byte type:', typeof value, value);
   return new Uint8Array(value);
 }
 
@@ -1095,7 +1095,7 @@ class ProxyNetworkService implements NetworkService {
         entry: this.parseEntry(data.entry),
       };
     } catch (error) {
-      log.error('[ProxyNetwork] Failed to parse record response:', error);
+      log.error('Failed to parse record response:', error);
       return null;
     }
   }
@@ -1151,7 +1151,7 @@ class ProxyNetworkService implements NetworkService {
         author: this.normalizeByteArrays(link.author),
       }));
     } catch (error) {
-      log.error('[ProxyNetwork] Failed to parse links response:', error);
+      log.error('Failed to parse links response:', error);
       return [];
     }
   }
@@ -1241,11 +1241,11 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status === 404) {
         return null;
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`Network error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return null;
     }
   }
@@ -1266,11 +1266,11 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status === 404) {
         return [];
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`Network error: ${response.status}`);
         return [];
       }
     } catch (error) {
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return [];
     }
   }
@@ -1291,11 +1291,11 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status === 404) {
         return null;
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`Network error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return null;
     }
   }
@@ -1321,11 +1321,11 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status === 404) {
         return 0;
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.error(`Network error: ${response.status}`);
         return 0;
       }
     } catch (error) {
-      log.error(`[ProxyNetwork] Request failed:`, error);
+      log.error(`Request failed:`, error);
       return 0;
     }
   }
@@ -1352,11 +1352,11 @@ class ProxyNetworkService implements NetworkService {
       } else if (response.status === 404) {
         return null;
       } else {
-        log.error(`[ProxyNetwork] Agent activity error: ${response.status}`);
+        log.error(`Agent activity error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      log.error(`[ProxyNetwork] Agent activity request failed:`, error);
+      log.error(`Agent activity request failed:`, error);
       return null;
     }
   }
@@ -1387,11 +1387,11 @@ class ProxyNetworkService implements NetworkService {
         const responseText = new TextDecoder().decode(response.body);
         return this.normalizeByteArrays(JSON.parse(responseText)) as MustGetAgentActivityResponse;
       } else {
-        log.error(`[ProxyNetwork] must_get_agent_activity error: ${response.status}`);
+        log.error(`must_get_agent_activity error: ${response.status}`);
         return null;
       }
     } catch (error) {
-      log.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
+      log.error(`must_get_agent_activity request failed:`, error);
       return null;
     }
   }

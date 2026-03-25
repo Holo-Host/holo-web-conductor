@@ -269,7 +269,7 @@ export class WebSocketNetworkService {
       };
       this.ws.onmessage = (event) => this.handleMessage(event);
       this.ws.onerror = (event) => {
-        console.error("[WebSocketService] WS onerror:", event);
+        log.error("WS onerror:", event);
         this.handleError(event);
       };
       this.ws.onclose = (event) => {
@@ -277,7 +277,7 @@ export class WebSocketNetworkService {
         this.handleClose(event);
       };
     } catch (error) {
-      console.error("[WebSocketService] Connection failed:", error);
+      log.error("Connection failed:", error);
       this.scheduleReconnect();
     }
   }
@@ -365,7 +365,7 @@ export class WebSocketNetworkService {
       log.debug(` Sending ${signals.length} remote signals for DNA ${dna_hash.slice(0, 12)}...`);
       this.send({ type: "send_remote_signal", dna_hash, signals });
     } else {
-      console.warn(`[WebSocketService] Cannot send remote signals - not connected`);
+      log.warn("Cannot send remote signals - not connected");
     }
   }
 
@@ -412,7 +412,7 @@ export class WebSocketNetworkService {
     if (nextAgent) {
       this.authenticate(nextAgent);
     } else if (uniqueAgents.length > 0) {
-      console.warn("[WebSocketService] All agents failed auth, no more agents to try");
+      log.warn("All agents failed auth, no more agents to try");
     }
   }
 
@@ -428,7 +428,7 @@ export class WebSocketNetworkService {
 
         case "auth_challenge":
           this.handleAuthChallenge(message).catch((e) =>
-            console.error("[WebSocketService] Auth challenge handling failed:", e)
+            log.error("Auth challenge handling failed:", e)
           );
           break;
 
@@ -453,7 +453,7 @@ export class WebSocketNetworkService {
           break;
 
         case "error":
-          console.error("[WebSocketService] Server error:", message.message);
+          log.error("Server error:", message.message);
           break;
 
         case "sign_agent_info":
@@ -461,12 +461,12 @@ export class WebSocketNetworkService {
           break;
       }
     } catch (error) {
-      console.error("[WebSocketService] Failed to parse message:", error);
+      log.error("Failed to parse message:", error);
     }
   }
 
   private handleError(event: Event): void {
-    console.error("[WebSocketService] WebSocket error:", event);
+    log.error("WebSocket error:", event);
   }
 
   private handleClose(event: CloseEvent): void {
@@ -505,7 +505,7 @@ export class WebSocketNetworkService {
       this.options.sessionToken = message.session_token;
       this.sessionTokenCallback?.(message.session_token);
     } else {
-      console.warn("[WebSocketService] auth_ok has NO session_token - HTTP auth will fail");
+      log.warn("auth_ok has NO session_token - HTTP auth will fail");
     }
 
     this.setState("connected");
@@ -515,7 +515,7 @@ export class WebSocketNetworkService {
   }
 
   private handleAuthError(message: string): void {
-    console.error("[WebSocketService] Authentication failed:", message);
+    log.error("Authentication failed:", message);
     this.authenticated = false;
 
     // Track the failed agent and try the next one
@@ -532,12 +532,12 @@ export class WebSocketNetworkService {
 
   private async handleAuthChallenge(message: Extract<ServerMessage, { type: "auth_challenge" }>): Promise<void> {
     if (!this.pendingAuthAgent) {
-      console.error("[WebSocketService] Received auth challenge but no pending auth agent");
+      log.error("Received auth challenge but no pending auth agent");
       return;
     }
 
     if (!this.signCallback) {
-      console.error("[WebSocketService] Received auth challenge but no sign callback configured");
+      log.error("Received auth challenge but no sign callback configured");
       this.send({ type: "auth_challenge_response", signature: "" });
       return;
     }
@@ -562,7 +562,7 @@ export class WebSocketNetworkService {
       const signatureB64 = btoa(String.fromCharCode(...signature));
       this.send({ type: "auth_challenge_response", signature: signatureB64 });
     } catch (error) {
-      console.error("[WebSocketService] Failed to sign auth challenge:", error);
+      log.error("Failed to sign auth challenge:", error);
       this.send({ type: "auth_challenge_response", signature: "" });
     }
   }
@@ -585,7 +585,7 @@ export class WebSocketNetworkService {
           signal: signalBytes,
         });
       } catch (error) {
-        console.error("[WebSocketService] Failed to process signal:", error);
+        log.error("Failed to process signal:", error);
       }
     }
   }
@@ -611,7 +611,7 @@ export class WebSocketNetworkService {
     log.debug(`Sign agent info request ${message.request_id} for agent ${message.agent_pubkey.substring(0, 20)}...`);
 
     if (!this.signCallback) {
-      console.error("[WebSocketService] No sign callback registered");
+      log.error("No sign callback registered");
       this.send({
         type: "sign_response",
         request_id: message.request_id,
@@ -633,7 +633,7 @@ export class WebSocketNetworkService {
     );
 
     if (!validation.valid) {
-      console.error(`[WebSocketService] Agent info validation failed: ${validation.error}`);
+      log.error(`Agent info validation failed: ${validation.error}`);
       this.send({
         type: "sign_response",
         request_id: message.request_id,
@@ -651,7 +651,7 @@ export class WebSocketNetworkService {
     try {
       agentPubkey = decodeHashFromBase64(message.agent_pubkey);
     } catch (error) {
-      console.error("[WebSocketService] Failed to decode agent_pubkey:", error);
+      log.error("Failed to decode agent_pubkey:", error);
       this.send({
         type: "sign_response",
         request_id: message.request_id,
@@ -678,7 +678,7 @@ export class WebSocketNetworkService {
         });
       })
       .catch((error) => {
-        console.error("[WebSocketService] Signing failed:", error);
+        log.error("Signing failed:", error);
         this.send({
           type: "sign_response",
           request_id: message.request_id,
@@ -696,9 +696,7 @@ export class WebSocketNetworkService {
 
         // Set timeout for pong response
         this.heartbeatTimeoutTimer = setTimeout(() => {
-          console.warn(
-            "[WebSocketService] Heartbeat timeout, closing connection"
-          );
+          log.warn("Heartbeat timeout, closing connection");
           this.ws?.close();
         }, this.options.heartbeatTimeout);
       }
@@ -767,7 +765,7 @@ export class WebSocketNetworkService {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn("[WebSocketService] Cannot send - WebSocket not open");
+      log.warn("Cannot send - WebSocket not open");
     }
   }
 
