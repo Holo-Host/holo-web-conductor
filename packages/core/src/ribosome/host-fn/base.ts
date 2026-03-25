@@ -6,6 +6,8 @@
 
 import { CallContext } from "../call-context";
 import { HostFnError, hostFunctionError } from "../error";
+import { isNetworkError } from "../../network/types";
+import { getNetworkErrorMode } from "../../network/index";
 import { serializeErrorResult } from "../serialization";
 import { recordHostFunction } from "../perf";
 
@@ -87,6 +89,17 @@ export function wrapHostFunction(
             throw new Error(`Cannot serialize error: no WASM instance`);
           }
           return serializeErrorResult(instanceRef.current, error.hostMessage);
+        }
+        // NetworkError from cascade/network: serialize as WasmError::Host
+        // This matches the real conductor which propagates CascadeError::NetworkError
+        // as WasmError { error: Host("message") } to the zome.
+        // Defense-in-depth: the cascade also checks the mode before re-throwing,
+        // but a host function could call network directly without going through cascade.
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') {
+          if (!instanceRef.current) {
+            throw new Error(`Cannot serialize error: no WASM instance`);
+          }
+          return serializeErrorResult(instanceRef.current, `Network error: ${error.message}`);
         }
         // Re-throw RibosomeErrors as-is
         if (error instanceof Error && error.name === "RibosomeError") {

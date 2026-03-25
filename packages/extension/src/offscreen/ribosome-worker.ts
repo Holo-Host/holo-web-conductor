@@ -77,7 +77,7 @@ import { callZome, type ZomeCallRequest } from '@hwc/core/ribosome';
 import { encode, decode } from '@msgpack/msgpack';
 import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
-import { setNetworkService, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
+import { setNetworkService, NetworkError, isNetworkError, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
 import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@holo-host/lair';
 import { createLairClient, createKeyStorage, EncryptedKeyStorage, type LairClient } from '@holo-host/lair';
@@ -1240,11 +1240,14 @@ class ProxyNetworkService implements NetworkService {
         return this.parseRecordResponse(responseText);
       } else if (response.status === 404) {
         return null;
+      } else if (response.status >= 500) {
+        throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
         return null;
       }
     } catch (error) {
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return null;
     }
@@ -1265,11 +1268,14 @@ class ProxyNetworkService implements NetworkService {
         return this.parseLinksResponse(responseText, baseAddress);
       } else if (response.status === 404) {
         return [];
+      } else if (response.status >= 500) {
+        throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
         return [];
       }
     } catch (error) {
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return [];
     }
@@ -1290,11 +1296,14 @@ class ProxyNetworkService implements NetworkService {
         return this.normalizeByteArrays(JSON.parse(responseText));
       } else if (response.status === 404) {
         return null;
+      } else if (response.status >= 500) {
+        throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
         return null;
       }
     } catch (error) {
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return null;
     }
@@ -1320,11 +1329,14 @@ class ProxyNetworkService implements NetworkService {
         return typeof count === 'number' ? count : 0;
       } else if (response.status === 404) {
         return 0;
+      } else if (response.status >= 500) {
+        throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.error(`[ProxyNetwork] Network error: ${response.status}`);
+        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
         return 0;
       }
     } catch (error) {
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return 0;
     }
@@ -1351,11 +1363,14 @@ class ProxyNetworkService implements NetworkService {
         return this.normalizeByteArrays(data) as AgentActivityResponse;
       } else if (response.status === 404) {
         return null;
+      } else if (response.status >= 500) {
+        throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.error(`[ProxyNetwork] Agent activity error: ${response.status}`);
+        log.warn(`[ProxyNetwork] Unexpected HTTP ${response.status}, treating as not found`);
         return null;
       }
     } catch (error) {
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Agent activity request failed:`, error);
       return null;
     }
@@ -1386,11 +1401,14 @@ class ProxyNetworkService implements NetworkService {
       if (response.status === 200) {
         const responseText = new TextDecoder().decode(response.body);
         return this.normalizeByteArrays(JSON.parse(responseText)) as MustGetAgentActivityResponse;
+      } else if (response.status >= 500) {
+        throw new NetworkError(response.status, `Linker server error: HTTP ${response.status}`);
       } else {
-        log.error(`[ProxyNetwork] must_get_agent_activity error: ${response.status}`);
+        log.warn(`[ProxyNetwork] must_get_agent_activity unexpected HTTP ${response.status}`);
         return null;
       }
     } catch (error) {
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
       return null;
     }

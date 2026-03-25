@@ -505,7 +505,11 @@ export class WebSocketNetworkService {
       this.options.sessionToken = message.session_token;
       this.sessionTokenCallback?.(message.session_token);
     } else {
-      console.warn("[WebSocketService] auth_ok has NO session_token - HTTP auth will fail");
+      if (this.signCallback) {
+        log.warn("auth_ok has no session_token - HTTP auth will fail");
+      } else {
+        log.debug("auth_ok has no session_token (linker does not require auth)");
+      }
     }
 
     this.setState("connected");
@@ -537,7 +541,7 @@ export class WebSocketNetworkService {
     }
 
     if (!this.signCallback) {
-      console.error("[WebSocketService] Received auth challenge but no sign callback configured");
+      log.error("Received auth challenge but no sign callback configured");
       this.send({ type: "auth_challenge_response", signature: "" });
       return;
     }
