@@ -77,7 +77,7 @@ import { callZome, type ZomeCallRequest } from '@hwc/core/ribosome';
 import { encode, decode } from '@msgpack/msgpack';
 import { SCHEMA_SQL } from '@hwc/core/storage/sqlite-schema';
 import { setStorageProvider, type StorageProvider } from '@hwc/core/storage';
-import { setNetworkService, NetworkError, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
+import { setNetworkService, NetworkError, isNetworkError, type NetworkService, type NetworkRecord, type NetworkEntry, type NetworkLink, type AgentActivityResponse, type MustGetAgentActivityResponse } from '@hwc/core/network';
 import { setLairClient } from '@hwc/core/signing';
 import type { ILairClient, Ed25519PubKey, Ed25519Signature, NewSeedResult } from '@holo-host/lair';
 import { createLairClient, createKeyStorage, EncryptedKeyStorage, type LairClient } from '@holo-host/lair';
@@ -1247,7 +1247,7 @@ class ProxyNetworkService implements NetworkService {
         return null;
       }
     } catch (error) {
-      if (error instanceof NetworkError) throw error;
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return null;
     }
@@ -1275,7 +1275,7 @@ class ProxyNetworkService implements NetworkService {
         return [];
       }
     } catch (error) {
-      if (error instanceof NetworkError) throw error;
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return [];
     }
@@ -1303,7 +1303,7 @@ class ProxyNetworkService implements NetworkService {
         return null;
       }
     } catch (error) {
-      if (error instanceof NetworkError) throw error;
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return null;
     }
@@ -1336,7 +1336,7 @@ class ProxyNetworkService implements NetworkService {
         return 0;
       }
     } catch (error) {
-      if (error instanceof NetworkError) throw error;
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Request failed:`, error);
       return 0;
     }
@@ -1370,7 +1370,7 @@ class ProxyNetworkService implements NetworkService {
         return null;
       }
     } catch (error) {
-      if (error instanceof NetworkError) throw error;
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] Agent activity request failed:`, error);
       return null;
     }
@@ -1408,7 +1408,7 @@ class ProxyNetworkService implements NetworkService {
         return null;
       }
     } catch (error) {
-      if (error instanceof NetworkError) throw error;
+      if (isNetworkError(error)) throw error;
       log.error(`[ProxyNetwork] must_get_agent_activity request failed:`, error);
       return null;
     }

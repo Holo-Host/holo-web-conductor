@@ -15,7 +15,7 @@ import type {
   NetworkLink,
   NetworkEntry,
 } from './types';
-import { NetworkError } from './types';
+import { isNetworkError } from './types';
 import { getNetworkErrorMode } from './index';
 import type { NetworkCache } from './cache';
 import type { StorageProvider } from '../storage/storage-provider';
@@ -174,7 +174,7 @@ export class Cascade {
           return networkRecord;
         }
       } catch (error) {
-        if (error instanceof NetworkError && getNetworkErrorMode() === 'propagate') throw error;
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') throw error;
         log.warn(`Network fetch failed:`, error);
       }
     } else if (opts.useNetwork) {
@@ -224,7 +224,7 @@ export class Cascade {
           return networkRecord;
         }
       } catch (error) {
-        if (error instanceof NetworkError && getNetworkErrorMode() === 'propagate') throw error;
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') throw error;
         log.warn(`Network fetch by entry hash failed:`, error);
       }
     } else if (opts.useNetwork) {
@@ -384,7 +384,7 @@ export class Cascade {
           this.cache.cacheLinksSync(baseAddress, networkLinks, linkType);
         }
       } catch (error) {
-        if (error instanceof NetworkError && getNetworkErrorMode() === 'propagate') throw error;
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') throw error;
         log.error(`🌐 Network fetch error: ${error}`);
       }
     } else if (opts.useNetwork) {
@@ -595,7 +595,7 @@ export class Cascade {
           return result;
         }
       } catch (error) {
-        if (error instanceof NetworkError && getNetworkErrorMode() === 'propagate') throw error;
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') throw error;
         log.warn(`Network details fetch failed:`, error);
       }
     }
@@ -651,7 +651,7 @@ export class Cascade {
           return result;
         }
       } catch (error) {
-        if (error instanceof NetworkError && getNetworkErrorMode() === 'propagate') throw error;
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') throw error;
         log.warn(`Network details fetch failed:`, error);
       }
     }

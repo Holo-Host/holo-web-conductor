@@ -26,7 +26,7 @@ export type {
 } from './types';
 
 // Errors
-export { NetworkError } from './types';
+export { NetworkError, isNetworkError } from './types';
 
 // Cache
 export { NetworkCache, getNetworkCache, resetNetworkCache } from './cache';

@@ -327,3 +327,12 @@ export class NetworkError extends Error {
     this.name = 'NetworkError';
   }
 }
+
+/**
+ * Check if an error is a NetworkError, with fallback for cross-bundle instanceof failures.
+ * When worker and offscreen bundles each get their own copy of the module,
+ * instanceof can silently fail — checking .name handles that case.
+ */
+export function isNetworkError(error: unknown): error is NetworkError {
+  return error instanceof NetworkError || (error as any)?.name === 'NetworkError';
+}

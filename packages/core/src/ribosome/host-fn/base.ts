@@ -6,7 +6,7 @@
 
 import { CallContext } from "../call-context";
 import { HostFnError, hostFunctionError } from "../error";
-import { NetworkError } from "../../network/types";
+import { isNetworkError } from "../../network/types";
 import { getNetworkErrorMode } from "../../network/index";
 import { serializeErrorResult } from "../serialization";
 import { recordHostFunction } from "../perf";
@@ -93,7 +93,7 @@ export function wrapHostFunction(
         // NetworkError from cascade/network: serialize as WasmError::Host
         // This matches the real conductor which propagates CascadeError::NetworkError
         // as WasmError { error: Host("message") } to the zome.
-        if (error instanceof NetworkError && getNetworkErrorMode() === 'propagate') {
+        if (isNetworkError(error) && getNetworkErrorMode() === 'propagate') {
           if (!instanceRef.current) {
             throw new Error(`Cannot serialize error: no WASM instance`);
           }
