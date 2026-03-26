@@ -1,5 +1,12 @@
 # Holo Web Conductor (HWC)
 
+[![CI](https://github.com/Holo-Host/holo-web-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/Holo-Host/holo-web-conductor/actions/workflows/ci.yml)
+[![npm: @holo-host/web-conductor-client](https://img.shields.io/npm/v/@holo-host/web-conductor-client)](https://www.npmjs.com/package/@holo-host/web-conductor-client)
+[![License: CAL-1.0](https://img.shields.io/badge/License-CAL--1.0-blue.svg)](./LICENSE)
+
+> [!WARNING]
+> **Alpha software.** HWC is under active development. APIs may change between releases. Not yet recommended for production use.
+
 A browser extension-based Holochain conductor for zero-arc nodes. HWC runs Holochain applications directly in the browser without requiring a local Holochain installation, enabling lightweight participation in Holochain networks through a Chrome or Firefox extension.
 
 HWC operates as a zero-arc node — it doesn't gossip or hold data for other nodes. Instead, it fetches all data from the network via a linker service, and stores agent keys locally using a Lair-like IndexedDB keystore. Web applications use `@holo-host/web-conductor-client`, a drop-in replacement for `@holochain/client` that communicates with the extension instead of a WebSocket conductor.
