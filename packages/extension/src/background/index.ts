@@ -183,11 +183,14 @@ async function checkLinkerHealth(): Promise<void> {
       executor.getWebSocketState().then((wsState) => {
         const wasHealthy = connectionStatus.wsHealthy;
         const wasAuthenticated = connectionStatus.authenticated;
-        const wasPeerCount = connectionStatus.peerCount;
         connectionStatus.wsHealthy = wsState.isConnected;
         connectionStatus.authenticated = wsState.authenticated;
-        connectionStatus.peerCount = wsState.peerCount;
-        if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated || wasPeerCount !== connectionStatus.peerCount) {
+        // Only update peerCount if WS is connected. On Chrome the async
+        // response may arrive after a disconnect already cleared peerCount.
+        if (wsState.isConnected) {
+          connectionStatus.peerCount = wsState.peerCount;
+        }
+        if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
           notifyConnectionStatusChange();
         }
       }).catch(() => {
@@ -1994,12 +1997,15 @@ async function handleLinkerReconnect(
 async function handleConnectionStatusGet(
   message: RequestMessage
 ): Promise<ResponseMessage> {
-  // Sync peerCount from executor so the app always gets the latest value
-  // (the periodic health check may not have run yet)
-  if (executor.isReady()) {
+  // Sync peerCount from executor if WS is connected.
+  // Don't overwrite a cleared peerCount — on Chrome the async response
+  // may carry a stale value from before disconnect.
+  if (executor.isReady() && connectionStatus.wsHealthy) {
     try {
       const wsState = await executor.getWebSocketState();
-      connectionStatus.peerCount = wsState.peerCount;
+      if (wsState.isConnected) {
+        connectionStatus.peerCount = wsState.peerCount;
+      }
     } catch {
       // Ignore — return whatever we have cached
     }
