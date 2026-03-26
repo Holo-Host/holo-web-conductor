@@ -328,12 +328,14 @@ executor.onWebSocketStateChange((state, authenticated) => {
   const wasAuthenticated = connectionStatus.authenticated;
   connectionStatus.wsHealthy = state === "connected";
   connectionStatus.authenticated = authenticated;
+  // Clear peer count immediately on disconnect so UI doesn't show stale values.
+  // It will be re-populated from pong on next connection.
+  if (state !== "connected") {
+    connectionStatus.peerCount = undefined;
+  }
   if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
     notifyConnectionStatusChange();
   }
-  // peerCount is synced by the periodic health check (every 5s) and
-  // on-demand in handleConnectionStatusGet. No eager async fetch here
-  // to avoid races with the health check.
 });
 
 executor.onRemoteSignal((data) => {

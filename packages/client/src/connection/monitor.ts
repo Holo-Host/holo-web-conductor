@@ -173,6 +173,7 @@ export class ConnectionMonitor {
       httpHealthy: false,
       wsHealthy: false,
       lastError: error,
+      peerCount: undefined,
     });
   }
 
