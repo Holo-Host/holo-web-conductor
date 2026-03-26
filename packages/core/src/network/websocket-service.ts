@@ -847,6 +847,7 @@ export class WebSocketNetworkService {
 
     this.authenticated = false;
     this.failedAuthAgents.clear();
+    this.lastPeerCount = undefined;
   }
 }
 
