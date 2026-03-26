@@ -485,9 +485,8 @@ function initializeWebSocketService(config: {
       // Ignore errors if background is not listening
     });
 
-    // When connected, wait for peer availability then process failed publish queue.
-    // Previously used a blind 2-second delay; now pings the linker and waits for
-    // a pong with peer_count > 0 before retrying (falls back after 5s timeout).
+    // When connected, ping the linker and wait for peer count before retrying
+    // failed publishes. Falls back to cached count after 5s timeout.
     if (state === "connected") {
       (async () => {
         try {

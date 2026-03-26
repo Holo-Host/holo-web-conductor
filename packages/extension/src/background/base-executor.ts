@@ -244,7 +244,6 @@ export abstract class BaseExecutor implements ZomeExecutor {
       }
 
       // Auto-retry publishes on reconnect: ping linker for peer count before retrying.
-      // Previously used a blind 2-second delay; now waits for pong with peer info.
       if (state === "connected") {
         (async () => {
           try {
