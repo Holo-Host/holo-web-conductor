@@ -220,6 +220,7 @@ function notifyConnectionStatusChange(): void {
 
 /**
  * Compare two ConnectionStatus objects for equality on all user-visible fields.
+ * Keep in sync with ConnectionStatus fields in @hwc/shared.
  */
 function statusEqual(a: ConnectionStatus, b: ConnectionStatus): boolean {
   return (

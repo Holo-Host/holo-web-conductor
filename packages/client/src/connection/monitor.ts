@@ -260,11 +260,12 @@ export class ConnectionMonitor {
         recoverable: true,
       });
     } else if (!wasHealthy && isHealthy) {
+      const wasReconnecting = this.state.status === ConnectionStatus.Reconnecting;
       this.updateState({
         ...extensionFields,
         status: ConnectionStatus.Connected,
       });
-      if (this.state.status === ConnectionStatus.Reconnecting) {
+      if (wasReconnecting) {
         this.emit('connection:reconnected', undefined as void);
       }
     } else {

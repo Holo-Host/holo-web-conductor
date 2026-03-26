@@ -153,12 +153,12 @@ describe("retryPublishesAfterReconnect", () => {
 
     await retryPublishesAfterReconnect(wsService, publishService as any, tracker as any, log);
 
-    // Wait for the fire-and-forget catch to run
-    await new Promise(r => setTimeout(r, 10));
-
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining("uhC0kAAAABBBBCC"),
-      expect.any(Error)
-    );
+    // Wait for the fire-and-forget catch to log the warning
+    await vi.waitFor(() => {
+      expect(log.warn).toHaveBeenCalledWith(
+        expect.stringContaining("uhC0kAAAABBBBCC"),
+        expect.any(Error)
+      );
+    });
   });
 });

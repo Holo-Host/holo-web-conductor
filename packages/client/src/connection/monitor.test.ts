@@ -395,6 +395,7 @@ describe('ConnectionMonitor', () => {
       const listener = vi.fn();
 
       m.setConnected();
+      m.start(); // Must start so push handler is registered
       m.on('connection:change', listener);
 
       api.push({ httpHealthy: true, wsHealthy: true, authenticated: true, peerCount: 5 });
@@ -457,6 +458,30 @@ describe('ConnectionMonitor', () => {
 
       // getConnectionStatus should NOT have been called again (push is active)
       expect(api.getConnectionStatus).not.toHaveBeenCalled();
+      m.stop();
+    });
+
+    it('polls when push goes stale', async () => {
+      const api = mockStatusApi({ httpHealthy: true, wsHealthy: true, peerCount: 10 });
+      // Use a very short staleness window so the test doesn't need real 15s
+      const m = new ConnectionMonitor({ ...defaultConfig, statusApi: api, healthCheckIntervalMs: 30 });
+
+      m.start();
+
+      // Wait for initial fetch to complete
+      await vi.waitFor(() => {
+        expect(api.getConnectionStatus).toHaveBeenCalled();
+      });
+
+      // Backdate lastPushAt so the monitor considers push stale.
+      // Access private field via cast — acceptable in tests.
+      (m as any).lastPushAt = 0;
+      (api.getConnectionStatus as ReturnType<typeof vi.fn>).mockClear();
+
+      // Wait for a health check interval to fire
+      await vi.waitFor(() => {
+        expect(api.getConnectionStatus).toHaveBeenCalled();
+      });
       m.stop();
     });
   });
