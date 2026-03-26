@@ -4,7 +4,31 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ConnectionMonitor } from './monitor';
-import { ConnectionStatus, type ConnectionConfig, type ConnectionState } from './types';
+import { ConnectionStatus, type ConnectionConfig, type ConnectionStatusAPI } from './types';
+
+/** Helper to create a mock statusApi for tests that need push/poll. */
+function mockStatusApi(initial?: Partial<Parameters<ConnectionStatusAPI['onConnectionChange']>[0]>): ConnectionStatusAPI & { pushHandlers: Set<(s: any) => void>; push: (s: any) => void } {
+  const pushHandlers = new Set<(s: any) => void>();
+  return {
+    pushHandlers,
+    push(status: any) {
+      pushHandlers.forEach((h) => h(status));
+    },
+    getConnectionStatus: vi.fn().mockResolvedValue({
+      httpHealthy: false,
+      wsHealthy: false,
+      authenticated: false,
+      linkerUrl: null,
+      lastError: undefined,
+      peerCount: undefined,
+      ...initial,
+    }),
+    onConnectionChange: vi.fn((cb: (s: any) => void) => {
+      pushHandlers.add(cb);
+      return () => pushHandlers.delete(cb);
+    }),
+  };
+}
 
 describe('ConnectionMonitor', () => {
   let monitor: ConnectionMonitor;
@@ -15,13 +39,10 @@ describe('ConnectionMonitor', () => {
 
   beforeEach(() => {
     monitor = new ConnectionMonitor(defaultConfig);
-    // Mock window.holochain
-    delete (window as any).holochain;
   });
 
   afterEach(() => {
     monitor.stop();
-    delete (window as any).holochain;
   });
 
   describe('initial state', () => {
@@ -99,15 +120,13 @@ describe('ConnectionMonitor', () => {
     });
   });
 
-  describe('setLinkerHealth', () => {
+  describe('applyExtensionStatus', () => {
     it('updates health status without changing connection status', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth({ httpHealthy: false, wsHealthy: false, lastError: 'Linker unreachable' });
+      monitor.applyExtensionStatus({ httpHealthy: false, wsHealthy: false, lastError: 'Linker unreachable' });
 
       const state = monitor.getState();
-      // Status should still be Connected (extension is connected)
-      expect(state.status).toBe(ConnectionStatus.Connected);
-      // But health reflects linker being down
+      // Status transitions to Error when health drops
       expect(state.httpHealthy).toBe(false);
       expect(state.wsHealthy).toBe(false);
       expect(state.lastError).toBe('Linker unreachable');
@@ -119,7 +138,7 @@ describe('ConnectionMonitor', () => {
       const listener = vi.fn();
       monitor.on('connection:change', listener);
 
-      monitor.setLinkerHealth({ httpHealthy: false, wsHealthy: true, lastError: 'HTTP down' });
+      monitor.applyExtensionStatus({ httpHealthy: false, wsHealthy: true, lastError: 'HTTP down' });
 
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -132,29 +151,29 @@ describe('ConnectionMonitor', () => {
 
     it('clears error when health is restored', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth({ httpHealthy: false, wsHealthy: false, lastError: 'Linker down' });
-      monitor.setLinkerHealth({ httpHealthy: true, wsHealthy: true, lastError: undefined });
+      monitor.applyExtensionStatus({ httpHealthy: false, wsHealthy: false, lastError: 'Linker down' });
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true, lastError: undefined });
 
       const state = monitor.getState();
       expect(state.httpHealthy).toBe(true);
       expect(state.lastError).toBeUndefined();
     });
 
-    it('setLinkerHealth propagates linkerUrl to state', () => {
+    it('propagates linkerUrl to state', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: 'https://linker.example.com' });
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: 'https://linker.example.com' });
 
       const state = monitor.getState();
       expect(state.linkerUrl).toBe('https://linker.example.com');
     });
 
-    it('setLinkerHealth emits change event when linkerUrl changes', () => {
+    it('emits change event when linkerUrl changes', () => {
       monitor.setConnected();
 
       const listener = vi.fn();
       monitor.on('connection:change', listener);
 
-      monitor.setLinkerHealth({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: 'https://linker.example.com' });
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: 'https://linker.example.com' });
 
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -163,18 +182,18 @@ describe('ConnectionMonitor', () => {
       );
     });
 
-    it('setLinkerHealth with null linkerUrl clears it', () => {
+    it('with null linkerUrl clears it', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: 'https://linker.example.com' });
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: 'https://linker.example.com' });
       expect(monitor.getState().linkerUrl).toBe('https://linker.example.com');
 
-      monitor.setLinkerHealth({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: null });
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true, authenticated: true, linkerUrl: null });
       expect(monitor.getState().linkerUrl).toBeNull();
     });
 
     it('passes through all fields from status object', () => {
       monitor.setConnected();
-      monitor.setLinkerHealth({
+      monitor.applyExtensionStatus({
         httpHealthy: true,
         wsHealthy: true,
         authenticated: true,
@@ -186,6 +205,21 @@ describe('ConnectionMonitor', () => {
       expect(state.peerCount).toBe(42);
       expect(state.linkerUrl).toBe('http://test:8090');
       expect(state.authenticated).toBe(true);
+    });
+
+    it('transitions to Error when health drops', () => {
+      monitor.setConnected();
+      monitor.applyExtensionStatus({ httpHealthy: false, wsHealthy: false, lastError: 'Gone' });
+
+      expect(monitor.getState().status).toBe(ConnectionStatus.Error);
+    });
+
+    it('transitions to Connected when health restores', () => {
+      monitor.setConnected();
+      monitor.applyExtensionStatus({ httpHealthy: false, wsHealthy: false, lastError: 'Gone' });
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true });
+
+      expect(monitor.getState().status).toBe(ConnectionStatus.Connected);
     });
   });
 
@@ -341,56 +375,89 @@ describe('ConnectionMonitor', () => {
   });
 
   describe('peerCount', () => {
-    it('includes peerCount in state from health check', async () => {
-      (window as any).holochain = {
-        getConnectionStatus: vi.fn().mockResolvedValue({
-          httpHealthy: true,
-          wsHealthy: true,
-          authenticated: true,
-          linkerUrl: 'http://localhost:8090',
-          lastChecked: Date.now(),
-          peerCount: 3,
-        }),
-      };
+    it('includes peerCount in state from push notification', () => {
+      const api = mockStatusApi({ httpHealthy: true, wsHealthy: true, authenticated: true, peerCount: 3 });
+      const m = new ConnectionMonitor({ ...defaultConfig, statusApi: api });
 
-      monitor.start();
-      // Wait for async health check
-      await vi.waitFor(() => {
-        const state = monitor.getState();
-        expect(state.peerCount).toBe(3);
-      });
+      m.start();
+
+      // Simulate push with peerCount
+      api.push({ httpHealthy: true, wsHealthy: true, authenticated: true, peerCount: 3 });
+
+      const state = m.getState();
+      expect(state.peerCount).toBe(3);
+      m.stop();
     });
 
-    it('emits change event when peerCount changes', async () => {
+    it('emits change event when peerCount changes', () => {
+      const api = mockStatusApi();
+      const m = new ConnectionMonitor({ ...defaultConfig, statusApi: api });
       const listener = vi.fn();
-      let callCount = 0;
 
-      (window as any).holochain = {
-        getConnectionStatus: vi.fn().mockImplementation(async () => ({
-          httpHealthy: true,
-          wsHealthy: true,
-          authenticated: true,
-          linkerUrl: 'http://localhost:8090',
-          lastChecked: Date.now(),
-          peerCount: callCount++ === 0 ? 0 : 5,
-        })),
-      };
+      m.setConnected();
+      m.on('connection:change', listener);
 
-      monitor.on('connection:change', listener);
-      monitor.start();
-
-      // First health check: peerCount=0
-      await vi.waitFor(() => {
-        expect(listener).toHaveBeenCalled();
-      });
-
-      // Update via public API
-      listener.mockClear();
-      monitor.setLinkerHealth({ peerCount: 5 });
+      api.push({ httpHealthy: true, wsHealthy: true, authenticated: true, peerCount: 5 });
 
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({ peerCount: 5 })
       );
+      m.stop();
+    });
+
+    it('clears peerCount when disconnected', () => {
+      monitor.setConnected();
+      monitor.applyExtensionStatus({ httpHealthy: true, wsHealthy: true, peerCount: 5 });
+      expect(monitor.getState().peerCount).toBe(5);
+
+      monitor.setDisconnected();
+      expect(monitor.getState().peerCount).toBeUndefined();
+    });
+  });
+
+  describe('self-subscription via statusApi', () => {
+    it('subscribes to push on start and unsubscribes on stop', () => {
+      const api = mockStatusApi();
+      const m = new ConnectionMonitor({ ...defaultConfig, statusApi: api });
+
+      m.start();
+      expect(api.onConnectionChange).toHaveBeenCalledTimes(1);
+      expect(api.pushHandlers.size).toBe(1);
+
+      m.stop();
+      expect(api.pushHandlers.size).toBe(0);
+    });
+
+    it('fetches initial status on start', async () => {
+      const api = mockStatusApi({ httpHealthy: true, wsHealthy: true, authenticated: true, peerCount: 7 });
+      const m = new ConnectionMonitor({ ...defaultConfig, statusApi: api });
+
+      m.start();
+
+      await vi.waitFor(() => {
+        expect(m.getState().peerCount).toBe(7);
+      });
+      m.stop();
+    });
+
+    it('skips polling when push is active', async () => {
+      const api = mockStatusApi();
+      const m = new ConnectionMonitor({ ...defaultConfig, statusApi: api, healthCheckIntervalMs: 50 });
+
+      m.start();
+
+      // Push some data to mark push as active
+      api.push({ httpHealthy: true, wsHealthy: true, authenticated: true, peerCount: 1 });
+
+      // Clear the call count from initial fetch
+      (api.getConnectionStatus as ReturnType<typeof vi.fn>).mockClear();
+
+      // Wait for a health check interval to pass
+      await new Promise((r) => setTimeout(r, 100));
+
+      // getConnectionStatus should NOT have been called again (push is active)
+      expect(api.getConnectionStatus).not.toHaveBeenCalled();
+      m.stop();
     });
   });
 });

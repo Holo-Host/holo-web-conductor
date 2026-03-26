@@ -2,8 +2,16 @@
  * Connection health monitoring for WebConductorAppClient.
  *
  * Monitors linker connection health via:
- * 1. Extension's connection status API
- * 2. Zome call success/failure patterns
+ * 1. Push notifications from the extension (authoritative, real-time)
+ * 2. Polling via getConnectionStatus() (fallback when push goes silent)
+ * 3. Zome call success/failure patterns (client-side heuristics)
+ *
+ * Extension-sourced fields (httpHealthy, wsHealthy, authenticated, linkerUrl,
+ * lastError, peerCount) always come from the extension — the monitor never
+ * independently guesses their values.
+ *
+ * Client-only fields (status, reconnectAttempt, nextReconnectMs,
+ * joiningServiceError) are managed locally.
  */
 
 import type {
@@ -26,6 +34,13 @@ export class ConnectionMonitor {
   private consecutiveFailures = 0;
   private readonly MAX_FAILURES_BEFORE_UNHEALTHY = 1;
 
+  /** Timestamp of last push notification from the extension. */
+  private lastPushAt = 0;
+  /** If push is fresher than this, skip polling. */
+  private readonly PUSH_STALENESS_MS = 15000;
+  /** Unsubscribe handle for onConnectionChange push listener. */
+  private unsubPush?: () => void;
+
   constructor(private config: ConnectionConfig) {
     this.state = {
       status: ConnectionStatus.Disconnected,
@@ -42,10 +57,25 @@ export class ConnectionMonitor {
   start(): void {
     if (this.healthCheckTimer) return;
 
+    // Subscribe to push notifications from the extension if available.
+    const api = this.config.statusApi;
+    if (api) {
+      this.unsubPush = api.onConnectionChange((status) => {
+        this.applyExtensionStatus(status);
+      });
+
+      // Fetch current status to catch events that fired before we subscribed.
+      api.getConnectionStatus().then((status) => {
+        this.applyExtensionStatus(status);
+      }).catch(() => {
+        // Extension not ready yet — will get push or poll later
+      });
+    }
+
     // Initial health check
     this.checkHealth();
 
-    // Periodic health checks
+    // Periodic health checks (fallback when push channel is silent)
     const interval = this.config.healthCheckIntervalMs ?? 10000;
     this.healthCheckTimer = setInterval(() => this.checkHealth(), interval);
   }
@@ -57,6 +87,10 @@ export class ConnectionMonitor {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = undefined;
+    }
+    if (this.unsubPush) {
+      this.unsubPush();
+      this.unsubPush = undefined;
     }
   }
 
@@ -178,21 +212,6 @@ export class ConnectionMonitor {
   }
 
   /**
-   * Update linker health status without changing overall connection status.
-   * Used when extension is connected but linker may be unreachable.
-   *
-   * Accepts a partial state object so new fields flow through automatically.
-   * Note: only fields present in the object are updated. To clear a field
-   * (e.g. lastError), pass it explicitly as undefined.
-   */
-  setLinkerHealth(status: Partial<ConnectionState>): void {
-    if (this.state.wsHealthy !== (status.wsHealthy ?? this.state.wsHealthy) || this.state.authenticated !== (status.authenticated ?? this.state.authenticated)) {
-      log.debug(`setLinkerHealth: ws=${status.wsHealthy} auth=${status.authenticated} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
-    }
-    this.updateState(status);
-  }
-
-  /**
    * Set a joining service error (e.g. session expired, agent revoked).
    * This is separate from linker errors — it means the joining service
    * could not provide a linker URL for this agent.
@@ -201,59 +220,71 @@ export class ConnectionMonitor {
     this.updateState({ joiningServiceError: error });
   }
 
+  /**
+   * Apply extension-sourced connection status.
+   *
+   * This is the single entry point for all data from the extension
+   * (both push notifications and poll responses). Extension-sourced
+   * fields overwrite local state; client-only fields are preserved.
+   */
+  applyExtensionStatus(status: {
+    httpHealthy: boolean;
+    wsHealthy: boolean;
+    authenticated?: boolean;
+    linkerUrl?: string | null;
+    lastError?: string;
+    peerCount?: number;
+  }): void {
+    this.lastPushAt = Date.now();
+
+    const wasHealthy = this.state.httpHealthy;
+    const isHealthy = status.httpHealthy;
+
+    // Extension-sourced fields — always overwrite
+    const extensionFields: Partial<ConnectionState> = {
+      httpHealthy: status.httpHealthy,
+      wsHealthy: status.wsHealthy,
+      authenticated: status.authenticated ?? false,
+      linkerUrl: status.linkerUrl,
+      lastError: status.lastError,
+      peerCount: status.peerCount,
+    };
+
+    if (wasHealthy && !isHealthy) {
+      this.updateState({
+        ...extensionFields,
+        status: ConnectionStatus.Error,
+      });
+      this.emit('connection:error', {
+        error: status.lastError || 'Linker connection lost',
+        recoverable: true,
+      });
+    } else if (!wasHealthy && isHealthy) {
+      this.updateState({
+        ...extensionFields,
+        status: ConnectionStatus.Connected,
+      });
+      if (this.state.status === ConnectionStatus.Reconnecting) {
+        this.emit('connection:reconnected', undefined as void);
+      }
+    } else {
+      // Steady state — update fields without changing status
+      this.updateState(extensionFields);
+    }
+  }
+
+  /**
+   * Poll extension for status. Only runs if push channel is stale.
+   */
   private async checkHealth(): Promise<void> {
+    // If push is active, skip polling — push is authoritative and faster.
+    if (Date.now() - this.lastPushAt < this.PUSH_STALENESS_MS) return;
+
     try {
-      // Check extension's connection status
-      if (window.holochain?.getConnectionStatus) {
-        const status = await window.holochain.getConnectionStatus();
-        const wasHealthy = this.state.httpHealthy;
-        const isHealthy = status.httpHealthy;
-
-        // Diagnostic: log when WS/auth status changes
-        if (this.state.wsHealthy !== status.wsHealthy || this.state.authenticated !== (status.authenticated ?? false)) {
-          log.debug(`Status from extension: http=${status.httpHealthy} ws=${status.wsHealthy} auth=${status.authenticated} err=${status.lastError || 'none'} (was ws=${this.state.wsHealthy} auth=${this.state.authenticated})`);
-        }
-
-        if (wasHealthy && !isHealthy) {
-          // Connection lost
-          this.updateState({
-            status: ConnectionStatus.Error,
-            httpHealthy: status.httpHealthy,
-            wsHealthy: status.wsHealthy,
-            authenticated: status.authenticated ?? false,
-            linkerUrl: status.linkerUrl,
-            lastError: status.lastError || 'Linker connection lost',
-            peerCount: status.peerCount,
-          });
-          this.emit('connection:error', {
-            error: status.lastError || 'Linker connection lost',
-            recoverable: true,
-          });
-        } else if (!wasHealthy && isHealthy) {
-          // Connection restored
-          this.updateState({
-            status: ConnectionStatus.Connected,
-            httpHealthy: true,
-            wsHealthy: status.wsHealthy,
-            authenticated: status.authenticated ?? false,
-            linkerUrl: status.linkerUrl,
-            lastError: undefined,
-            peerCount: status.peerCount,
-          });
-          if (this.state.status === ConnectionStatus.Reconnecting) {
-            this.emit('connection:reconnected', undefined as void);
-          }
-        } else {
-          // Update state with current values
-          this.updateState({
-            httpHealthy: status.httpHealthy,
-            wsHealthy: status.wsHealthy,
-            authenticated: status.authenticated ?? false,
-            linkerUrl: status.linkerUrl,
-            lastError: status.lastError,
-            peerCount: status.peerCount,
-          });
-        }
+      const api = this.config.statusApi;
+      if (api) {
+        const status = await api.getConnectionStatus();
+        this.applyExtensionStatus(status);
       }
     } catch (e) {
       // Health check failed - likely extension communication issue
