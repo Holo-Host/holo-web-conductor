@@ -27,7 +27,6 @@ Your Web App ──► @holo-host/web-conductor-client ──► HWC Browser Ext
 npm install @holo-host/web-conductor-client
 ```
 
-> **Not yet published to npm?** See [Local Development Setup](#local-development-setup-before-npm-publish) below for how to use `file:` dependencies during the pre-publish period.
 
 ### 2. Detect the extension and connect
 
@@ -427,98 +426,9 @@ Signals are forwarded from the extension in real-time via the linker's WebSocket
 
 ---
 
-## Local Development Setup (Before npm Publish)
+## Local Development (Contributing to HWC Packages)
 
-The `@holo-host/web-conductor-client` and `@holo-host/joining-service` packages are not yet published to npm. During this interim period, your hApp uses npm `file:` dependencies that point to local checkouts of these repos.
-
-### Directory layout
-
-All repos must be siblings in the same parent directory:
-
-```
-parent/
-├── holo-web-conductor/       # This repo (contains client + lair packages)
-├── joining-service/          # Optional — only if your app uses joining flows
-├── h2hc-linker/              # Optional — needed to run local HWC infrastructure
-└── your-happ/                # Your application
-```
-
-### 1. Clone the repos
-
-```bash
-cd ~/code   # or wherever your projects live
-
-# Required
-git clone https://github.com/holo-host/holo-web-conductor.git
-
-# Optional (for joining flows)
-git clone https://github.com/holo-host/joining-service.git
-
-# Optional (for local linker — or use a prebuilt binary)
-git clone https://github.com/holo-host/h2hc-linker.git
-```
-
-### 2. Run the setup script
-
-```bash
-cd holo-web-conductor
-nix develop -c ./scripts/holo-dev-setup.sh
-```
-
-This verifies the directory layout, checks that `file:` dependencies resolve, runs `npm install`, and builds the packages your hApp depends on.
-
-Options:
-- `--check` — verify only, don't build
-- `--clone` — clone missing repos automatically, then build
-- `--download-linker` — download a prebuilt h2hc-linker binary instead of building from source
-
-### 3. Add file: dependencies to your hApp
-
-In your hApp's UI `package.json`:
-
-```json
-{
-  "dependencies": {
-    "@holo-host/web-conductor-client": "file:../../holo-web-conductor/packages/client",
-    "@holo-host/joining-service": "file:../../joining-service"
-  }
-}
-```
-
-Adjust the relative paths if your directory layout differs. Then run `npm install` in your hApp.
-
-### 4. Develop normally
-
-The `file:` references are symlinks — changes to the client or joining-service source are picked up immediately after a rebuild of the dependency:
-
-```bash
-# After changing web-conductor-client source:
-cd ../holo-web-conductor && nix develop -c npm run build --workspace=packages/client
-
-# After changing joining-service source:
-cd ../joining-service && npm run build
-```
-
-Your hApp's dev server (Vite, etc.) will see the updated files.
-
-### 5. Run local HWC infrastructure
-
-Most hApps use mewsfeed's `deploy/local-dev.sh` pattern (or a copy of it) to start conductors, bootstrap, linker, and optionally the joining service. See the [mewsfeed README](https://github.com/holo-host/mewsfeed#local-hwc-development) for the full pattern.
-
-### When these packages are published
-
-Once published to npm, replace the `file:` references with version ranges:
-
-```json
-{
-  "dependencies": {
-    "@holo-host/web-conductor-client": "^0.1.0",
-    "@holo-host/joining-service": "^0.1.0"
-  }
-}
-```
-
-To continue local development after publishing, use `npm link` to override the npm version with your local checkout:
+If you're modifying `@holo-host/web-conductor-client` or `@holo-host/joining-service` locally and want your hApp to use the local version instead of the npm package, use `npm link`:
 
 ```bash
 # In holo-web-conductor:
@@ -527,3 +437,13 @@ cd packages/client && npm link
 # In your hApp:
 cd your-happ/ui && npm link @holo-host/web-conductor-client
 ```
+
+Changes to the client source are picked up after a rebuild:
+
+```bash
+cd holo-web-conductor && nix develop -c npm run build --workspace=packages/client
+```
+
+### Running local HWC infrastructure
+
+Most hApps use mewsfeed's `deploy/local-dev.sh` pattern to start conductors, bootstrap, linker, and optionally the joining service. See the [mewsfeed README](https://github.com/holo-host/mewsfeed#local-hwc-development) for the full pattern.
