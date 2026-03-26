@@ -46,6 +46,7 @@ export {
   ConnectionStatus,
   type ConnectionState,
   type ConnectionConfig,
+  type ConnectionStatusAPI,
   type ConnectionEventMap,
   type ConnectionEventListener,
 } from './connection/types';

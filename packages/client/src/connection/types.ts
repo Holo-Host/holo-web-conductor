@@ -45,6 +45,29 @@ export interface ConnectionState {
 }
 
 /**
+ * Minimal subset of the window.holochain API needed by ConnectionMonitor
+ * to self-subscribe for push status updates and poll on-demand.
+ */
+export interface ConnectionStatusAPI {
+  getConnectionStatus(): Promise<{
+    httpHealthy: boolean;
+    wsHealthy: boolean;
+    authenticated: boolean;
+    linkerUrl?: string | null;
+    lastError?: string;
+    peerCount?: number;
+  }>;
+  onConnectionChange(callback: (status: {
+    httpHealthy: boolean;
+    wsHealthy: boolean;
+    authenticated: boolean;
+    linkerUrl?: string | null;
+    lastError?: string;
+    peerCount?: number;
+  }) => void): () => void;
+}
+
+/**
  * Configuration for linker connection.
  */
 export interface ConnectionConfig {
@@ -58,6 +81,9 @@ export interface ConnectionConfig {
   maxReconnectDelayMs?: number;
   /** Health check interval in ms (default: 10000) */
   healthCheckIntervalMs?: number;
+  /** Extension status API (window.holochain) — if provided, the monitor
+   *  self-subscribes for push updates and uses polling only as fallback. */
+  statusApi?: ConnectionStatusAPI;
 }
 
 /**

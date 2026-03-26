@@ -523,5 +523,20 @@ describe("WebSocketNetworkService", () => {
       const result = await service.pingForPeerCount(100);
       expect(result).toBeUndefined();
     });
+
+    it("should clear peer count on disconnect", () => {
+      const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
+      service.connect();
+      mockWs.simulateOpen();
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
+
+      mockWs.simulateMessage({ type: "pong", peer_count: 5 });
+      expect(service.getPeerCount()).toBe(5);
+
+      // Simulate connection close
+      mockWs.simulateClose(1006, "abnormal");
+      expect(service.getPeerCount()).toBeUndefined();
+    });
   });
 });

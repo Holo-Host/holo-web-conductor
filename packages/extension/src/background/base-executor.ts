@@ -32,8 +32,8 @@ import {
   WebSocketNetworkService,
   type ConnectionState,
 } from "@hwc/core/network";
-import { PublishService } from "@hwc/core/dht";
-import { encodeHashToBase64, decodeHashFromBase64 } from "@holochain/client";
+import { PublishService, PublishTracker, retryPublishesAfterReconnect } from "@hwc/core/dht";
+import { encodeHashToBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 import { createLogger } from "../lib/logger";
 
@@ -243,27 +243,11 @@ export abstract class BaseExecutor implements ZomeExecutor {
         this.wsStateChangeCallback(state, this.wsService?.isAuthenticated() || false);
       }
 
-      // Auto-retry publishes on reconnect: ping linker for peer count before retrying.
-      // Previously used a blind 2-second delay; now waits for pong with peer info.
-      if (state === "connected") {
-        (async () => {
-          try {
-            const peerCount = await this.wsService!.pingForPeerCount(5000);
-            logPublish.info(`Connection established, peer count: ${peerCount ?? 'unknown'} - auto-retrying publishes`);
-            const registrations = this.wsService?.getRegistrations() || [];
-            if (registrations.length > 0 && this.publishService) {
-              const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
-              for (const dnaHashB64 of uniqueDnas) {
-                const dnaHash = decodeHashFromBase64(dnaHashB64);
-                this.publishService.processQueue(dnaHash).catch(err => {
-                  logPublish.warn(`Auto-retry failed:`, err);
-                });
-              }
-            }
-          } catch (err) {
-            logPublish.warn("Failed to get peer count for auto-retry:", err);
-          }
-        })();
+      // When connected, ping linker for peer count then retry failed publishes.
+      if (state === "connected" && this.wsService && this.publishService) {
+        retryPublishesAfterReconnect(this.wsService, this.publishService, PublishTracker.getInstance(), logPublish).catch(err => {
+          logPublish.warn("Failed to retry publishes after reconnect:", err);
+        });
       }
     });
 

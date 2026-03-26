@@ -161,6 +161,8 @@ export class WebConductorAppClient implements AppClient {
       maxReconnectDelayMs: 30000,
       healthCheckIntervalMs: 10000,
       ...config,
+      // Pass extension API so the monitor can self-subscribe for push updates
+      statusApi: window.holochain?.onConnectionChange ? window.holochain : undefined,
     };
     this._roleName = config.roleName ?? 'default';
 
@@ -205,7 +207,7 @@ export class WebConductorAppClient implements AppClient {
         const reconnected = await this.configureLinkerFromJoiningServiceOrConfig(info);
         if (reconnected) {
           this.connection.setConnected();
-          this.subscribeToExtensionConnectionStatus();
+          this.startMonitoring();
           return;
         }
         // Reconnect failed — but the app IS installed. Proceed with degraded
@@ -213,7 +215,7 @@ export class WebConductorAppClient implements AppClient {
         // The linker may already be configured from a previous session.
         log.info('Reconnect failed but app is installed, proceeding with degraded connectivity');
         this.connection.setConnected();
-        this.subscribeToExtensionConnectionStatus();
+        this.startMonitoring();
         return;
       }
     } catch (e) {
@@ -241,7 +243,7 @@ export class WebConductorAppClient implements AppClient {
 
     await this.setupFromAppInfo(info);
     this.connection.setConnected();
-    this.subscribeToExtensionConnectionStatus();
+    this.startMonitoring();
   }
 
   /**
@@ -585,32 +587,15 @@ export class WebConductorAppClient implements AppClient {
   }
 
   /**
-   * Subscribe to extension's connection status updates for real-time monitoring.
-   * The extension handles health checks - we just reflect its status.
-   *
-   * Extension connection status is separate from linker health:
-   * - Extension: Always "connected" if window.holochain exists
-   * - Linker: May be healthy or unreachable
+   * Start connection monitoring. The monitor self-subscribes to the
+   * extension's push API (via statusApi in config) and polls as fallback.
    */
-  private subscribeToExtensionConnectionStatus(): void {
-    const holochain = window.holochain;
-    if (!holochain?.onConnectionChange) return;
-
-    // Disable client-side auto-reconnection since extension handles health monitoring
-    this.reconnectionManager.cancel();
-
-    const applyStatus = (status: { httpHealthy: boolean; wsHealthy: boolean; authenticated?: boolean; linkerUrl?: string | null; lastError?: string; peerCount?: number }) => {
-      this.connection.setLinkerHealth(status);
-    };
-
-    // Subscribe to future changes
-    holochain.onConnectionChange(applyStatus);
-
-    // Fetch current status to catch events that fired before we subscribed
-    // (e.g., WS auth completing during the connect flow)
-    if (holochain.getConnectionStatus) {
-      holochain.getConnectionStatus().then(applyStatus).catch(() => {});
+  private startMonitoring(): void {
+    // Extension handles health monitoring — disable client-side auto-reconnection
+    if (this.connectionConfig.statusApi) {
+      this.reconnectionManager.cancel();
     }
+    this.connection.start();
   }
 
   private async setupFromAppInfo(info: WebConductorAppInfo): Promise<void> {

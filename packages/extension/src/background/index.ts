@@ -138,84 +138,66 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 /**
- * Check linker health by making a simple HTTP request
+ * Check linker health by making a simple HTTP request and syncing WS state.
+ *
+ * All mutations go through updateConnectionStatus() so change detection
+ * and notification happen in one place — no fire-and-forget races.
  */
 async function checkLinkerHealth(): Promise<void> {
   if (!linkerConfig?.linkerUrl) {
-    connectionStatus = {
+    updateConnectionStatus({
       httpHealthy: false,
       wsHealthy: false,
       authenticated: false,
       linkerUrl: null,
-      lastChecked: Date.now(),
       lastError: 'No linker configured',
-    };
-    notifyConnectionStatusChange();
+      peerCount: undefined,
+    });
     return;
   }
 
-  const previousStatus = { ...connectionStatus };
-
+  // HTTP health check
+  let httpHealthy = false;
+  let lastError: string | undefined;
   try {
-    // Simple health check - try to reach the linker
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-
     const response = await fetch(`${linkerConfig.linkerUrl}/health`, {
       method: 'GET',
       signal: controller.signal,
     });
     clearTimeout(timeout);
-
-    connectionStatus = {
-      httpHealthy: response.ok,
-      wsHealthy: connectionStatus.wsHealthy, // WebSocket status tracked separately
-      authenticated: connectionStatus.authenticated, // Preserve auth state
-      linkerUrl: linkerConfig.linkerUrl,
-      lastChecked: Date.now(),
-      lastError: response.ok ? undefined : `HTTP ${response.status}`,
-      peerCount: connectionStatus.peerCount, // Preserve peer count
-    };
-
-    // Also sync WebSocket state from executor to ensure wsHealthy/authenticated is accurate
-    // This catches cases where WS_STATE_CHANGE messages were missed
-    if (executor.isReady()) {
-      executor.getWebSocketState().then((wsState) => {
-        const wasHealthy = connectionStatus.wsHealthy;
-        const wasAuthenticated = connectionStatus.authenticated;
-        const wasPeerCount = connectionStatus.peerCount;
-        connectionStatus.wsHealthy = wsState.isConnected;
-        connectionStatus.authenticated = wsState.authenticated;
-        connectionStatus.peerCount = wsState.peerCount;
-        if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated || wasPeerCount !== connectionStatus.peerCount) {
-          notifyConnectionStatusChange();
-        }
-      }).catch(() => {
-        // Ignore errors during health check sync
-      });
-    }
+    httpHealthy = response.ok;
+    lastError = response.ok ? undefined : `HTTP ${response.status}`;
   } catch (error) {
-    connectionStatus = {
-      httpHealthy: false,
-      wsHealthy: connectionStatus.wsHealthy, // Preserve: WS is independent of HTTP
-      authenticated: connectionStatus.authenticated, // Preserve: auth is independent of HTTP
-      linkerUrl: linkerConfig.linkerUrl,
-      lastChecked: Date.now(),
-      lastError: error instanceof Error ? error.message : 'Connection failed',
-      peerCount: connectionStatus.peerCount, // Preserve peer count
-    };
+    httpHealthy = false;
+    lastError = error instanceof Error ? error.message : 'Connection failed';
   }
 
-  // Notify subscribers if status changed
-  if (
-    previousStatus.httpHealthy !== connectionStatus.httpHealthy ||
-    previousStatus.wsHealthy !== connectionStatus.wsHealthy ||
-    previousStatus.authenticated !== connectionStatus.authenticated ||
-    previousStatus.lastError !== connectionStatus.lastError
-  ) {
-    log.info(`Connection status changed: http=${connectionStatus.httpHealthy} ws=${connectionStatus.wsHealthy} auth=${connectionStatus.authenticated} err=${connectionStatus.lastError || 'none'}`);
-    notifyConnectionStatusChange();
+  // Sync WebSocket state from executor (awaited — no race).
+  // On Chrome this crosses to the offscreen document; on Firefox it's in-process.
+  let wsHealthy = connectionStatus.wsHealthy;
+  let authenticated = connectionStatus.authenticated;
+  let peerCount = connectionStatus.peerCount;
+  if (executor.isReady()) {
+    try {
+      const wsState = await executor.getWebSocketState();
+      wsHealthy = wsState.isConnected;
+      authenticated = wsState.authenticated;
+      peerCount = wsState.isConnected ? wsState.peerCount : undefined;
+    } catch {
+      // Keep whatever we had cached
+    }
   }
+
+  updateConnectionStatus({
+    httpHealthy,
+    wsHealthy,
+    authenticated,
+    linkerUrl: linkerConfig.linkerUrl,
+    lastError,
+    peerCount,
+  });
 }
 
 /**
@@ -233,6 +215,35 @@ function notifyConnectionStatusChange(): void {
     } catch {
       connectedPorts.delete(port);
     }
+  }
+}
+
+/**
+ * Compare two ConnectionStatus objects for equality on all user-visible fields.
+ * Keep in sync with ConnectionStatus fields in @hwc/shared.
+ */
+function statusEqual(a: ConnectionStatus, b: ConnectionStatus): boolean {
+  return (
+    a.httpHealthy === b.httpHealthy &&
+    a.wsHealthy === b.wsHealthy &&
+    a.authenticated === b.authenticated &&
+    a.linkerUrl === b.linkerUrl &&
+    a.lastError === b.lastError &&
+    a.peerCount === b.peerCount
+  );
+}
+
+/**
+ * Single mutation point for connectionStatus.
+ * Merges partial updates, stamps lastChecked, and notifies on change.
+ */
+function updateConnectionStatus(partial: Partial<ConnectionStatus>): void {
+  const prev = { ...connectionStatus };
+  Object.assign(connectionStatus, partial);
+  connectionStatus.lastChecked = Date.now();
+  if (!statusEqual(prev, connectionStatus)) {
+    log.info(`Connection status changed: http=${connectionStatus.httpHealthy} ws=${connectionStatus.wsHealthy} auth=${connectionStatus.authenticated} peers=${connectionStatus.peerCount} err=${connectionStatus.lastError || 'none'}`);
+    notifyConnectionStatusChange();
   }
 }
 
@@ -294,10 +305,12 @@ async function restoreLinkerConfigFromStorage(): Promise<void> {
       // the WS connection but it may not have completed yet -- that's OK because
       // onWebSocketStateChange will fire a follow-up when it does.
       const wsState = await executor.getWebSocketState();
-      connectionStatus.wsHealthy = wsState.isConnected;
-      connectionStatus.authenticated = wsState.authenticated;
-      connectionStatus.linkerUrl = saved.linkerUrl;
-      notifyConnectionStatusChange();
+      updateConnectionStatus({
+        wsHealthy: wsState.isConnected,
+        authenticated: wsState.authenticated,
+        linkerUrl: saved.linkerUrl,
+        peerCount: wsState.isConnected ? wsState.peerCount : undefined,
+      });
     }
   } catch (err) {
     logLinker.warn('Failed to restore linker config:', err);
@@ -324,16 +337,13 @@ async function registerContextAgentsWithLinker(context: HappContext): Promise<vo
 // Wire executor event callbacks
 executor.onWebSocketStateChange((state, authenticated) => {
   logLinker.debug(`WebSocket state changed: ${state} authenticated: ${authenticated}`);
-  const wasHealthy = connectionStatus.wsHealthy;
-  const wasAuthenticated = connectionStatus.authenticated;
-  connectionStatus.wsHealthy = state === "connected";
-  connectionStatus.authenticated = authenticated;
-  if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
-    notifyConnectionStatusChange();
-  }
-  // peerCount is synced by the periodic health check (every 5s) and
-  // on-demand in handleConnectionStatusGet. No eager async fetch here
-  // to avoid races with the health check.
+  updateConnectionStatus({
+    wsHealthy: state === "connected",
+    authenticated,
+    // Clear peer count on disconnect so UI doesn't show stale values.
+    // It will be re-populated from pong on next connection.
+    peerCount: state === "connected" ? connectionStatus.peerCount : undefined,
+  });
 });
 
 executor.onRemoteSignal((data) => {
@@ -1991,12 +2001,15 @@ async function handleLinkerReconnect(
 async function handleConnectionStatusGet(
   message: RequestMessage
 ): Promise<ResponseMessage> {
-  // Sync peerCount from executor so the app always gets the latest value
-  // (the periodic health check may not have run yet)
+  // Sync latest WS state so the response includes fresh peerCount.
   if (executor.isReady()) {
     try {
       const wsState = await executor.getWebSocketState();
-      connectionStatus.peerCount = wsState.peerCount;
+      updateConnectionStatus({
+        wsHealthy: wsState.isConnected,
+        authenticated: wsState.authenticated,
+        peerCount: wsState.isConnected ? wsState.peerCount : undefined,
+      });
     } catch {
       // Ignore — return whatever we have cached
     }
