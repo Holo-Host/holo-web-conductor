@@ -22,12 +22,17 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      // Don't bundle peer dependencies or the joining-service packages
-      external: [
-        '@holochain/client',
-        '@holo-host/joining-service/client',
-        '@holo-host/joining-service/ui/shoelace',
-      ],
+      // Don't bundle peer dependencies or the joining-service packages.
+      // @hwc/shared is intentionally NOT listed — it must be bundled
+      // since it's a private workspace package not published to npm.
+      external: (id) => {
+        // Explicitly bundle @hwc/shared (private, not on npm)
+        if (id.startsWith('@hwc/shared')) return false;
+        // Externalize peer deps and joining-service
+        if (id === '@holochain/client') return true;
+        if (id.startsWith('@holo-host/joining-service')) return true;
+        return false;
+      },
       output: {
         globals: {
           '@holochain/client': 'HolochainClient',

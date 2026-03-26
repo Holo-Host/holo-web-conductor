@@ -3,7 +3,22 @@
  */
 
 import type { ConnectionState } from './connection/types';
-import type { ConnectionStatus } from '@hwc/shared';
+
+/**
+ * Linker connection status reported by the extension.
+ * Duplicated from @hwc/shared so the published declaration files
+ * don't reference the private workspace package.
+ */
+export interface ConnectionStatus {
+  httpHealthy: boolean;
+  wsHealthy: boolean;
+  authenticated: boolean;
+  linkerUrl: string | null;
+  lastChecked: number;
+  lastError?: string;
+  /** Network peers known to the linker (from WebSocket pong). */
+  peerCount?: number;
+}
 
 /**
  * The window.holochain API provided by the Web Conductor extension.

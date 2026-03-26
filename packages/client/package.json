@@ -33,9 +33,11 @@
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@holo-host/joining-service": "file:../../../joining-service",
-    "@hwc/shared": "*",
+    "@holo-host/joining-service": "^0.1.0",
     "@msgpack/msgpack": "^2.8.0 || ^3.0.0"
   },
   "peerDependencies": {
