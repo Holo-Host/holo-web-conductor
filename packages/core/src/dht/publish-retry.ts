@@ -43,18 +43,17 @@ export async function retryPublishesAfterReconnect(
   }
 
   const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
-  const dnaHashes = [...uniqueDnas].map(b64 => decodeHashFromBase64(b64));
+  const dnaEntries = [...uniqueDnas].map(b64 => ({ b64, hash: decodeHashFromBase64(b64) }));
 
   // Reset all failed ops back to Pending so they get retried,
   // including ops that exhausted their retry count.
-  const resetCount = await tracker.resetFailedForDnas(dnaHashes);
+  const resetCount = await tracker.resetFailedForDnas(dnaEntries.map(e => e.hash));
 
-  log.info(`Reconnected (peer count: ${peerCount ?? 'unknown'}) — retrying publishes for ${uniqueDnas.size} DNAs${resetCount > 0 ? `, reset ${resetCount} failed ops` : ''}`);
+  log.info(`Reconnected (peer count: ${peerCount ?? 'unknown'}) — retrying publishes for ${dnaEntries.length} DNAs${resetCount > 0 ? `, reset ${resetCount} failed ops` : ''}`);
 
-  for (const dnaHashB64 of uniqueDnas) {
-    const dnaHash = decodeHashFromBase64(dnaHashB64);
-    publishService.processQueue(dnaHash).catch(err => {
-      log.warn(`Auto-retry failed for DNA ${dnaHashB64.substring(0, 15)}...:`, err);
+  for (const { b64, hash } of dnaEntries) {
+    publishService.processQueue(hash).catch(err => {
+      log.warn(`Auto-retry failed for DNA ${b64.substring(0, 15)}...:`, err);
     });
   }
 }
