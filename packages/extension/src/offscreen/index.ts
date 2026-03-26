@@ -18,7 +18,7 @@ import {
   WebSocketNetworkService,
   type ConnectionState,
 } from "@hwc/core/network";
-import { PublishService, retryPublishesAfterReconnect } from "@hwc/core/dht";
+import { PublishService, PublishTracker, retryPublishesAfterReconnect } from "@hwc/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@hwc/core";
 import { encodeHashToBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
@@ -487,7 +487,7 @@ function initializeWebSocketService(config: {
 
     // When connected, ping linker for peer count then retry failed publishes.
     if (state === "connected" && wsService && publishService) {
-      retryPublishesAfterReconnect(wsService, publishService, logPublish).catch(err => {
+      retryPublishesAfterReconnect(wsService, publishService, PublishTracker.getInstance(), logPublish).catch(err => {
         logPublish.warn("Failed to retry publishes after reconnect:", err);
       });
     }

@@ -32,7 +32,7 @@ import {
   WebSocketNetworkService,
   type ConnectionState,
 } from "@hwc/core/network";
-import { PublishService, retryPublishesAfterReconnect } from "@hwc/core/dht";
+import { PublishService, PublishTracker, retryPublishesAfterReconnect } from "@hwc/core/dht";
 import { encodeHashToBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 import { createLogger } from "../lib/logger";
@@ -245,7 +245,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
 
       // When connected, ping linker for peer count then retry failed publishes.
       if (state === "connected" && this.wsService && this.publishService) {
-        retryPublishesAfterReconnect(this.wsService, this.publishService, logPublish).catch(err => {
+        retryPublishesAfterReconnect(this.wsService, this.publishService, PublishTracker.getInstance(), logPublish).catch(err => {
           logPublish.warn("Failed to retry publishes after reconnect:", err);
         });
       }
