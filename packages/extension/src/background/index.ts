@@ -174,7 +174,7 @@ async function checkLinkerHealth(): Promise<void> {
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: response.ok ? undefined : `HTTP ${response.status}`,
-      peerCount: connectionStatus.peerCount, // Preserve peer count
+      peerCount: connectionStatus.wsHealthy ? connectionStatus.peerCount : undefined,
     };
 
     // Also sync WebSocket state from executor to ensure wsHealthy/authenticated is accurate
@@ -202,7 +202,7 @@ async function checkLinkerHealth(): Promise<void> {
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: error instanceof Error ? error.message : 'Connection failed',
-      peerCount: connectionStatus.peerCount, // Preserve peer count
+      peerCount: connectionStatus.wsHealthy ? connectionStatus.peerCount : undefined,
     };
   }
 
