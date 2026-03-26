@@ -350,6 +350,35 @@ describe("ChromeOffscreenExecutor", () => {
       expect(state.registrations).toHaveLength(1);
     });
 
+    it("getWebSocketState returns peer count from offscreen", async () => {
+      sendMessageMock.mockResolvedValue({
+        success: true,
+        state: "connected",
+        isConnected: true,
+        registrations: [],
+        peerCount: 7,
+      });
+      const executor = await createReadyExecutor();
+
+      const state = await executor.getWebSocketState();
+
+      expect(state.peerCount).toBe(7);
+    });
+
+    it("getWebSocketState returns undefined peerCount when not provided", async () => {
+      sendMessageMock.mockResolvedValue({
+        success: true,
+        state: "connected",
+        isConnected: true,
+        registrations: [],
+      });
+      const executor = await createReadyExecutor();
+
+      const state = await executor.getWebSocketState();
+
+      expect(state.peerCount).toBeUndefined();
+    });
+
     it("getWebSocketState returns disconnected on error", async () => {
       sendMessageMock.mockRejectedValue(new Error("no offscreen"));
       const executor = new ChromeOffscreenExecutor();
@@ -358,6 +387,7 @@ describe("ChromeOffscreenExecutor", () => {
 
       expect(state.isConnected).toBe(false);
       expect(state.state).toBe("disconnected");
+      expect(state.peerCount).toBeUndefined();
     });
   });
 

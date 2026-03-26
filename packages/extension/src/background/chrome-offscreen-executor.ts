@@ -368,6 +368,7 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
           isConnected: response.isConnected || false,
           authenticated: response.authenticated || false,
           registrations: response.registrations,
+          peerCount: response.peerCount,
         };
       }
     } catch (error) {

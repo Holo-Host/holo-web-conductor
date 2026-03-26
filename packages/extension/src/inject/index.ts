@@ -5,6 +5,7 @@
  * It communicates with the content script via window.postMessage.
  */
 
+// Mirror of ConnectionStatus from @hwc/shared (inject script cannot import modules)
 interface ConnectionStatus {
   httpHealthy: boolean;
   wsHealthy: boolean;
@@ -12,6 +13,7 @@ interface ConnectionStatus {
   linkerUrl: string | null;
   lastChecked: number;
   lastError?: string;
+  peerCount?: number;
 }
 
 interface HolochainAPI {

@@ -60,6 +60,7 @@ import type { ZomeCallRequest } from "@hwc/core/ribosome";
 import { encode, decode } from "@msgpack/msgpack";
 import sodium from "libsodium-wrappers";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
+import type { ConnectionStatus } from "@hwc/shared";
 import type { ZomeExecutor } from "../lib/zome-executor";
 import { ChromeOffscreenExecutor } from "./chrome-offscreen-executor";
 import { FirefoxDirectExecutor } from "./firefox-direct-executor";
@@ -100,16 +101,6 @@ const executor: ZomeExecutor = createExecutor();
 // Linker configuration - tracked in background for status reporting and health checks.
 // Executor gets its own copy via configureNetwork().
 let linkerConfig: { linkerUrl: string; sessionToken?: string } | null = null;
-
-// Connection status tracking
-interface ConnectionStatus {
-  httpHealthy: boolean;
-  wsHealthy: boolean;
-  authenticated: boolean;
-  linkerUrl: string | null;
-  lastChecked: number;
-  lastError?: string;
-}
 
 let connectionStatus: ConnectionStatus = {
   httpHealthy: false,
@@ -183,6 +174,7 @@ async function checkLinkerHealth(): Promise<void> {
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: response.ok ? undefined : `HTTP ${response.status}`,
+      peerCount: connectionStatus.peerCount, // Preserve peer count
     };
 
     // Also sync WebSocket state from executor to ensure wsHealthy/authenticated is accurate
@@ -191,9 +183,11 @@ async function checkLinkerHealth(): Promise<void> {
       executor.getWebSocketState().then((wsState) => {
         const wasHealthy = connectionStatus.wsHealthy;
         const wasAuthenticated = connectionStatus.authenticated;
+        const wasPeerCount = connectionStatus.peerCount;
         connectionStatus.wsHealthy = wsState.isConnected;
         connectionStatus.authenticated = wsState.authenticated;
-        if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
+        connectionStatus.peerCount = wsState.peerCount;
+        if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated || wasPeerCount !== connectionStatus.peerCount) {
           notifyConnectionStatusChange();
         }
       }).catch(() => {
@@ -208,6 +202,7 @@ async function checkLinkerHealth(): Promise<void> {
       linkerUrl: linkerConfig.linkerUrl,
       lastChecked: Date.now(),
       lastError: error instanceof Error ? error.message : 'Connection failed',
+      peerCount: connectionStatus.peerCount, // Preserve peer count
     };
   }
 
@@ -336,6 +331,9 @@ executor.onWebSocketStateChange((state, authenticated) => {
   if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
     notifyConnectionStatusChange();
   }
+  // peerCount is synced by the periodic health check (every 5s) and
+  // on-demand in handleConnectionStatusGet. No eager async fetch here
+  // to avoid races with the health check.
 });
 
 executor.onRemoteSignal((data) => {
@@ -1988,11 +1986,21 @@ async function handleLinkerReconnect(
 
 /**
  * Handle CONNECTION_STATUS_GET request
- * Returns current connection health status
+ * Returns current connection health status, with fresh peerCount from executor.
  */
 async function handleConnectionStatusGet(
   message: RequestMessage
 ): Promise<ResponseMessage> {
+  // Sync peerCount from executor so the app always gets the latest value
+  // (the periodic health check may not have run yet)
+  if (executor.isReady()) {
+    try {
+      const wsState = await executor.getWebSocketState();
+      connectionStatus.peerCount = wsState.peerCount;
+    } catch {
+      // Ignore — return whatever we have cached
+    }
+  }
   return createSuccessResponse(message.id, connectionStatus);
 }
 

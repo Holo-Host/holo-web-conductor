@@ -458,5 +458,33 @@ describe("WebSocketNetworkService", () => {
       // Should not throw
       mockWs.simulateMessage({ type: "pong" });
     });
+
+    it("should track peer count from pong", () => {
+      const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
+      service.connect();
+      mockWs.simulateOpen();
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
+
+      expect(service.getPeerCount()).toBeUndefined();
+
+      mockWs.simulateMessage({ type: "pong", peer_count: 5 });
+      expect(service.getPeerCount()).toBe(5);
+
+      mockWs.simulateMessage({ type: "pong", peer_count: 12 });
+      expect(service.getPeerCount()).toBe(12);
+    });
+
+    it("should handle pong without peer_count (older linker)", () => {
+      const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
+      service.connect();
+      mockWs.simulateOpen();
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
+
+      // Simulate older linker that doesn't include peer_count
+      mockWs.simulateMessage({ type: "pong" });
+      expect(service.getPeerCount()).toBeUndefined();
+    });
   });
 });

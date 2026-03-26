@@ -165,6 +165,7 @@ export abstract class BaseExecutor implements ZomeExecutor {
       isConnected: this.wsService?.isConnected() || false,
       authenticated: this.wsService?.isAuthenticated() || false,
       registrations: this.wsService?.getRegistrations(),
+      peerCount: this.wsService?.getPeerCount(),
     };
   }
 
