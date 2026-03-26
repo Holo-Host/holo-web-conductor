@@ -243,20 +243,27 @@ export abstract class BaseExecutor implements ZomeExecutor {
         this.wsStateChangeCallback(state, this.wsService?.isAuthenticated() || false);
       }
 
-      // Auto-retry publishes on reconnect
+      // Auto-retry publishes on reconnect: ping linker for peer count before retrying.
+      // Previously used a blind 2-second delay; now waits for pong with peer info.
       if (state === "connected") {
-        setTimeout(() => {
-          const registrations = this.wsService?.getRegistrations() || [];
-          if (registrations.length > 0 && this.publishService) {
-            const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
-            for (const dnaHashB64 of uniqueDnas) {
-              const dnaHash = decodeHashFromBase64(dnaHashB64);
-              this.publishService.processQueue(dnaHash).catch(err => {
-                logPublish.warn(`Auto-retry failed:`, err);
-              });
+        (async () => {
+          try {
+            const peerCount = await this.wsService!.pingForPeerCount(5000);
+            logPublish.info(`Connection established, peer count: ${peerCount ?? 'unknown'} - auto-retrying publishes`);
+            const registrations = this.wsService?.getRegistrations() || [];
+            if (registrations.length > 0 && this.publishService) {
+              const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
+              for (const dnaHashB64 of uniqueDnas) {
+                const dnaHash = decodeHashFromBase64(dnaHashB64);
+                this.publishService.processQueue(dnaHash).catch(err => {
+                  logPublish.warn(`Auto-retry failed:`, err);
+                });
+              }
             }
+          } catch (err) {
+            logPublish.warn("Failed to get peer count for auto-retry:", err);
           }
-        }, 2000);
+        })();
       }
     });
 

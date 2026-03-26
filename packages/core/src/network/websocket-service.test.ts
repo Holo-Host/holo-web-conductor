@@ -486,5 +486,42 @@ describe("WebSocketNetworkService", () => {
       mockWs.simulateMessage({ type: "pong" });
       expect(service.getPeerCount()).toBeUndefined();
     });
+
+    it("pingForPeerCount resolves with peer count from pong", async () => {
+      const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
+      service.connect();
+      mockWs.simulateOpen();
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
+
+      const promise = service.pingForPeerCount(2000);
+
+      // Simulate pong arriving after ping
+      mockWs.simulateMessage({ type: "pong", peer_count: 8 });
+
+      const result = await promise;
+      expect(result).toBe(8);
+    });
+
+    it("pingForPeerCount falls back to cached value on timeout", async () => {
+      const service = new WebSocketNetworkService(options);
+      service.registerAgent("dna123", "agent456");
+      service.connect();
+      mockWs.simulateOpen();
+      mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
+
+      // Set a known peer count first
+      mockWs.simulateMessage({ type: "pong", peer_count: 3 });
+
+      // Start ping but don't send pong — timeout after 50ms
+      const result = await service.pingForPeerCount(50);
+      expect(result).toBe(3);
+    });
+
+    it("pingForPeerCount returns undefined when not connected", async () => {
+      const service = new WebSocketNetworkService(options);
+      const result = await service.pingForPeerCount(100);
+      expect(result).toBeUndefined();
+    });
   });
 });

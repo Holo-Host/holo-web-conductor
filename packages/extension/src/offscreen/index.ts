@@ -485,26 +485,29 @@ function initializeWebSocketService(config: {
       // Ignore errors if background is not listening
     });
 
-    // When connected, automatically process failed publish queue
-    // This ensures failed publishes are retried when connection is re-established
+    // When connected, wait for peer availability then process failed publish queue.
+    // Previously used a blind 2-second delay; now pings the linker and waits for
+    // a pong with peer_count > 0 before retrying (falls back after 5s timeout).
     if (state === "connected") {
-      // Small delay to allow agent registrations to propagate
-      setTimeout(() => {
-        logPublish.info("Connection established - triggering auto-retry of failed publishes");
-        // Get registered DNAs from the websocket service and trigger publish processing
-        const registrations = wsService?.getRegistrations() || [];
-        if (registrations.length > 0 && publishService) {
-          const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
-          for (const dnaHashB64 of uniqueDnas) {
-            // Convert base64 to Uint8Array
-            const dnaHash = decodeHashFromBase64(dnaHashB64);
-            logPublish.info(`Auto-processing publish queue for DNA: ${dnaHashB64.substring(0, 15)}...`);
-            publishService.processQueue(dnaHash).catch(err => {
-              logPublish.warn(`Auto-retry failed for DNA ${dnaHashB64.substring(0, 15)}...:`, err);
-            });
+      (async () => {
+        try {
+          const peerCount = await wsService!.pingForPeerCount(5000);
+          logPublish.info(`Connection established, peer count: ${peerCount ?? 'unknown'} - triggering auto-retry of failed publishes`);
+          const registrations = wsService?.getRegistrations() || [];
+          if (registrations.length > 0 && publishService) {
+            const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
+            for (const dnaHashB64 of uniqueDnas) {
+              const dnaHash = decodeHashFromBase64(dnaHashB64);
+              logPublish.info(`Auto-processing publish queue for DNA: ${dnaHashB64.substring(0, 15)}...`);
+              publishService.processQueue(dnaHash).catch(err => {
+                logPublish.warn(`Auto-retry failed for DNA ${dnaHashB64.substring(0, 15)}...:`, err);
+              });
+            }
           }
+        } catch (err) {
+          logPublish.warn("Failed to get peer count for auto-retry:", err);
         }
-      }, 2000); // 2 second delay for agent registration propagation
+      })();
     }
   });
 

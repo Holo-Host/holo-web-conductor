@@ -602,6 +602,34 @@ export class WebSocketNetworkService {
     }
   }
 
+  /** Resolve callback for a pending pingForPeerCount() call */
+  private peerCountResolve: ((count: number | undefined) => void) | null = null;
+
+  /**
+   * Send a ping and return a promise that resolves with the peer count
+   * from the pong response. Rejects after timeoutMs if no pong arrives.
+   * Used to verify peers are available before publishing.
+   */
+  pingForPeerCount(timeoutMs = 5000): Promise<number | undefined> {
+    if (!this.isConnected()) {
+      return Promise.resolve(undefined);
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.peerCountResolve = null;
+        resolve(this.lastPeerCount);
+      }, timeoutMs);
+
+      this.peerCountResolve = (count) => {
+        clearTimeout(timer);
+        this.peerCountResolve = null;
+        resolve(count);
+      };
+
+      this.send({ type: "ping" });
+    });
+  }
+
   private handlePong(message: Extract<ServerMessage, { type: "pong" }>): void {
     // Clear the timeout - server is alive
     if (this.heartbeatTimeoutTimer) {
@@ -615,6 +643,11 @@ export class WebSocketNetworkService {
         log.info(`Network peer count: ${message.peer_count}`);
       }
       this.lastPeerCount = message.peer_count;
+    }
+
+    // Resolve any pending pingForPeerCount() call
+    if (this.peerCountResolve) {
+      this.peerCountResolve(message.peer_count);
     }
   }
 
