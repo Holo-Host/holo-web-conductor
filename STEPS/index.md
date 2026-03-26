@@ -41,7 +41,7 @@
 | 11 | ✅ | Synchronous SQLite Storage Layer |
 | 12 | ⏳ | Code Quality & Testing Improvements |
 | 12.1 | ✅ | Unified Encoding Documentation |
-| 12.2 | ⏳ | DHT Publishing Debug Panel |
+| 12.2 | ✅ | DHT Publishing Debug Panel |
 | 12.3 | ⏳ | Test Audit |
 | 13 | ⏳ | Storage Backup & Recovery |
 | 13.1 | ✅ | Persistent Storage + Seed Phrase Export |
@@ -52,7 +52,7 @@
 | 14.2 | ✅ | Connection Status Interface |
 | 14.3 | ✅ | Enhanced WebConductorAppClient |
 | 14.4 | ✅ | Extension API Enhancements |
-| 15 | 📋 | Robust Publish Verification |
+| 15 | ✅ | Robust Publish Verification |
 | 16 | ✅ | E2E Debugging Automation (Playwright infrastructure) |
 | 17 | ✅ | h2hc-linker 0.6.1 Integration (core complete, see notes) |
 | 18 | ✅ | Zome Call Serialization |
@@ -97,16 +97,18 @@ Protect against data loss from extension uninstall or browser cache clear:
 
 See [13_PLAN.md](./13_PLAN.md)
 
-### Step 15: Robust Publish Verification
-**Priority**: Medium (reliability improvement)
+### Step 15: Robust Publish Verification (complete)
+**Status**: Complete (PR #53, PR #54)
 
-Ensure publishing only proceeds when network connectivity is verified:
-- Add peer count to WebSocket protocol (gateway sends connected peer count in ping/pong)
-- Wait for at least one peer connection before allowing publish attempts
-- Provide UI feedback when waiting for peers
-- Replace current 2-second delay heuristic with actual peer verification
+Peer-count-gated publishing replaces the blind 2-second delay:
+- Linker reports kitsune2 peer count in WebSocket pong (`peer_count` field)
+- On reconnect, extension pings linker and waits for pong before retrying
+- All failed ops (including retry-exhausted) reset to Pending on reconnect
+- `ConnectionStatus.peerCount` available to hApps via client library
+- Shared `retryPublishesAfterReconnect()` eliminates Chrome/Firefox code duplication
+- `ConnectionStatus` consolidated into `@hwc/shared`; `setLinkerHealth` refactored to accept partial object
 
-**Background**: Currently auto-retry on reconnect uses a 2-second delay to hope agent registration propagates. This should verify actual peer connectivity instead.
+See [15_COMPLETION.md](./15_COMPLETION.md)
 
 ### Step 16: E2E Debugging Automation (complete)
 **Status**: Complete

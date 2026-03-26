@@ -4,9 +4,16 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { retryPublishesAfterReconnect } from "./publish-retry";
+import { PublishTracker } from "./publish-tracker";
 import type { WebSocketNetworkService } from "../network/websocket-service";
 import type { PublishService } from "./publish-service";
 import type { Logger } from "@hwc/shared";
+
+// Mock PublishTracker singleton
+const mockResetFailedForDnas = vi.fn().mockResolvedValue(0);
+vi.spyOn(PublishTracker, "getInstance").mockReturnValue({
+  resetFailedForDnas: mockResetFailedForDnas,
+} as unknown as PublishTracker);
 
 function createMockWsService(overrides: Partial<WebSocketNetworkService> = {}): WebSocketNetworkService {
   return {
@@ -41,6 +48,7 @@ describe("retryPublishesAfterReconnect", () => {
     wsService = createMockWsService();
     publishService = createMockPublishService();
     log = createMockLog();
+    mockResetFailedForDnas.mockClear().mockResolvedValue(0);
   });
 
   it("pings for peer count before processing", async () => {
@@ -56,6 +64,24 @@ describe("retryPublishesAfterReconnect", () => {
     expect(log.info).toHaveBeenCalledWith(
       expect.stringContaining("peer count: 3")
     );
+  });
+
+  it("resets failed ops to pending before processing queue", async () => {
+    mockResetFailedForDnas.mockResolvedValue(4);
+    wsService = createMockWsService({
+      getRegistrations: vi.fn().mockReturnValue([
+        { dna_hash: "uhC0kAAAA", agent_pubkey: "uhCAkBBBB" },
+      ]),
+    } as any);
+
+    await retryPublishesAfterReconnect(wsService, publishService as any, log);
+
+    expect(mockResetFailedForDnas).toHaveBeenCalledTimes(1);
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining("Reset 4 failed ops")
+    );
+    // processQueue should be called after reset
+    expect(publishService.processQueue).toHaveBeenCalled();
   });
 
   it("processes queue for each unique DNA", async () => {
@@ -77,6 +103,7 @@ describe("retryPublishesAfterReconnect", () => {
     await retryPublishesAfterReconnect(wsService, publishService as any, log);
 
     expect(wsService.pingForPeerCount).toHaveBeenCalled();
+    expect(mockResetFailedForDnas).not.toHaveBeenCalled();
     expect(publishService.processQueue).not.toHaveBeenCalled();
   });
 
@@ -96,5 +123,20 @@ describe("retryPublishesAfterReconnect", () => {
     expect(log.info).toHaveBeenCalledWith(
       expect.stringContaining("peer count: unknown")
     );
+  });
+
+  it("skips reset log when no failed ops to reset", async () => {
+    mockResetFailedForDnas.mockResolvedValue(0);
+    wsService = createMockWsService({
+      getRegistrations: vi.fn().mockReturnValue([
+        { dna_hash: "uhC0kAAAA", agent_pubkey: "uhCAkBBBB" },
+      ]),
+    } as any);
+
+    await retryPublishesAfterReconnect(wsService, publishService as any, log);
+
+    // Should not log "Reset 0 failed ops"
+    const infoCalls = (log.info as any).mock.calls.map((c: any) => c[0]);
+    expect(infoCalls.some((msg: string) => msg.includes("Reset"))).toBe(false);
   });
 });
