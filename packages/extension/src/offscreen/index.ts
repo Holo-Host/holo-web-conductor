@@ -18,9 +18,9 @@ import {
   WebSocketNetworkService,
   type ConnectionState,
 } from "@hwc/core/network";
-import { PublishService } from "@hwc/core/dht";
+import { PublishService, retryPublishesAfterReconnect } from "@hwc/core/dht";
 import { toUint8Array, normalizeUint8Arrays, serializeForTransport } from "@hwc/core";
-import { encodeHashToBase64, decodeHashFromBase64 } from "@holochain/client";
+import { encodeHashToBase64 } from "@holochain/client";
 import type { Record as HolochainRecord, DnaHash } from "@holochain/client";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 
@@ -485,28 +485,11 @@ function initializeWebSocketService(config: {
       // Ignore errors if background is not listening
     });
 
-    // When connected, ping the linker and wait for peer count before retrying
-    // failed publishes. Falls back to cached count after 5s timeout.
-    if (state === "connected") {
-      (async () => {
-        try {
-          const peerCount = await wsService!.pingForPeerCount(5000);
-          logPublish.info(`Connection established, peer count: ${peerCount ?? 'unknown'} - triggering auto-retry of failed publishes`);
-          const registrations = wsService?.getRegistrations() || [];
-          if (registrations.length > 0 && publishService) {
-            const uniqueDnas = new Set(registrations.map(r => r.dna_hash));
-            for (const dnaHashB64 of uniqueDnas) {
-              const dnaHash = decodeHashFromBase64(dnaHashB64);
-              logPublish.info(`Auto-processing publish queue for DNA: ${dnaHashB64.substring(0, 15)}...`);
-              publishService.processQueue(dnaHash).catch(err => {
-                logPublish.warn(`Auto-retry failed for DNA ${dnaHashB64.substring(0, 15)}...:`, err);
-              });
-            }
-          }
-        } catch (err) {
-          logPublish.warn("Failed to get peer count for auto-retry:", err);
-        }
-      })();
+    // When connected, ping linker for peer count then retry failed publishes.
+    if (state === "connected" && wsService && publishService) {
+      retryPublishesAfterReconnect(wsService, publishService, logPublish).catch(err => {
+        logPublish.warn("Failed to retry publishes after reconnect:", err);
+      });
     }
   });
 

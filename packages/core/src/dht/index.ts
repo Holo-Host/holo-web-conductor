@@ -67,6 +67,9 @@ export { PublishTracker, type PublishAttemptResult } from "./publish-tracker";
 // Publish service
 export { PublishService, type PublishServiceOptions } from "./publish-service";
 
+// Publish retry on reconnect
+export { retryPublishesAfterReconnect } from "./publish-retry";
+
 // Record conversion utilities
 export {
   storedActionToClientAction,
