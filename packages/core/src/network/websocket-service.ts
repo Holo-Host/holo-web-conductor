@@ -168,7 +168,7 @@ export class WebSocketNetworkService {
   /** Agent pubkeys that failed auth (so we can try the next one) */
   private failedAuthAgents = new Set<string>();
   private sessionTokenCallback: ((token: string) => void) | null = null;
-  private lastPeerCount: number = 0;
+  private lastPeerCount: number | undefined;
 
   constructor(options: WebSocketServiceOptions) {
     this.options = {
@@ -206,7 +206,7 @@ export class WebSocketNetworkService {
   /**
    * Get the last known network peer count (from most recent pong)
    */
-  getPeerCount(): number {
+  getPeerCount(): number | undefined {
     return this.lastPeerCount;
   }
 

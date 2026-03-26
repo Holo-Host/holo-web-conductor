@@ -384,11 +384,9 @@ describe('ConnectionMonitor', () => {
         expect(listener).toHaveBeenCalled();
       });
 
-      // Trigger another health check
+      // Update via public API
       listener.mockClear();
-      // Manually trigger by calling checkHealth through start interval
-      // Instead, just update state directly to verify change detection
-      (monitor as any).updateState({ peerCount: 5 });
+      monitor.setLinkerHealth({ peerCount: 5 });
 
       expect(listener).toHaveBeenCalledWith(
         expect.objectContaining({ peerCount: 5 })

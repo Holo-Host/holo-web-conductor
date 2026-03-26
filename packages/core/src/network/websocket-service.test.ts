@@ -466,7 +466,7 @@ describe("WebSocketNetworkService", () => {
       mockWs.simulateOpen();
       mockWs.simulateMessage({ type: "auth_ok", session_token: "" });
 
-      expect(service.getPeerCount()).toBe(0);
+      expect(service.getPeerCount()).toBeUndefined();
 
       mockWs.simulateMessage({ type: "pong", peer_count: 5 });
       expect(service.getPeerCount()).toBe(5);
@@ -484,7 +484,7 @@ describe("WebSocketNetworkService", () => {
 
       // Simulate older linker that doesn't include peer_count
       mockWs.simulateMessage({ type: "pong" });
-      expect(service.getPeerCount()).toBe(0);
+      expect(service.getPeerCount()).toBeUndefined();
     });
   });
 });

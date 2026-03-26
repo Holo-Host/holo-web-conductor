@@ -368,14 +368,14 @@ export class ChromeOffscreenExecutor extends BaseExecutor {
           isConnected: response.isConnected || false,
           authenticated: response.authenticated || false,
           registrations: response.registrations,
-          peerCount: response.peerCount ?? 0,
+          peerCount: response.peerCount,
         };
       }
     } catch (error) {
       logLinker.debug("Could not get WebSocket state from offscreen:", error);
     }
 
-    return { state: "disconnected", isConnected: false, authenticated: false, peerCount: 0 };
+    return { state: "disconnected", isConnected: false, authenticated: false };
   }
 
   // ============================================================================

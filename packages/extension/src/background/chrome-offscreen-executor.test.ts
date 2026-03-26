@@ -365,7 +365,7 @@ describe("ChromeOffscreenExecutor", () => {
       expect(state.peerCount).toBe(7);
     });
 
-    it("getWebSocketState defaults peer count to 0", async () => {
+    it("getWebSocketState returns undefined peerCount when not provided", async () => {
       sendMessageMock.mockResolvedValue({
         success: true,
         state: "connected",
@@ -376,7 +376,7 @@ describe("ChromeOffscreenExecutor", () => {
 
       const state = await executor.getWebSocketState();
 
-      expect(state.peerCount).toBe(0);
+      expect(state.peerCount).toBeUndefined();
     });
 
     it("getWebSocketState returns disconnected on error", async () => {
@@ -387,7 +387,7 @@ describe("ChromeOffscreenExecutor", () => {
 
       expect(state.isConnected).toBe(false);
       expect(state.state).toBe("disconnected");
-      expect(state.peerCount).toBe(0);
+      expect(state.peerCount).toBeUndefined();
     });
   });
 

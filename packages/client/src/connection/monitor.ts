@@ -179,7 +179,10 @@ export class ConnectionMonitor {
   /**
    * Update linker health status without changing overall connection status.
    * Used when extension is connected but linker may be unreachable.
+   *
    * Accepts a partial state object so new fields flow through automatically.
+   * Note: only fields present in the object are updated. To clear a field
+   * (e.g. lastError), pass it explicitly as undefined.
    */
   setLinkerHealth(status: Partial<ConnectionState>): void {
     if (this.state.wsHealthy !== (status.wsHealthy ?? this.state.wsHealthy) || this.state.authenticated !== (status.authenticated ?? this.state.authenticated)) {

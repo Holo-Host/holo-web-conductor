@@ -331,15 +331,9 @@ executor.onWebSocketStateChange((state, authenticated) => {
   if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
     notifyConnectionStatusChange();
   }
-  // Eagerly sync peerCount so push notifications include it
-  if (executor.isReady()) {
-    executor.getWebSocketState().then((wsState) => {
-      if (connectionStatus.peerCount !== wsState.peerCount) {
-        connectionStatus.peerCount = wsState.peerCount;
-        notifyConnectionStatusChange();
-      }
-    }).catch(() => {});
-  }
+  // peerCount is synced by the periodic health check (every 5s) and
+  // on-demand in handleConnectionStatusGet. No eager async fetch here
+  // to avoid races with the health check.
 });
 
 executor.onRemoteSignal((data) => {
