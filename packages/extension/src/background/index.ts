@@ -330,10 +330,11 @@ executor.onWebSocketStateChange((state, authenticated) => {
   connectionStatus.authenticated = authenticated;
   // Clear peer count immediately on disconnect so UI doesn't show stale values.
   // It will be re-populated from pong on next connection.
+  const hadPeerCount = connectionStatus.peerCount !== undefined;
   if (state !== "connected") {
     connectionStatus.peerCount = undefined;
   }
-  if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated) {
+  if (wasHealthy !== connectionStatus.wsHealthy || wasAuthenticated !== connectionStatus.authenticated || (hadPeerCount && connectionStatus.peerCount === undefined)) {
     notifyConnectionStatusChange();
   }
 });
