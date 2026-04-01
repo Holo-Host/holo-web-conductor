@@ -2,7 +2,12 @@ import type { ConnectionStatus } from "@hwc/shared";
 
 interface ConnectionStatusDeps {
   getLinkerConfig: () => { linkerUrl: string; sessionToken?: string } | null;
-  getExecutor: () => { isReady(): boolean; getWebSocketState(): Promise<{ isConnected: boolean; authenticated: boolean; peerCount?: number }> };
+  getExecutor: () => {
+    isReady(): boolean;
+    getWebSocketState(): Promise<{ state: string; isConnected: boolean; authenticated: boolean; peerCount?: number }>;
+    disconnectLinker(): Promise<void>;
+    reconnectLinker(): Promise<void>;
+  };
   log: { info(...args: any[]): void; warn?(...args: any[]): void };
 }
 
@@ -59,7 +64,13 @@ export class ConnectionStatusManager {
 
     this.checkLinkerHealth();
 
-    this.healthCheckInterval = setInterval(() => this.checkLinkerHealth(), this.HEALTH_CHECK_INTERVAL_MS);
+    this.healthCheckInterval = setInterval(() => {
+      // On Firefox MV3, event pages suspend after ~30s of no Chrome API calls,
+      // killing all setInterval timers and WebSocket connections. A periodic
+      // chrome.storage.local.get() call keeps the event page alive.
+      try { chrome.storage.local.get('__hwc_keepalive'); } catch { /* not in extension context */ }
+      this.checkLinkerHealth();
+    }, this.HEALTH_CHECK_INTERVAL_MS);
   }
 
   stopHealthChecks(): void {
