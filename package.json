@@ -23,6 +23,7 @@
     "e2e:test:ziptest": "npx tsx packages/e2e/src/index.ts test --project=chromium-extension --test=tests/ziptest.test.ts --headed",
     "e2e:test:mewsfeed": "npx tsx packages/e2e/src/index.ts test --project=chromium-extension --test=tests/mewsfeed.test.ts --headed",
     "e2e:test:cross-browser": "npx tsx packages/e2e/src/index.ts test --project=cross-browser --test=tests/cross-browser.test.ts --headed",
+    "e2e:test:connection-status": "npx tsx packages/e2e/src/index.ts test --project=cross-browser --test=tests/connection-status.test.ts --headed --happ=ziptest",
     "e2e:test:browsers": "cd packages/e2e && npx playwright test --config=playwright.browser-tests.cjs",
     "e2e:env": "npx tsx packages/e2e/src/index.ts env",
     "e2e:env:start": "npx tsx packages/e2e/src/index.ts env start",

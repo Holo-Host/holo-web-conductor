@@ -35,7 +35,7 @@ module.exports = defineConfig({
   projects: [
     {
       name: 'chromium-extension',
-      testIgnore: /cross-browser/,
+      testIgnore: /cross-browser|connection-status/,
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -50,15 +50,15 @@ module.exports = defineConfig({
     },
     {
       name: 'firefox-extension',
-      testIgnore: /cross-browser/,
+      testIgnore: /cross-browser|connection-status/,
       use: {
         ...devices['Desktop Firefox'],
       },
     },
     {
-      // Cross-browser tests manage their own browser contexts internally
+      // Tests that manage their own browser contexts (Chrome + Firefox)
       name: 'cross-browser',
-      testMatch: /cross-browser/,
+      testMatch: /cross-browser|connection-status/,
       use: {
         ...devices['Desktop Chrome'],
       },
