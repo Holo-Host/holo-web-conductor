@@ -66,6 +66,17 @@
 | 26 | ✅ | Membrane Proof Support |
 | 27 | ✅ | Joining Service Integration |
 | 28 | ✅ | Lair Generalization (non-browser environments) |
+| 29 | 📋 | Meta-Analysis: Code Quality, Tech Debt, Process Improvements |
+| 29.1 | 📋 | Formalize connection state machine |
+| 29.2 | 📋 | Split mega-files (background/index.ts, ribosome-worker.ts) |
+| 29.3 | ✅ | Add typecheck to CI (already in place) |
+| 29.4 | 📋 | Fix skipped tests and expand coverage |
+| 29.5 | 📋 | Platform compatibility checklist |
+| 29.6 | 📋 | Automate build freshness check |
+| 29.7 | 📋 | Sanitize innerHTML in extension popup |
+| 29.8 | 📋 | Consistent error handling strategy |
+| 29.9 | 📋 | Fix @msgpack/msgpack version mismatch |
+| 29.10 | 📋 | Improve CONTRIBUTING.md for AI instruction clarity |
 | CI | ✅ | GitHub Actions CI for HWC and h2hc-linker |
 | CI-R | ✅ | Release Workflows (tag-triggered, extension + linker) |
 | Meta-1 | 📋 | Process Review (periodic) |
@@ -169,6 +180,24 @@ Integrated `@holo-host/joining-service/client` into the extension and client lib
 Generalized the lair package to work outside browser environments:
 - Abstracted storage backend (IndexedDB for browser, pluggable for Node.js/other)
 - Enables joining service and other server-side code to use lair for key management
+
+### Step 29: Meta-Analysis — Code Quality, Tech Debt, Process Improvements
+**Status**: Planned
+**Priority**: High
+
+10 sub-tasks addressing accumulated debt from Steps 1-28. Recommended execution order:
+1. **29.3** Typecheck in CI (quick win)
+2. **29.1** Formalize connection state machine (highest bug density)
+3. **29.2** Split mega-files (enables testing)
+4. **29.4** Fix skipped tests (benefits from 29.2, 29.3)
+5. **29.7** Sanitize innerHTML (security, small scope)
+6. **29.5** Platform compatibility checklist (documentation)
+7. **29.6** Automate build freshness check (scripting)
+8. **29.8** Consistent error handling strategy (broad)
+9. **29.9** Fix msgpack version mismatch (low priority)
+10. **29.10** Improve CONTRIBUTING.md for AI clarity (incorporate learnings)
+
+See [29_PLAN.md](./29_PLAN.md)
 
 ### CI-R: Release Workflows (complete)
 **Status**: Complete (PR #32 for HWC, direct commit for h2hc-linker)
