@@ -29,6 +29,23 @@ const APP_ID = 'conn-test';
 
 const env = new EnvironmentManager({ happ: 'ziptest' });
 
+/** Poll getConnectionStatus() until a JS predicate returns true */
+async function waitForStatusPredicate(
+  page: import('@playwright/test').Page,
+  predicate: (s: any) => boolean,
+  timeout = 60000,
+): Promise<any> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const status = await page.evaluate(async () =>
+      (window as any).holochain.getConnectionStatus(),
+    );
+    if (predicate(status)) return status;
+    await page.waitForTimeout(2000);
+  }
+  return page.evaluate(async () => (window as any).holochain.getConnectionStatus());
+}
+
 /** Install hApp and configure linker on a page */
 async function installAndConfigure(page: import('@playwright/test').Page): Promise<void> {
   await page.evaluate(
@@ -164,13 +181,23 @@ test.describe('connection status transitions (Chrome + Firefox)', () => {
       await installAndConfigure(page);
     }
 
-    // --- Verify initial connected state ---
+    // --- Verify initial connected state + peerCount ---
     for (const { name, page } of pages) {
       console.log(`[test] ${name}: waiting for connected state`);
       const status = await waitForStatusFields(page, { wsHealthy: true, authenticated: true });
-      console.log(`[test] ${name}: initial status: ${JSON.stringify(status)}`);
+      console.log(`[test] ${name}: connected: ${JSON.stringify(status)}`);
       expect(status.wsHealthy).toBe(true);
       expect(status.authenticated).toBe(true);
+
+      console.log(`[test] ${name}: waiting for peerCount`);
+      const withPeers = await waitForStatusPredicate(
+        page,
+        (s: any) => typeof s.peerCount === 'number' && s.peerCount > 0,
+        60000,
+      );
+      console.log(`[test] ${name}: peerCount = ${withPeers.peerCount}`);
+      expect(typeof withPeers.peerCount).toBe('number');
+      expect(withPeers.peerCount).toBeGreaterThan(0);
     }
 
     // --- Start collecting transitions ---
@@ -215,6 +242,15 @@ test.describe('connection status transitions (Chrome + Firefox)', () => {
       console.log(`[test] ${name}: reconnected status: ${JSON.stringify(status)}`);
       expect(status.wsHealthy).toBe(true);
       expect(status.authenticated).toBe(true);
+
+      console.log(`[test] ${name}: waiting for peerCount after reconnect`);
+      const withPeers = await waitForStatusPredicate(
+        page,
+        (s: any) => typeof s.peerCount === 'number' && s.peerCount > 0,
+        60000,
+      );
+      console.log(`[test] ${name}: peerCount after reconnect = ${withPeers.peerCount}`);
+      expect(withPeers.peerCount).toBeGreaterThan(0);
 
       const transitions = await getTransitions(page);
       console.log(`[test] ${name}: ${transitions.length} total transition(s)`);

@@ -62,6 +62,7 @@ import sodium from "libsodium-wrappers";
 import { createLogger, setLogFilter, getLogFilter } from "../lib/logger";
 import type { ConnectionStatus } from "@hwc/shared";
 import type { ZomeExecutor } from "../lib/zome-executor";
+import { ConnectionStatusManager } from "./connection-status";
 import { ChromeOffscreenExecutor } from "./chrome-offscreen-executor";
 import { FirefoxDirectExecutor } from "./firefox-direct-executor";
 
@@ -102,173 +103,30 @@ const executor: ZomeExecutor = createExecutor();
 // Executor gets its own copy via configureNetwork().
 let linkerConfig: { linkerUrl: string; sessionToken?: string } | null = null;
 
-let connectionStatus: ConnectionStatus = {
-  httpHealthy: false,
-  wsHealthy: false,
-  authenticated: false,
-  linkerUrl: null,
-  lastChecked: 0,
-};
-
-let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
-const HEALTH_CHECK_INTERVAL_MS = 5000;
-
-// Long-lived ports from content scripts (used for push messages and keepalive)
-const connectedPorts = new Set<chrome.runtime.Port>();
+const connectionStatusManager = new ConnectionStatusManager({
+  getLinkerConfig: () => linkerConfig,
+  getExecutor: () => executor,
+  log,
+});
 
 // Handle port connections from content scripts
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "hwc-content") return;
 
-  connectedPorts.add(port);
-  log.info(`Content script port connected (${connectedPorts.size} total)`);
+  connectionStatusManager.addPort(port);
+  log.info(`Content script port connected`);
 
   // Send current connection status immediately so the page has fresh state.
   // After background restart this may be stale (all-false) until
   // restoreLinkerConfigFromStorage completes and pushes corrected state.
-  port.postMessage({
-    type: 'connectionStatusChange',
-    payload: connectionStatus,
-  });
+  connectionStatusManager.sendStatusToPort(port);
 
   port.onDisconnect.addListener(() => {
-    connectedPorts.delete(port);
-    log.info(`Content script port disconnected (${connectedPorts.size} remaining)`);
+    connectionStatusManager.removePort(port);
+    log.info(`Content script port disconnected`);
   });
 });
 
-/**
- * Check linker health by making a simple HTTP request and syncing WS state.
- *
- * All mutations go through updateConnectionStatus() so change detection
- * and notification happen in one place — no fire-and-forget races.
- */
-async function checkLinkerHealth(): Promise<void> {
-  if (!linkerConfig?.linkerUrl) {
-    updateConnectionStatus({
-      httpHealthy: false,
-      wsHealthy: false,
-      authenticated: false,
-      linkerUrl: null,
-      lastError: 'No linker configured',
-      peerCount: undefined,
-    });
-    return;
-  }
-
-  // HTTP health check
-  let httpHealthy = false;
-  let lastError: string | undefined;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const response = await fetch(`${linkerConfig.linkerUrl}/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    httpHealthy = response.ok;
-    lastError = response.ok ? undefined : `HTTP ${response.status}`;
-  } catch (error) {
-    httpHealthy = false;
-    lastError = error instanceof Error ? error.message : 'Connection failed';
-  }
-
-  // Sync WebSocket state from executor (awaited — no race).
-  // On Chrome this crosses to the offscreen document; on Firefox it's in-process.
-  let wsHealthy = connectionStatus.wsHealthy;
-  let authenticated = connectionStatus.authenticated;
-  let peerCount = connectionStatus.peerCount;
-  if (executor.isReady()) {
-    try {
-      const wsState = await executor.getWebSocketState();
-      wsHealthy = wsState.isConnected;
-      authenticated = wsState.authenticated;
-      peerCount = wsState.isConnected ? wsState.peerCount : undefined;
-    } catch {
-      // Keep whatever we had cached
-    }
-  }
-
-  updateConnectionStatus({
-    httpHealthy,
-    wsHealthy,
-    authenticated,
-    linkerUrl: linkerConfig.linkerUrl,
-    lastError,
-    peerCount,
-  });
-}
-
-/**
- * Notify all subscribed tabs of connection status change
- */
-function notifyConnectionStatusChange(): void {
-  const message = {
-    type: 'connectionStatusChange',
-    payload: connectionStatus,
-  };
-
-  for (const port of connectedPorts) {
-    try {
-      port.postMessage(message);
-    } catch {
-      connectedPorts.delete(port);
-    }
-  }
-}
-
-/**
- * Compare two ConnectionStatus objects for equality on all user-visible fields.
- * Keep in sync with ConnectionStatus fields in @hwc/shared.
- */
-function statusEqual(a: ConnectionStatus, b: ConnectionStatus): boolean {
-  return (
-    a.httpHealthy === b.httpHealthy &&
-    a.wsHealthy === b.wsHealthy &&
-    a.authenticated === b.authenticated &&
-    a.linkerUrl === b.linkerUrl &&
-    a.lastError === b.lastError &&
-    a.peerCount === b.peerCount
-  );
-}
-
-/**
- * Single mutation point for connectionStatus.
- * Merges partial updates, stamps lastChecked, and notifies on change.
- */
-function updateConnectionStatus(partial: Partial<ConnectionStatus>): void {
-  const prev = { ...connectionStatus };
-  Object.assign(connectionStatus, partial);
-  connectionStatus.lastChecked = Date.now();
-  if (!statusEqual(prev, connectionStatus)) {
-    log.info(`Connection status changed: http=${connectionStatus.httpHealthy} ws=${connectionStatus.wsHealthy} auth=${connectionStatus.authenticated} peers=${connectionStatus.peerCount} err=${connectionStatus.lastError || 'none'}`);
-    notifyConnectionStatusChange();
-  }
-}
-
-/**
- * Start periodic health checks
- */
-function startHealthChecks(): void {
-  if (healthCheckInterval) return;
-
-  // Immediate check
-  checkLinkerHealth();
-
-  // Periodic checks
-  healthCheckInterval = setInterval(checkLinkerHealth, HEALTH_CHECK_INTERVAL_MS);
-}
-
-/**
- * Stop periodic health checks
- */
-function stopHealthChecks(): void {
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-    healthCheckInterval = null;
-  }
-}
 
 /**
  * Set the linker configuration
@@ -277,7 +135,7 @@ function stopHealthChecks(): void {
 function setLinkerConfig(url: string, sessionToken?: string): void {
   linkerConfig = { linkerUrl: url, sessionToken };
   logLinker.info(`Linker config set: ${url}`);
-  startHealthChecks();
+  connectionStatusManager.startHealthChecks();
   // Persist to storage so config survives background page suspension (Firefox MV3)
   chrome.storage.local.set({ hwc_linker_config: { linkerUrl: url, sessionToken } }).catch((err) => {
     logLinker.warn('Failed to persist linker config:', err);
@@ -296,7 +154,7 @@ async function restoreLinkerConfigFromStorage(): Promise<void> {
     if (saved?.linkerUrl) {
       logLinker.info(`Restoring linker config from storage: ${saved.linkerUrl}`);
       linkerConfig = { linkerUrl: saved.linkerUrl, sessionToken: saved.sessionToken };
-      startHealthChecks();
+      connectionStatusManager.startHealthChecks();
       // Re-initialize executor and forward config to worker
       await executor.initialize();
       await executor.configureNetwork({ linkerUrl: saved.linkerUrl, sessionToken: saved.sessionToken });
@@ -305,7 +163,7 @@ async function restoreLinkerConfigFromStorage(): Promise<void> {
       // the WS connection but it may not have completed yet -- that's OK because
       // onWebSocketStateChange will fire a follow-up when it does.
       const wsState = await executor.getWebSocketState();
-      updateConnectionStatus({
+      connectionStatusManager.update({
         wsHealthy: wsState.isConnected,
         authenticated: wsState.authenticated,
         linkerUrl: saved.linkerUrl,
@@ -337,12 +195,12 @@ async function registerContextAgentsWithLinker(context: HappContext): Promise<vo
 // Wire executor event callbacks
 executor.onWebSocketStateChange((state, authenticated) => {
   logLinker.debug(`WebSocket state changed: ${state} authenticated: ${authenticated}`);
-  updateConnectionStatus({
+  connectionStatusManager.update({
     wsHealthy: state === "connected",
     authenticated,
     // Clear peer count on disconnect so UI doesn't show stale values.
     // It will be re-populated from pong on next connection.
-    peerCount: state === "connected" ? connectionStatus.peerCount : undefined,
+    peerCount: state === "connected" ? connectionStatusManager.getStatus().peerCount : undefined,
   });
 });
 
@@ -2005,7 +1863,7 @@ async function handleConnectionStatusGet(
   if (executor.isReady()) {
     try {
       const wsState = await executor.getWebSocketState();
-      updateConnectionStatus({
+      connectionStatusManager.update({
         wsHealthy: wsState.isConnected,
         authenticated: wsState.authenticated,
         peerCount: wsState.isConnected ? wsState.peerCount : undefined,
@@ -2014,7 +1872,7 @@ async function handleConnectionStatusGet(
       // Ignore — return whatever we have cached
     }
   }
-  return createSuccessResponse(message.id, connectionStatus);
+  return createSuccessResponse(message.id, connectionStatusManager.getStatus());
 }
 
 // ============================================================================
