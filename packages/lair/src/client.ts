@@ -18,10 +18,10 @@ import type {
   EncryptedExport,
   LairClient as ILairClient,
   StoredKeyEntry,
-} from "./types";
-import type { KeyStorage } from "./storage";
-import { createKeyStorage } from "./storage";
-import { seedToMnemonic, mnemonicToSeed } from "./mnemonic";
+} from "./types.js";
+import type { KeyStorage } from "./storage.js";
+import { createKeyStorage } from "./storage.js";
+import { seedToMnemonic, mnemonicToSeed } from "./mnemonic.js";
 
 /** Minimum passphrase length for export/import operations */
 const MIN_PASSPHRASE_LENGTH = 8;

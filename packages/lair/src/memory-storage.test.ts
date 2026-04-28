@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { MemoryKeyStorage } from "./memory-storage";
-import type { StoredKeyEntry } from "./types";
+import { MemoryKeyStorage } from "./memory-storage.js";
+import type { StoredKeyEntry } from "./types.js";
 
 function makeEntry(tag: string, seedByte = 0x01): StoredKeyEntry {
   return {

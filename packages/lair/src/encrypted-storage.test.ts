@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import sodium from "libsodium-wrappers";
-import { EncryptedKeyStorage } from "./encrypted-storage";
-import { MemoryKeyStorage } from "./memory-storage";
-import type { StoredKeyEntry } from "./types";
+import { EncryptedKeyStorage } from "./encrypted-storage.js";
+import { MemoryKeyStorage } from "./memory-storage.js";
+import type { StoredKeyEntry } from "./types.js";
 
 function makeEntry(tag: string): StoredKeyEntry {
   // 64-byte Ed25519 private key (plaintext)
