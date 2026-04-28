@@ -1,6 +1,6 @@
 {
   "name": "@holo-host/lair",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lair keystore implementation for Holochain applications",
   "license": "Apache-2.0",
   "type": "module",
