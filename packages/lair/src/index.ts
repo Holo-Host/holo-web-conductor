@@ -45,4 +45,4 @@ export { seedToStoredEntry, hexToSeed } from "./seed-utils.js";
 // Export mnemonic (seed phrase backup/recovery)
 export { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from "./mnemonic.js";
 
-export const VERSION = "0.1.1";
+export const VERSION = "0.1.2";
