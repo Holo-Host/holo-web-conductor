@@ -28,20 +28,20 @@ export type {
   EncryptedExport,
   LairClient as ILairClient,
   StoredKeyEntry,
-} from "./types";
+} from "./types.js";
 
 // Export storage
-export type { KeyStorage } from "./storage";
-export { IndexedDBKeyStorage, createKeyStorage } from "./storage";
-export { MemoryKeyStorage } from "./memory-storage";
+export type { KeyStorage } from "./storage.js";
+export { IndexedDBKeyStorage, createKeyStorage } from "./storage.js";
+export { MemoryKeyStorage } from "./memory-storage.js";
 
 // Export client
-export { LairClient, createLairClient } from "./client";
+export { LairClient, createLairClient } from "./client.js";
 
 // Export seed utilities (for loading keys from external sources)
-export { seedToStoredEntry, hexToSeed } from "./seed-utils";
+export { seedToStoredEntry, hexToSeed } from "./seed-utils.js";
 
 // Export mnemonic (seed phrase backup/recovery)
-export { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from "./mnemonic";
+export { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from "./mnemonic.js";
 
 export const VERSION = "0.1.0";
