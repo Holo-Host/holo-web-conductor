@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from './mnemonic';
+import { seedToMnemonic, mnemonicToSeed, isValidMnemonic } from './mnemonic.js';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 
 describe('mnemonic', () => {

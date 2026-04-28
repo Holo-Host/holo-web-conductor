@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import sodium from "libsodium-wrappers";
-import { seedToStoredEntry, hexToSeed } from "./seed-utils";
+import { seedToStoredEntry, hexToSeed } from "./seed-utils.js";
 
 describe("seedToStoredEntry", () => {
   it("produces a StoredKeyEntry from a 32-byte seed", async () => {

@@ -8,8 +8,8 @@
  * - Any context where keys are provided externally
  */
 
-import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types";
-import type { KeyStorage } from "./storage";
+import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types.js";
+import type { KeyStorage } from "./storage.js";
 
 export class MemoryKeyStorage implements KeyStorage {
   private entries = new Map<EntryTag, StoredKeyEntry>();

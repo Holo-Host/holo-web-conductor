@@ -4,7 +4,7 @@
  * Stores key entries in browser IndexedDB for persistence
  */
 
-import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types";
+import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types.js";
 
 const DB_NAME = "hwc_lair";
 const DB_VERSION = 1;

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LairClient, createLairClient } from "./client";
-import { createKeyStorage, type KeyStorage } from "./storage";
+import { LairClient, createLairClient } from "./client.js";
+import { createKeyStorage, type KeyStorage } from "./storage.js";
 import sodium from "libsodium-wrappers";
 
 describe("LairClient", () => {

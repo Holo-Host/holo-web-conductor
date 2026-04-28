@@ -6,7 +6,7 @@
  */
 
 import sodium from "libsodium-wrappers";
-import type { EntryTag, StoredKeyEntry } from "./types";
+import type { EntryTag, StoredKeyEntry } from "./types.js";
 
 /**
  * Runtime guard — narrows libsodium's string | Uint8Array return to Uint8Array.

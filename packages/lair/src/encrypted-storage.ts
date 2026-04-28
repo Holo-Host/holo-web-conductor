@@ -21,8 +21,8 @@
  */
 
 import sodium from "libsodium-wrappers";
-import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types";
-import type { KeyStorage } from "./storage";
+import type { EntryTag, EntryInfo, StoredKeyEntry } from "./types.js";
+import type { KeyStorage } from "./storage.js";
 
 /**
  * 4-byte magic header for encrypted seeds. Chosen to be extremely unlikely
